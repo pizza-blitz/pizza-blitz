@@ -227,6 +227,48 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(breakeven.status_code, 200)
             self.assertEqual(breakeven.json()["fixed_costs"]["total"], 3750)
 
+            empty_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={"order_type": "takeaway", "items": []},
+            )
+            self.assertEqual(empty_order.status_code, 422)
+
+            takeaway = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "takeaway",
+                    "customer_name": "Walk-in",
+                    "customer_phone": "9999999999",
+                    "payment_method": "upi",
+                    "discount_amount": 10,
+                    "items": [
+                        {"name": "Margherita Pizza (R)", "quantity": 2, "price": 199}
+                    ],
+                },
+            )
+            self.assertEqual(takeaway.status_code, 200)
+            self.assertEqual(takeaway.json()["subtotal"], 398)
+            self.assertEqual(takeaway.json()["discount"], 10)
+            self.assertEqual(takeaway.json()["tax"], 19.4)
+            self.assertEqual(takeaway.json()["total"], 407.4)
+
+            takeaway_id = takeaway.json()["order_id"]
+            fetched_order = client.get(f"/api/v1/restaurant/orders/{takeaway_id}")
+            self.assertEqual(fetched_order.status_code, 200)
+            self.assertEqual(fetched_order.json()["customer_phone"], "9999999999")
+
+            takeaway_invoice = client.post(
+                f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
+            )
+            self.assertEqual(takeaway_invoice.status_code, 200)
+            self.assertTrue(takeaway_invoice.json()["invoice_number"].startswith("PB-"))
+
+            closed_takeaway = client.patch(
+                f"/api/v1/restaurant/orders/{takeaway_id}/close?payment_method=upi"
+            )
+            self.assertEqual(closed_takeaway.status_code, 200)
+            self.assertEqual(closed_takeaway.json()["status"], "closed")
+
 
 if __name__ == "__main__":
     unittest.main()

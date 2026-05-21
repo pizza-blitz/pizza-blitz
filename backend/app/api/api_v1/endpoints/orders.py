@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -33,7 +33,10 @@ class OrderItem(BaseModel):
 class OrderCreate(BaseModel):
     order_type: str = "dine-in"
     table_number: Optional[str] = None
-    items: List[OrderItem] = []
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    items: List[OrderItem] = Field(default_factory=list)
+    discount_amount: float = 0.0
     payment_method: Optional[str] = None
     notes: Optional[str] = None
 
@@ -75,6 +78,28 @@ def serialize_invoice(invoice: Invoice) -> dict:
     }
 
 
+def serialize_order(order: RestaurantOrder) -> dict:
+    return {
+        "id": order.id,
+        "date": order.date.isoformat() if order.date else None,
+        "order_type": order.order_type,
+        "table_number": order.table_number,
+        "customer_name": order.customer_name,
+        "customer_phone": order.customer_phone,
+        "items": order.items or [],
+        "subtotal": order.subtotal,
+        "discount_amount": order.discount_amount,
+        "tax_amount": order.tax_amount,
+        "total_amount": order.total_amount,
+        "payment_status": order.payment_status,
+        "payment_method": order.payment_method,
+        "status": order.status,
+        "notes": order.notes,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "closed_at": order.closed_at.isoformat() if order.closed_at else None,
+    }
+
+
 @router.get("/tables")
 def get_tables(db: Session = Depends(get_db)):
     ensure_default_tables(db)
@@ -84,16 +109,37 @@ def get_tables(db: Session = Depends(get_db)):
 
 @router.post("/")
 def create_order(order: OrderCreate, db: Session = Depends(get_db)):
-    subtotal = sum(item.price * item.quantity for item in order.items)
-    tax = round(subtotal * 0.05, 2)
-    total = round(subtotal + tax, 2)
-    items = [item.model_dump() for item in order.items]
+    valid_items = [item for item in order.items if item.quantity > 0]
+    if not valid_items:
+        raise HTTPException(status_code=422, detail="Order must include at least one item.")
+
+    if order.order_type == "dine-in" and not order.table_number:
+        raise HTTPException(status_code=422, detail="Dine-in orders require a table number.")
+
+    if order.table_number:
+        table = db.query(DiningTable).filter(
+            DiningTable.table_number == order.table_number
+        ).first()
+        if not table:
+            raise HTTPException(status_code=404, detail="Table not found")
+        if table.status == "occupied" and table.current_order_id:
+            raise HTTPException(status_code=409, detail="Table already has an open order.")
+
+    subtotal = round(sum(item.price * item.quantity for item in valid_items), 2)
+    discount = round(max(order.discount_amount or 0, 0), 2)
+    taxable_subtotal = max(subtotal - discount, 0)
+    tax = round(taxable_subtotal * 0.05, 2)
+    total = round(taxable_subtotal + tax, 2)
+    items = [item.model_dump() for item in valid_items]
 
     row = RestaurantOrder(
         order_type=order.order_type,
         table_number=order.table_number,
+        customer_name=order.customer_name,
+        customer_phone=order.customer_phone,
         items=items,
         subtotal=subtotal,
+        discount_amount=discount,
         tax_amount=tax,
         total_amount=total,
         payment_method=order.payment_method,
@@ -103,25 +149,37 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     db.flush()
 
     if order.table_number:
-        table = db.query(DiningTable).filter(
-            DiningTable.table_number == order.table_number
-        ).first()
-        if table:
-            table.status = "occupied"
-            table.current_order_id = row.id
-            table.last_updated = datetime.utcnow()
+        table.status = "occupied"
+        table.current_order_id = row.id
+        table.last_updated = datetime.utcnow()
 
     db.commit()
-    return {"order_id": row.id, "total": total, "tax": tax}
+    return {
+        "order_id": row.id,
+        "subtotal": subtotal,
+        "discount": discount,
+        "tax": tax,
+        "total": total,
+        "status": row.status,
+    }
 
 
 @router.patch("/{order_id}/close")
-def close_order(order_id: int, db: Session = Depends(get_db)):
+def close_order(
+    order_id: int,
+    payment_method: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
     if order.status != "closed":
+        if payment_method:
+            order.payment_method = payment_method
+        if not order.payment_method:
+            order.payment_method = "cash"
+        order.payment_status = "paid"
         order.status = "closed"
         order.closed_at = datetime.utcnow()
 
@@ -137,13 +195,14 @@ def close_order(order_id: int, db: Session = Depends(get_db)):
         daily = db.query(DailySales).filter(DailySales.date == date.today()).first()
         if daily:
             daily.total_sale = float(daily.total_sale or 0) + float(order.total_amount or 0)
-            daily.cash_collected = float(daily.cash_collected or 0) + float(order.total_amount or 0)
+            if (order.payment_method or "").lower() == "cash":
+                daily.cash_collected = float(daily.cash_collected or 0) + float(order.total_amount or 0)
             daily.profit = float(daily.total_sale or 0) - float(daily.total_expense or 0)
         else:
             daily = DailySales(
                 date=date.today(),
                 total_sale=order.total_amount or 0,
-                cash_collected=order.total_amount or 0,
+                cash_collected=order.total_amount if (order.payment_method or "").lower() == "cash" else 0,
                 total_expense=0,
                 profit=order.total_amount or 0,
                 payment_method=order.payment_method or "mixed",
@@ -207,16 +266,16 @@ def todays_orders(db: Session = Depends(get_db)):
     total = sum(float(row.total_amount or 0) for row in rows if row.status == "closed")
     return {
         "orders": [
-            {
-                "id": row.id,
-                "order_type": row.order_type,
-                "table_number": row.table_number,
-                "total_amount": row.total_amount,
-                "status": row.status,
-                "payment_method": row.payment_method,
-                "created_at": row.created_at.isoformat() if row.created_at else None,
-            }
+            serialize_order(row)
             for row in rows
         ],
         "total_collected_today": total,
     }
+
+
+@router.get("/{order_id}")
+def get_order(order_id: int, db: Session = Depends(get_db)):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return serialize_order(order)
