@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ID="${GCP_PROJECT_ID:-eduecosystem-prod}"
+if [[ -z "${GCP_PROJECT_ID:-}" ]]; then
+  echo "Set GCP_PROJECT_ID to the standalone Pizza Blitz Google Cloud project before deploying." >&2
+  exit 1
+fi
+
+PROJECT_ID="$GCP_PROJECT_ID"
 REGION="${GCP_REGION:-us-central1}"
 BACKEND_IMAGE="gcr.io/$PROJECT_ID/pizza-blitz-backend"
 FRONTEND_IMAGE="gcr.io/$PROJECT_ID/pizza-blitz-frontend"
@@ -62,4 +67,3 @@ gcloud run deploy pizza-blitz-frontend \
 
 cd "$ROOT"
 echo "Deployment complete."
-

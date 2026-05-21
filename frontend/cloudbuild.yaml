@@ -2,9 +2,14 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args: [
     'build', '--no-cache', 
-    '-t', 'us-central1-docker.pkg.dev/eduecosystem-prod/eduecosystem-repo/pizza-blitz-frontend:latest', 
+    '-t', '${_ARTIFACT_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/pizza-blitz-frontend:latest',
     '--build-arg', 'NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL}',
     '.'
   ]
 images:
-- 'us-central1-docker.pkg.dev/eduecosystem-prod/eduecosystem-repo/pizza-blitz-frontend:latest'
+- '${_ARTIFACT_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/pizza-blitz-frontend:latest'
+
+substitutions:
+  _ARTIFACT_REGION: us-central1
+  _ARTIFACT_REPOSITORY: pizza-blitz-repo
+  _NEXT_PUBLIC_API_URL: http://localhost:8000

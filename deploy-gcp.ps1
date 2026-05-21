@@ -1,7 +1,9 @@
 $ErrorActionPreference = "Stop"
 
 $PROJECT_ID = $env:GCP_PROJECT_ID
-if (-not $PROJECT_ID) { $PROJECT_ID = "eduecosystem-prod" }
+if (-not $PROJECT_ID) {
+  throw "Set GCP_PROJECT_ID to the standalone Pizza Blitz Google Cloud project before deploying."
+}
 
 $REGION = $env:GCP_REGION
 if (-not $REGION) { $REGION = "us-central1" }
@@ -64,4 +66,3 @@ gcloud run deploy pizza-blitz-frontend `
 
 Set-Location $ROOT
 Write-Host "Deployment complete."
-
