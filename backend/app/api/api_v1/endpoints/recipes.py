@@ -38,7 +38,7 @@ def list_recipes(db: Session = Depends(get_db)):
 
 @router.post("/")
 def upsert_recipe(payload: RecipeCreate, db: Session = Depends(get_db)):
-    ingredients = [ingredient.dict() for ingredient in payload.ingredients]
+    ingredients = [ingredient.model_dump() for ingredient in payload.ingredients]
     row = db.query(Recipe).filter(Recipe.menu_item == payload.menu_item).first()
     if row:
         row.ingredients = ingredients

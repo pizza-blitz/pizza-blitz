@@ -39,13 +39,22 @@ The standalone copy excludes generated dependency/build folders such as `node_mo
   - lifetime summary
   - same-period comparison
   - target status
+- Added standard-library backend validation test suite for realistic internal portal flows.
+- Validation suite covers:
+  - current-period sales totals
+  - last-year same-period comparison
+  - lifetime revenue/profit
+  - POS order creation
+  - invoice generation
+  - order close syncing into daily sales
+  - recipe prediction endpoint
+  - waste logging and summary
 
 ## Immediate Priority
 
 Make the internal restaurant portal locally stable first:
 
-1. Confirm backend imports and `/health` works.
-2. Confirm frontend builds.
-3. Continue validating formulas with realistic historical data.
-4. Run browser verification once local server startup is approached again.
-5. Only after the internal portal is reliable, build the public customer ordering website.
+1. Fix remaining non-fatal chart sizing warning in frontend build.
+2. Replace deprecated `google.generativeai` usage when we work on OCR/import flows.
+3. Run browser verification once local server startup is approached again.
+4. Only after the internal portal is reliable, build the public customer ordering website.

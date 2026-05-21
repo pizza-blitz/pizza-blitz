@@ -22,9 +22,10 @@ Baseline already completed:
 6. Backend contracts were added/fixed for POS orders, invoices, recipes, and waste.
 7. POS lifecycle test passes through FastAPI test client.
 8. Frontend production build passes after backend contract work.
+9. Backend validation suite passes with `python -m unittest discover -s tests -v`.
 
 Next best step:
 
-1. Validate formulas with realistic historical data imported from Google Sheet or seed data.
-2. Fix remaining non-fatal chart sizing warning in Recharts.
+1. Fix remaining non-fatal chart sizing warning in Recharts.
+2. Replace deprecated `google.generativeai` usage when OCR/import work is next.
 3. Run the app locally in browser and verify each internal portal page.

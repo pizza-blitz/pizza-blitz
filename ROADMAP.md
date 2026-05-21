@@ -31,6 +31,7 @@ Pizza Blitz has two connected products:
   - same day last week
   - same month last year
   - breakeven
+- Add automated validation for realistic historical data and POS-to-sales flow. Initial backend suite completed.
 - Confirm reports and exports.
 
 ## Phase 2 - Deployment

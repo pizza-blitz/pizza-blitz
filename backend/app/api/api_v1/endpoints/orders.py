@@ -87,7 +87,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     subtotal = sum(item.price * item.quantity for item in order.items)
     tax = round(subtotal * 0.05, 2)
     total = round(subtotal + tax, 2)
-    items = [item.dict() for item in order.items]
+    items = [item.model_dump() for item in order.items]
 
     row = RestaurantOrder(
         order_type=order.order_type,
