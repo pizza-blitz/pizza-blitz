@@ -1,0 +1,33 @@
+# Dependencies and build outputs
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Python runtime and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!*.env.example
+env_vars.yaml
+
+# Local databases and logs
+*.sqlite
+*.sqlite3
+*.db
+*.log
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

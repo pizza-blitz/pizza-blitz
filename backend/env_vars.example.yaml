@@ -1,0 +1,5 @@
+GEMINI_API_KEY: "set-in-cloud-secret-manager-or-runtime-env"
+SQLALCHEMY_DATABASE_URI: "postgresql+psycopg2://USER:PASSWORD@/DB_NAME?host=/cloudsql/PROJECT:REGION:INSTANCE"
+RESTAURANT_ADMIN_ID: "admin"
+RESTAURANT_ADMIN_PASSWORD: "set-secure-password"
+

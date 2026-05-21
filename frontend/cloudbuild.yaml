@@ -1,0 +1,10 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [
+    'build', '--no-cache', 
+    '-t', 'us-central1-docker.pkg.dev/eduecosystem-prod/eduecosystem-repo/pizza-blitz-frontend:latest', 
+    '--build-arg', 'NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL}',
+    '.'
+  ]
+images:
+- 'us-central1-docker.pkg.dev/eduecosystem-prod/eduecosystem-repo/pizza-blitz-frontend:latest'
