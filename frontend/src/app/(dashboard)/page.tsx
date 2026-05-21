@@ -141,7 +141,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 900, height: 300 }}>
               <BarChart data={monthlyData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 10}} dy={10} />
@@ -251,7 +251,7 @@ export default function Dashboard() {
         </div>
         {stats?.chart_data && (
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 900, height: 256 }}>
               <AreaChart data={stats.chart_data}>
                 <defs>
                   <linearGradient id="colorSale" x1="0" y1="0" x2="0" y2="1">

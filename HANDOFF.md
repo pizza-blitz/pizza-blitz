@@ -23,9 +23,10 @@ Baseline already completed:
 7. POS lifecycle test passes through FastAPI test client.
 8. Frontend production build passes after backend contract work.
 9. Backend validation suite passes with `python -m unittest discover -s tests -v`.
+10. Recharts prerender sizing warning is fixed with explicit `initialDimension` on responsive charts.
 
 Next best step:
 
-1. Fix remaining non-fatal chart sizing warning in Recharts.
-2. Replace deprecated `google.generativeai` usage when OCR/import work is next.
-3. Run the app locally in browser and verify each internal portal page.
+1. Replace deprecated `google.generativeai` usage when OCR/import work is next.
+2. Run the app locally in browser and verify each internal portal page.
+3. Start deployment preparation after browser verification passes.

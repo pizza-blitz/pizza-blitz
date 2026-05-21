@@ -85,7 +85,7 @@ export default function VendorPricePage() {
               <TrendingUp className="w-5 h-5 text-blue-400" /> {itemSearch} Price Trends
             </h3>
             <div className="h-[400px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 900, height: 400 }}>
                 <LineChart data={history.reverse()}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2c" vertical={false} />
                   <XAxis dataKey="recorded_date" stroke="#666" fontSize={10} tickFormatter={(str)=>str.split(' ')[0]} />

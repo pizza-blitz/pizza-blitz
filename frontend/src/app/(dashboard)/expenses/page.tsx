@@ -73,7 +73,7 @@ export default function ExpenseTracker() {
                   </div>
                </div>
                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height: 320 }}>
                     <AreaChart data={trends}>
                       <defs>
                         <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -97,7 +97,7 @@ export default function ExpenseTracker() {
             <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-gray-100 flex flex-col items-center justify-center text-center">
                <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-8">Allocation Map</h3>
                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 480, height: 256 }}>
                     <PieChart>
                       <Pie
                         data={categories}

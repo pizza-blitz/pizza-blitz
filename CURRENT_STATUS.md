@@ -26,7 +26,7 @@ The standalone copy excludes generated dependency/build folders such as `node_mo
 - Local git repository has been initialized.
 - Backend `/health` check passes through FastAPI test client: `200 {"status": "ok", "project": "Restaurant Portal API"}`.
 - Frontend production build passes with Next.js.
-- Remaining known warning: Recharts reports a non-fatal container width/height warning during prerender.
+- Recharts container sizing warning during frontend prerender is fixed.
 - Remaining cleanup debt: backend imports `google.generativeai`, which now emits a deprecation warning and should eventually move to `google.genai`.
 - Frontend pages now use the shared API URL helper instead of stale hardcoded production backend URLs.
 - Backend now uses an in-memory SQLite dev DB by default because file-backed SQLite writes produced disk I/O errors in this workspace. Production should still use `SQLALCHEMY_DATABASE_URI` for PostgreSQL.
@@ -54,7 +54,6 @@ The standalone copy excludes generated dependency/build folders such as `node_mo
 
 Make the internal restaurant portal locally stable first:
 
-1. Fix remaining non-fatal chart sizing warning in frontend build.
-2. Replace deprecated `google.generativeai` usage when we work on OCR/import flows.
-3. Run browser verification once local server startup is approached again.
-4. Only after the internal portal is reliable, build the public customer ordering website.
+1. Replace deprecated `google.generativeai` usage when we work on OCR/import flows.
+2. Run browser verification once local server startup is approached again.
+3. Only after the internal portal is reliable, build the public customer ordering website.

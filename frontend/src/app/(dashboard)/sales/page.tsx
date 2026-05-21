@@ -120,7 +120,7 @@ export default function SalesHistory() {
           {isLoading ? (
             <div className="h-full flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-orange-500" /></div>
           ) : (
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height: 288 }}>
               <BarChart data={filteredSales}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 10}} tickFormatter={(val) => new Date(val).toLocaleDateString(undefined, {day: 'numeric', month: 'short'})} />
