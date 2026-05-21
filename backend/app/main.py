@@ -5,7 +5,7 @@ from app.api.api_v1.api import api_router
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.models import domain
-from app.models.domain import DiningTable, MenuItem
+from app.models.domain import DiningTable, MenuItem, Vendor
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
@@ -34,6 +34,12 @@ DEFAULT_MENU_ITEMS = [
     {"name": "Brownie", "category": "Desserts", "selling_price": 79.0, "cost_price": 20.0},
 ]
 
+DEFAULT_VENDORS = [
+    {"name": "Amul Dairy Supplier", "contact_person": "Procurement Desk", "category": "Dairy"},
+    {"name": "Local Vegetable Market", "contact_person": "Fresh Produce Desk", "category": "Vegetables"},
+    {"name": "Bakery Base Partner", "contact_person": "Kitchen Supplies", "category": "Bakery"},
+]
+
 
 def seed_baseline_data() -> None:
     db = SessionLocal()
@@ -47,6 +53,11 @@ def seed_baseline_data() -> None:
         for item in DEFAULT_MENU_ITEMS:
             if item["name"] not in existing_menu:
                 db.add(MenuItem(**item))
+
+        existing_vendors = {row.name for row in db.query(Vendor).all()}
+        for vendor in DEFAULT_VENDORS:
+            if vendor["name"] not in existing_vendors:
+                db.add(Vendor(**vendor))
 
         db.commit()
     finally:

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.api.deps import get_db
+from app.models.domain import Vendor, VendorPriceHistory
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 
 router = APIRouter()
 
@@ -14,58 +14,111 @@ class PriceEntry(BaseModel):
     unit: str
     notes: Optional[str] = None
 
+def _vendor_dict(vendor: Vendor) -> dict:
+    return {
+        "id": vendor.id,
+        "name": vendor.name,
+        "contact_person": vendor.contact_person,
+        "phone": vendor.phone,
+        "whatsapp": vendor.whatsapp,
+        "category": vendor.category,
+        "is_active": vendor.is_active,
+        "created_at": vendor.created_at.isoformat() if vendor.created_at else None,
+    }
+
+def _history_dict(history: VendorPriceHistory, vendor_name: str | None = None) -> dict:
+    return {
+        "id": history.id,
+        "vendor_id": history.vendor_id,
+        "vendor_name": vendor_name or (history.vendor.name if history.vendor else None),
+        "item_name": history.item_name,
+        "price_per_unit": history.price_per_unit,
+        "unit": history.unit,
+        "notes": history.notes,
+        "recorded_date": history.recorded_date.isoformat() if history.recorded_date else None,
+    }
+
 @router.get("/")
 def get_vendors(db: Session = Depends(get_db)):
-    result = db.execute(text("SELECT * FROM vendors ORDER BY name")).fetchall()
-    return [dict(r._mapping) for r in result]
+    vendors = db.query(Vendor).order_by(Vendor.name.asc()).all()
+    return [_vendor_dict(vendor) for vendor in vendors]
 
 @router.post("/prices")
 def log_price(entry: PriceEntry, db: Session = Depends(get_db)):
-    db.execute(text("""
-        INSERT INTO vendor_price_history (vendor_id, item_name, price_per_unit, unit, notes)
-        VALUES (:vid, :item, :price, :unit, :notes)
-    """), {"vid": entry.vendor_id, "item": entry.item_name,
-           "price": entry.price_per_unit, "unit": entry.unit, "notes": entry.notes})
+    vendor = db.get(Vendor, entry.vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    history = VendorPriceHistory(
+        vendor_id=entry.vendor_id,
+        item_name=entry.item_name,
+        price_per_unit=entry.price_per_unit,
+        unit=entry.unit,
+        notes=entry.notes,
+    )
+    db.add(history)
     db.commit()
-    return {"status": "price logged", "item": entry.item_name}
+    db.refresh(history)
+    return {"status": "price logged", "item": entry.item_name, "price": _history_dict(history, vendor.name)}
 
 @router.get("/prices/history/{item_name}")
 def item_price_history(item_name: str, db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT h.*, v.name as vendor_name
-        FROM vendor_price_history h
-        JOIN vendors v ON v.id = h.vendor_id
-        WHERE h.item_name = :item
-        ORDER BY h.recorded_date DESC
-    """), {"item": item_name}).fetchall()
-    return [dict(r._mapping) for r in result]
+    history = (
+        db.query(VendorPriceHistory)
+        .join(Vendor)
+        .filter(VendorPriceHistory.item_name == item_name)
+        .order_by(VendorPriceHistory.recorded_date.desc())
+        .all()
+    )
+    return [_history_dict(row) for row in history]
 
 @router.get("/prices/alerts/increases")
 def price_increase_alerts(db: Session = Depends(get_db)):
-    # Find items where latest price is > 5% higher than previous price
-    result = db.execute(text("""
-        WITH ranked_prices AS (
-            SELECT item_name, vendor_id, price_per_unit, recorded_date,
-                   LAG(price_per_unit) OVER (PARTITION BY item_name, vendor_id ORDER BY recorded_date) as prev_price
-            FROM vendor_price_history
+    history = (
+        db.query(VendorPriceHistory)
+        .join(Vendor)
+        .order_by(
+            VendorPriceHistory.item_name.asc(),
+            VendorPriceHistory.vendor_id.asc(),
+            VendorPriceHistory.recorded_date.asc(),
         )
-        SELECT r.*, v.name as vendor_name,
-               ((price_per_unit - prev_price) / prev_price * 100) as pct_increase
-        FROM ranked_prices r
-        JOIN vendors v ON v.id = r.vendor_id
-        WHERE prev_price IS NOT NULL AND (price_per_unit / prev_price) > 1.05
-        ORDER BY recorded_date DESC
-    """)).fetchall()
-    return [dict(r._mapping) for r in result]
+        .all()
+    )
+
+    grouped: dict[tuple[str, int], list[VendorPriceHistory]] = {}
+    for row in history:
+        grouped.setdefault((row.item_name, row.vendor_id), []).append(row)
+
+    alerts = []
+    for rows in grouped.values():
+        for previous, current in zip(rows, rows[1:]):
+            if previous.price_per_unit and current.price_per_unit / previous.price_per_unit > 1.05:
+                alert = _history_dict(current)
+                alert["prev_price"] = previous.price_per_unit
+                alert["pct_increase"] = (
+                    (current.price_per_unit - previous.price_per_unit)
+                    / previous.price_per_unit
+                    * 100
+                )
+                alerts.append(alert)
+
+    return sorted(alerts, key=lambda row: row["recorded_date"] or "", reverse=True)
 
 @router.get("/intelligence/cheapest/{item_name}")
 def find_cheapest_vendor(item_name: str, db: Session = Depends(get_db)):
-    result = db.execute(text("""
-        SELECT DISTINCT ON (vendor_id) vendor_id, price_per_unit, unit, recorded_date, v.name as vendor_name
-        FROM vendor_price_history h
-        JOIN vendors v ON v.id = h.vendor_id
-        WHERE item_name = :item
-        ORDER BY vendor_id, recorded_date DESC
-    """), {"item": item_name}).fetchall()
-    sorted_res = sorted([dict(r._mapping) for r in result], key=lambda x: x['price_per_unit'])
-    return sorted_res
+    rows = (
+        db.query(VendorPriceHistory)
+        .join(Vendor)
+        .filter(VendorPriceHistory.item_name == item_name)
+        .order_by(VendorPriceHistory.recorded_date.desc())
+        .all()
+    )
+
+    latest_by_vendor: dict[int, VendorPriceHistory] = {}
+    for row in rows:
+        latest_by_vendor.setdefault(row.vendor_id, row)
+
+    return sorted(
+        [_history_dict(row) for row in latest_by_vendor.values()],
+        key=lambda row: row["price_per_unit"],
+    )

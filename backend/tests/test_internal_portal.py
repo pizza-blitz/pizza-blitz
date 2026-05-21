@@ -125,6 +125,108 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(waste_summary.status_code, 200)
             self.assertEqual(waste_summary.json()["total_waste_cost"], 90)
 
+            promo = client.post(
+                "/api/v1/restaurant/promotions/",
+                json={
+                    "name": "Weekend Combo",
+                    "start_date": yesterday.isoformat(),
+                    "end_date": today.isoformat(),
+                    "discount_type": "percentage",
+                    "discount_value": 15,
+                },
+            )
+            self.assertEqual(promo.status_code, 200)
+            promo_id = promo.json()["promotion"]["id"]
+
+            active_promos = client.get("/api/v1/restaurant/promotions/active")
+            self.assertEqual(active_promos.status_code, 200)
+            self.assertIn("Weekend Combo", [item["name"] for item in active_promos.json()])
+
+            promo_performance = client.get(
+                f"/api/v1/restaurant/promotions/performance/{promo_id}"
+            )
+            self.assertEqual(promo_performance.status_code, 200)
+            self.assertAlmostEqual(
+                promo_performance.json()["total_revenue_during"],
+                2217.9,
+                places=2,
+            )
+
+            shift = client.post(
+                "/api/v1/restaurant/shifts/",
+                json={
+                    "date": today.isoformat(),
+                    "staff_name": "Amit",
+                    "role": "Chef",
+                    "shift_start": "11:00",
+                    "shift_end": "23:00",
+                },
+            )
+            self.assertEqual(shift.status_code, 200)
+
+            shift_performance = client.get("/api/v1/restaurant/shifts/performance")
+            self.assertEqual(shift_performance.status_code, 200)
+            self.assertEqual(shift_performance.json()[0]["staff_name"], "Amit")
+
+            shift_day = client.get(f"/api/v1/restaurant/shifts/by-date/{today.isoformat()}")
+            self.assertEqual(shift_day.status_code, 200)
+            self.assertAlmostEqual(shift_day.json()["total_sale"], 1417.9, places=2)
+
+            vendors = client.get("/api/v1/restaurant/vendors/")
+            self.assertEqual(vendors.status_code, 200)
+            vendor_id = vendors.json()[0]["id"]
+
+            first_price = client.post(
+                "/api/v1/restaurant/vendors/prices",
+                json={
+                    "vendor_id": vendor_id,
+                    "item_name": "Amul Cheese",
+                    "price_per_unit": 500,
+                    "unit": "kg",
+                },
+            )
+            self.assertEqual(first_price.status_code, 200)
+
+            second_price = client.post(
+                "/api/v1/restaurant/vendors/prices",
+                json={
+                    "vendor_id": vendor_id,
+                    "item_name": "Amul Cheese",
+                    "price_per_unit": 550,
+                    "unit": "kg",
+                },
+            )
+            self.assertEqual(second_price.status_code, 200)
+
+            price_history = client.get("/api/v1/restaurant/vendors/prices/history/Amul Cheese")
+            self.assertEqual(price_history.status_code, 200)
+            self.assertGreaterEqual(len(price_history.json()), 2)
+
+            price_alerts = client.get("/api/v1/restaurant/vendors/prices/alerts/increases")
+            self.assertEqual(price_alerts.status_code, 200)
+            self.assertIn("Amul Cheese", [item["item_name"] for item in price_alerts.json()])
+
+            cheapest = client.get("/api/v1/restaurant/vendors/intelligence/cheapest/Amul Cheese")
+            self.assertEqual(cheapest.status_code, 200)
+            self.assertEqual(cheapest.json()[0]["price_per_unit"], 550)
+
+            breakeven_setup = client.post(
+                "/api/v1/restaurant/stats/breakeven/setup",
+                params={
+                    "month": today.strftime("%Y-%m"),
+                    "rent": 1000,
+                    "salaries": 2000,
+                    "utilities": 500,
+                    "other_fixed": 250,
+                    "avg_order_value": 250,
+                },
+            )
+            self.assertEqual(breakeven_setup.status_code, 200)
+
+            breakeven = client.get("/api/v1/restaurant/stats/breakeven")
+            self.assertEqual(breakeven.status_code, 200)
+            self.assertEqual(breakeven.json()["fixed_costs"]["total"], 3750)
+
 
 if __name__ == "__main__":
     unittest.main()

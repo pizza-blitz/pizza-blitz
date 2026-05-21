@@ -77,6 +77,51 @@ class PurchaseOrder(Base):
     whatsapp_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class Promotion(Base):
+    __tablename__ = "promotions"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=False)
+    start_date = Column(Date, index=True, nullable=False)
+    end_date = Column(Date, index=True, nullable=False)
+    description = Column(String, nullable=True)
+    discount_type = Column(String, default="percentage")
+    discount_value = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ShiftLog(Base):
+    __tablename__ = "shift_log"
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, index=True, nullable=False)
+    staff_name = Column(String, index=True, nullable=False)
+    role = Column(String, nullable=True)
+    shift_start = Column(String, nullable=True)
+    shift_end = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Vendor(Base):
+    __tablename__ = "vendors"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    contact_person = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    whatsapp = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    price_history = relationship("VendorPriceHistory", back_populates="vendor")
+
+class VendorPriceHistory(Base):
+    __tablename__ = "vendor_price_history"
+    id = Column(Integer, primary_key=True, index=True)
+    vendor_id = Column(Integer, ForeignKey("vendors.id"), index=True, nullable=False)
+    item_name = Column(String, index=True, nullable=False)
+    price_per_unit = Column(Float, nullable=False)
+    unit = Column(String, default="unit")
+    notes = Column(String, nullable=True)
+    recorded_date = Column(DateTime, default=datetime.utcnow, index=True)
+    vendor = relationship("Vendor", back_populates="price_history")
+
 class GoogleSheetSync(Base):
     __tablename__ = "google_sheet_sync"
     id = Column(Integer, primary_key=True, index=True)

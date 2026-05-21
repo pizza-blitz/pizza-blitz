@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, text
 from app.api.deps import get_db
-from app.models.domain import DailySales
+from app.models.domain import DailySales, FixedCost
 from datetime import datetime, timedelta
 
 router = APIRouter()
@@ -364,7 +364,7 @@ def breakeven_analysis(db: Session = Depends(get_db)):
     import calendar
     today = date.today()
     month_str = today.strftime("%Y-%m")
-    fixed = db.execute(text("SELECT * FROM fixed_costs WHERE month=:m"), {"m": month_str}).fetchone()
+    fixed = db.query(FixedCost).filter(FixedCost.month == month_str).first()
     rent = float(fixed.rent) if fixed else 0
     salaries = float(fixed.salaries) if fixed else 0
     utilities = float(fixed.utilities) if fixed else 0
@@ -372,20 +372,20 @@ def breakeven_analysis(db: Session = Depends(get_db)):
     avg_order = float(fixed.avg_order_value) if fixed else 250
     total_fixed = rent + salaries + utilities + other
     month_start = today.replace(day=1)
-    variable = db.execute(text("""
-        SELECT COALESCE(AVG(total_expense),0) as avg_expense,
-               COALESCE(AVG(total_sale),0) as avg_sale
-        FROM daily_sales WHERE date >= :start
-    """), {"start": month_start}).fetchone()
-    avg_variable_per_day = float(variable.avg_expense) if variable else 0
-    avg_daily_sale = float(variable.avg_sale) if variable else 0
+    avg_expense, avg_sale = (
+        db.query(func.avg(DailySales.total_expense), func.avg(DailySales.total_sale))
+        .filter(DailySales.date >= month_start)
+        .one()
+    )
+    avg_variable_per_day = float(avg_expense or 0)
+    avg_daily_sale = float(avg_sale or 0)
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     variable_cost_per_order = (avg_variable_per_day / (avg_daily_sale / avg_order)) if avg_daily_sale > 0 else avg_order * 0.4
     contribution_margin = avg_order - variable_cost_per_order
     orders_to_breakeven_daily = (total_fixed / days_in_month) / contribution_margin if contribution_margin > 0 else 0
     revenue_to_breakeven_daily = orders_to_breakeven_daily * avg_order
-    today_sales = db.execute(text("SELECT COALESCE(total_sale,0) as s FROM daily_sales WHERE date=:d"), {"d": today}).fetchone()
-    today_revenue = float(today_sales.s) if today_sales else 0
+    today_sales = db.query(DailySales).filter(DailySales.date == today).first()
+    today_revenue = float(today_sales.total_sale or 0) if today_sales else 0
     above_breakeven = today_revenue > revenue_to_breakeven_daily
     return {
         "month": month_str,
@@ -403,15 +403,16 @@ def breakeven_analysis(db: Session = Depends(get_db)):
 def set_fixed_costs(month: str, rent: float = 0, salaries: float = 0,
                     utilities: float = 0, other_fixed: float = 0,
                     avg_order_value: float = 250, db: Session = Depends(get_db)):
-    db.execute(text("""
-        INSERT INTO fixed_costs (month, rent, salaries, utilities, other_fixed, avg_order_value)
-        VALUES (:month, :rent, :sal, :util, :other, :avg)
-        ON CONFLICT (month) DO UPDATE
-        SET rent=EXCLUDED.rent, salaries=EXCLUDED.salaries,
-            utilities=EXCLUDED.utilities, other_fixed=EXCLUDED.other_fixed,
-            avg_order_value=EXCLUDED.avg_order_value
-    """), {"month": month, "rent": rent, "sal": salaries,
-           "util": utilities, "other": other_fixed, "avg": avg_order_value})
+    fixed = db.query(FixedCost).filter(FixedCost.month == month).first()
+    if fixed is None:
+        fixed = FixedCost(month=month)
+        db.add(fixed)
+
+    fixed.rent = rent
+    fixed.salaries = salaries
+    fixed.utilities = utilities
+    fixed.other_fixed = other_fixed
+    fixed.avg_order_value = avg_order_value
     db.commit()
     return {"status": "saved", "month": month}
 
