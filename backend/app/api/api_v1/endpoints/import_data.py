@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
-from app.models.domain import DailySales, Expense, GoogleSheetSync
+from app.models.domain import DailySales
 from app.services.sheets_service import SheetsService
-import google.generativeai as genai
-import os
-import json
+from app.services.gemini_service import bytes_part, generate_text, parse_json_response
 from datetime import datetime
 
 router = APIRouter()
@@ -21,15 +19,9 @@ def import_from_sheets(sheet_url: str, db: Session = Depends(get_db)):
 
 @router.post("/pdf")
 async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Gemini API Key for Vision not configured")
-    
-    genai.configure(api_key=api_key)
-    
     try:
         contents = await file.read()
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        pdf_part = bytes_part(contents, "application/pdf")
         
         # Use Gemini Vision (or Text with PDF analysis) to extract data
         prompt = """
@@ -44,7 +36,11 @@ async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(ge
         response = None
         for attempt in range(max_retries):
             try:
-                response = model.generate_content([prompt, {"mime_type": "application/pdf", "data": contents}])
+                response = generate_text(
+                    model="gemini-2.0-flash",
+                    contents=[prompt, pdf_part],
+                    missing_key_detail="Gemini API Key for Vision not configured",
+                )
                 break
             except Exception as e:
                 if "429" in str(e) and attempt < max_retries - 1:
@@ -52,9 +48,7 @@ async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(ge
                     continue
                 raise e
         
-        # Clean and parse JSON
-        text = response.text.replace('```json', '').replace('```', '').strip()
-        extracted_data = json.loads(text)
+        extracted_data = parse_json_response(response or "[]")
         
         imported_count = 0
         for entry in extracted_data:

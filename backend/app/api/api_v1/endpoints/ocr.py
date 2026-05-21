@@ -1,55 +1,65 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.api.deps import get_db
-import base64, json, os
+from app.models.domain import InventoryItem, InventoryTransaction
+from app.services.gemini_service import bytes_part, generate_text, parse_json_response
 
 router = APIRouter()
+
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 @router.post("/scan-bill")
 async def scan_bill(file: UploadFile = File(...), db: Session = Depends(get_db)):
     image_bytes = await file.read()
-    image_base64 = base64.b64encode(image_bytes).decode()
-    
-    import google.generativeai as genai
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    image_part = bytes_part(image_bytes, file.content_type or "image/jpeg")
     
     prompt = """Extract all inventory items from this bill or photo.
     Return ONLY a JSON array like this:
     [{"item_name":"cheese","quantity":10,"unit":"kg","price_per_unit":500,"total_price":5000}]
     If any field is unclear use null. Return only the JSON array, nothing else."""
     
-    import PIL.Image
-    import io
-    image = PIL.Image.open(io.BytesIO(image_bytes))
-    response = model.generate_content([prompt, image])
-    
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    
-    items = json.loads(raw.strip())
+    raw = generate_text(model="gemini-1.5-flash", contents=[prompt, image_part])
+    items = parse_json_response(raw)
     
     updated = []
     for item in items:
         if item.get("item_name") and item.get("quantity"):
-            db.execute(text("""
-                INSERT INTO inventory_items (name, quantity, unit, cost_per_unit, last_updated)
-                VALUES (:name, :qty, :unit, :cost, NOW())
-                ON CONFLICT (name) DO UPDATE
-                SET quantity = inventory_items.quantity + EXCLUDED.quantity,
-                    cost_per_unit = EXCLUDED.cost_per_unit,
-                    last_updated = NOW()
-            """), {
-                "name": item["item_name"],
-                "qty": float(item["quantity"]),
-                "unit": item.get("unit") or "units",
-                "cost": float(item.get("price_per_unit") or 0)
-            })
-            updated.append(item["item_name"])
+            name = str(item["item_name"]).strip()
+            quantity = _to_float(item.get("quantity"))
+            unit = item.get("unit") or "units"
+            unit_cost = _to_float(item.get("price_per_unit"))
+            total_cost = _to_float(item.get("total_price"), quantity * unit_cost)
+
+            inventory_item = db.query(InventoryItem).filter(InventoryItem.name == name).first()
+            if inventory_item is None:
+                inventory_item = InventoryItem(
+                    name=name,
+                    category="Imported",
+                    unit=unit,
+                    current_stock=0.0,
+                    minimum_stock=0.0,
+                    cost_per_unit=unit_cost,
+                )
+                db.add(inventory_item)
+                db.flush()
+
+            inventory_item.current_stock = (inventory_item.current_stock or 0.0) + quantity
+            inventory_item.unit = unit
+            inventory_item.cost_per_unit = unit_cost
+
+            db.add(InventoryTransaction(
+                item_id=inventory_item.id,
+                transaction_type="purchase",
+                quantity=quantity,
+                unit_cost=unit_cost,
+                total_cost=total_cost,
+                notes="Imported from scanned bill",
+            ))
+            updated.append(name)
     db.commit()
     
     return {

@@ -1,13 +1,11 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy.orm import Session
-import google.generativeai as genai
-import os
 import json
-from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
 from app.api.deps import get_db
 from app.models.domain import InventoryItem, InventoryTransaction
+from app.services.gemini_service import bytes_part, generate_text
 
 router = APIRouter()
 
@@ -41,10 +39,10 @@ def update_or_create_item(item: InventoryItemSchema, db: Session = Depends(get_d
     if item.id:
         db_item = db.query(InventoryItem).filter(InventoryItem.id == item.id).first()
         if not db_item: raise HTTPException(status_code=404, detail="Item not found")
-        for key, value in item.dict().items():
+        for key, value in item.model_dump().items():
             setattr(db_item, key, value)
     else:
-        db_item = InventoryItem(**item.dict(exclude={"id"}))
+        db_item = InventoryItem(**item.model_dump(exclude={"id"}))
         db.add(db_item)
     
     db.commit()
@@ -77,20 +75,20 @@ def record_transaction(req: TransactionRequest, db: Session = Depends(get_db)):
 
 @router.post("/extract-invoice")
 async def extract_invoice(file: UploadFile = File(...)):
-    # Existing Gemini logic ...
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Gemini API Key not configured")
-    
-    genai.configure(api_key=api_key)
-    
     try:
         contents = await file.read()
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        image_parts = [{"mime_type": file.content_type, "data": contents}]
-        prompt = "Analyze this invoice... (rest of prompt)" # Simplified for brevity in thought, keep original logic
-        response = model.generate_content([prompt, image_parts[0]])
-        text = response.text.replace('```json', '').replace('```', '').strip()
+        invoice_part = bytes_part(
+            contents,
+            file.content_type or "application/octet-stream",
+        )
+        prompt = """
+        Analyze this restaurant supplier invoice.
+        Return only a JSON array of line items with:
+        item_name, quantity, unit, price_per_unit, total_price.
+        If a field is unclear, use null. Do not include markdown.
+        """
+        text = generate_text(model="gemini-1.5-flash", contents=[prompt, invoice_part])
+        text = text.replace('```json', '').replace('```', '').strip()
         try:
             items = json.loads(text)
             return {"status": "success", "extracted_items": items}
@@ -98,4 +96,3 @@ async def extract_invoice(file: UploadFile = File(...)):
             return {"status": "error", "message": "Failed to parse JSON from AI response", "raw_response": text}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-

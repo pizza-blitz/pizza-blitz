@@ -1,22 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
-from app.models.domain import DailySales, InventoryItem, MenuItem
-import google.generativeai as genai
-import os
+from app.models.domain import DailySales, InventoryItem
+from app.services.gemini_service import generate_text, parse_json_response
 from datetime import datetime, timedelta
-import json
 
 router = APIRouter()
 
 @router.get("/ai-insights")
 def get_ai_insights(db: Session = Depends(get_db)):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Gemini API Key not configured")
-    
-    genai.configure(api_key=api_key)
-    
     # 1. Gather Data (Last 30 Days)
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     sales = db.query(DailySales).filter(DailySales.date >= thirty_days_ago).all()
@@ -37,8 +29,6 @@ def get_ai_insights(db: Session = Depends(get_db)):
     }
 
     # 2. Prompt Gemini
-    # Try gemini-1.5-flash (standard ID)
-    model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     You are an expert restaurant consultant for 'Pizza Blitz'. 
     Analyze the following performance data from the last 30 days:
@@ -51,11 +41,11 @@ def get_ai_insights(db: Session = Depends(get_db)):
     """
     
     try:
-        response = model.generate_content(prompt)
-        # Clean response text
-        text = response.text.replace('```json', '').replace('```', '').strip()
-        insights = json.loads(text)
+        text = generate_text(model="gemini-1.5-flash", contents=prompt)
+        insights = parse_json_response(text)
         return {"status": "success", "data": insights}
+    except HTTPException:
+        raise
     except Exception as e:
         # Fallback if AI fails or model not found
         return {
