@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.models.domain import DailySales, DiningTable, Invoice, RestaurantOrder
+from app.models.domain import Customer, DailySales, DiningTable, Invoice, RestaurantOrder
 
 
 router = APIRouter()
@@ -100,6 +100,28 @@ def serialize_order(order: RestaurantOrder) -> dict:
     }
 
 
+def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
+    phone = (order.customer_phone or "").strip()
+    if not phone:
+        return
+
+    customer = db.query(Customer).filter(Customer.phone == phone).first()
+    if customer is None:
+        customer = Customer(
+            name=order.customer_name,
+            phone=phone,
+            total_orders=0,
+            total_spend=0.0,
+        )
+        db.add(customer)
+
+    if order.customer_name:
+        customer.name = order.customer_name
+    customer.total_orders = int(customer.total_orders or 0) + 1
+    customer.total_spend = float(customer.total_spend or 0.0) + float(order.total_amount or 0.0)
+    customer.last_order_at = datetime.utcnow()
+
+
 @router.get("/tables")
 def get_tables(db: Session = Depends(get_db)):
     ensure_default_tables(db)
@@ -147,6 +169,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     )
     db.add(row)
     db.flush()
+    upsert_customer_from_order(db, row)
 
     if order.table_number:
         table.status = "occupied"

@@ -257,6 +257,15 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(fetched_order.status_code, 200)
             self.assertEqual(fetched_order.json()["customer_phone"], "9999999999")
 
+            customers = client.get("/api/v1/restaurant/customers/")
+            self.assertEqual(customers.status_code, 200)
+            customer_phones = [customer["phone"] for customer in customers.json()]
+            self.assertIn("9999999999", customer_phones)
+
+            customer_summary = client.get("/api/v1/restaurant/customers/summary")
+            self.assertEqual(customer_summary.status_code, 200)
+            self.assertEqual(customer_summary.json()["total_customers"], 1)
+
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
             )

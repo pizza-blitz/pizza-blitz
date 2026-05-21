@@ -77,6 +77,19 @@ class PurchaseOrder(Base):
     whatsapp_sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class Customer(Base):
+    __tablename__ = "customers"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=True)
+    phone = Column(String(30), unique=True, index=True, nullable=False)
+    email = Column(String(255), nullable=True)
+    opt_in_marketing = Column(Boolean, default=True)
+    total_orders = Column(Integer, default=0)
+    total_spend = Column(Float, default=0.0)
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+    last_order_at = Column(DateTime, nullable=True)
+    notes = Column(String, nullable=True)
+
 class Promotion(Base):
     __tablename__ = "promotions"
     id = Column(Integer, primary_key=True, index=True)
