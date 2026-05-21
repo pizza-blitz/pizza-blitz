@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     SQLALCHEMY_DATABASE_URI: str = os.getenv(
         "SQLALCHEMY_DATABASE_URI",
-        "sqlite:///./restaurant_db.sqlite",
+        "sqlite:///:memory:",
     )
     
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")

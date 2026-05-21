@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, text
 
 
 def check_years() -> None:
-    db_uri = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///./restaurant_db.sqlite")
+    db_uri = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///:memory:")
     engine = create_engine(db_uri)
     with engine.connect() as conn:
         print("Yearly Record Breakdown:")
@@ -26,4 +26,3 @@ def check_years() -> None:
 
 if __name__ == "__main__":
     check_years()
-

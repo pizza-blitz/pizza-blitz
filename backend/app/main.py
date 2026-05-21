@@ -2,12 +2,60 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.api_v1.api import api_router
+from app.db.base import Base
+from app.db.session import SessionLocal, engine
+from app.models import domain
+from app.models.domain import DiningTable, MenuItem
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
 
+DEFAULT_TABLES = [
+    ("T1", 4),
+    ("T2", 4),
+    ("T3", 6),
+    ("T4", 2),
+    ("T5", 4),
+    ("T6", 8),
+    ("T7", 2),
+    ("T8", 4),
+]
+
+DEFAULT_MENU_ITEMS = [
+    {"name": "Margherita Pizza (R)", "category": "Pizza", "selling_price": 199.0, "cost_price": 80.0},
+    {"name": "Margherita Pizza (M)", "category": "Pizza", "selling_price": 299.0, "cost_price": 120.0},
+    {"name": "Margherita Pizza (L)", "category": "Pizza", "selling_price": 449.0, "cost_price": 180.0},
+    {"name": "Farmhouse Pizza (R)", "category": "Pizza", "selling_price": 249.0, "cost_price": 100.0},
+    {"name": "Garlic Bread", "category": "Sides", "selling_price": 119.0, "cost_price": 40.0},
+    {"name": "French Fries", "category": "Sides", "selling_price": 89.0, "cost_price": 25.0},
+    {"name": "Cheese Burst Burger", "category": "Burgers", "selling_price": 149.0, "cost_price": 60.0},
+    {"name": "Veggie Delight Sandwich", "category": "Sandwiches", "selling_price": 129.0, "cost_price": 50.0},
+    {"name": "Cold Coffee", "category": "Beverages", "selling_price": 99.0, "cost_price": 30.0},
+    {"name": "Brownie", "category": "Desserts", "selling_price": 79.0, "cost_price": 20.0},
+]
+
+
+def seed_baseline_data() -> None:
+    db = SessionLocal()
+    try:
+        existing_tables = {row.table_number for row in db.query(DiningTable).all()}
+        for table_number, capacity in DEFAULT_TABLES:
+            if table_number not in existing_tables:
+                db.add(DiningTable(table_number=table_number, capacity=capacity))
+
+        existing_menu = {row.name for row in db.query(MenuItem).all()}
+        for item in DEFAULT_MENU_ITEMS:
+            if item["name"] not in existing_menu:
+                db.add(MenuItem(**item))
+
+        db.commit()
+    finally:
+        db.close()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    seed_baseline_data()
     start_scheduler()
     yield
 

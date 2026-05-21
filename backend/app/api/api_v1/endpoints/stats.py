@@ -11,19 +11,19 @@ router = APIRouter()
 def get_dashboard_stats(period: str = "30days", db: Session = Depends(get_db)):
     today = datetime.utcnow().date()
     if period == "7days":
-        start_date = today - timedelta(days=7)
+        start_date = today - timedelta(days=6)
     elif period == "90days" or period == "3months":
-        start_date = today - timedelta(days=90)
+        start_date = today - timedelta(days=89)
     elif period == "1year":
-        start_date = today - timedelta(days=365)
+        start_date = today - timedelta(days=364)
     elif period == "2years":
-        start_date = today - timedelta(days=730)
+        start_date = today - timedelta(days=729)
     elif period == "lifetime":
         # Get earliest date in DB
         first_record = db.query(func.min(DailySales.date)).scalar()
         start_date = first_record if first_record else today
     else:
-        start_date = today - timedelta(days=30)
+        start_date = today - timedelta(days=29)
     
     # Current Period Summary
     current = db.query(
@@ -33,7 +33,7 @@ def get_dashboard_stats(period: str = "30days", db: Session = Depends(get_db)):
     ).filter(DailySales.date >= start_date, DailySales.date <= today).first()
     
     # Previous Period for Trend (Same duration as start_date to today)
-    delta = (today - start_date).days
+    delta = (today - start_date).days + 1
     prev_start = start_date - timedelta(days=delta if delta > 0 else 30)
     prev_end = start_date - timedelta(days=1)
     
@@ -120,25 +120,23 @@ def get_lifetime_summary(db: Session = Depends(get_db)):
     revenue = float(stats.total_revenue)
     profit = float(stats.total_profit)
     
-    # Best Month
-    best_month_res = db.query(
+    monthly_rows = db.query(
         extract('year', DailySales.date).label('year'),
         extract('month', DailySales.date).label('month'),
         func.sum(DailySales.total_sale).label('total')
-    ).group_by('year', 'month').order_by(text('total DESC')).first()
+    ).group_by('year', 'month').all()
+    
+    # Best Month
+    best_month_res = max(monthly_rows, key=lambda row: float(row.total))
     
     # Worst Month
-    worst_month_res = db.query(
-        extract('year', DailySales.date).label('year'),
-        extract('month', DailySales.date).label('month'),
-        func.sum(DailySales.total_sale).label('total')
-    ).group_by('year', 'month').order_by(text('total ASC')).first()
+    worst_month_res = min(monthly_rows, key=lambda row: float(row.total))
     
     best_month_name = datetime(int(best_month_res.year), int(best_month_res.month), 1).strftime("%b %Y")
     worst_month_name = datetime(int(worst_month_res.year), int(worst_month_res.month), 1).strftime("%b %Y")
     
     # Avg Monthly Revenue
-    total_months = db.query(func.count(func.distinct(func.date_trunc('month', DailySales.date)))).scalar()
+    total_months = len(monthly_rows)
     avg_monthly = revenue / total_months if total_months > 0 else revenue
     
     return {
@@ -160,7 +158,7 @@ def compare_same_period(period: str = "7days", db: Session = Depends(get_db)):
         days = 30
     
     today = datetime.utcnow().date()
-    current_start = today - timedelta(days=days)
+    current_start = today - timedelta(days=days - 1)
     last_year_start = current_start - timedelta(days=365)
     last_year_end = today - timedelta(days=365)
     
@@ -435,8 +433,10 @@ def target_status(monthly_target: float = 0, db: Session = Depends(get_db)):
         ly = db.execute(text("SELECT COALESCE(SUM(total_sale),0) as revenue FROM daily_sales WHERE date >= :start AND date < :end"),
                        {"start": last_year_start, "end": last_year_start.replace(month=last_year_start.month+1) if last_year_start.month < 12 else last_year_start.replace(year=last_year_start.year+1, month=1)}).fetchone()
         monthly_target = float(ly.revenue or 0) * 1.1
+        if monthly_target <= 0 and revenue_so_far > 0:
+            monthly_target = revenue_so_far
     target_pct = (revenue_so_far / monthly_target * 100) if monthly_target > 0 else 0
-    required_daily = (monthly_target - revenue_so_far) / days_remaining if days_remaining > 0 else 0
+    required_daily = max(0, (monthly_target - revenue_so_far) / days_remaining) if days_remaining > 0 else 0
     on_track = daily_avg >= required_daily
     return {
         "month": today.strftime("%B %Y"),

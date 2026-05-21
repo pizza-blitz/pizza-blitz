@@ -20,7 +20,7 @@ Pizza Blitz has two connected products:
 - Run backend locally.
 - Run frontend locally.
 - Verify all existing dashboard pages.
-- Fix broken frontend/backend API contracts.
+- Fix broken frontend/backend API contracts. Initial pass completed for POS, invoices, recipes, and waste.
 - Validate formulas:
   - daily sale
   - total expense
@@ -77,4 +77,3 @@ Pizza Blitz has two connected products:
 - One-click promotional message workflow.
 - Campaign history.
 - Future WhatsApp/SMS/email/social integration.
-

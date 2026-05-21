@@ -63,6 +63,7 @@ async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(ge
                 date=datetime.strptime(entry['date'], '%Y-%m-%d').date(),
                 total_sale=entry['total_sale'],
                 total_expense=entry['total_expense'],
+                profit=float(entry['total_sale']) - float(entry['total_expense']),
                 notes=entry.get('notes', 'Imported from PDF')
             )
             db.merge(db_obj) # Avoid duplicates if date exists

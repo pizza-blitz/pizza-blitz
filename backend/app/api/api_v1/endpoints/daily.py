@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
-from app.models.domain import DailySales
+from app.models.domain import DailySales, WasteLog
 from pydantic import BaseModel
 from datetime import date
 from typing import Optional
@@ -26,6 +26,14 @@ class DailyEntryRequest(BaseModel):
     payment_method: str = "mixed"
     notes: Optional[str] = None
 
+class WasteEntryRequest(BaseModel):
+    date: date
+    item_name: str
+    quantity: float
+    unit: str = "kg"
+    estimated_cost: float
+    reason: str
+
 @router.post("/daily-entry")
 def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)):
     # Check if entry already exists for this date
@@ -36,6 +44,7 @@ def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)
         existing.total_sale = request.total_sale
         existing.cash_collected = request.cash_collected
         existing.total_expense = request.total_expense
+        existing.profit = request.total_sale - request.total_expense
         existing.payment_method = request.payment_method
         existing.notes = request.notes
         action = "updated"
@@ -47,6 +56,7 @@ def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)
             total_sale=request.total_sale,
             cash_collected=request.cash_collected,
             total_expense=request.total_expense,
+            profit=request.total_sale - request.total_expense,
             payment_method=request.payment_method,
             notes=request.notes
         )
@@ -105,3 +115,68 @@ def export_sales_csv(
         media_type="text/csv", 
         headers={"Content-Disposition": "attachment; filename=sales_export.csv"}
     )
+
+@router.get("/waste")
+def list_waste(db: Session = Depends(get_db)):
+    rows = db.query(WasteLog).order_by(WasteLog.date.desc(), WasteLog.id.desc()).limit(100).all()
+    return [
+        {
+            "id": str(row.id),
+            "date": row.date.isoformat() if row.date else None,
+            "item_name": row.item_name,
+            "quantity": row.quantity,
+            "unit": row.unit,
+            "estimated_cost": row.estimated_cost,
+            "reason": row.reason,
+        }
+        for row in rows
+    ]
+
+@router.post("/waste")
+def create_waste_entry(request: WasteEntryRequest, db: Session = Depends(get_db)):
+    row = WasteLog(
+        date=request.date,
+        item_name=request.item_name,
+        quantity=request.quantity,
+        unit=request.unit,
+        estimated_cost=request.estimated_cost,
+        reason=request.reason,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": str(row.id),
+        "date": row.date.isoformat(),
+        "item_name": row.item_name,
+        "quantity": row.quantity,
+        "unit": row.unit,
+        "estimated_cost": row.estimated_cost,
+        "reason": row.reason,
+    }
+
+@router.get("/waste/summary")
+def waste_summary(db: Session = Depends(get_db)):
+    from datetime import timedelta
+
+    start_date = date.today() - timedelta(days=30)
+    rows = db.query(WasteLog).filter(WasteLog.date >= start_date).all()
+    total = sum(float(row.estimated_cost or 0) for row in rows)
+    by_item = {}
+    for row in rows:
+        by_item[row.item_name] = by_item.get(row.item_name, 0.0) + float(row.estimated_cost or 0)
+
+    top_items = [
+        {
+            "item_name": item_name,
+            "cost": round(cost, 2),
+            "percentage": round((cost / total * 100), 1) if total > 0 else 0,
+        }
+        for item_name, cost in sorted(by_item.items(), key=lambda item: item[1], reverse=True)[:10]
+    ]
+
+    return {
+        "total_waste_cost": round(total, 2),
+        "top_items": top_items,
+        "count": len(rows),
+    }

@@ -14,4 +14,5 @@ def sync_job():
 scheduler.add_job(sync_job, "interval", hours=24)
 
 def start_scheduler():
-    scheduler.start()
+    if not scheduler.running:
+        scheduler.start()

@@ -21,8 +21,11 @@ env_vars.yaml
 
 # Local databases and logs
 *.sqlite
+*.sqlite-*
 *.sqlite3
+*.sqlite3-*
 *.db
+*.db-*
 *.log
 
 # OS/editor noise
@@ -30,4 +33,3 @@ env_vars.yaml
 Thumbs.db
 .idea/
 .vscode/
-

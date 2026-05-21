@@ -19,9 +19,12 @@ Baseline already completed:
 3. Frontend production build passes.
 4. Secret scan is clean for copied production strings.
 5. Stale hardcoded backend URLs were removed from frontend pages.
+6. Backend contracts were added/fixed for POS orders, invoices, recipes, and waste.
+7. POS lifecycle test passes through FastAPI test client.
+8. Frontend production build passes after backend contract work.
 
 Next best step:
 
-1. Audit API route contracts between frontend pages and backend endpoints.
-2. Fix dashboard formula/data mismatches.
+1. Validate formulas with realistic historical data imported from Google Sheet or seed data.
+2. Fix remaining non-fatal chart sizing warning in Recharts.
 3. Run the app locally in browser and verify each internal portal page.

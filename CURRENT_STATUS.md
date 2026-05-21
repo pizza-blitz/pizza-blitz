@@ -29,6 +29,16 @@ The standalone copy excludes generated dependency/build folders such as `node_mo
 - Remaining known warning: Recharts reports a non-fatal container width/height warning during prerender.
 - Remaining cleanup debt: backend imports `google.generativeai`, which now emits a deprecation warning and should eventually move to `google.genai`.
 - Frontend pages now use the shared API URL helper instead of stale hardcoded production backend URLs.
+- Backend now uses an in-memory SQLite dev DB by default because file-backed SQLite writes produced disk I/O errors in this workspace. Production should still use `SQLALCHEMY_DATABASE_URI` for PostgreSQL.
+- POS/order tables, invoices, recipes, waste log, and fixed costs now have backend models.
+- Existing frontend pages for POS orders, invoices, recipes, and waste now have matching backend API contracts.
+- POS lifecycle verified through FastAPI test client: create order, generate invoice, close order, and update dashboard sales.
+- Analytics endpoints verified after formula portability fixes:
+  - dashboard stats
+  - monthly breakdown
+  - lifetime summary
+  - same-period comparison
+  - target status
 
 ## Immediate Priority
 
@@ -36,6 +46,6 @@ Make the internal restaurant portal locally stable first:
 
 1. Confirm backend imports and `/health` works.
 2. Confirm frontend builds.
-3. Audit API route contracts between frontend and backend.
-4. Validate sales, expense, profit, breakeven, and comparison formulas.
+3. Continue validating formulas with realistic historical data.
+4. Run browser verification once local server startup is approached again.
 5. Only after the internal portal is reliable, build the public customer ordering website.
