@@ -19,6 +19,10 @@ type OrderItem = {
   name: string;
   quantity: number;
   price: number;
+  selected_options?: {
+    option_name: string;
+    price_delta: number;
+  }[];
 };
 
 type Order = {
@@ -32,6 +36,7 @@ type Order = {
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
+  delivery_fee?: number;
   total_amount: number;
   payment_status: string;
   payment_method?: string | null;
@@ -225,7 +230,16 @@ export default function ReceiptPage() {
                     key={`${item.name}-${index}`}
                     className="grid grid-cols-[1fr_64px_90px_90px] gap-3 py-3 text-sm"
                   >
-                    <span className="font-bold">{item.name}</span>
+                    <span className="font-bold">
+                      {item.name}
+                      {!!item.selected_options?.length && (
+                        <span className="mt-1 block text-xs font-semibold text-slate-500">
+                          {item.selected_options
+                            .map((option) => option.option_name)
+                            .join(", ")}
+                        </span>
+                      )}
+                    </span>
                     <span className="text-right">{item.quantity}</span>
                     <span className="text-right">{money(item.price)}</span>
                     <span className="text-right font-bold">
@@ -241,6 +255,9 @@ export default function ReceiptPage() {
               <TotalRow label={couponNote ? `Discount (${couponNote})` : "Discount"} value={money(order.discount_amount)} />
               <TotalRow label="CGST 2.5%" value={money(cgst)} />
               <TotalRow label="SGST 2.5%" value={money(sgst)} />
+              {!!order.delivery_fee && (
+                <TotalRow label="Delivery" value={money(order.delivery_fee)} />
+              )}
               <div className="flex justify-between border-t border-slate-200 pt-3 text-xl font-black">
                 <span>Total</span>
                 <span>{money(order.total_amount)}</span>

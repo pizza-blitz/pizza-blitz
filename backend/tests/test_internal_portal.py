@@ -1055,6 +1055,100 @@ class InternalPortalValidationTest(unittest.TestCase):
             finally:
                 settings.RAZORPAY_WEBHOOK_SECRET = old_razorpay_secret
 
+            customized_menu = client.get("/api/v1/restaurant/menu/menu-with-customizations")
+            self.assertEqual(customized_menu.status_code, 200)
+            pizza_item = next(
+                item
+                for item in customized_menu.json()
+                if item["name"] == "Margherita Pizza (R)"
+            )
+            customization_groups = {
+                group["name"]: group
+                for group in pizza_item["customization_groups"]
+            }
+            self.assertIn("Size", customization_groups)
+            self.assertIn("Toppings", customization_groups)
+            self.assertIn("Combo", customization_groups)
+
+            selected_options = [
+                {
+                    "group_id": customization_groups["Size"]["id"],
+                    "group_name": "Size",
+                    "option_id": next(
+                        option["id"]
+                        for option in customization_groups["Size"]["options"]
+                        if option["name"] == "Medium"
+                    ),
+                    "option_name": "Medium",
+                    "price_delta": 100,
+                },
+                {
+                    "group_id": customization_groups["Crust"]["id"],
+                    "group_name": "Crust",
+                    "option_id": next(
+                        option["id"]
+                        for option in customization_groups["Crust"]["options"]
+                        if option["name"] == "Cheese Burst"
+                    ),
+                    "option_name": "Cheese Burst",
+                    "price_delta": 59,
+                },
+                {
+                    "group_id": customization_groups["Toppings"]["id"],
+                    "group_name": "Toppings",
+                    "option_id": next(
+                        option["id"]
+                        for option in customization_groups["Toppings"]["options"]
+                        if option["name"] == "Extra Cheese"
+                    ),
+                    "option_name": "Extra Cheese",
+                    "price_delta": 39,
+                },
+                {
+                    "group_id": customization_groups["Combo"]["id"],
+                    "group_name": "Combo",
+                    "option_id": next(
+                        option["id"]
+                        for option in customization_groups["Combo"]["options"]
+                        if option["name"] == "Fries + Drink"
+                    ),
+                    "option_name": "Fries + Drink",
+                    "price_delta": 99,
+                },
+            ]
+            customized_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "pickup",
+                    "customer_name": "Custom Guest",
+                    "customer_phone": "9444444444",
+                    "payment_method": "cash",
+                    "items": [
+                        {
+                            "name": "Margherita Pizza (R)",
+                            "quantity": 1,
+                            "price": 496,
+                            "base_price": 199,
+                            "customization_total": 297,
+                            "selected_options": selected_options,
+                        }
+                    ],
+                },
+            )
+            self.assertEqual(customized_order.status_code, 200)
+            self.assertEqual(customized_order.json()["subtotal"], 496)
+            self.assertEqual(customized_order.json()["tax"], 24.8)
+            self.assertEqual(customized_order.json()["total"], 520.8)
+
+            customized_detail = client.get(
+                f"/api/v1/restaurant/orders/{customized_order.json()['order_id']}"
+            )
+            self.assertEqual(customized_detail.status_code, 200)
+            self.assertEqual(
+                customized_detail.json()["items"][0]["selected_options"][0]["option_name"],
+                "Medium",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

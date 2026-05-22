@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
-const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
+const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
 const ACTIVE_PROMOS_API = getApiUrl("/api/v1/restaurant/promotions/active");
@@ -35,10 +35,39 @@ type MenuItem = {
   selling_price: number;
   cost_price: number;
   is_available: boolean;
+  customization_groups?: CustomizationGroup[];
 };
 
 type CartItem = MenuItem & {
+  cart_key: string;
   quantity: number;
+  base_price: number;
+  customization_total: number;
+  selected_options: SelectedOption[];
+};
+
+type CustomizationOption = {
+  id: number;
+  name: string;
+  price_delta: number;
+  is_default: boolean;
+};
+
+type CustomizationGroup = {
+  id: number;
+  name: string;
+  selection_type: "single" | "multiple";
+  min_select: number;
+  max_select: number;
+  options: CustomizationOption[];
+};
+
+type SelectedOption = {
+  group_id: number;
+  group_name: string;
+  option_id: number;
+  option_name: string;
+  price_delta: number;
 };
 
 type CouponResult = {
@@ -96,7 +125,7 @@ type ReorderDraft = {
     email?: string;
     opt_in_marketing?: boolean;
   };
-  items?: { name?: string; quantity?: number }[];
+  items?: { name?: string; quantity?: number; selected_options?: SelectedOption[] }[];
   source_order_id?: number;
 };
 
@@ -125,6 +154,7 @@ export default function PublicOrderPage() {
   const [selectedDeliveryZoneId, setSelectedDeliveryZoneId] = useState<number | null>(null);
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [customizationDrafts, setCustomizationDrafts] = useState<Record<number, Record<number, number[]>>>({});
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [orderType, setOrderType] = useState<"pickup" | "delivery">("pickup");
@@ -184,21 +214,127 @@ export default function PublicOrderPage() {
     }
   }, []);
 
+  const defaultDraftForItem = (item: MenuItem) => {
+    const draft: Record<number, number[]> = {};
+    (item.customization_groups || []).forEach((group) => {
+      if (group.selection_type === "single") {
+        const defaultOption = group.options.find((option) => option.is_default) || group.options[0];
+        draft[group.id] = defaultOption ? [defaultOption.id] : [];
+      } else {
+        draft[group.id] = group.options
+          .filter((option) => option.is_default)
+          .slice(0, group.max_select || group.options.length)
+          .map((option) => option.id);
+      }
+    });
+    return draft;
+  };
+
+  const draftForItem = (item: MenuItem) =>
+    customizationDrafts[item.id] || defaultDraftForItem(item);
+
+  const selectedOptionsForItem = (item: MenuItem, draft = draftForItem(item)) => {
+    const selected: SelectedOption[] = [];
+    (item.customization_groups || []).forEach((group) => {
+      const optionIds = new Set(draft[group.id] || []);
+      group.options
+        .filter((option) => optionIds.has(option.id))
+        .forEach((option) => {
+          if (group.name === "Combo" && option.name === "No Combo") return;
+          selected.push({
+            group_id: group.id,
+            group_name: group.name,
+            option_id: option.id,
+            option_name: option.name,
+            price_delta: Number(option.price_delta || 0),
+          });
+        });
+    });
+    return selected;
+  };
+
+  const draftFromSavedOptions = (
+    item: MenuItem,
+    savedOptions: SelectedOption[] = []
+  ) => {
+    const nextDraft = defaultDraftForItem(item);
+    (item.customization_groups || []).forEach((group) => {
+      const matchedOptionIds = group.options
+        .filter((option) =>
+          savedOptions.some(
+            (savedOption) =>
+              savedOption.group_name === group.name &&
+              savedOption.option_name === option.name
+          )
+        )
+        .map((option) => option.id);
+      if (matchedOptionIds.length) {
+        nextDraft[group.id] =
+          group.selection_type === "single"
+            ? [matchedOptionIds[0]]
+            : matchedOptionIds.slice(0, group.max_select || matchedOptionIds.length);
+      }
+    });
+    return nextDraft;
+  };
+
+  const customizationTotalForItem = (item: MenuItem, draft = draftForItem(item)) =>
+    roundMoney(
+      selectedOptionsForItem(item, draft).reduce(
+        (total, option) => total + Number(option.price_delta || 0),
+        0
+      )
+    );
+
+  const configuredPriceForItem = (item: MenuItem, draft = draftForItem(item)) =>
+    roundMoney(Number(item.selling_price || 0) + customizationTotalForItem(item, draft));
+
+  const cartKeyFor = (itemId: number, selectedOptions: SelectedOption[]) =>
+    `${itemId}:${selectedOptions
+      .map((option) => option.option_id)
+      .sort((a, b) => a - b)
+      .join("-")}`;
+
+  const updateCustomization = (
+    item: MenuItem,
+    group: CustomizationGroup,
+    option: CustomizationOption
+  ) => {
+    setOrderId(null);
+    setPendingPayment(null);
+    setCoupon(null);
+    setCustomizationDrafts((current) => {
+      const currentDraft = current[item.id] || defaultDraftForItem(item);
+      const selected = currentDraft[group.id] || [];
+      let nextSelection: number[];
+
+      if (group.selection_type === "single") {
+        nextSelection = [option.id];
+      } else if (selected.includes(option.id)) {
+        nextSelection = selected.filter((id) => id !== option.id);
+      } else if (selected.length >= group.max_select) {
+        setMessage(`Choose up to ${group.max_select} ${group.name.toLowerCase()} options.`);
+        nextSelection = selected;
+      } else {
+        nextSelection = [...selected, option.id];
+      }
+
+      return {
+        ...current,
+        [item.id]: {
+          ...currentDraft,
+          [group.id]: nextSelection,
+        },
+      };
+    });
+  };
+
   const applySavedReorder = (availableMenu: MenuItem[]) => {
     const savedReorder = window.localStorage.getItem(REORDER_STORAGE_KEY);
     if (!savedReorder) return;
 
     try {
       const draft = JSON.parse(savedReorder) as ReorderDraft;
-      const requestedQuantities = new Map<string, number>();
-      (draft.items || []).forEach((item) => {
-        const name = String(item.name || "").trim().toLowerCase();
-        const quantity = Number(item.quantity || 0);
-        if (name && quantity > 0) {
-          requestedQuantities.set(name, (requestedQuantities.get(name) || 0) + quantity);
-        }
-      });
-
       if (draft.customer) {
         setCustomerName(draft.customer.name || "");
         setCustomerPhone(draft.customer.phone || "");
@@ -206,10 +342,33 @@ export default function PublicOrderPage() {
         setOptInMarketing(draft.customer.opt_in_marketing ?? true);
       }
 
-      const nextCart = availableMenu
-        .map((item) => {
-          const quantity = requestedQuantities.get(item.name.trim().toLowerCase()) || 0;
-          return quantity > 0 ? { ...item, quantity } : null;
+      const nextCart = (draft.items || [])
+        .map((draftItem) => {
+          const item = availableMenu.find(
+            (menuItem) =>
+              menuItem.name.trim().toLowerCase() ===
+              String(draftItem.name || "").trim().toLowerCase()
+          );
+          if (!item) return null;
+          const quantity = Number(draftItem.quantity || 0);
+          if (quantity <= 0) return null;
+          const itemDraft = draftFromSavedOptions(item, draftItem.selected_options || []);
+          const selectedOptions = selectedOptionsForItem(item, itemDraft);
+          const customizationTotal = roundMoney(
+            selectedOptions.reduce(
+              (total, option) => total + Number(option.price_delta || 0),
+              0
+            )
+          );
+          return {
+            ...item,
+            cart_key: cartKeyFor(item.id, selectedOptions),
+            quantity,
+            base_price: Number(item.selling_price || 0),
+            customization_total: customizationTotal,
+            selected_options: selectedOptions,
+            selling_price: roundMoney(Number(item.selling_price || 0) + customizationTotal),
+          };
         })
         .filter((item): item is CartItem => item !== null);
 
@@ -218,7 +377,7 @@ export default function PublicOrderPage() {
         return;
       }
 
-      const missingCount = Math.max(requestedQuantities.size - nextCart.length, 0);
+      const missingCount = Math.max((draft.items || []).length - nextCart.length, 0);
       setCart(nextCart);
       setCoupon(null);
       setCouponCode("");
@@ -337,25 +496,41 @@ export default function PublicOrderPage() {
     setPendingPayment(null);
     setMessage("");
     setCoupon(null);
+    const draft = draftForItem(item);
+    const selectedOptions = selectedOptionsForItem(item, draft);
+    const customizationTotal = customizationTotalForItem(item, draft);
+    const unitPrice = configuredPriceForItem(item, draft);
+    const cartKey = cartKeyFor(item.id, selectedOptions);
     setCart((current) => {
-      const existing = current.find((cartItem) => cartItem.id === item.id);
+      const existing = current.find((cartItem) => cartItem.cart_key === cartKey);
       if (existing) {
         return current.map((cartItem) =>
-          cartItem.id === item.id
+          cartItem.cart_key === cartKey
             ? { ...cartItem, quantity: cartItem.quantity + 1 }
             : cartItem
         );
       }
-      return [...current, { ...item, quantity: 1 }];
+      return [
+        ...current,
+        {
+          ...item,
+          cart_key: cartKey,
+          quantity: 1,
+          base_price: Number(item.selling_price || 0),
+          customization_total: customizationTotal,
+          selected_options: selectedOptions,
+          selling_price: unitPrice,
+        },
+      ];
     });
   };
 
-  const updateQuantity = (itemId: number, delta: number) => {
+  const updateQuantity = (cartKey: string, delta: number) => {
     setCoupon(null);
     setCart((current) =>
       current
         .map((item) =>
-          item.id === itemId ? { ...item, quantity: Math.max(item.quantity + delta, 0) } : item
+          item.cart_key === cartKey ? { ...item, quantity: Math.max(item.quantity + delta, 0) } : item
         )
         .filter((item) => item.quantity > 0)
     );
@@ -451,6 +626,9 @@ export default function PublicOrderPage() {
           name: item.name,
           quantity: item.quantity,
           price: item.selling_price,
+          base_price: item.base_price,
+          customization_total: item.customization_total,
+          selected_options: item.selected_options,
         })),
       }),
     });
@@ -662,31 +840,84 @@ export default function PublicOrderPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {filteredMenu.map((item) => (
-              <article
-                key={item.id}
-                className="grid grid-cols-12 overflow-hidden rounded-lg border border-slate-200 bg-white"
-              >
-                <img
-                  src={categoryImages[item.category] || fallbackImage}
-                  alt={item.name}
-                  className="col-span-4 h-full min-h-36 object-cover"
-                />
-                <div className="col-span-8 p-4">
-                  <p className="text-xs font-bold text-red-700">{item.category}</p>
-                  <h3 className="mt-1 min-h-12 text-lg font-black leading-6">{item.name}</h3>
-                  <div className="mt-4 flex items-center justify-between gap-3">
-                    <span className="text-lg font-black">Rs {item.selling_price}</span>
-                    <button
-                      onClick={() => addToCart(item)}
-                      className="flex items-center gap-2 rounded-md bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-red-700"
-                    >
-                      <Plus className="h-4 w-4" /> Add
-                    </button>
+            {filteredMenu.map((item) => {
+              const draft = draftForItem(item);
+              const selectedOptions = selectedOptionsForItem(item, draft);
+              const configuredPrice = configuredPriceForItem(item, draft);
+              return (
+                <article
+                  key={item.id}
+                  className="overflow-hidden rounded-lg border border-slate-200 bg-white"
+                >
+                  <div className="grid grid-cols-12">
+                    <img
+                      src={categoryImages[item.category] || fallbackImage}
+                      alt={item.name}
+                      className="col-span-4 h-full min-h-36 object-cover"
+                    />
+                    <div className="col-span-8 p-4">
+                      <p className="text-xs font-bold text-red-700">{item.category}</p>
+                      <h3 className="mt-1 min-h-12 text-lg font-black leading-6">{item.name}</h3>
+                      {selectedOptions.length > 0 && (
+                        <p className="mt-2 line-clamp-2 text-xs font-semibold text-slate-500">
+                          {selectedOptions.map((option) => option.option_name).join(", ")}
+                        </p>
+                      )}
+                      <div className="mt-4 flex items-center justify-between gap-3">
+                        <span className="text-lg font-black">Rs {configuredPrice}</span>
+                        <button
+                          onClick={() => addToCart(item)}
+                          className="flex items-center gap-2 rounded-md bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-red-700"
+                        >
+                          <Plus className="h-4 w-4" /> Add
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                  {(item.customization_groups || []).length > 0 && (
+                    <div className="space-y-3 border-t border-slate-100 bg-slate-50 p-4">
+                      {item.customization_groups?.map((group) => {
+                        const selectedIds = new Set(draft[group.id] || []);
+                        return (
+                          <div key={`${item.id}-${group.id}`}>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+                                {group.name}
+                              </p>
+                              {group.selection_type === "multiple" && (
+                                <span className="text-xs font-bold text-slate-400">
+                                  up to {group.max_select}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {group.options.map((option) => {
+                                const active = selectedIds.has(option.id);
+                                return (
+                                  <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() => updateCustomization(item, group, option)}
+                                    className={`rounded-md border px-3 py-2 text-xs font-black ${
+                                      active
+                                        ? "border-red-700 bg-red-700 text-white"
+                                        : "border-slate-300 bg-white text-slate-700 hover:border-red-600"
+                                    }`}
+                                  >
+                                    {option.name}
+                                    {option.price_delta > 0 ? ` +${option.price_delta}` : ""}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         </section>
 
@@ -768,15 +999,22 @@ export default function PublicOrderPage() {
 
             <div className="mb-5 space-y-3">
               {cart.map((item) => (
-                <div key={item.id} className="grid grid-cols-12 items-center gap-3">
+                <div key={item.cart_key} className="grid grid-cols-12 items-center gap-3">
                   <div className="col-span-6">
                     <p className="font-bold leading-5">{item.name}</p>
                     <p className="text-sm text-slate-500">Rs {item.selling_price}</p>
+                    {item.selected_options.length > 0 && (
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {item.selected_options
+                          .map((option) => option.option_name)
+                          .join(", ")}
+                      </p>
+                    )}
                   </div>
                   <div className="col-span-3 flex items-center justify-center gap-1">
-                    <IconButton label="Decrease" onClick={() => updateQuantity(item.id, -1)} icon={Minus} />
+                    <IconButton label="Decrease" onClick={() => updateQuantity(item.cart_key, -1)} icon={Minus} />
                     <span className="w-6 text-center text-sm font-black">{item.quantity}</span>
-                    <IconButton label="Increase" onClick={() => updateQuantity(item.id, 1)} icon={Plus} />
+                    <IconButton label="Increase" onClick={() => updateQuantity(item.cart_key, 1)} icon={Plus} />
                   </div>
                   <div className="col-span-3 text-right font-black">
                     Rs {roundMoney(item.quantity * item.selling_price)}

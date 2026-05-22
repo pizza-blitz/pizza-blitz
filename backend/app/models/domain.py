@@ -25,6 +25,31 @@ class MenuItem(Base):
     is_available = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class MenuCustomizationGroup(Base):
+    __tablename__ = "menu_customization_groups"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), unique=True, index=True, nullable=False)
+    applies_to_categories = Column(JSON, default=list)
+    selection_type = Column(String(20), default="single")
+    min_select = Column(Integer, default=0)
+    max_select = Column(Integer, default=1)
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    options = relationship("MenuCustomizationOption", back_populates="group")
+
+class MenuCustomizationOption(Base):
+    __tablename__ = "menu_customization_options"
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("menu_customization_groups.id"), index=True, nullable=False)
+    name = Column(String(120), nullable=False)
+    price_delta = Column(Float, default=0.0)
+    is_default = Column(Boolean, default=False)
+    sort_order = Column(Integer, default=0)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    group = relationship("MenuCustomizationGroup", back_populates="options")
+
 class InventoryItem(Base):
     __tablename__ = "inventory_items"
     id = Column(Integer, primary_key=True, index=True)

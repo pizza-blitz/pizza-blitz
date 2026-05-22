@@ -47,6 +47,9 @@ class OrderItem(BaseModel):
     name: str
     quantity: int
     price: float
+    base_price: Optional[float] = None
+    customization_total: float = 0.0
+    selected_options: List[dict] = Field(default_factory=list)
 
 
 class OrderCreate(BaseModel):

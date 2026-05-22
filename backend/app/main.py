@@ -7,6 +7,7 @@ from app.db.session import SessionLocal, engine
 from app.models import domain
 from app.models.domain import DiningTable, ExpenseCategory, MenuItem, Vendor
 from app.services.delivery_service import seed_default_delivery_zones
+from app.services.menu_customization_service import seed_default_customizations
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
@@ -77,6 +78,7 @@ def seed_baseline_data() -> None:
                 db.add(ExpenseCategory(name=category_name, is_active=True))
 
         seed_default_delivery_zones(db)
+        seed_default_customizations(db)
         db.commit()
     finally:
         db.close()

@@ -24,7 +24,12 @@ type Order = {
   id: number;
   date?: string | null;
   order_type: string;
-  items: { name: string; quantity: number; price: number }[];
+  items: {
+    name: string;
+    quantity: number;
+    price: number;
+    selected_options?: { option_name: string; price_delta: number }[];
+  }[];
   discount_amount: number;
   tax_amount: number;
   total_amount: number;
@@ -117,6 +122,7 @@ export default function CustomerAccountPage() {
         items: order.items.map((item) => ({
           name: item.name,
           quantity: item.quantity,
+          selected_options: item.selected_options || [],
         })),
         source_order_id: order.id,
       })
@@ -253,6 +259,13 @@ export default function CustomerAccountPage() {
                       <div key={`${order.id}-${item.name}-${index}`} className="flex justify-between py-3 text-sm">
                         <span className="font-semibold">
                           {item.quantity} x {item.name}
+                          {!!item.selected_options?.length && (
+                            <span className="mt-1 block text-xs text-slate-500">
+                              {item.selected_options
+                                .map((option) => option.option_name)
+                                .join(", ")}
+                            </span>
+                          )}
                         </span>
                         <span>Rs {Number(item.price * item.quantity).toLocaleString()}</span>
                       </div>

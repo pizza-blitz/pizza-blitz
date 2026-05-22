@@ -28,7 +28,12 @@ type TrackedOrder = {
   order_type: string;
   customer_name?: string | null;
   customer_phone?: string | null;
-  items: { name: string; quantity: number; price: number }[];
+  items: {
+    name: string;
+    quantity: number;
+    price: number;
+    selected_options?: { option_name: string; price_delta: number }[];
+  }[];
   total_amount: number;
   payment_status: string;
   payment_method?: string | null;
@@ -212,6 +217,13 @@ export default function TrackOrderPage() {
                   <div key={`${item.name}-${index}`} className="flex justify-between py-3 text-sm">
                     <span className="font-semibold">
                       {item.quantity} x {item.name}
+                      {!!item.selected_options?.length && (
+                        <span className="mt-1 block text-xs text-slate-500">
+                          {item.selected_options
+                            .map((option) => option.option_name)
+                            .join(", ")}
+                        </span>
+                      )}
                     </span>
                     <span>Rs {Number(item.price * item.quantity).toLocaleString()}</span>
                   </div>

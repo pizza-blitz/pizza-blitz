@@ -5,7 +5,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.models.domain import InventoryItem, MenuItem, Recipe
+from app.models.domain import InventoryItem, MenuCustomizationGroup, MenuItem, Recipe
+from app.services.menu_customization_service import (
+    customized_menu_payload,
+    seed_default_customizations,
+    serialize_customization_group,
+)
 
 
 router = APIRouter()
@@ -26,6 +31,24 @@ class MenuItemSchema(BaseModel):
 @router.get("/menu", response_model=List[MenuItemSchema])
 def get_menu(db: Session = Depends(get_db)):
     return db.query(MenuItem).order_by(MenuItem.name.asc()).all()
+
+
+@router.get("/customizations")
+def get_menu_customizations(db: Session = Depends(get_db)):
+    seed_default_customizations(db)
+    db.commit()
+    groups = (
+        db.query(MenuCustomizationGroup)
+        .filter(MenuCustomizationGroup.is_active == True)  # noqa: E712
+        .order_by(MenuCustomizationGroup.sort_order.asc(), MenuCustomizationGroup.id.asc())
+        .all()
+    )
+    return [serialize_customization_group(group) for group in groups]
+
+
+@router.get("/menu-with-customizations")
+def get_menu_with_customizations(db: Session = Depends(get_db)):
+    return customized_menu_payload(db)
 
 
 @router.post("/menu", response_model=MenuItemSchema)

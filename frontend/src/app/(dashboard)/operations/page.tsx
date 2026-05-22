@@ -27,6 +27,11 @@ type OrderItem = {
   name: string;
   quantity: number;
   price: number;
+  selected_options?: {
+    group_name: string;
+    option_name: string;
+    price_delta: number;
+  }[];
 };
 
 type Order = {
@@ -102,6 +107,15 @@ function paymentClass(status: string) {
   if (status === "paid") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (status === "awaiting_payment") return "bg-amber-50 text-amber-700 border-amber-200";
   return "bg-zinc-100 text-zinc-700 border-zinc-200";
+}
+
+function itemSummary(item: OrderItem) {
+  const optionNames = (item.selected_options || [])
+    .map((option) => option.option_name)
+    .filter(Boolean);
+  return optionNames.length
+    ? `${item.quantity}x ${item.name} (${optionNames.join(", ")})`
+    : `${item.quantity}x ${item.name}`;
 }
 
 export default function OperationsPage() {
@@ -483,7 +497,7 @@ export default function OperationsPage() {
                   </div>
                   <p className="mt-2 truncate text-sm text-gray-600">
                     {order.items
-                      .map((item) => `${item.quantity}x ${item.name}`)
+                      .map((item) => itemSummary(item))
                       .join(" | ")}
                   </p>
                   {order.delivery_address && (
