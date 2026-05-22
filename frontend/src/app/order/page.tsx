@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -173,6 +173,8 @@ export default function PublicOrderPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
+  const [isCheckoutVisible, setIsCheckoutVisible] = useState(false);
+  const checkoutRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     fetch(MENU_API)
@@ -212,6 +214,18 @@ export default function PublicOrderPage() {
         window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const checkoutElement = checkoutRef.current;
+    if (!checkoutElement || !("IntersectionObserver" in window)) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsCheckoutVisible(entry.isIntersecting),
+      { threshold: 0.18 }
+    );
+    observer.observe(checkoutElement);
+    return () => observer.disconnect();
   }, []);
 
   const defaultDraftForItem = (item: MenuItem) => {
@@ -921,7 +935,7 @@ export default function PublicOrderPage() {
           </div>
         </section>
 
-        <aside id="checkout" className="xl:col-span-4">
+        <aside id="checkout" ref={checkoutRef} className="xl:col-span-4">
           <form
             onSubmit={placeOrder}
             className="sticky top-5 rounded-lg border border-slate-200 bg-white p-5"
@@ -1188,7 +1202,7 @@ export default function PublicOrderPage() {
         </aside>
       </main>
 
-      {!!cart.length && (
+      {!!cart.length && !isCheckoutVisible && (
         <a
           href="#checkout"
           className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-between rounded-lg bg-slate-950 px-4 py-3 text-white shadow-2xl md:hidden"
