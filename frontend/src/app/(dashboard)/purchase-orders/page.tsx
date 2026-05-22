@@ -230,6 +230,12 @@ export default function PurchaseOrders() {
                       </div>
                       <div className="text-right space-y-2">
                         <div className="font-bold text-gray-900">Rs. {order.total_amount?.toLocaleString()}</div>
+                        <Link
+                          href={`/purchase-orders/${order.id}`}
+                          className="inline-flex items-center justify-center px-3 py-1.5 rounded-md border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:bg-gray-50"
+                        >
+                          Open
+                        </Link>
                         {order.status !== "received" && (
                           <div className="flex flex-wrap justify-end gap-2">
                             {order.status !== "sent" && (

@@ -20,6 +20,10 @@ class PurchaseOrderStatusUpdate(BaseModel):
     status: str
 
 
+class PurchaseOrderItemsUpdate(BaseModel):
+    items: List[Any]
+
+
 def _reorder_quantity(item: InventoryItem) -> float:
     current_stock = float(item.current_stock or 0)
     minimum_stock = float(item.minimum_stock or 0)
@@ -56,6 +60,43 @@ def _line_number(line: dict, keys: List[str], default: float = 0.0) -> float:
 
 def _line_name(line: dict) -> str:
     return str(line.get("name") or line.get("item_name") or "").strip()
+
+
+def _normalize_purchase_order_line(line: dict) -> dict:
+    if not isinstance(line, dict):
+        raise HTTPException(status_code=422, detail="Each purchase order item must be an object")
+
+    name = _line_name(line)
+    if not name:
+        raise HTTPException(status_code=422, detail="Each purchase order item needs a name")
+
+    quantity = _line_number(line, ["quantity", "reorder_quantity", "needed"], 0.0)
+    received_quantity = _line_number(line, ["received_quantity"], quantity)
+    if quantity <= 0 < received_quantity:
+        quantity = received_quantity
+
+    unit_cost = _line_number(
+        line,
+        ["unit_cost", "price_per_unit", "cost_per_unit"],
+        0.0,
+    )
+    if quantity < 0 or received_quantity < 0 or unit_cost < 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Quantities and unit cost cannot be negative",
+        )
+
+    normalized = dict(line)
+    normalized["name"] = name
+    normalized["unit"] = str(line.get("unit") or "unit")
+    normalized["quantity"] = round(quantity, 4)
+    normalized["needed"] = round(quantity, 4)
+    normalized["received_quantity"] = round(received_quantity, 4)
+    normalized["unit_cost"] = round(unit_cost, 4)
+    normalized["estimated_cost"] = round(received_quantity * unit_cost, 2)
+    if "inventory_item_id" not in normalized and line.get("item_id"):
+        normalized["inventory_item_id"] = line["item_id"]
+    return normalized
 
 
 def _find_or_create_inventory_item(db: Session, line: dict) -> InventoryItem | None:
@@ -170,6 +211,10 @@ def _receive_inventory(order: PurchaseOrder, db: Session) -> tuple[list[dict], l
     return inventory_updates, skipped_items
 
 
+def _purchase_order_total(items: List[dict]) -> float:
+    return round(sum(float(item.get("estimated_cost") or 0) for item in items), 2)
+
+
 @router.get("/", response_model=List[Any])
 def get_purchase_orders(db: Session = Depends(get_db)):
     return db.query(PurchaseOrder).all()
@@ -231,6 +276,30 @@ def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
         "created": len(created_orders),
         "purchase_orders": created_orders,
     }
+
+@router.patch("/{order_id}/items")
+def reconcile_purchase_order_items(
+    order_id: int,
+    obj_in: PurchaseOrderItemsUpdate,
+    db: Session = Depends(get_db),
+):
+    order = _get_purchase_order_or_404(order_id, db)
+    if order.status == "received":
+        raise HTTPException(status_code=409, detail="Received purchase orders cannot be edited")
+    if not obj_in.items:
+        raise HTTPException(status_code=422, detail="Purchase order needs at least one item")
+
+    items = [_normalize_purchase_order_line(item) for item in obj_in.items]
+    order.items = items
+    order.total_amount = _purchase_order_total(items)
+    db.commit()
+    db.refresh(order)
+    return {
+        "purchase_order": order,
+        "items": order.items,
+        "total_amount": order.total_amount,
+    }
+
 
 @router.patch("/{order_id}/sent")
 def mark_purchase_order_sent(order_id: int, db: Session = Depends(get_db)):

@@ -491,6 +491,33 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(draft["total_amount"], 2220)
             self.assertEqual(len(draft["items"]), 2)
 
+            reconciled_items = []
+            for item in draft["items"]:
+                updated_item = dict(item)
+                if item["name"] == "Tomato Sauce":
+                    updated_item["received_quantity"] = 18
+                    updated_item["unit_cost"] = 110
+                elif item["name"] == "Basil":
+                    updated_item["received_quantity"] = 8
+                    updated_item["unit_cost"] = 22
+                reconciled_items.append(updated_item)
+
+            reconciled_po = client.patch(
+                f"/api/v1/restaurant/purchase-orders/{draft_id}/items",
+                json={"items": reconciled_items},
+            )
+            self.assertEqual(reconciled_po.status_code, 200)
+            self.assertEqual(reconciled_po.json()["total_amount"], 2156)
+            reconciled_by_name = {
+                item["name"]: item
+                for item in reconciled_po.json()["items"]
+            }
+            self.assertEqual(
+                reconciled_by_name["Tomato Sauce"]["received_quantity"],
+                18,
+            )
+            self.assertEqual(reconciled_by_name["Basil"]["unit_cost"], 22)
+
             sent_po = client.patch(
                 f"/api/v1/restaurant/purchase-orders/{draft_id}/sent"
             )
@@ -509,8 +536,12 @@ class InternalPortalValidationTest(unittest.TestCase):
                 item["name"]: item
                 for item in received_po.json()["inventory_updates"]
             }
-            self.assertEqual(updates_by_name["Tomato Sauce"]["new_stock"], 20)
-            self.assertEqual(updates_by_name["Basil"]["new_stock"], 10)
+            self.assertEqual(updates_by_name["Tomato Sauce"]["quantity"], 18)
+            self.assertEqual(updates_by_name["Tomato Sauce"]["new_stock"], 21)
+            self.assertEqual(updates_by_name["Tomato Sauce"]["unit_cost"], 110)
+            self.assertEqual(updates_by_name["Basil"]["quantity"], 8)
+            self.assertEqual(updates_by_name["Basil"]["new_stock"], 9)
+            self.assertEqual(updates_by_name["Basil"]["unit_cost"], 22)
 
             low_stock_after_receive = client.get(
                 "/api/v1/restaurant/inventory/low-stock"
@@ -523,6 +554,12 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(repeated_receive.status_code, 200)
             self.assertEqual(repeated_receive.json()["inventory_updates"], [])
+
+            received_reconcile = client.patch(
+                f"/api/v1/restaurant/purchase-orders/{draft_id}/items",
+                json={"items": reconciled_items},
+            )
+            self.assertEqual(received_reconcile.status_code, 409)
 
             closed_status_update = client.patch(
                 f"/api/v1/restaurant/orders/{takeaway_id}/status",
