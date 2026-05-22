@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Clock,
@@ -17,6 +18,7 @@ import { getApiUrl } from "@/lib/api";
 
 const HISTORY_API = getApiUrl("/api/v1/restaurant/orders/customer-history");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
+const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
 
 type Order = {
   id: number;
@@ -47,6 +49,7 @@ type CustomerHistory = {
 };
 
 export default function CustomerAccountPage() {
+  const router = useRouter();
   const [phone, setPhone] = useState("");
   const [history, setHistory] = useState<CustomerHistory | null>(null);
   const [message, setMessage] = useState("");
@@ -88,6 +91,27 @@ export default function CustomerAccountPage() {
       })
     );
     setHistory(data);
+  };
+
+  const reorder = (order: Order) => {
+    if (!history) return;
+    window.localStorage.setItem(
+      REORDER_STORAGE_KEY,
+      JSON.stringify({
+        customer: {
+          name: history.customer.name || "",
+          phone: history.customer.phone,
+          email: history.customer.email || "",
+          opt_in_marketing: history.customer.opt_in_marketing ?? true,
+        },
+        items: order.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+        })),
+        source_order_id: order.id,
+      })
+    );
+    router.push("/order");
   };
 
   return (
@@ -200,6 +224,13 @@ export default function CustomerAccountPage() {
                   >
                     Track live status <ArrowRight className="h-4 w-4" />
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => reorder(order)}
+                    className="mb-4 ml-2 inline-flex items-center gap-2 rounded-md bg-red-700 px-3 py-2 text-sm font-bold text-white hover:bg-red-800"
+                  >
+                    <ShoppingBag className="h-4 w-4" /> Order again
+                  </button>
                   <div className="divide-y divide-slate-100 border-y border-slate-100">
                     {order.items.map((item, index) => (
                       <div key={`${order.id}-${item.name}-${index}`} className="flex justify-between py-3 text-sm">

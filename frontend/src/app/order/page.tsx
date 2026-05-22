@@ -23,6 +23,7 @@ const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
+const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
 
 type MenuItem = {
   id: number;
@@ -55,6 +56,17 @@ type PendingPayment = {
   sessionId?: string;
   checkoutUrl?: string | null;
   sessionStatus?: string;
+};
+
+type ReorderDraft = {
+  customer?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    opt_in_marketing?: boolean;
+  };
+  items?: { name?: string; quantity?: number }[];
+  source_order_id?: number;
 };
 
 const categoryImages: Record<string, string> = {
@@ -99,7 +111,11 @@ export default function PublicOrderPage() {
   useEffect(() => {
     fetch(MENU_API)
       .then((response) => response.json())
-      .then((data: MenuItem[]) => setMenu(data.filter((item) => item.is_available)))
+      .then((data: MenuItem[]) => {
+        const availableMenu = data.filter((item) => item.is_available);
+        setMenu(availableMenu);
+        applySavedReorder(availableMenu);
+      })
       .catch(() => setMessage("Menu is not available right now."));
 
     const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
@@ -115,6 +131,58 @@ export default function PublicOrderPage() {
       }
     }
   }, []);
+
+  const applySavedReorder = (availableMenu: MenuItem[]) => {
+    const savedReorder = window.localStorage.getItem(REORDER_STORAGE_KEY);
+    if (!savedReorder) return;
+
+    try {
+      const draft = JSON.parse(savedReorder) as ReorderDraft;
+      const requestedQuantities = new Map<string, number>();
+      (draft.items || []).forEach((item) => {
+        const name = String(item.name || "").trim().toLowerCase();
+        const quantity = Number(item.quantity || 0);
+        if (name && quantity > 0) {
+          requestedQuantities.set(name, (requestedQuantities.get(name) || 0) + quantity);
+        }
+      });
+
+      if (draft.customer) {
+        setCustomerName(draft.customer.name || "");
+        setCustomerPhone(draft.customer.phone || "");
+        setCustomerEmail(draft.customer.email || "");
+        setOptInMarketing(draft.customer.opt_in_marketing ?? true);
+      }
+
+      const nextCart = availableMenu
+        .map((item) => {
+          const quantity = requestedQuantities.get(item.name.trim().toLowerCase()) || 0;
+          return quantity > 0 ? { ...item, quantity } : null;
+        })
+        .filter((item): item is CartItem => item !== null);
+
+      if (!nextCart.length) {
+        setMessage("Previous order items are not available right now.");
+        return;
+      }
+
+      const missingCount = Math.max(requestedQuantities.size - nextCart.length, 0);
+      setCart(nextCart);
+      setCoupon(null);
+      setCouponCode("");
+      setOrderId(null);
+      setPendingPayment(null);
+      setMessage(
+        `Loaded ${nextCart.length} item${nextCart.length === 1 ? "" : "s"} from order #${
+          draft.source_order_id || "history"
+        }${missingCount ? `; ${missingCount} unavailable item${missingCount === 1 ? "" : "s"} skipped` : ""}.`
+      );
+    } catch {
+      setMessage("Could not load previous order.");
+    } finally {
+      window.localStorage.removeItem(REORDER_STORAGE_KEY);
+    }
+  };
 
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(menu.map((item) => item.category)))],
