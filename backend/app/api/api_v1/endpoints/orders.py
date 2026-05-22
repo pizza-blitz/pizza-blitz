@@ -130,6 +130,61 @@ def serialize_order(order: RestaurantOrder) -> dict:
     }
 
 
+def order_eta_window(order: RestaurantOrder) -> str:
+    if order.status == "closed":
+        return "Completed"
+    if order.status == "ready":
+        return "Ready now"
+    if order.status == "preparing":
+        return "10-15 min"
+    if (order.order_type or "").lower() == "delivery":
+        return "35-45 min"
+    return "20-25 min"
+
+
+def order_tracking_steps(order: RestaurantOrder) -> list[dict]:
+    status = (order.status or "open").lower()
+    payment_status = (order.payment_status or "pending").lower()
+    payment_ready = payment_status == "paid" or (order.payment_method or "").lower() != "prepaid"
+    steps = [
+        ("placed", True, "Order placed"),
+        ("payment", payment_ready, "Payment checked"),
+        ("preparing", status in {"preparing", "ready", "closed"}, "Preparing"),
+        ("ready", status in {"ready", "closed"}, "Ready"),
+        ("completed", status == "closed", "Completed"),
+    ]
+    return [
+        {"key": key, "label": label, "complete": complete}
+        for key, complete, label in steps
+    ]
+
+
+def serialize_order_tracking(order: RestaurantOrder) -> dict:
+    payload = serialize_order(order)
+    payload.update(
+        {
+            "eta_window": order_eta_window(order),
+            "tracking_steps": order_tracking_steps(order),
+            "next_action": order_next_action(order),
+        }
+    )
+    return payload
+
+
+def order_next_action(order: RestaurantOrder) -> str:
+    if (order.payment_method or "").lower() == "prepaid" and order.payment_status != "paid":
+        return "Payment is pending. Confirm prepaid payment to continue."
+    if order.status == "open":
+        return "Order received. Kitchen will begin preparation shortly."
+    if order.status == "preparing":
+        return "Kitchen is preparing your order."
+    if order.status == "ready":
+        return "Order is ready for pickup or handoff."
+    if order.status == "closed":
+        return "Order completed. Thank you for ordering."
+    return "Order is being processed."
+
+
 def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
     phone = (order.customer_phone or "").strip()
     if not phone:
@@ -463,6 +518,19 @@ def customer_order_history(phone: str, db: Session = Depends(get_db)):
         },
         "orders": [serialize_order(order) for order in orders],
     }
+
+
+@router.get("/track/{order_id}")
+def track_order(order_id: int, phone: str, db: Session = Depends(get_db)):
+    normalized_phone = phone.strip()
+    if not normalized_phone:
+        raise HTTPException(status_code=422, detail="Phone number is required.")
+
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order or (order.customer_phone or "").strip() != normalized_phone:
+        raise HTTPException(status_code=404, detail="Order not found for this phone number.")
+
+    return serialize_order_tracking(order)
 
 
 @router.get("/{order_id}")

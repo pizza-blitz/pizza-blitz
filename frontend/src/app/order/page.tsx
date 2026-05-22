@@ -138,6 +138,10 @@ export default function PublicOrderPage() {
       }),
     [menu, search, category]
   );
+  const trackingHref =
+    orderId && customerPhone.trim()
+      ? `/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`
+      : "/account";
 
   const addToCart = (item: MenuItem) => {
     setOrderId(null);
@@ -435,8 +439,16 @@ export default function PublicOrderPage() {
             )}
 
             {orderId && (
-              <div className="mb-4 flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
-                <CheckCircle2 className="h-4 w-4" /> Order #{orderId} confirmed
+              <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" /> Order #{orderId} confirmed
+                </div>
+                <Link
+                  href={trackingHref}
+                  className="mt-2 inline-flex text-sm font-black text-green-900 underline"
+                >
+                  Track this order
+                </Link>
               </div>
             )}
 

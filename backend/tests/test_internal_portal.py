@@ -322,6 +322,19 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(ready.status_code, 200)
             self.assertEqual(ready.json()["status"], "ready")
 
+            tracking = client.get(
+                f"/api/v1/restaurant/orders/track/{takeaway_id}?phone=9999999999"
+            )
+            self.assertEqual(tracking.status_code, 200)
+            self.assertEqual(tracking.json()["status"], "ready")
+            self.assertEqual(tracking.json()["eta_window"], "Ready now")
+            self.assertEqual(tracking.json()["tracking_steps"][3]["complete"], True)
+
+            wrong_phone_tracking = client.get(
+                f"/api/v1/restaurant/orders/track/{takeaway_id}?phone=1111111111"
+            )
+            self.assertEqual(wrong_phone_tracking.status_code, 404)
+
             customers = client.get("/api/v1/restaurant/customers/")
             self.assertEqual(customers.status_code, 200)
             customer_phones = [customer["phone"] for customer in customers.json()]
