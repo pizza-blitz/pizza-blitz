@@ -296,6 +296,40 @@ def todays_orders(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/customer-history/{phone}")
+def customer_order_history(phone: str, db: Session = Depends(get_db)):
+    normalized_phone = phone.strip()
+    if not normalized_phone:
+        raise HTTPException(status_code=422, detail="Phone number is required.")
+
+    customer = db.query(Customer).filter(Customer.phone == normalized_phone).first()
+    orders = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.customer_phone == normalized_phone)
+        .order_by(RestaurantOrder.created_at.desc(), RestaurantOrder.id.desc())
+        .limit(25)
+        .all()
+    )
+    if customer is None and not orders:
+        raise HTTPException(status_code=404, detail="No orders found for this phone number.")
+
+    return {
+        "customer": {
+            "name": customer.name if customer else None,
+            "phone": normalized_phone,
+            "email": customer.email if customer else None,
+            "total_orders": customer.total_orders if customer else len(orders),
+            "total_spend": (
+                round(float(customer.total_spend or 0), 2)
+                if customer
+                else round(sum(float(order.total_amount or 0) for order in orders), 2)
+            ),
+            "last_order_at": customer.last_order_at.isoformat() if customer and customer.last_order_at else None,
+        },
+        "orders": [serialize_order(order) for order in orders],
+    }
+
+
 @router.get("/{order_id}")
 def get_order(order_id: int, db: Session = Depends(get_db)):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()

@@ -317,6 +317,14 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(customer_summary.status_code, 200)
             self.assertEqual(customer_summary.json()["total_customers"], 1)
 
+            customer_history = client.get(
+                "/api/v1/restaurant/orders/customer-history/9999999999"
+            )
+            self.assertEqual(customer_history.status_code, 200)
+            self.assertEqual(customer_history.json()["customer"]["phone"], "9999999999")
+            self.assertEqual(customer_history.json()["customer"]["total_orders"], 1)
+            self.assertEqual(customer_history.json()["orders"][0]["id"], takeaway_id)
+
             promo_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
             self.assertEqual(promo_outreach.status_code, 200)
             outreach_payload = promo_outreach.json()

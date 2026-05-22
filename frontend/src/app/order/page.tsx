@@ -228,6 +228,12 @@ export default function PublicOrderPage() {
           </div>
           <div className="flex items-center gap-3">
             <Link
+              href="/account"
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
+            >
+              My Orders
+            </Link>
+            <Link
               href="/login"
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
             >
