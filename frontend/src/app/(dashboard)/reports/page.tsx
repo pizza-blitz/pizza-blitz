@@ -52,6 +52,27 @@ export default function Reports() {
     return `Rs ${nextValue.toLocaleString()}`;
   };
 
+  const percentChange = (current: number, baseline: number) => {
+    const currentValue = Number(current || 0);
+    const baselineValue = Number(baseline || 0);
+    if (baselineValue === 0) return 0;
+    return Math.round(((currentValue - baselineValue) / baselineValue) * 1000) / 10;
+  };
+
+  const formatPercent = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+
+  const comparison = data?.comparison;
+  const weekdayRows = comparison?.weekday_breakdown
+    ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
+    : [];
+  const varianceRows = comparison?.daily_comparison
+    ? comparison.daily_comparison.slice(-7).map((row: any) => ({
+        ...row,
+        previousChange: percentChange(row.current_sale, row.previous_sale),
+        yoyChange: percentChange(row.current_sale, row.last_year_sale),
+      }))
+    : [];
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -190,6 +211,102 @@ export default function Reports() {
                 </div>
               </aside>
             </div>
+          )}
+
+          {comparison && (
+            <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.75fr_1.25fr]">
+              <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Weekday Mix</p>
+                    <h2 className="mt-1 text-xl font-black text-gray-950">Strongest Sales Days</h2>
+                  </div>
+                  <BarChart3 className="h-5 w-5 text-orange-600" />
+                </div>
+                <div className="space-y-3">
+                  {weekdayRows.map((row: any, index: number) => {
+                    const maxSale = Number(weekdayRows[0]?.current_sale || 0);
+                    const width = maxSale > 0 ? Math.max(8, (Number(row.current_sale || 0) / maxSale) * 100) : 0;
+                    const yoyPositive = Number(row.yoy_change_percent || 0) >= 0;
+                    return (
+                      <div key={row.weekday} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-black text-gray-950">{index + 1}. {row.weekday}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.days} comparison days</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-gray-950">Rs {Number(row.current_sale || 0).toLocaleString()}</p>
+                            <p className={`text-[10px] font-black ${yoyPositive ? "text-green-700" : "text-red-700"}`}>
+                              {formatPercent(Number(row.yoy_change_percent || 0))} YoY
+                            </p>
+                          </div>
+                        </div>
+                        <div className="h-2 rounded-full bg-white">
+                          <div className="h-2 rounded-full bg-orange-600" style={{ width: `${width}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Same-Day Variance</p>
+                    <h2 className="mt-1 text-xl font-black text-gray-950">Last 7 Operating Days</h2>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-md bg-green-50 px-3 py-2 text-xs font-black text-green-700">
+                      Best: {comparison.best_day?.label || "No data"}
+                    </span>
+                    <span className="rounded-md bg-red-50 px-3 py-2 text-xs font-black text-red-700">
+                      Soft: {comparison.slowest_day?.label || "No data"}
+                    </span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full min-w-[760px] text-left">
+                    <thead className="bg-gray-950 text-white">
+                      <tr>
+                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Date</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Current</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Vs Previous</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Vs Last Year</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {varianceRows.map((row: any) => {
+                        const previousPositive = Number(row.previousChange || 0) >= 0;
+                        const yoyPositive = Number(row.yoyChange || 0) >= 0;
+                        return (
+                          <tr key={`variance-${row.date}`} className="hover:bg-orange-50/50">
+                            <td className="px-4 py-3">
+                              <p className="text-sm font-black text-gray-900">{row.label}</p>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.weekday}</p>
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm font-black text-gray-950">Rs {Number(row.current_sale || 0).toLocaleString()}</td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`rounded-md px-2 py-1 text-xs font-black ${previousPositive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                {formatPercent(Number(row.previousChange || 0))}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <span className={`rounded-md px-2 py-1 text-xs font-black ${yoyPositive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                {formatPercent(Number(row.yoyChange || 0))}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right text-sm font-black text-green-700">Rs {Number(row.current_profit || 0).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
