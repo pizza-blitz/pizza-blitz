@@ -1,46 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
+  adminOnlyRoutePrefixes,
+  isPathIn,
+  staffRoutePrefixes,
+} from "@/lib/access";
+import {
   ADMIN_COOKIE,
   CUSTOMER_COOKIE,
+  STAFF_COOKIE,
   verifySessionToken,
 } from "@/lib/session";
-
-const adminRoutes = [
-  "/dashboard",
-  "/ceo",
-  "/orders",
-  "/operations",
-  "/shifts",
-  "/daily",
-  "/sales",
-  "/reports",
-  "/receipt",
-  "/invoices",
-  "/breakeven",
-  "/menu",
-  "/inventory",
-  "/recipes",
-  "/customers",
-  "/promotions",
-  "/social",
-  "/ads",
-  "/ops",
-  "/vendors",
-  "/waste",
-  "/expenses",
-  "/ai-insights",
-  "/purchase-orders",
-  "/settings",
-];
-
-function isPathIn(pathname: string, routes: string[]) {
-  return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
-}
 
 function redirectWithClearedCookie(
   request: NextRequest,
   pathname: string,
-  cookieName: string,
+  cookieNames: string | string[],
   nextPath?: string
 ) {
   const url = new URL(pathname, request.url);
@@ -48,14 +22,17 @@ function redirectWithClearedCookie(
     url.searchParams.set("next", nextPath);
   }
   const response = NextResponse.redirect(url);
-  response.cookies.set({
-    name: cookieName,
-    value: "",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
+  const names = Array.isArray(cookieNames) ? cookieNames : [cookieNames];
+  names.forEach((cookieName) => {
+    response.cookies.set({
+      name: cookieName,
+      value: "",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0,
+    });
   });
   return response;
 }
@@ -66,6 +43,10 @@ export async function middleware(request: NextRequest) {
     request.cookies.get(ADMIN_COOKIE)?.value,
     "admin"
   );
+  const staffSession = await verifySessionToken(
+    request.cookies.get(STAFF_COOKIE)?.value,
+    "staff"
+  );
   const customerSession = await verifySessionToken(
     request.cookies.get(CUSTOMER_COOKIE)?.value,
     "customer"
@@ -75,12 +56,36 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  if (pathname === "/login" && staffSession) {
+    return NextResponse.redirect(new URL("/orders", request.url));
+  }
+
   if (pathname === "/account/login" && customerSession) {
     return NextResponse.redirect(new URL("/account", request.url));
   }
 
-  if (isPathIn(pathname, adminRoutes) && !adminSession) {
-    return redirectWithClearedCookie(request, "/login", ADMIN_COOKIE, pathname);
+  if (isPathIn(pathname, adminOnlyRoutePrefixes)) {
+    if (adminSession) {
+      return NextResponse.next();
+    }
+    if (staffSession) {
+      return NextResponse.redirect(new URL("/orders", request.url));
+    }
+    return redirectWithClearedCookie(
+      request,
+      "/login",
+      [ADMIN_COOKIE, STAFF_COOKIE],
+      pathname
+    );
+  }
+
+  if (isPathIn(pathname, staffRoutePrefixes) && !adminSession && !staffSession) {
+    return redirectWithClearedCookie(
+      request,
+      "/login",
+      [ADMIN_COOKIE, STAFF_COOKIE],
+      pathname
+    );
   }
 
   if ((pathname === "/account" || pathname.startsWith("/account/")) && pathname !== "/account/login") {

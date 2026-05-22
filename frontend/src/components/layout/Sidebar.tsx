@@ -1,4 +1,6 @@
 import Link from "next/link";
+import type { ComponentType } from "react";
+import type { SessionRole } from "@/lib/session";
 import { 
   LayoutDashboard, Package, Receipt, ShoppingCart, 
   BarChart3, Settings, PlusCircle, Utensils, 
@@ -6,11 +8,18 @@ import {
   Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2, ShieldCheck
 } from "lucide-react";
 
-export const portalNavItems = [
+type PortalNavItem = {
+  name: string;
+  href: string;
+  icon: ComponentType<{ className?: string }>;
+  allowedRoles?: SessionRole[];
+};
+
+export const portalNavItems: PortalNavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "CEO Command", href: "/ceo", icon: Crown },
-  { name: "POS (Orders)", href: "/orders", icon: ShoppingCart },
-  { name: "Kitchen Ops", href: "/operations", icon: Flame },
+  { name: "POS (Orders)", href: "/orders", icon: ShoppingCart, allowedRoles: ["admin", "staff"] },
+  { name: "Kitchen Ops", href: "/operations", icon: Flame, allowedRoles: ["admin", "staff"] },
   { name: "Shift Log", href: "/shifts", icon: Activity },
   { name: "Daily Entry", href: "/daily", icon: PlusCircle },
   { name: "Sales History", href: "/sales", icon: DollarSign },
@@ -32,7 +41,14 @@ export const portalNavItems = [
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
-export default function Sidebar() {
+export function portalNavItemsForRole(role: SessionRole) {
+  return portalNavItems.filter((item) =>
+    (item.allowedRoles || ["admin"]).includes(role)
+  );
+}
+
+export default function Sidebar({ role = "admin" }: { role?: SessionRole }) {
+  const navItems = portalNavItemsForRole(role);
   return (
     <div className="hidden h-screen w-64 shrink-0 flex-col border-r bg-white shadow-sm md:flex">
       <div className="border-b px-5 py-4">
@@ -40,7 +56,7 @@ export default function Sidebar() {
         <p className="mt-1 text-xs font-semibold text-gray-400">Restaurant Portal</p>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        {portalNavItems.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           return (
             <Link

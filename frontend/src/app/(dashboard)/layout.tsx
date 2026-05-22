@@ -1,11 +1,38 @@
 import Link from "next/link";
-import Sidebar, { portalNavItems } from "@/components/layout/Sidebar";
+import { cookies } from "next/headers";
+import Sidebar, { portalNavItemsForRole } from "@/components/layout/Sidebar";
+import {
+  ADMIN_COOKIE,
+  STAFF_COOKIE,
+  type SessionRole,
+  verifySessionToken,
+} from "@/lib/session";
 
-export default function DashboardLayout({
+async function currentPortalRole(): Promise<SessionRole> {
+  const cookieStore = cookies();
+  const adminSession = await verifySessionToken(
+    cookieStore.get(ADMIN_COOKIE)?.value,
+    "admin"
+  );
+  if (adminSession) return "admin";
+
+  const staffSession = await verifySessionToken(
+    cookieStore.get(STAFF_COOKIE)?.value,
+    "staff"
+  );
+  if (staffSession) return "staff";
+
+  return "admin";
+}
+
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const role = await currentPortalRole();
+  const navItems = portalNavItemsForRole(role);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gray-50 text-gray-900 md:flex-row">
       <header className="border-b bg-white shadow-sm md:hidden">
@@ -22,7 +49,7 @@ export default function DashboardLayout({
           </Link>
         </div>
         <nav className="flex gap-2 overflow-x-auto px-3 pb-3">
-          {portalNavItems.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <Link
@@ -37,7 +64,7 @@ export default function DashboardLayout({
           })}
         </nav>
       </header>
-      <Sidebar />
+      <Sidebar role={role} />
       <main className="min-w-0 flex-1 overflow-y-auto p-4 md:p-8">
         {children}
       </main>

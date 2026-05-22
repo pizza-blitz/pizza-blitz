@@ -1,7 +1,8 @@
 export const ADMIN_COOKIE = "pb_admin_session";
+export const STAFF_COOKIE = "pb_staff_session";
 export const CUSTOMER_COOKIE = "pb_customer_session";
 
-export type SessionRole = "admin" | "customer";
+export type SessionRole = "admin" | "staff" | "customer";
 
 export type SessionPayload = {
   role: SessionRole;
@@ -13,6 +14,7 @@ export type SessionPayload = {
 };
 
 const ADMIN_SESSION_SECONDS = 60 * 60 * 8;
+const STAFF_SESSION_SECONDS = 60 * 60 * 10;
 const CUSTOMER_SESSION_SECONDS = 60 * 60 * 24 * 30;
 
 function getSessionSecret() {
@@ -60,7 +62,9 @@ async function signPayload(payloadPart: string) {
 }
 
 export function maxAgeForRole(role: SessionRole) {
-  return role === "admin" ? ADMIN_SESSION_SECONDS : CUSTOMER_SESSION_SECONDS;
+  if (role === "admin") return ADMIN_SESSION_SECONDS;
+  if (role === "staff") return STAFF_SESSION_SECONDS;
+  return CUSTOMER_SESSION_SECONDS;
 }
 
 export async function createSessionToken(

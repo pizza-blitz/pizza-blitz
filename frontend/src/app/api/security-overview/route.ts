@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
-import { ADMIN_COOKIE, CUSTOMER_COOKIE, maxAgeForRole } from "@/lib/session";
+import {
+  adminOnlyRoutePrefixes,
+  staffRoutePrefixes,
+} from "@/lib/access";
+import {
+  ADMIN_COOKIE,
+  CUSTOMER_COOKIE,
+  STAFF_COOKIE,
+  maxAgeForRole,
+} from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +21,12 @@ function formatDuration(seconds: number) {
 export async function GET() {
   const adminId = process.env.PIZZA_BLITZ_ADMIN_ID || "admin";
   const adminPassword = process.env.PIZZA_BLITZ_ADMIN_PASSWORD || "admin123";
+  const staffId = process.env.PIZZA_BLITZ_STAFF_ID || "staff";
+  const staffPassword = process.env.PIZZA_BLITZ_STAFF_PASSWORD || "staff123";
   const sessionSecret = process.env.PIZZA_BLITZ_SESSION_SECRET;
 
   const adminPasswordHardened = adminPassword !== "admin123";
+  const staffPasswordHardened = staffPassword !== "staff123";
   const sessionSecretHardened = Boolean(sessionSecret);
 
   return NextResponse.json({
@@ -28,8 +40,8 @@ export async function GET() {
       {
         role: "Counter Staff",
         access: "Order entry, kitchen flow, delivery handoff, receipt workflow",
-        entry: "/orders",
-        protection: "Currently under admin session, staff role split pending",
+        entry: "/login",
+        protection: "Required staff or admin session cookie",
       },
       {
         role: "Customer",
@@ -49,8 +61,15 @@ export async function GET() {
         name: "Admin Portal",
         cookie: ADMIN_COOKIE,
         duration: formatDuration(maxAgeForRole("admin")),
-        protectedRoutes: 23,
+        protectedRoutes: adminOnlyRoutePrefixes.length + staffRoutePrefixes.length,
         status: adminPasswordHardened ? "Ready" : "Action needed",
+      },
+      {
+        name: "Counter Staff",
+        cookie: STAFF_COOKIE,
+        duration: formatDuration(maxAgeForRole("staff")),
+        protectedRoutes: staffRoutePrefixes.length,
+        status: staffPasswordHardened ? "Ready" : "Action needed",
       },
       {
         name: "Customer Account",
@@ -77,6 +96,21 @@ export async function GET() {
           : "Replace the default admin password before real staff use.",
       },
       {
+        name: "Staff ID",
+        status: staffId === "staff" ? "Default" : "Configured",
+        detail:
+          staffId === "staff"
+            ? "Local staff ID is still the default value."
+            : "Staff ID is configured from environment.",
+      },
+      {
+        name: "Staff Password",
+        status: staffPasswordHardened ? "Configured" : "Default",
+        detail: staffPasswordHardened
+          ? "Staff password is no longer the local default."
+          : "Replace the default staff password before counter use.",
+      },
+      {
         name: "Session Signing",
         status: sessionSecretHardened ? "Configured" : "Fallback",
         detail: sessionSecretHardened
@@ -85,8 +119,8 @@ export async function GET() {
       },
       {
         name: "Role Split",
-        status: "Planned",
-        detail: "Counter staff permissions should become a separate role before launch.",
+        status: "Configured",
+        detail: "Counter staff uses a separate session and can access only POS, kitchen ops, and receipt routes.",
       },
     ],
   });

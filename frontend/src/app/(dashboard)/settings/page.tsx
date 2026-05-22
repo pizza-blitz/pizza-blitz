@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 import React, { useEffect, useState } from 'react';
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock,
   CircleDollarSign,
@@ -307,7 +306,7 @@ export default function Settings() {
             <div>
               <h3 className="font-bold text-gray-900">Access Control & Roles</h3>
               <p className="text-sm text-gray-500">
-                Admin and customer sessions are separated today; staff-specific permissions are the next hardening step.
+                Admin, counter staff, and customer sessions are separated with route-level permissions.
               </p>
             </div>
           </div>
@@ -318,8 +317,8 @@ export default function Settings() {
             <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-2 text-blue-700">
               <UserCheck className="h-3.5 w-3.5" /> Customer protected
             </span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-3 py-2 text-amber-700">
-              <AlertTriangle className="h-3.5 w-3.5" /> Staff split pending
+            <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-3 py-2 text-indigo-700">
+              <Shield className="h-3.5 w-3.5" /> Staff restricted
             </span>
           </div>
         </div>
@@ -330,7 +329,7 @@ export default function Settings() {
           </div>
         ) : securityOverview ? (
           <div className="mt-5 space-y-5">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {securityOverview.sessions.map((session) => (
                 <div key={session.cookie} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
                   <div className="flex items-center justify-between gap-3">
