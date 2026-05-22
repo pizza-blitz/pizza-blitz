@@ -403,6 +403,42 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(customer_history.json()["customer"]["total_orders"], 1)
             self.assertEqual(customer_history.json()["orders"][0]["id"], takeaway_id)
 
+            delivery = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "delivery",
+                    "customer_name": "Walk-in",
+                    "customer_phone": "9999999999",
+                    "customer_email": "walkin@example.com",
+                    "opt_in_marketing": True,
+                    "payment_method": "prepaid",
+                    "notes": (
+                        "Customer website order | Fulfillment: delivery | "
+                        "ETA: 35-45 min | Address: 12 Park Street"
+                    ),
+                    "items": [
+                        {"name": "Garlic Bread", "quantity": 1, "price": 119}
+                    ],
+                },
+            )
+            self.assertEqual(delivery.status_code, 200)
+            delivery_id = delivery.json()["order_id"]
+
+            delivery_detail = client.get(f"/api/v1/restaurant/orders/{delivery_id}")
+            self.assertEqual(delivery_detail.status_code, 200)
+            self.assertEqual(delivery_detail.json()["source"], "customer_website")
+            self.assertEqual(delivery_detail.json()["fulfillment_type"], "delivery")
+            self.assertEqual(delivery_detail.json()["delivery_address"], "12 Park Street")
+            self.assertEqual(delivery_detail.json()["eta_window"], "35-45 min")
+            self.assertEqual(delivery_detail.json()["payment_due"], True)
+
+            delivery_tracking = client.get(
+                f"/api/v1/restaurant/orders/track/{delivery_id}?phone=9999999999"
+            )
+            self.assertEqual(delivery_tracking.status_code, 200)
+            self.assertEqual(delivery_tracking.json()["tracking_steps"][1]["complete"], False)
+            self.assertIn("Payment is pending", delivery_tracking.json()["next_action"])
+
             promo_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
             self.assertEqual(promo_outreach.status_code, 200)
             outreach_payload = promo_outreach.json()

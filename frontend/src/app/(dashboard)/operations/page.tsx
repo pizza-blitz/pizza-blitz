@@ -9,7 +9,9 @@ import {
   CreditCard,
   FileText,
   Flame,
+  Globe2,
   Loader2,
+  MapPin,
   ReceiptText,
   RefreshCw,
   TimerReset,
@@ -29,6 +31,11 @@ type OrderItem = {
 type Order = {
   id: number;
   order_type: string;
+  source?: string | null;
+  fulfillment_type?: string | null;
+  delivery_address?: string | null;
+  eta_window?: string | null;
+  payment_due?: boolean;
   table_number?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -305,7 +312,8 @@ export default function OperationsPage() {
               const canClose = order.status !== "closed" && !isPrepaidDue;
               const primaryLocation = order.table_number
                 ? `Table ${order.table_number}`
-                : order.order_type.replace("-", " ");
+                : (order.fulfillment_type || order.order_type).replace("-", " ");
+              const isOnlineOrder = order.source === "customer_website";
 
               return (
                 <div
@@ -323,16 +331,34 @@ export default function OperationsPage() {
                       )}
                       {primaryLocation}
                     </span>
+                    {isOnlineOrder && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-bold text-red-700">
+                        <Globe2 className="h-3.5 w-3.5" />
+                        Online
+                      </span>
+                    )}
                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500">
                       <TimerReset className="h-3.5 w-3.5" />
                       {ageLabel(order.created_at)}
                     </span>
+                    {order.eta_window && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        ETA {order.eta_window}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-2 truncate text-sm text-gray-600">
                     {order.items
                       .map((item) => `${item.quantity}x ${item.name}`)
                       .join(" | ")}
                   </p>
+                  {order.delivery_address && (
+                    <p className="mt-2 flex items-center gap-1 truncate text-xs font-semibold text-gray-500">
+                      <MapPin className="h-3.5 w-3.5 text-red-600" />
+                      {order.delivery_address}
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                     <span>{order.customer_name || "Walk-in"}</span>
                     {order.customer_phone && <span>{order.customer_phone}</span>}

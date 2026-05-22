@@ -110,10 +110,19 @@ def serialize_invoice(invoice: Invoice) -> dict:
 
 
 def serialize_order(order: RestaurantOrder) -> dict:
+    metadata = order_metadata(order)
     return {
         "id": order.id,
         "date": order.date.isoformat() if order.date else None,
         "order_type": order.order_type,
+        "source": metadata["source"],
+        "fulfillment_type": metadata["fulfillment_type"],
+        "delivery_address": metadata["delivery_address"],
+        "eta_window": order_eta_window(order),
+        "payment_due": (
+            (order.payment_method or "").lower() == "prepaid"
+            and (order.payment_status or "").lower() != "paid"
+        ),
         "table_number": order.table_number,
         "customer_name": order.customer_name,
         "customer_phone": order.customer_phone,
@@ -145,6 +154,28 @@ def serialize_order(order: RestaurantOrder) -> dict:
     }
 
 
+def note_value(notes: Optional[str], label: str) -> Optional[str]:
+    if not notes:
+        return None
+    prefix = f"{label}:"
+    for part in notes.split("|"):
+        text = part.strip()
+        if text.lower().startswith(prefix.lower()):
+            value = text[len(prefix):].strip()
+            return value or None
+    return None
+
+
+def order_metadata(order: RestaurantOrder) -> dict:
+    notes = order.notes or ""
+    fulfillment_type = note_value(notes, "Fulfillment") or order.order_type or "takeaway"
+    return {
+        "source": "customer_website" if "customer website order" in notes.lower() else "counter",
+        "fulfillment_type": fulfillment_type,
+        "delivery_address": note_value(notes, "Address"),
+    }
+
+
 def order_eta_window(order: RestaurantOrder) -> str:
     if order.status == "closed":
         return "Completed"
@@ -152,6 +183,9 @@ def order_eta_window(order: RestaurantOrder) -> str:
         return "Ready now"
     if order.status == "preparing":
         return "10-15 min"
+    eta_from_notes = note_value(order.notes, "ETA")
+    if eta_from_notes:
+        return eta_from_notes
     if (order.order_type or "").lower() == "delivery":
         return "35-45 min"
     return "20-25 min"

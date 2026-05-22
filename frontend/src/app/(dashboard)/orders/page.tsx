@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  Globe2,
+  MapPin,
   Plus,
   Printer,
   ReceiptText,
@@ -40,6 +42,11 @@ type Table = {
 type Order = {
   id: number;
   order_type: string;
+  source?: string | null;
+  fulfillment_type?: string | null;
+  delivery_address?: string | null;
+  eta_window?: string | null;
+  payment_due?: boolean;
   table_number?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -285,7 +292,9 @@ export default function OrdersPage() {
                   <div>
                     <p className="font-black">Order #{order.id}</p>
                     <p className="text-xs text-gray-500">
-                      {order.table_number ? `Table ${order.table_number}` : "Takeaway"}
+                      {order.table_number
+                        ? `Table ${order.table_number}`
+                        : order.fulfillment_type || order.order_type || "Takeaway"}
                       {order.customer_name ? ` | ${order.customer_name}` : ""}
                     </p>
                   </div>
@@ -297,6 +306,29 @@ export default function OrdersPage() {
                   <span className="text-sm text-gray-400">{order.items.length} item types</span>
                   <span className="font-black">Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
                 </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {order.source === "customer_website" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-300">
+                      <Globe2 className="h-3 w-3" /> Online
+                    </span>
+                  )}
+                  {order.eta_window && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-gray-400">
+                      <Clock className="h-3 w-3" /> {order.eta_window}
+                    </span>
+                  )}
+                  {order.payment_due && (
+                    <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300">
+                      Payment due
+                    </span>
+                  )}
+                </div>
+                {order.delivery_address && (
+                  <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-gray-500">
+                    <MapPin className="h-3 w-3 text-orange-400" />
+                    {order.delivery_address}
+                  </p>
+                )}
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <Link
                     href={`/receipt/${order.id}`}
