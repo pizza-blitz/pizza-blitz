@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mail, Phone, Plus, RefreshCw, Search, Users } from "lucide-react";
+import { CheckCircle2, Copy, Filter, Mail, Phone, Plus, RefreshCw, Search, Users, XCircle } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
 const CUSTOMERS_API = getApiUrl("/api/v1/restaurant/customers");
@@ -20,9 +20,32 @@ type Customer = {
 type Summary = {
   total_customers: number;
   opted_in_customers: number;
+  opted_out_customers: number;
   repeat_customers: number;
+  high_spenders: number;
+  email_ready_customers: number;
+  missing_email_customers: number;
   recorded_spend: number;
 };
+
+type SegmentKey =
+  | "all"
+  | "marketing_opt_in"
+  | "opted_out"
+  | "repeat_customers"
+  | "high_spenders"
+  | "with_email"
+  | "missing_email";
+
+const segmentOptions: { value: SegmentKey; label: string }[] = [
+  { value: "all", label: "All Contacts" },
+  { value: "marketing_opt_in", label: "Marketing Opt-in" },
+  { value: "opted_out", label: "Opted Out" },
+  { value: "repeat_customers", label: "Repeat Customers" },
+  { value: "high_spenders", label: "High Spenders" },
+  { value: "with_email", label: "Email Ready" },
+  { value: "missing_email", label: "Missing Email" },
+];
 
 const emptyForm = {
   name: "",
@@ -36,6 +59,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [search, setSearch] = useState("");
+  const [segment, setSegment] = useState<SegmentKey>("all");
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
@@ -44,14 +68,48 @@ export default function CustomersPage() {
     fetchData();
   }, []);
 
-  const fetchData = async (query = search) => {
-    const params = query ? `?q=${encodeURIComponent(query)}` : "";
+  const fetchData = async (query = search, selectedSegment = segment) => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (selectedSegment !== "all") params.set("segment", selectedSegment);
+    const queryString = params.toString() ? `?${params.toString()}` : "";
     const [customersRes, summaryRes] = await Promise.all([
-      fetch(`${CUSTOMERS_API}/${params}`),
+      fetch(`${CUSTOMERS_API}/${queryString}`),
       fetch(`${CUSTOMERS_API}/summary`),
     ]);
     setCustomers(await customersRes.json());
     setSummary(await summaryRes.json());
+  };
+
+  const selectSegment = (value: SegmentKey) => {
+    setSegment(value);
+    fetchData(search, value);
+  };
+
+  const copyContacts = async () => {
+    if (!customers.length) {
+      setMessage("No contacts in the current view.");
+      return;
+    }
+    const rows = customers.map((customer) =>
+      [
+        segmentLabel(segment),
+        customer.phone,
+        customer.email || "",
+        customer.name || "",
+        customer.opt_in_marketing ? "yes" : "no",
+        customer.total_orders || 0,
+        customer.total_spend || 0,
+        customer.last_order_at || "",
+      ].join("\t")
+    );
+    await navigator.clipboard.writeText(
+      [
+        "segment\tphone\temail\tname\tmarketing_opt_in\ttotal_orders\ttotal_spend\tlast_order_at",
+        ...rows,
+      ].join("\n")
+    );
+    setMessage(`Copied ${customers.length} contacts from ${segmentLabel(segment)}.`);
   };
 
   const saveCustomer = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -111,16 +169,17 @@ export default function CustomersPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 gap-4 mb-8 md:grid-cols-2 xl:grid-cols-5">
         <Metric label="Total Contacts" value={summary?.total_customers || 0} />
         <Metric label="Marketing Opt-in" value={summary?.opted_in_customers || 0} />
-        <Metric label="Repeat Customers" value={summary?.repeat_customers || 0} />
+        <Metric label="Opted Out" value={summary?.opted_out_customers || 0} />
+        <Metric label="Email Ready" value={summary?.email_ready_customers || 0} />
         <Metric label="Recorded Spend" value={`Rs ${Math.round(summary?.recorded_spend || 0).toLocaleString()}`} />
       </div>
 
       <div className="bg-[#1a1a1c] border border-white/5 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="relative flex-1">
+        <div className="grid grid-cols-1 gap-3 mb-6 xl:grid-cols-12">
+          <div className="relative xl:col-span-6">
             <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
             <input
               value={search}
@@ -128,15 +187,35 @@ export default function CustomersPage() {
               onKeyDown={(event) => {
                 if (event.key === "Enter") fetchData();
               }}
-              placeholder="Search by name or phone"
+              placeholder="Search by name, phone, email, or notes"
               className="w-full bg-black/30 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-orange-500"
             />
           </div>
+          <label className="relative xl:col-span-3">
+            <Filter className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+            <select
+              value={segment}
+              onChange={(event) => selectSegment(event.target.value as SegmentKey)}
+              className="w-full appearance-none bg-black/30 border border-white/10 rounded-xl py-3 pl-11 pr-4 outline-none focus:border-orange-500"
+            >
+              {segmentOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             onClick={() => fetchData()}
-            className="px-5 py-3 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600"
+            className="px-5 py-3 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 xl:col-span-1"
           >
             Search
+          </button>
+          <button
+            onClick={copyContacts}
+            className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white text-black font-bold hover:bg-orange-500 hover:text-white xl:col-span-2"
+          >
+            <Copy className="w-4 h-4" /> Copy
           </button>
         </div>
 
@@ -153,7 +232,23 @@ export default function CustomersPage() {
               <div className="lg:col-span-3 flex items-center gap-2 text-sm text-gray-300">
                 <Mail className="w-4 h-4 text-orange-400" /> {customer.email || "No email"}
               </div>
-              <div className="lg:col-span-2 text-right">
+              <div className="lg:col-span-1">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black ${
+                    customer.opt_in_marketing
+                      ? "bg-green-500/10 text-green-300"
+                      : "bg-red-500/10 text-red-300"
+                  }`}
+                >
+                  {customer.opt_in_marketing ? (
+                    <CheckCircle2 className="h-3 w-3" />
+                  ) : (
+                    <XCircle className="h-3 w-3" />
+                  )}
+                  {customer.opt_in_marketing ? "Opt-in" : "Opt-out"}
+                </span>
+              </div>
+              <div className="lg:col-span-1 text-right">
                 <p className="font-black">Rs {Math.round(customer.total_spend || 0).toLocaleString()}</p>
                 <p className="text-xs text-gray-500">{customer.total_orders || 0} orders</p>
               </div>
@@ -231,4 +326,8 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <p className="text-2xl font-black mt-2">{value}</p>
     </div>
   );
+}
+
+function segmentLabel(value: SegmentKey) {
+  return segmentOptions.find((option) => option.value === value)?.label || value;
 }

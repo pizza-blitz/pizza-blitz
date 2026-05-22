@@ -433,6 +433,34 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(opt_out_history.json()["customer"]["email"], "privacy@example.com")
             self.assertEqual(opt_out_history.json()["customer"]["opt_in_marketing"], False)
 
+            post_opt_out_summary = client.get("/api/v1/restaurant/customers/summary")
+            self.assertEqual(post_opt_out_summary.status_code, 200)
+            self.assertEqual(post_opt_out_summary.json()["total_customers"], 2)
+            self.assertEqual(post_opt_out_summary.json()["opted_in_customers"], 1)
+            self.assertEqual(post_opt_out_summary.json()["opted_out_customers"], 1)
+            self.assertEqual(post_opt_out_summary.json()["email_ready_customers"], 2)
+
+            opt_in_segment = client.get(
+                "/api/v1/restaurant/customers/",
+                params={"segment": "marketing_opt_in"},
+            )
+            self.assertEqual(opt_in_segment.status_code, 200)
+            self.assertEqual([customer["phone"] for customer in opt_in_segment.json()], ["9999999999"])
+
+            opted_out_segment = client.get(
+                "/api/v1/restaurant/customers/",
+                params={"segment": "opted_out"},
+            )
+            self.assertEqual(opted_out_segment.status_code, 200)
+            self.assertEqual([customer["phone"] for customer in opted_out_segment.json()], ["9777777777"])
+
+            email_search = client.get(
+                "/api/v1/restaurant/customers/",
+                params={"q": "walkin@example.com"},
+            )
+            self.assertEqual(email_search.status_code, 200)
+            self.assertEqual(email_search.json()[0]["phone"], "9999999999")
+
             opt_out_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
             self.assertEqual(opt_out_outreach.status_code, 200)
             self.assertEqual(opt_out_outreach.json()["audience_count"], 1)
