@@ -751,7 +751,7 @@ export default function PublicOrderPage() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-5 py-6 xl:grid-cols-12">
+      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-5 py-6 pb-24 xl:grid-cols-12 xl:pb-6">
         <section className="xl:col-span-8">
           <div className="mb-6 grid grid-cols-1 overflow-hidden rounded-lg border border-slate-200 bg-white md:grid-cols-12">
             <div className="p-5 md:col-span-7">
@@ -1187,6 +1187,19 @@ export default function PublicOrderPage() {
           </form>
         </aside>
       </main>
+
+      {!!cart.length && (
+        <a
+          href="#checkout"
+          className="fixed inset-x-3 bottom-3 z-40 flex items-center justify-between rounded-lg bg-slate-950 px-4 py-3 text-white shadow-2xl md:hidden"
+        >
+          <span className="flex items-center gap-2 text-sm font-black">
+            <ShoppingBag className="h-4 w-4 text-red-300" />
+            {cart.length} item{cart.length === 1 ? "" : "s"}
+          </span>
+          <span className="text-sm font-black">Checkout Rs {total}</span>
+        </a>
+      )}
     </div>
   );
 }

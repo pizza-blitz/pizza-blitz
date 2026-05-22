@@ -57,7 +57,7 @@ export default function Reports() {
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter">Financial Audit Logs</h1>
-          <p className="text-gray-500 mt-1 font-medium">Verified historical performance reports for stake-holder review.</p>
+          <p className="text-gray-500 mt-1 font-medium">Verified historical performance reports for stakeholder review.</p>
         </div>
         <div className="flex space-x-4">
           <button onClick={handleExport} className="bg-white border-2 border-gray-100 text-gray-900 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center hover:bg-gray-50 transition-all shadow-sm">
@@ -108,14 +108,14 @@ export default function Reports() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-5">
                   {data.comparison.summary_cards.map((card: any) => {
                     const positive = card.yoy_change_percent >= 0;
                     const DirectionIcon = positive ? ArrowUpRight : ArrowDownRight;
                     return (
                       <div key={card.key} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                         <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{card.label}</p>
-                        <p className="mt-2 text-xl font-black text-gray-950">{formatComparisonValue(card.key, card.current)}</p>
+                        <p className="mt-2 whitespace-nowrap text-lg font-black text-gray-950 xl:text-xl">{formatComparisonValue(card.key, card.current)}</p>
                         <div className="mt-3 grid gap-1 text-[11px] font-bold text-gray-500">
                           <div className="flex items-center justify-between">
                             <span>Previous</span>
