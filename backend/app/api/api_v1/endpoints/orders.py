@@ -48,6 +48,8 @@ class OrderCreate(BaseModel):
     table_number: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
+    opt_in_marketing: Optional[bool] = None
     items: List[OrderItem] = Field(default_factory=list)
     discount_amount: float = 0.0
     coupon_code: Optional[str] = None
@@ -321,7 +323,12 @@ def deduct_inventory_for_order(db: Session, order: RestaurantOrder) -> list[dict
     return usage_rows
 
 
-def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
+def upsert_customer_from_order(
+    db: Session,
+    order: RestaurantOrder,
+    customer_email: Optional[str] = None,
+    opt_in_marketing: Optional[bool] = None,
+) -> None:
     phone = (order.customer_phone or "").strip()
     if not phone:
         return
@@ -331,6 +338,8 @@ def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
         customer = Customer(
             name=order.customer_name,
             phone=phone,
+            email=(customer_email or "").strip() or None,
+            opt_in_marketing=True if opt_in_marketing is None else opt_in_marketing,
             total_orders=0,
             total_spend=0.0,
         )
@@ -338,6 +347,10 @@ def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
 
     if order.customer_name:
         customer.name = order.customer_name
+    if customer_email and customer_email.strip():
+        customer.email = customer_email.strip()
+    if opt_in_marketing is not None:
+        customer.opt_in_marketing = opt_in_marketing
     customer.total_orders = int(customer.total_orders or 0) + 1
     customer.total_spend = float(customer.total_spend or 0.0) + float(order.total_amount or 0.0)
     customer.last_order_at = datetime.utcnow()
@@ -406,7 +419,12 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     )
     db.add(row)
     db.flush()
-    upsert_customer_from_order(db, row)
+    upsert_customer_from_order(
+        db,
+        row,
+        customer_email=order.customer_email,
+        opt_in_marketing=order.opt_in_marketing,
+    )
 
     if order.table_number:
         table.status = "occupied"
@@ -664,6 +682,7 @@ def customer_order_history(phone: str, db: Session = Depends(get_db)):
             "name": customer.name if customer else None,
             "phone": normalized_phone,
             "email": customer.email if customer else None,
+            "opt_in_marketing": customer.opt_in_marketing if customer else True,
             "total_orders": customer.total_orders if customer else len(orders),
             "total_spend": (
                 round(float(customer.total_spend or 0), 2)

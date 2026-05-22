@@ -7,6 +7,7 @@ import {
   Clock,
   CreditCard,
   MapPin,
+  Mail,
   Minus,
   Percent,
   Phone,
@@ -83,6 +84,8 @@ export default function PublicOrderPage() {
   const [paymentMethod, setPaymentMethod] = useState<"prepaid" | "cash">("prepaid");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [optInMarketing, setOptInMarketing] = useState(true);
   const [address, setAddress] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [coupon, setCoupon] = useState<CouponResult | null>(null);
@@ -105,6 +108,8 @@ export default function PublicOrderPage() {
         const parsed = JSON.parse(savedCustomer);
         setCustomerName(parsed.name || "");
         setCustomerPhone(parsed.phone || "");
+        setCustomerEmail(parsed.email || "");
+        setOptInMarketing(parsed.opt_in_marketing ?? true);
       } catch {
         window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
       }
@@ -215,6 +220,8 @@ export default function PublicOrderPage() {
         order_type: orderType,
         customer_name: customerName,
         customer_phone: customerPhone,
+        customer_email: customerEmail || null,
+        opt_in_marketing: optInMarketing,
         payment_method: paymentMethod,
         discount_amount: discount,
         coupon_code: coupon ? coupon.promotion.code || couponCode : null,
@@ -244,7 +251,12 @@ export default function PublicOrderPage() {
 
     window.localStorage.setItem(
       CUSTOMER_STORAGE_KEY,
-      JSON.stringify({ name: customerName, phone: customerPhone })
+      JSON.stringify({
+        name: customerName,
+        phone: customerPhone,
+        email: customerEmail,
+        opt_in_marketing: optInMarketing,
+      })
     );
     if (paymentMethod === "prepaid") {
       const orderId = Number(data.order_id);
@@ -583,6 +595,24 @@ export default function PublicOrderPage() {
                   className="w-full outline-none"
                 />
               </FieldIcon>
+              <FieldIcon icon={Mail}>
+                <input
+                  value={customerEmail}
+                  onChange={(event) => setCustomerEmail(event.target.value)}
+                  placeholder="Email for receipts and offers"
+                  type="email"
+                  className="w-full outline-none"
+                />
+              </FieldIcon>
+              <label className="flex items-start gap-3 rounded-md border border-slate-300 px-3 py-3 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={optInMarketing}
+                  onChange={(event) => setOptInMarketing(event.target.checked)}
+                  className="mt-1"
+                />
+                Send me Pizza Blitz offers and order updates on my saved contact details.
+              </label>
               {orderType === "delivery" && (
                 <FieldIcon icon={MapPin}>
                   <input

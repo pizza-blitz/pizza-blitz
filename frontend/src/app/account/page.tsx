@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Clock,
   History,
+  Mail,
   Phone,
   ReceiptText,
   Search,
@@ -37,6 +38,7 @@ type CustomerHistory = {
     name?: string | null;
     phone: string;
     email?: string | null;
+    opt_in_marketing?: boolean;
     total_orders: number;
     total_spend: number;
     last_order_at?: string | null;
@@ -78,7 +80,12 @@ export default function CustomerAccountPage() {
     }
     window.localStorage.setItem(
       CUSTOMER_STORAGE_KEY,
-      JSON.stringify({ name: data.customer.name || "", phone: data.customer.phone })
+      JSON.stringify({
+        name: data.customer.name || "",
+        phone: data.customer.phone,
+        email: data.customer.email || "",
+        opt_in_marketing: data.customer.opt_in_marketing ?? true,
+      })
     );
     setHistory(data);
   };
@@ -154,15 +161,19 @@ export default function CustomerAccountPage() {
 
         {history && (
           <>
-            <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-5">
               <Metric icon={User} label="Customer" value={history.customer.name || "Pizza Guest"} />
               <Metric icon={Phone} label="Phone" value={history.customer.phone} />
+              <Metric icon={Mail} label="Email" value={history.customer.email || "Not saved"} />
               <Metric icon={History} label="Orders" value={history.customer.total_orders} />
               <Metric
                 icon={ReceiptText}
                 label="Total Spend"
                 value={`Rs ${Math.round(history.customer.total_spend || 0).toLocaleString()}`}
               />
+            </div>
+            <div className="mb-6 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+              Offers and updates: {history.customer.opt_in_marketing ? "Enabled" : "Disabled"}
             </div>
 
             <div className="space-y-4">

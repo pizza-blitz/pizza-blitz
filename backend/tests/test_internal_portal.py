@@ -330,6 +330,8 @@ class InternalPortalValidationTest(unittest.TestCase):
                     "order_type": "takeaway",
                     "customer_name": "Walk-in",
                     "customer_phone": "9999999999",
+                    "customer_email": "walkin@example.com",
+                    "opt_in_marketing": True,
                     "payment_method": "upi",
                     "discount_amount": 10,
                     "items": [
@@ -379,6 +381,13 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(customers.status_code, 200)
             customer_phones = [customer["phone"] for customer in customers.json()]
             self.assertIn("9999999999", customer_phones)
+            walkin_customer = next(
+                customer
+                for customer in customers.json()
+                if customer["phone"] == "9999999999"
+            )
+            self.assertEqual(walkin_customer["email"], "walkin@example.com")
+            self.assertEqual(walkin_customer["opt_in_marketing"], True)
 
             customer_summary = client.get("/api/v1/restaurant/customers/summary")
             self.assertEqual(customer_summary.status_code, 200)
@@ -389,6 +398,8 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(customer_history.status_code, 200)
             self.assertEqual(customer_history.json()["customer"]["phone"], "9999999999")
+            self.assertEqual(customer_history.json()["customer"]["email"], "walkin@example.com")
+            self.assertEqual(customer_history.json()["customer"]["opt_in_marketing"], True)
             self.assertEqual(customer_history.json()["customer"]["total_orders"], 1)
             self.assertEqual(customer_history.json()["orders"][0]["id"], takeaway_id)
 
@@ -398,6 +409,37 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(outreach_payload["audience_count"], 1)
             self.assertEqual(outreach_payload["contacts"][0]["phone"], "9999999999")
             self.assertIn("WEEKEND15", outreach_payload["message_preview"])
+
+            opt_out_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "takeaway",
+                    "customer_name": "Privacy Guest",
+                    "customer_phone": "9777777777",
+                    "customer_email": "privacy@example.com",
+                    "opt_in_marketing": False,
+                    "payment_method": "cash",
+                    "items": [
+                        {"name": "Garlic Bread", "quantity": 1, "price": 119}
+                    ],
+                },
+            )
+            self.assertEqual(opt_out_order.status_code, 200)
+
+            opt_out_history = client.get(
+                "/api/v1/restaurant/orders/customer-history/9777777777"
+            )
+            self.assertEqual(opt_out_history.status_code, 200)
+            self.assertEqual(opt_out_history.json()["customer"]["email"], "privacy@example.com")
+            self.assertEqual(opt_out_history.json()["customer"]["opt_in_marketing"], False)
+
+            opt_out_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
+            self.assertEqual(opt_out_outreach.status_code, 200)
+            self.assertEqual(opt_out_outreach.json()["audience_count"], 1)
+            self.assertNotIn(
+                "9777777777",
+                [contact["phone"] for contact in opt_out_outreach.json()["contacts"]],
+            )
 
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
