@@ -184,6 +184,15 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(active_promos.status_code, 200)
             self.assertIn("Weekend Combo", [item["name"] for item in active_promos.json()])
 
+            coupon = client.post(
+                "/api/v1/restaurant/promotions/validate-code",
+                json={"code": "weekend15", "subtotal": 398},
+            )
+            self.assertEqual(coupon.status_code, 200)
+            self.assertEqual(coupon.json()["discount"], 59.7)
+            self.assertEqual(coupon.json()["tax"], 16.92)
+            self.assertEqual(coupon.json()["total"], 355.22)
+
             promo_performance = client.get(
                 f"/api/v1/restaurant/promotions/performance/{promo_id}"
             )

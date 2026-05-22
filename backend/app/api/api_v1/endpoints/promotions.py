@@ -31,6 +31,10 @@ class PromotionCreate(BaseModel):
     status: str = "draft"
     message_template: Optional[str] = None
 
+class CouponValidationRequest(BaseModel):
+    code: str = Field(..., min_length=1)
+    subtotal: float = Field(..., ge=0)
+
 def _parse_date(value: str) -> date:
     try:
         return date.fromisoformat(value)
@@ -75,6 +79,13 @@ def _promotion_dict(promo: Promotion) -> dict:
         "message_template": promo.message_template,
         "created_at": promo.created_at.isoformat() if promo.created_at else None,
     }
+
+def _calculate_discount(promo: Promotion, subtotal: float) -> float:
+    if promo.discount_type == "percentage":
+        discount = subtotal * (float(promo.discount_value or 0) / 100)
+    else:
+        discount = float(promo.discount_value or 0)
+    return round(min(max(discount, 0), subtotal), 2)
 
 def _offer_label(promo: Promotion) -> str:
     value = f"{promo.discount_value:g}"
@@ -166,6 +177,32 @@ def active_promotions(db: Session = Depends(get_db)):
         .all()
     )
     return [_promotion_dict(promo) for promo in promotions]
+
+@router.post("/validate-code")
+def validate_coupon(payload: CouponValidationRequest, db: Session = Depends(get_db)):
+    code = _normalize_code(payload.code)
+    promo = db.query(Promotion).filter(Promotion.code == code).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Coupon code not found.")
+
+    today = date.today()
+    if promo.start_date > today or promo.end_date < today:
+        raise HTTPException(status_code=409, detail="Coupon is not active today.")
+    if promo.status not in {"active", "scheduled"}:
+        raise HTTPException(status_code=409, detail="Coupon is not active.")
+
+    discount = _calculate_discount(promo, payload.subtotal)
+    taxable_subtotal = max(round(payload.subtotal - discount, 2), 0)
+    tax = round(taxable_subtotal * 0.05, 2)
+    total = round(taxable_subtotal + tax, 2)
+    return {
+        "valid": True,
+        "promotion": _promotion_dict(promo),
+        "subtotal": round(payload.subtotal, 2),
+        "discount": discount,
+        "tax": tax,
+        "total": total,
+    }
 
 @router.get("/audience")
 def audience_summary(

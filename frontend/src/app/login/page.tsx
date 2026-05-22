@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function Login() {
   const [id, setId] = useState("");
@@ -51,6 +52,11 @@ export default function Login() {
             Sign In to Portal
           </button>
         </form>
+        <div className="mt-6 border-t border-gray-100 pt-5 text-center">
+          <Link href="/order" className="font-bold text-orange-700 hover:text-orange-900">
+            Continue as Customer
+          </Link>
+        </div>
       </div>
     </div>
   );
