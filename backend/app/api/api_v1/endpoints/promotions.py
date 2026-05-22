@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db
 from app.models.domain import (
+    AdCampaign,
     CampaignDelivery,
     Customer,
     DailySales,
@@ -28,6 +29,9 @@ VALID_CHANNELS = {"whatsapp", "sms", "email"}
 VALID_STATUSES = {"draft", "scheduled", "active", "paused", "completed"}
 VALID_SOCIAL_PLATFORMS = {"facebook", "instagram"}
 VALID_SOCIAL_POST_STATUSES = {"draft", "scheduled", "ready"}
+VALID_AD_OBJECTIVES = {"awareness", "traffic", "engagement", "leads", "sales"}
+VALID_AD_PLATFORMS = {"facebook", "instagram"}
+VALID_AD_CAMPAIGN_STATUSES = {"draft", "planned", "ready"}
 DEFAULT_MESSAGE_TEMPLATE = (
     "Hi {name}, Pizza Blitz has {offer} for you. Use code {code} before {end_date}. "
     "Reply or visit us to order."
@@ -35,6 +39,10 @@ DEFAULT_MESSAGE_TEMPLATE = (
 DEFAULT_SOCIAL_MESSAGE_TEMPLATE = (
     "{promo_name} at Pizza Blitz: {offer}. Use code {code} before {end_date}. "
     "Order online or visit us today."
+)
+DEFAULT_AD_MESSAGE_TEMPLATE = (
+    "{promo_name} at Pizza Blitz: {offer}. Use code {code} before {end_date}. "
+    "Order online now."
 )
 
 class PromotionCreate(BaseModel):
@@ -69,6 +77,22 @@ class PromotionSocialPostCreate(BaseModel):
     platforms: list[str] = Field(default_factory=lambda: ["facebook", "instagram"])
     status: str = "ready"
     scheduled_at: Optional[str] = None
+
+
+class PromotionAdCampaignCreate(BaseModel):
+    name: Optional[str] = None
+    objective: str = "sales"
+    platforms: list[str] = Field(default_factory=lambda: ["facebook", "instagram"])
+    audience: Optional[str] = "Existing customers and local pizza lovers"
+    location: Optional[str] = None
+    creative_template: Optional[str] = None
+    link_url: Optional[str] = None
+    image_url: Optional[str] = None
+    daily_budget: float = Field(500, ge=0)
+    lifetime_budget: float = Field(0, ge=0)
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    status: str = "ready"
 
 
 def _parse_date(value: str) -> date:
@@ -188,6 +212,23 @@ def _render_social_message(promo: Promotion, template: Optional[str] = None) -> 
         ) from exc
 
 
+def _render_ad_message(promo: Promotion, template: Optional[str] = None) -> str:
+    values = {
+        "offer": _offer_label(promo),
+        "code": promo.code or "PIZZABLITZ",
+        "end_date": promo.end_date.isoformat(),
+        "promo_name": promo.name,
+        "description": promo.description or "",
+    }
+    try:
+        return (template or DEFAULT_AD_MESSAGE_TEMPLATE).format(**values)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown ad message placeholder: {exc.args[0]}",
+        ) from exc
+
+
 def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -195,6 +236,12 @@ def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid scheduled_at: {value}") from exc
+
+
+def _parse_optional_ad_date(value: Optional[str]) -> Optional[date]:
+    if not value:
+        return None
+    return _parse_date(value)
 
 
 def _normalize_social_platforms(platforms: list[str]) -> list[str]:
@@ -218,6 +265,34 @@ def _normalize_social_post_status(status: str) -> str:
     return normalized
 
 
+def _normalize_ad_platforms(platforms: list[str]) -> list[str]:
+    cleaned = []
+    for platform in platforms:
+        normalized = platform.strip().lower()
+        if normalized and normalized not in cleaned:
+            cleaned.append(normalized)
+    invalid = [platform for platform in cleaned if platform not in VALID_AD_PLATFORMS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Unsupported ad platform: {', '.join(invalid)}")
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="At least one ad platform is required.")
+    return cleaned
+
+
+def _normalize_ad_objective(objective: str) -> str:
+    normalized = objective.strip().lower()
+    if normalized not in VALID_AD_OBJECTIVES:
+        raise HTTPException(status_code=422, detail="Unsupported ad objective.")
+    return normalized
+
+
+def _normalize_ad_campaign_status(status: str) -> str:
+    normalized = status.strip().lower()
+    if normalized not in VALID_AD_CAMPAIGN_STATUSES:
+        raise HTTPException(status_code=422, detail="Unsupported ad campaign status.")
+    return normalized
+
+
 def _social_post_dict(post: SocialPost) -> dict:
     return {
         "id": post.id,
@@ -229,6 +304,26 @@ def _social_post_dict(post: SocialPost) -> dict:
         "status": post.status,
         "scheduled_at": post.scheduled_at.isoformat() if post.scheduled_at else None,
         "created_at": post.created_at.isoformat() if post.created_at else None,
+    }
+
+
+def _ad_campaign_dict(campaign: AdCampaign) -> dict:
+    return {
+        "id": campaign.id,
+        "name": campaign.name,
+        "objective": campaign.objective,
+        "platforms": campaign.platforms or [],
+        "audience": campaign.audience,
+        "location": campaign.location,
+        "creative_message": campaign.creative_message,
+        "link_url": campaign.link_url,
+        "image_url": campaign.image_url,
+        "daily_budget": round(float(campaign.daily_budget or 0), 2),
+        "lifetime_budget": round(float(campaign.lifetime_budget or 0), 2),
+        "start_date": campaign.start_date.isoformat() if campaign.start_date else None,
+        "end_date": campaign.end_date.isoformat() if campaign.end_date else None,
+        "status": campaign.status,
+        "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
     }
 
 
@@ -525,6 +620,46 @@ def create_social_post_from_promotion(
         "status": "social post created",
         "promotion": _promotion_dict(promo),
         "post": _social_post_dict(post),
+    }
+
+
+@router.post("/{promo_id}/ad-campaign")
+def create_ad_campaign_from_promotion(
+    promo_id: int,
+    payload: PromotionAdCampaignCreate,
+    db: Session = Depends(get_db),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+
+    start_date = _parse_optional_ad_date(payload.start_date) or promo.start_date
+    end_date = _parse_optional_ad_date(payload.end_date) or promo.end_date
+    if start_date and end_date and end_date < start_date:
+        raise HTTPException(status_code=422, detail="End date cannot be before start date.")
+
+    campaign = AdCampaign(
+        name=(payload.name or f"Pizza Blitz Ad: {promo.name}").strip(),
+        objective=_normalize_ad_objective(payload.objective),
+        platforms=_normalize_ad_platforms(payload.platforms),
+        audience=(payload.audience or "").strip() or None,
+        location=(payload.location or "").strip() or None,
+        creative_message=_render_ad_message(promo, payload.creative_template).strip(),
+        link_url=(payload.link_url or "").strip() or None,
+        image_url=(payload.image_url or "").strip() or None,
+        daily_budget=payload.daily_budget,
+        lifetime_budget=payload.lifetime_budget,
+        start_date=start_date,
+        end_date=end_date,
+        status=_normalize_ad_campaign_status(payload.status),
+    )
+    db.add(campaign)
+    db.commit()
+    db.refresh(campaign)
+    return {
+        "status": "ad campaign created",
+        "promotion": _promotion_dict(promo),
+        "campaign": _ad_campaign_dict(campaign),
     }
 
 

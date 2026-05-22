@@ -16,6 +16,7 @@ import {
   Send,
   Share2,
   Tag,
+  Target,
   Users,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
@@ -170,6 +171,7 @@ export default function PromotionsPage() {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<"dry_run" | "send" | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
+  const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
 
   useEffect(() => {
     fetchPromotions();
@@ -349,6 +351,35 @@ export default function PromotionsPage() {
     }
   };
 
+  const createAdCampaign = async () => {
+    if (!selectedPromotion) return;
+    setCreatingAdCampaign(true);
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/ad-campaign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          link_url: `${window.location.origin}/order`,
+          image_url: defaultSocialImage,
+          platforms: ["facebook", "instagram"],
+          objective: "sales",
+          daily_budget: 500,
+          status: "ready",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail || "Ad campaign could not be created.");
+        return;
+      }
+      setMessage(`Created ad campaign #${data.campaign.id} from ${selectedPromotion.name}.`);
+    } catch {
+      setMessage("Ad campaign could not be created.");
+    } finally {
+      setCreatingAdCampaign(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -498,6 +529,13 @@ export default function PromotionsPage() {
                     className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Share2 className="h-4 w-4" /> {creatingSocialPost ? "Creating" : "Create Social Post"}
+                  </button>
+                  <button
+                    onClick={createAdCampaign}
+                    disabled={creatingAdCampaign}
+                    className="flex items-center gap-2 rounded-xl bg-sky-500/15 px-5 py-3 font-bold text-sky-100 hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Target className="h-4 w-4" /> {creatingAdCampaign ? "Creating" : "Create Ad Campaign"}
                   </button>
                   <button
                     onClick={() => sendCampaign(true)}
