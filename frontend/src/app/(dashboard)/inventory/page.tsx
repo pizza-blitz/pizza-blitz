@@ -12,6 +12,10 @@ export default function Inventory() {
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isCreatingPO, setIsCreatingPO] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [adjustmentType, setAdjustmentType] = useState<'purchase' | 'usage' | 'wastage'>('purchase');
+  const [adjustmentQty, setAdjustmentQty] = useState("1");
+  const [adjustmentNotes, setAdjustmentNotes] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -20,9 +24,10 @@ export default function Inventory() {
 
   const fetchItems = async () => {
     try {
-      const [res, lowStockRes] = await Promise.all([
+      const [res, lowStockRes, transactionsRes] = await Promise.all([
         fetch(getApiUrl('/api/v1/restaurant/inventory/items')),
         fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock')),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/transactions?limit=12')),
       ]);
       if (res.ok) {
         const data = await res.json();
@@ -38,6 +43,9 @@ export default function Inventory() {
       }
       if (lowStockRes.ok) {
         setLowStock(await lowStockRes.json());
+      }
+      if (transactionsRes.ok) {
+        setTransactions(await transactionsRes.json());
       }
       setIsLoading(false);
     } catch (err) { console.error(err); setIsLoading(false); }
@@ -65,15 +73,40 @@ export default function Inventory() {
     }
   };
 
-  const handleAdjust = async (type: 'purchase' | 'usage' | 'wastage', qty: number) => {
+  const handleAdjust = async () => {
+    if (!selectedItem) return;
+    const quantity = Number(adjustmentQty);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setMessage("Enter a quantity greater than zero.");
+      return;
+    }
+
     setIsAdjusting(true);
-    await new Promise(r => setTimeout(r, 1000));
-    setItems(items.map(i => i.id === selectedItem.id ? {
-      ...i, 
-      current_stock: type === 'purchase' ? i.current_stock + qty : i.current_stock - qty 
-    } : i));
-    setIsAdjusting(false);
-    setSelectedItem(null);
+    setMessage("");
+    try {
+      const response = await fetch(getApiUrl('/api/v1/restaurant/inventory/transaction'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: selectedItem.id,
+          transaction_type: adjustmentType,
+          quantity,
+          unit_cost: adjustmentType === 'purchase' ? selectedItem.cost_per_unit : undefined,
+          notes: adjustmentNotes || `Manual ${adjustmentType} adjustment`,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not update stock.");
+      setMessage(`${selectedItem.name} stock updated to ${data.new_stock} ${selectedItem.unit}.`);
+      setAdjustmentQty("1");
+      setAdjustmentNotes("");
+      setSelectedItem(null);
+      await fetchItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update stock.");
+    } finally {
+      setIsAdjusting(false);
+    }
   };
 
   return (
@@ -163,7 +196,12 @@ export default function Inventory() {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
-                          onClick={() => setSelectedItem(item)}
+                          onClick={() => {
+                            setSelectedItem(item);
+                            setAdjustmentType('purchase');
+                            setAdjustmentQty("1");
+                            setAdjustmentNotes("");
+                          }}
                           className="mx-auto block p-2 hover:bg-orange-50 text-orange-600 rounded-lg transition-colors"
                         >
                           <RefreshCw className="w-4 h-4" />
@@ -246,16 +284,57 @@ export default function Inventory() {
                   <div className="font-bold text-gray-900">{selectedItem.name}</div>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  {['Purchase', 'Usage', 'Wastage'].map(type => (
+                  {['purchase', 'usage', 'wastage'].map(type => (
                     <button 
                       key={type}
-                      onClick={() => handleAdjust(type.toLowerCase() as any, 1)}
-                      className="py-2 text-xs font-bold rounded-lg border border-gray-200 hover:border-orange-500 hover:bg-orange-50 transition-all capitalize"
+                      onClick={() => setAdjustmentType(type as 'purchase' | 'usage' | 'wastage')}
+                      className={`py-2 text-xs font-bold rounded-lg border transition-all capitalize ${
+                        adjustmentType === type
+                          ? 'border-orange-500 bg-orange-50 text-orange-700'
+                          : 'border-gray-200 hover:border-orange-500 hover:bg-orange-50'
+                      }`}
                     >
                       {type}
                     </button>
                   ))}
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="space-y-1">
+                    <span className="text-xs font-bold uppercase text-gray-400">Quantity</span>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={adjustmentQty}
+                      onChange={(event) => setAdjustmentQty(event.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:border-orange-500"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-bold uppercase text-gray-400">Unit</span>
+                    <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold text-gray-600">
+                      {selectedItem.unit}
+                    </div>
+                  </label>
+                </div>
+                <label className="block space-y-1">
+                  <span className="text-xs font-bold uppercase text-gray-400">Notes</span>
+                  <input
+                    type="text"
+                    value={adjustmentNotes}
+                    onChange={(event) => setAdjustmentNotes(event.target.value)}
+                    placeholder="Reason for adjustment"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:border-orange-500"
+                  />
+                </label>
+                <button
+                  onClick={handleAdjust}
+                  disabled={isAdjusting}
+                  className="w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-black text-white hover:bg-orange-700 disabled:bg-gray-300 flex items-center justify-center gap-2"
+                >
+                  {isAdjusting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save Adjustment
+                </button>
                 <button 
                   onClick={() => setSelectedItem(null)}
                   className="w-full py-2 text-xs text-gray-500 hover:text-gray-700"
@@ -266,6 +345,41 @@ export default function Inventory() {
             ) : (
               <p className="text-sm text-gray-500 italic pb-4 text-center">Select an item to adjust stock levels.</p>
             )}
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-900 mb-4 flex items-center">
+              <History className="w-5 h-5 mr-2 text-gray-600" />
+              Recent Stock Movements
+            </h3>
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+              {transactions.map((transaction: any) => (
+                <div key={transaction.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-gray-900">{transaction.item_name || `Item #${transaction.item_id}`}</p>
+                      <p className="text-xs text-gray-500 capitalize">
+                        {transaction.transaction_type} {transaction.notes ? `- ${transaction.notes}` : ""}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-gray-400">
+                        {transaction.created_at ? new Date(transaction.created_at).toLocaleString() : ""}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-sm font-black ${transaction.signed_quantity >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {transaction.signed_quantity >= 0 ? '+' : ''}{transaction.signed_quantity} {transaction.item_unit || ""}
+                      </p>
+                      <p className="text-xs text-gray-500">Rs {Math.round(transaction.total_cost || 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {transactions.length === 0 && (
+                <div className="rounded-xl border border-dashed border-gray-200 p-5 text-center text-sm font-semibold text-gray-500">
+                  No stock movements recorded yet.
+                </div>
+              )}
+            </div>
           </div>
 
           {/* AI Invoice Scanner */}

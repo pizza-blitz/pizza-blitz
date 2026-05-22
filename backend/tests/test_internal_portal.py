@@ -434,12 +434,62 @@ class InternalPortalValidationTest(unittest.TestCase):
 
             inventory_after_repeat = client.get("/api/v1/restaurant/inventory/items")
             self.assertEqual(inventory_after_repeat.status_code, 200)
+            inventory_items_after_repeat = inventory_after_repeat.json()
             repeat_stock_by_name = {
                 item["name"]: item["current_stock"]
-                for item in inventory_after_repeat.json()
+                for item in inventory_items_after_repeat
             }
             self.assertEqual(repeat_stock_by_name["Mozzarella"], 760)
             self.assertEqual(repeat_stock_by_name["Pizza Base"], 98)
+            inventory_id_by_name = {
+                item["name"]: item["id"]
+                for item in inventory_items_after_repeat
+            }
+
+            usage_transactions = client.get(
+                f"/api/v1/restaurant/inventory/transactions?item_id={inventory_id_by_name['Mozzarella']}&limit=5"
+            )
+            self.assertEqual(usage_transactions.status_code, 200)
+            self.assertIn(
+                "usage",
+                [transaction["transaction_type"] for transaction in usage_transactions.json()],
+            )
+
+            manual_wastage = client.post(
+                "/api/v1/restaurant/inventory/transaction",
+                json={
+                    "item_id": inventory_id_by_name["Pizza Base"],
+                    "transaction_type": "wastage",
+                    "quantity": 1,
+                    "unit_cost": 20,
+                    "notes": "Test stock count correction",
+                },
+            )
+            self.assertEqual(manual_wastage.status_code, 200)
+            self.assertEqual(manual_wastage.json()["new_stock"], 97)
+            self.assertEqual(
+                manual_wastage.json()["transaction"]["signed_quantity"],
+                -1,
+            )
+
+            invalid_transaction = client.post(
+                "/api/v1/restaurant/inventory/transaction",
+                json={
+                    "item_id": inventory_id_by_name["Pizza Base"],
+                    "transaction_type": "spoiled",
+                    "quantity": 1,
+                },
+            )
+            self.assertEqual(invalid_transaction.status_code, 422)
+
+            recent_transactions = client.get(
+                "/api/v1/restaurant/inventory/transactions?limit=10"
+            )
+            self.assertEqual(recent_transactions.status_code, 200)
+            self.assertIn(
+                "Test stock count correction",
+                [transaction["notes"] for transaction in recent_transactions.json()],
+            )
 
             for low_stock_item in [
                 {
@@ -568,6 +618,15 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertIn(
                 "Tomato Sauce",
                 [item["item_name"] for item in recent_vendor_prices.json()],
+            )
+
+            purchase_transactions = client.get(
+                "/api/v1/restaurant/inventory/transactions?transaction_type=purchase&limit=10"
+            )
+            self.assertEqual(purchase_transactions.status_code, 200)
+            self.assertIn(
+                "Tomato Sauce",
+                [transaction["item_name"] for transaction in purchase_transactions.json()],
             )
 
             low_stock_after_receive = client.get(

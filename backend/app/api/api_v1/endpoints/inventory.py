@@ -31,6 +31,26 @@ class TransactionRequest(BaseModel):
     notes: Optional[str] = None
 
 
+def _transaction_dict(transaction: InventoryTransaction, item: InventoryItem | None = None) -> dict:
+    quantity = float(transaction.quantity or 0)
+    transaction_type = transaction.transaction_type or ""
+    signed_quantity = quantity if transaction_type == "purchase" else -quantity
+    return {
+        "id": transaction.id,
+        "item_id": transaction.item_id,
+        "item_name": item.name if item else None,
+        "item_unit": item.unit if item else None,
+        "transaction_type": transaction_type,
+        "quantity": quantity,
+        "signed_quantity": signed_quantity,
+        "unit_cost": float(transaction.unit_cost or 0),
+        "total_cost": float(transaction.total_cost or 0),
+        "notes": transaction.notes,
+        "photo_url": transaction.photo_url,
+        "created_at": transaction.created_at.isoformat() if transaction.created_at else None,
+    }
+
+
 def _reorder_quantity(item: InventoryItem) -> float:
     current_stock = float(item.current_stock or 0)
     minimum_stock = float(item.minimum_stock or 0)
@@ -94,6 +114,31 @@ def low_stock_summary(db: Session = Depends(get_db)):
         ),
     }
 
+@router.get("/transactions")
+def get_inventory_transactions(
+    item_id: Optional[int] = None,
+    transaction_type: Optional[str] = None,
+    limit: int = 25,
+    db: Session = Depends(get_db),
+):
+    capped_limit = min(max(limit, 1), 100)
+    query = (
+        db.query(InventoryTransaction, InventoryItem)
+        .outerjoin(InventoryItem, InventoryTransaction.item_id == InventoryItem.id)
+    )
+    if item_id is not None:
+        query = query.filter(InventoryTransaction.item_id == item_id)
+    if transaction_type:
+        query = query.filter(InventoryTransaction.transaction_type == transaction_type)
+
+    rows = (
+        query
+        .order_by(InventoryTransaction.created_at.desc(), InventoryTransaction.id.desc())
+        .limit(capped_limit)
+        .all()
+    )
+    return [_transaction_dict(transaction, item) for transaction, item in rows]
+
 @router.post("/items", response_model=InventoryItemSchema)
 def update_or_create_item(item: InventoryItemSchema, db: Session = Depends(get_db)):
     if item.id:
@@ -113,13 +158,17 @@ def update_or_create_item(item: InventoryItemSchema, db: Session = Depends(get_d
 def record_transaction(req: TransactionRequest, db: Session = Depends(get_db)):
     item = db.query(InventoryItem).filter(InventoryItem.id == req.item_id).first()
     if not item: raise HTTPException(status_code=404, detail="Item not found")
+    if req.quantity <= 0:
+        raise HTTPException(status_code=422, detail="Quantity must be greater than zero")
+    if req.transaction_type not in ["purchase", "usage", "wastage"]:
+        raise HTTPException(status_code=422, detail="Transaction type must be purchase, usage, or wastage")
     
     # Update stock
     if req.transaction_type == "purchase":
-        item.current_stock += req.quantity
+        item.current_stock = round(float(item.current_stock or 0) + req.quantity, 4)
         if req.unit_cost: item.cost_per_unit = req.unit_cost
     elif req.transaction_type in ["usage", "wastage"]:
-        item.current_stock -= req.quantity
+        item.current_stock = round(float(item.current_stock or 0) - req.quantity, 4)
     
     transaction = InventoryTransaction(
         item_id=req.item_id,
@@ -131,7 +180,13 @@ def record_transaction(req: TransactionRequest, db: Session = Depends(get_db)):
     )
     db.add(transaction)
     db.commit()
-    return {"status": "success", "new_stock": item.current_stock}
+    db.refresh(transaction)
+    db.refresh(item)
+    return {
+        "status": "success",
+        "new_stock": item.current_stock,
+        "transaction": _transaction_dict(transaction, item),
+    }
 
 @router.post("/extract-invoice")
 async def extract_invoice(file: UploadFile = File(...)):
