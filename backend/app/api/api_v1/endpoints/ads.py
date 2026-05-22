@@ -143,6 +143,21 @@ def _launch_counts(launches: list[AdCampaignLaunch]) -> dict:
     }
 
 
+def _campaign_launch_blockers(campaign: AdCampaign, provider_status: dict) -> list[str]:
+    blockers: list[str] = []
+    if not provider_status.get("configured"):
+        blockers.extend(provider_status.get("missing_settings") or ["Meta Ads provider setup"])
+    if not (float(campaign.daily_budget or 0) > 0 or float(campaign.lifetime_budget or 0) > 0):
+        blockers.append("Daily or lifetime budget")
+    if not (campaign.platforms or []):
+        blockers.append("At least one platform")
+    if not (campaign.creative_message or "").strip():
+        blockers.append("Creative message")
+    if campaign.status not in {"planned", "ready"}:
+        blockers.append("Campaign must be planned or ready")
+    return sorted(set(blockers))
+
+
 @router.get("/provider-status")
 def ads_provider_status():
     return ad_provider_status()
@@ -179,6 +194,53 @@ def ads_summary(db: Session = Depends(get_db)):
         "average_cpc": round(spend_value / clicks_value, 2) if clicks_value else 0,
         "average_cpa": round(spend_value / conversions_value, 2) if conversions_value else 0,
         "roas": round(revenue_value / spend_value, 2) if spend_value else 0,
+    }
+
+
+@router.get("/launch-readiness")
+def ads_launch_readiness(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    provider_status = ad_provider_status()
+    campaigns = (
+        db.query(AdCampaign)
+        .filter(AdCampaign.status.in_(["draft", "planned", "ready", "failed"]))
+        .order_by(AdCampaign.updated_at.desc(), AdCampaign.id.desc())
+        .limit(limit)
+        .all()
+    )
+    rows = []
+    ready_count = 0
+    blocked_count = 0
+    planned_budget = 0.0
+
+    for campaign in campaigns:
+        budget = float(campaign.daily_budget or campaign.lifetime_budget or 0)
+        planned_budget += budget
+        blockers = _campaign_launch_blockers(campaign, provider_status)
+        eligible = not blockers
+        ready_count += 1 if eligible else 0
+        blocked_count += 0 if eligible else 1
+        rows.append(
+            {
+                "id": campaign.id,
+                "name": campaign.name,
+                "objective": campaign.objective,
+                "status": campaign.status,
+                "platforms": campaign.platforms or [],
+                "budget": round(budget, 2),
+                "eligible": eligible,
+                "blockers": blockers,
+            }
+        )
+
+    return {
+        "provider_status": provider_status,
+        "ready_count": ready_count,
+        "blocked_count": blocked_count,
+        "planned_budget": round(planned_budget, 2),
+        "campaigns": rows,
     }
 
 

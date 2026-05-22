@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BarChart3,
   CheckCircle2,
   Link as LinkIcon,
@@ -84,6 +85,25 @@ type LaunchHistory = {
   launches: AdLaunch[];
 };
 
+type ReadinessCampaign = {
+  id: number;
+  name: string;
+  objective: ObjectiveKey;
+  status: CampaignStatus;
+  platforms: PlatformKey[];
+  budget: number;
+  eligible: boolean;
+  blockers: string[];
+};
+
+type LaunchReadiness = {
+  provider_status: ProviderStatus;
+  ready_count: number;
+  blocked_count: number;
+  planned_budget: number;
+  campaigns: ReadinessCampaign[];
+};
+
 type CampaignForm = {
   name: string;
   objective: ObjectiveKey;
@@ -141,6 +161,7 @@ export default function AdsManagerPage() {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [summary, setSummary] = useState<AdsSummary | null>(null);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
+  const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<LaunchHistory | null>(null);
   const [campaignForm, setCampaignForm] = useState(emptyCampaign);
@@ -178,13 +199,15 @@ export default function AdsManagerPage() {
 
   const fetchAds = async () => {
     setLoading(true);
-    const [statusResponse, summaryResponse, campaignsResponse] = await Promise.all([
+    const [statusResponse, summaryResponse, campaignsResponse, readinessResponse] = await Promise.all([
       fetch(`${ADS_API}/provider-status`),
       fetch(`${ADS_API}/summary`),
       fetch(`${ADS_API}/campaigns`),
+      fetch(`${ADS_API}/launch-readiness`),
     ]);
     if (statusResponse.ok) setProviderStatus(await statusResponse.json());
     if (summaryResponse.ok) setSummary(await summaryResponse.json());
+    if (readinessResponse.ok) setLaunchReadiness(await readinessResponse.json());
     if (campaignsResponse.ok) {
       const data: AdCampaign[] = await campaignsResponse.json();
       setCampaigns(data);
@@ -331,6 +354,90 @@ export default function AdsManagerPage() {
         <Metric label="Revenue" value={`Rs ${Math.round(summary?.total_revenue || 0).toLocaleString()}`} icon={CheckCircle2} />
         <Metric label="ROAS" value={`${summary?.roas || 0}x`} icon={Send} />
       </div>
+
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-black">Meta Ads Launch Console</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Launch readiness for paused Meta campaign shells before ad sets and creatives are activated.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-4 py-2 text-xs font-black uppercase ${
+              launchReadiness?.provider_status.configured
+                ? "bg-green-500/10 text-green-300"
+                : "bg-yellow-500/10 text-yellow-300"
+            }`}
+          >
+            {launchReadiness?.provider_status.configured ? "Meta ready" : "Setup needed"}
+          </span>
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-4">
+          <ReadinessMetric label="Ready" value={launchReadiness?.ready_count || 0} icon={CheckCircle2} />
+          <ReadinessMetric label="Blocked" value={launchReadiness?.blocked_count || 0} icon={AlertTriangle} />
+          <ReadinessMetric
+            label="Planned Budget"
+            value={`Rs ${Math.round(launchReadiness?.planned_budget || 0).toLocaleString()}`}
+            icon={BarChart3}
+          />
+          <ReadinessMetric
+            label="Launch Mode"
+            value={launchReadiness?.provider_status.launch_mode?.replaceAll("_", " ") || "paused campaign"}
+            icon={Target}
+          />
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-500">
+            {launchReadiness?.provider_status.configured ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-300" />
+            ) : (
+              <AlertTriangle className="h-3.5 w-3.5 text-yellow-300" />
+            )}
+            Meta Ads Provider
+          </div>
+          <p className="text-sm font-semibold leading-6 text-gray-400">
+            {launchReadiness?.provider_status.configured
+              ? "Meta Ads can create paused campaigns for final review inside Meta Ads Manager."
+              : launchReadiness?.provider_status.missing_settings.join(", ") || "Provider status is loading."}
+          </p>
+        </div>
+
+        {launchReadiness?.campaigns.length ? (
+          <div className="mt-5 rounded-xl border border-white/5 bg-black/25 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="font-black">Campaign Preflight</h3>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                {launchReadiness.campaigns.length} checked
+              </span>
+            </div>
+            <div className="space-y-2">
+              {launchReadiness.campaigns.slice(0, 5).map((campaign) => (
+                <div key={`ready-${campaign.id}`} className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-sm md:grid-cols-12">
+                  <div className="md:col-span-4">
+                    <p className="font-bold text-white">{campaign.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {objectiveLabel(campaign.objective)} | Rs {Math.round(campaign.budget).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${campaign.eligible ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"}`}>
+                      {campaign.eligible ? "ready" : "blocked"}
+                    </span>
+                  </div>
+                  <div className="text-gray-400 md:col-span-6">
+                    {campaign.eligible
+                      ? campaign.platforms.map((platform) => platformLabels[platform]).join(", ")
+                      : campaign.blockers.join(", ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="xl:col-span-5">
@@ -611,6 +718,25 @@ function Metric({
       </div>
       <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function ReadinessMetric({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-500">
+        <Icon className="h-4 w-4 text-orange-400" /> {label}
+      </div>
+      <p className="mt-3 text-2xl font-black capitalize">{value}</p>
     </div>
   );
 }
