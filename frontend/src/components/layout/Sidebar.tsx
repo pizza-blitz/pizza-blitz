@@ -8,7 +8,7 @@ import {
 
 export default function Sidebar() {
   const navItems = [
-    { name: "Dashboard", href: "/", icon: LayoutDashboard },
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "CEO Command", href: "/ceo", icon: Crown },
     { name: "POS (Orders)", href: "/orders", icon: ShoppingCart },
     { name: "Kitchen Ops", href: "/operations", icon: Flame },

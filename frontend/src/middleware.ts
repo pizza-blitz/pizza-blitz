@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from "next/server";
 const ADMIN_COOKIE = "pb_admin_session";
 
 const protectedRoutes = [
-  "/",
   "/dashboard",
   "/ceo",
   "/orders",
@@ -40,7 +39,7 @@ export function middleware(request: NextRequest) {
   const hasAdminSession = request.cookies.has(ADMIN_COOKIE);
 
   if (pathname === "/login" && hasAdminSession) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   if (isProtectedPath(pathname) && !hasAdminSession) {
