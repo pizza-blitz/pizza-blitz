@@ -70,9 +70,10 @@ export default function PurchaseOrders() {
       if (!response.ok) throw new Error(data.detail || "Could not update purchase order.");
 
       const updatedItems = data.inventory_updates?.length || 0;
+      const expenseAmount = Number(data.expense?.amount || 0);
       setMessage(
         action === "receive"
-          ? `Received PO-${orderId} and updated ${updatedItems} inventory item${updatedItems === 1 ? "" : "s"}.`
+          ? `Received PO-${orderId}, updated ${updatedItems} inventory item${updatedItems === 1 ? "" : "s"}, and posted expense Rs. ${expenseAmount.toLocaleString()}.`
           : `Marked PO-${orderId} as sent.`
       );
       await fetchOrders();

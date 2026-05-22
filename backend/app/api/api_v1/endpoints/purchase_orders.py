@@ -2,9 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Any
 from app.api.deps import get_db
-from app.models.domain import InventoryItem, InventoryTransaction, PurchaseOrder
+from app.models.domain import (
+    DailySales,
+    Expense,
+    ExpenseCategory,
+    InventoryItem,
+    InventoryTransaction,
+    PurchaseOrder,
+)
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import date, datetime
 
 router = APIRouter()
 
@@ -215,6 +222,65 @@ def _purchase_order_total(items: List[dict]) -> float:
     return round(sum(float(item.get("estimated_cost") or 0) for item in items), 2)
 
 
+def _ensure_inventory_expense_category(db: Session) -> ExpenseCategory:
+    category = (
+        db.query(ExpenseCategory)
+        .filter(ExpenseCategory.name == "Inventory Purchase")
+        .first()
+    )
+    if category:
+        if not category.is_active:
+            category.is_active = True
+        return category
+
+    category = ExpenseCategory(name="Inventory Purchase", is_active=True)
+    db.add(category)
+    db.flush()
+    return category
+
+
+def _post_purchase_order_expense(order: PurchaseOrder, db: Session) -> Expense | None:
+    amount = round(float(order.total_amount or 0), 2)
+    if amount <= 0:
+        return None
+
+    description = f"Purchase order #{order.id} received from {order.supplier_name}"
+    existing_expense = (
+        db.query(Expense)
+        .filter(Expense.description == description)
+        .first()
+    )
+    if existing_expense:
+        return existing_expense
+
+    category = _ensure_inventory_expense_category(db)
+    expense = Expense(
+        date=datetime.utcnow(),
+        category_id=category.id,
+        amount=amount,
+        description=description,
+    )
+    db.add(expense)
+
+    today = date.today()
+    daily = db.query(DailySales).filter(DailySales.date == today).first()
+    if daily:
+        daily.total_expense = round(float(daily.total_expense or 0) + amount, 2)
+        daily.profit = round(float(daily.total_sale or 0) - float(daily.total_expense or 0), 2)
+    else:
+        db.add(DailySales(
+            date=today,
+            cash_collected=0,
+            total_sale=0,
+            total_expense=amount,
+            profit=round(-amount, 2),
+            payment_method="mixed",
+            notes=f"Auto expense from PO-{order.id}",
+        ))
+
+    return expense
+
+
 @router.get("/", response_model=List[Any])
 def get_purchase_orders(db: Session = Depends(get_db)):
     return db.query(PurchaseOrder).all()
@@ -328,14 +394,18 @@ def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
 
     inventory_updates, skipped_items = _receive_inventory(order, db)
     order.status = "received"
+    expense = _post_purchase_order_expense(order, db)
     db.commit()
     db.refresh(order)
+    if expense:
+        db.refresh(expense)
 
     return {
         "status": order.status,
         "purchase_order": order,
         "inventory_updates": inventory_updates,
         "skipped_items": skipped_items,
+        "expense": expense,
     }
 
 

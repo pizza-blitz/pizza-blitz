@@ -542,6 +542,11 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(updates_by_name["Basil"]["quantity"], 8)
             self.assertEqual(updates_by_name["Basil"]["new_stock"], 9)
             self.assertEqual(updates_by_name["Basil"]["unit_cost"], 22)
+            self.assertEqual(received_po.json()["expense"]["amount"], 2156)
+            self.assertIn(
+                f"Purchase order #{draft_id}",
+                received_po.json()["expense"]["description"],
+            )
 
             low_stock_after_receive = client.get(
                 "/api/v1/restaurant/inventory/low-stock"
@@ -554,6 +559,16 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(repeated_receive.status_code, 200)
             self.assertEqual(repeated_receive.json()["inventory_updates"], [])
+
+            purchase_expenses = client.get("/api/v1/restaurant/expenses/expenses")
+            self.assertEqual(purchase_expenses.status_code, 200)
+            posted_po_expenses = [
+                expense
+                for expense in purchase_expenses.json()
+                if f"Purchase order #{draft_id}" in (expense["description"] or "")
+            ]
+            self.assertEqual(len(posted_po_expenses), 1)
+            self.assertEqual(posted_po_expenses[0]["amount"], 2156)
 
             received_reconcile = client.patch(
                 f"/api/v1/restaurant/purchase-orders/{draft_id}/items",
