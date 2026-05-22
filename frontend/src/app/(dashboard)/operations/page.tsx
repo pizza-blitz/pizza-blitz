@@ -191,7 +191,10 @@ export default function OperationsPage() {
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not close order.");
-      setMessage(`Order #${order.id} closed.`);
+      const usageCount = Array.isArray(data.inventory_usage) ? data.inventory_usage.length : 0;
+      setMessage(
+        `Order #${order.id} closed${usageCount ? ` and ${usageCount} ingredients updated.` : "."}`
+      );
       await fetchOrders();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not close order.");

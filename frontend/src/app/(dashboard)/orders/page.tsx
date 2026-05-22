@@ -180,7 +180,12 @@ export default function OrdersPage() {
       { method: "PATCH" }
     );
     const data = await response.json();
-    setMessage(response.ok ? `Order #${order.id} closed.` : data.detail || "Could not close order.");
+    const usageCount = Array.isArray(data.inventory_usage) ? data.inventory_usage.length : 0;
+    setMessage(
+      response.ok
+        ? `Order #${order.id} closed${usageCount ? ` and ${usageCount} ingredients updated.` : "."}`
+        : data.detail || "Could not close order."
+    );
     await fetchData();
   };
 

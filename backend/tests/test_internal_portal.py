@@ -410,6 +410,36 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(closed_takeaway.status_code, 200)
             self.assertEqual(closed_takeaway.json()["status"], "closed")
+            usage_by_ingredient = {
+                item["ingredient_name"]: item
+                for item in closed_takeaway.json()["inventory_usage"]
+            }
+            self.assertEqual(usage_by_ingredient["Mozzarella"]["quantity"], 240)
+            self.assertEqual(usage_by_ingredient["Pizza Base"]["quantity"], 2)
+
+            inventory_after_close = client.get("/api/v1/restaurant/inventory/items")
+            self.assertEqual(inventory_after_close.status_code, 200)
+            stock_by_name = {
+                item["name"]: item["current_stock"]
+                for item in inventory_after_close.json()
+            }
+            self.assertEqual(stock_by_name["Mozzarella"], 760)
+            self.assertEqual(stock_by_name["Pizza Base"], 98)
+
+            repeated_close = client.patch(
+                f"/api/v1/restaurant/orders/{takeaway_id}/close?payment_method=upi"
+            )
+            self.assertEqual(repeated_close.status_code, 200)
+            self.assertEqual(repeated_close.json()["inventory_usage"], [])
+
+            inventory_after_repeat = client.get("/api/v1/restaurant/inventory/items")
+            self.assertEqual(inventory_after_repeat.status_code, 200)
+            repeat_stock_by_name = {
+                item["name"]: item["current_stock"]
+                for item in inventory_after_repeat.json()
+            }
+            self.assertEqual(repeat_stock_by_name["Mozzarella"], 760)
+            self.assertEqual(repeat_stock_by_name["Pizza Base"], 98)
 
             closed_status_update = client.patch(
                 f"/api/v1/restaurant/orders/{takeaway_id}/status",

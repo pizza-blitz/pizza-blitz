@@ -6,7 +6,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.models.domain import Customer, DailySales, DiningTable, Invoice, Promotion, RestaurantOrder
+from app.models.domain import (
+    Customer,
+    DailySales,
+    DiningTable,
+    InventoryItem,
+    InventoryTransaction,
+    Invoice,
+    Promotion,
+    Recipe,
+    RestaurantOrder,
+)
 from app.services.payment_gateway import create_payment_session
 
 
@@ -23,6 +33,8 @@ DEFAULT_TABLES = [
     ("T7", 2),
     ("T8", 4),
 ]
+
+ORDER_USAGE_NOTE_PREFIX = "Auto usage from order"
 
 
 class OrderItem(BaseModel):
@@ -229,6 +241,86 @@ def append_order_note(notes: Optional[str], extra: str) -> str:
     return extra
 
 
+def inventory_usage_note(order_id: int, menu_item: str) -> str:
+    return f"{ORDER_USAGE_NOTE_PREFIX} #{order_id}: {menu_item}"
+
+
+def order_inventory_already_deducted(db: Session, order_id: int) -> bool:
+    return (
+        db.query(InventoryTransaction)
+        .filter(InventoryTransaction.transaction_type == "usage")
+        .filter(InventoryTransaction.notes.like(f"{ORDER_USAGE_NOTE_PREFIX} #{order_id}:%"))
+        .first()
+        is not None
+    )
+
+
+def deduct_inventory_for_order(db: Session, order: RestaurantOrder) -> list[dict]:
+    if order_inventory_already_deducted(db, order.id):
+        return []
+
+    recipe_by_menu_item = {
+        recipe.menu_item.strip().lower(): recipe
+        for recipe in db.query(Recipe).all()
+        if recipe.menu_item
+    }
+    inventory_by_name = {
+        item.name.strip().lower(): item
+        for item in db.query(InventoryItem).all()
+        if item.name
+    }
+
+    usage_rows = []
+    for ordered_item in order.items or []:
+        menu_item_name = str(ordered_item.get("name") or "").strip()
+        ordered_quantity = float(ordered_item.get("quantity") or 0)
+        if not menu_item_name or ordered_quantity <= 0:
+            continue
+
+        recipe = recipe_by_menu_item.get(menu_item_name.lower())
+        if not recipe:
+            continue
+
+        for ingredient in recipe.ingredients or []:
+            ingredient_name = str(ingredient.get("name") or "").strip()
+            recipe_quantity = float(ingredient.get("quantity") or 0)
+            if not ingredient_name or recipe_quantity <= 0:
+                continue
+
+            inventory_item = inventory_by_name.get(ingredient_name.lower())
+            if not inventory_item:
+                continue
+
+            usage_quantity = round(recipe_quantity * ordered_quantity, 4)
+            unit_cost = float(inventory_item.cost_per_unit or 0)
+            inventory_item.current_stock = round(
+                float(inventory_item.current_stock or 0) - usage_quantity,
+                4,
+            )
+            transaction = InventoryTransaction(
+                item_id=inventory_item.id,
+                transaction_type="usage",
+                quantity=usage_quantity,
+                unit_cost=unit_cost,
+                total_cost=round(usage_quantity * unit_cost, 2),
+                notes=inventory_usage_note(order.id, menu_item_name),
+            )
+            db.add(transaction)
+            usage_rows.append(
+                {
+                    "inventory_item_id": inventory_item.id,
+                    "ingredient_name": inventory_item.name,
+                    "menu_item": menu_item_name,
+                    "quantity": usage_quantity,
+                    "unit": ingredient.get("unit") or inventory_item.unit,
+                    "new_stock": inventory_item.current_stock,
+                    "estimated_cost": transaction.total_cost,
+                }
+            )
+
+    return usage_rows
+
+
 def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
     phone = (order.customer_phone or "").strip()
     if not phone:
@@ -344,6 +436,7 @@ def close_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    inventory_usage = []
     if order.status != "closed":
         requested_payment_method = (
             payment_method.strip().lower()
@@ -364,6 +457,7 @@ def close_order(
         order.payment_status = "paid"
         order.status = "closed"
         order.closed_at = datetime.utcnow()
+        inventory_usage = deduct_inventory_for_order(db, order)
 
         if order.table_number:
             table = db.query(DiningTable).filter(
@@ -393,7 +487,11 @@ def close_order(
             db.add(daily)
 
     db.commit()
-    return {"status": "closed", "total_collected": order.total_amount}
+    return {
+        "status": "closed",
+        "total_collected": order.total_amount,
+        "inventory_usage": inventory_usage,
+    }
 
 
 @router.patch("/{order_id}/status")
