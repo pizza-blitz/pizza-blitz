@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,11 @@ from app.models.domain import (
     Recipe,
     RestaurantOrder,
 )
-from app.services.payment_gateway import create_payment_session
+from app.services.payment_gateway import (
+    PaymentWebhookError,
+    create_payment_session,
+    normalize_payment_webhook,
+)
 
 
 router = APIRouter()
@@ -232,6 +236,35 @@ def order_next_action(order: RestaurantOrder) -> str:
     if order.status == "closed":
         return "Order completed. Thank you for ordering."
     return "Order is being processed."
+
+
+def apply_order_payment(
+    db: Session,
+    order: RestaurantOrder,
+    *,
+    provider: str,
+    reference: Optional[str],
+    paid_amount: Optional[float],
+) -> tuple[dict, bool]:
+    settled_amount = paid_amount if paid_amount is not None else order.total_amount
+    if round(float(settled_amount or 0), 2) < round(float(order.total_amount or 0), 2):
+        raise HTTPException(status_code=422, detail="Paid amount is below order total.")
+
+    if (order.payment_status or "").lower() == "paid":
+        return serialize_order(order), False
+
+    order.payment_method = "prepaid"
+    order.payment_status = "paid"
+    order.payment_provider = (provider or "manual").strip().lower() or "manual"
+    order.payment_reference = (
+        reference.strip()
+        if reference and reference.strip()
+        else f"{order.payment_provider.upper()}-{order.id}"
+    )
+    order.payment_confirmed_at = datetime.utcnow()
+    db.commit()
+    db.refresh(order)
+    return serialize_order(order), True
 
 
 def normalize_coupon_code(value: Optional[str]) -> Optional[str]:
@@ -617,22 +650,63 @@ def confirm_order_payment(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    paid_amount = payload.paid_amount if payload.paid_amount is not None else order.total_amount
-    if round(float(paid_amount or 0), 2) < round(float(order.total_amount or 0), 2):
-        raise HTTPException(status_code=422, detail="Paid amount is below order total.")
-
-    order.payment_method = "prepaid"
-    order.payment_status = "paid"
-    order.payment_provider = payload.payment_provider.strip() or "manual"
-    order.payment_reference = (
-        payload.payment_reference.strip()
-        if payload.payment_reference
-        else f"PB-PAY-{order.id}"
+    payment_order, _ = apply_order_payment(
+        db,
+        order,
+        provider=payload.payment_provider,
+        reference=payload.payment_reference or f"PB-PAY-{order.id}",
+        paid_amount=payload.paid_amount,
     )
-    order.payment_confirmed_at = datetime.utcnow()
-    db.commit()
-    db.refresh(order)
-    return serialize_order(order)
+    return payment_order
+
+
+@router.post("/payments/webhook/{provider}")
+async def process_payment_webhook(
+    provider: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    raw_body = await request.body()
+    try:
+        event = normalize_payment_webhook(provider, raw_body, request.headers)
+    except PaymentWebhookError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    order = None
+    if event.get("order_id"):
+        order = db.query(RestaurantOrder).filter(
+            RestaurantOrder.id == int(event["order_id"])
+        ).first()
+    if order is None and event.get("provider_order_id"):
+        order = db.query(RestaurantOrder).filter(
+            RestaurantOrder.payment_session_id == str(event["provider_order_id"])
+        ).first()
+    if order is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Webhook did not match an existing order.",
+        )
+
+    if event["status"] != "paid":
+        return {
+            "status": "ignored",
+            "event": event["event_type"],
+            "payment_status": order.payment_status,
+            "order": serialize_order(order),
+        }
+
+    payment_order, changed = apply_order_payment(
+        db,
+        order,
+        provider=event["provider"],
+        reference=event.get("provider_payment_id") or event.get("provider_order_id"),
+        paid_amount=event.get("paid_amount"),
+    )
+    return {
+        "status": "processed" if changed else "already_paid",
+        "event": event["event_type"],
+        "order": payment_order,
+    }
 
 
 @router.post("/{order_id}/invoice")

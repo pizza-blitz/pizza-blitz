@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 import os
 import unittest
 from datetime import date, timedelta
@@ -6,6 +9,7 @@ os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 
 
@@ -850,6 +854,124 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(payment.status_code, 200)
             self.assertEqual(payment.json()["payment_status"], "paid")
             self.assertEqual(payment.json()["payment_reference"], "TEST-PAY-001")
+
+            webhook_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "pickup",
+                    "customer_name": "Webhook Guest",
+                    "customer_phone": "9666666666",
+                    "payment_method": "prepaid",
+                    "items": [
+                        {"name": "Garlic Bread", "quantity": 1, "price": 119}
+                    ],
+                },
+            )
+            self.assertEqual(webhook_order.status_code, 200)
+            webhook_order_id = webhook_order.json()["order_id"]
+
+            manual_webhook = client.post(
+                "/api/v1/restaurant/orders/payments/webhook/manual",
+                json={
+                    "order_id": webhook_order_id,
+                    "payment_reference": "WEBHOOK-MANUAL-001",
+                    "paid_amount": webhook_order.json()["total"],
+                    "status": "paid",
+                },
+            )
+            self.assertEqual(manual_webhook.status_code, 200)
+            self.assertEqual(manual_webhook.json()["status"], "processed")
+            self.assertEqual(
+                manual_webhook.json()["order"]["payment_status"],
+                "paid",
+            )
+            self.assertEqual(
+                manual_webhook.json()["order"]["payment_reference"],
+                "WEBHOOK-MANUAL-001",
+            )
+
+            repeated_manual_webhook = client.post(
+                "/api/v1/restaurant/orders/payments/webhook/manual",
+                json={
+                    "order_id": webhook_order_id,
+                    "payment_reference": "WEBHOOK-MANUAL-001",
+                    "paid_amount": webhook_order.json()["total"],
+                    "status": "paid",
+                },
+            )
+            self.assertEqual(repeated_manual_webhook.status_code, 200)
+            self.assertEqual(repeated_manual_webhook.json()["status"], "already_paid")
+
+            gateway_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "pickup",
+                    "customer_name": "Gateway Guest",
+                    "customer_phone": "9555555555",
+                    "payment_method": "prepaid",
+                    "items": [
+                        {"name": "Garlic Bread", "quantity": 1, "price": 119}
+                    ],
+                },
+            )
+            self.assertEqual(gateway_order.status_code, 200)
+            gateway_order_id = gateway_order.json()["order_id"]
+            razorpay_payload = {
+                "event": "payment.captured",
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "id": "pay_test_001",
+                            "order_id": f"razorpay_{gateway_order_id}",
+                            "amount": int(round(gateway_order.json()["total"] * 100)),
+                            "status": "captured",
+                            "notes": {"order_id": str(gateway_order_id)},
+                        }
+                    }
+                },
+            }
+            razorpay_body = json.dumps(
+                razorpay_payload,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            old_razorpay_secret = settings.RAZORPAY_WEBHOOK_SECRET
+            settings.RAZORPAY_WEBHOOK_SECRET = "test_webhook_secret"
+            try:
+                bad_gateway_webhook = client.post(
+                    "/api/v1/restaurant/orders/payments/webhook/razorpay",
+                    content=razorpay_body,
+                    headers={
+                        "content-type": "application/json",
+                        "x-razorpay-signature": "bad-signature",
+                    },
+                )
+                self.assertEqual(bad_gateway_webhook.status_code, 401)
+
+                razorpay_signature = hmac.new(
+                    b"test_webhook_secret",
+                    razorpay_body,
+                    hashlib.sha256,
+                ).hexdigest()
+                gateway_webhook = client.post(
+                    "/api/v1/restaurant/orders/payments/webhook/razorpay",
+                    content=razorpay_body,
+                    headers={
+                        "content-type": "application/json",
+                        "x-razorpay-signature": razorpay_signature,
+                    },
+                )
+                self.assertEqual(gateway_webhook.status_code, 200)
+                self.assertEqual(gateway_webhook.json()["status"], "processed")
+                self.assertEqual(
+                    gateway_webhook.json()["order"]["payment_status"],
+                    "paid",
+                )
+                self.assertEqual(
+                    gateway_webhook.json()["order"]["payment_reference"],
+                    "pay_test_001",
+                )
+            finally:
+                settings.RAZORPAY_WEBHOOK_SECRET = old_razorpay_secret
 
 
 if __name__ == "__main__":

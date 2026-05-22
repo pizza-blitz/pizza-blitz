@@ -29,8 +29,10 @@ class Settings(BaseSettings):
     PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://localhost:3000/account")
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
+    CASHFREE_WEBHOOK_SECRET: str | None = os.getenv("CASHFREE_WEBHOOK_SECRET")
     RAZORPAY_KEY_ID: str | None = os.getenv("RAZORPAY_KEY_ID")
     RAZORPAY_KEY_SECRET: str | None = os.getenv("RAZORPAY_KEY_SECRET")
+    RAZORPAY_WEBHOOK_SECRET: str | None = os.getenv("RAZORPAY_WEBHOOK_SECRET")
 
     class Config:
         case_sensitive = True
