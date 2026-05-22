@@ -22,11 +22,11 @@ const menuHighlights = [
       "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=900&q=80",
   },
   {
-    name: "Garlic Bread",
-    detail: "Oven baked sides for pickup or delivery",
-    price: "from Rs 119",
+    name: "French Fries",
+    detail: "Crispy sides for pickup or delivery",
+    price: "from Rs 89",
     image:
-      "https://images.unsplash.com/photo-1619535860434-cf9b38f60d6a?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?auto=format&fit=crop&w=900&q=80",
   },
   {
     name: "Cold Coffee",
