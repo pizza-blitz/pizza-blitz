@@ -60,12 +60,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Business Intelligence</h1>
-          <p className="text-gray-500 text-sm">Real-time performance metrics & multi-year historical analysis.</p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold leading-tight text-gray-900 sm:text-3xl">Business Intelligence</h1>
+          <p className="mt-1 text-sm text-gray-500">Real-time performance metrics & multi-year historical analysis.</p>
         </div>
-        <div className="flex space-x-2">
+        <div className="flex w-full max-w-full gap-2 overflow-x-auto pb-1 lg:w-auto">
           {[
             {label: '7D', val: '7days'},
             {label: '30D', val: '30days'},
@@ -76,7 +76,7 @@ export default function Dashboard() {
             <button
               key={filter.val}
               onClick={() => setPeriod(filter.val)}
-              className={`px-4 py-2 text-xs border rounded-xl transition-all font-bold shadow-sm ${
+              className={`shrink-0 rounded-xl border px-4 py-2 text-xs font-bold shadow-sm transition-all ${
                 period === filter.val
                   ? 'bg-orange-600 text-white border-orange-700 scale-105'
                   : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-600'
@@ -129,13 +129,13 @@ export default function Dashboard() {
       {/* Advanced Section: Lifetime Summary & Monthly Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Monthly Breakdown Chart */}
-        <div className="lg:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-          <div className="flex justify-between items-center mb-8">
+        <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-8 lg:col-span-2">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-xl font-black text-gray-900">Historical Scale</h3>
               <p className="text-gray-400 text-sm">Monthly sales vs profit since launch</p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-4">
               <div className="flex items-center"><div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div><span className="text-xs font-bold text-gray-500">Sales</span></div>
               <div className="flex items-center"><div className="w-3 h-3 bg-indigo-500 rounded-full mr-2"></div><span className="text-xs font-bold text-gray-500">Profit</span></div>
             </div>
@@ -158,7 +158,7 @@ export default function Dashboard() {
         </div>
 
         {/* Lifetime Performance Card */}
-        <div className="bg-indigo-600 rounded-3xl p-8 text-white shadow-xl shadow-indigo-100 relative overflow-hidden flex flex-col justify-between">
+        <div className="relative flex flex-col justify-between overflow-hidden rounded-3xl bg-indigo-600 p-6 text-white shadow-xl shadow-indigo-100 sm:p-8">
           <div className="absolute top-0 right-0 p-4 opacity-10">
             <Award className="w-40 h-40" />
           </div>
@@ -167,7 +167,7 @@ export default function Dashboard() {
               <Clock className="w-5 h-5 text-indigo-200" />
               <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs">Since {lifetime?.start_date || 'Day 1'}</p>
             </div>
-            <h3 className="text-3xl font-black mb-2">Lifetime Power</h3>
+            <h3 className="mb-2 text-2xl font-black sm:text-3xl">Lifetime Power</h3>
             <p className="text-indigo-100 text-sm mb-8 opacity-80">Accumulated business value across all cycles.</p>
 
             <div className="space-y-6">
@@ -242,8 +242,8 @@ export default function Dashboard() {
       </div>
 
       {/* Granular Area Chart */}
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
-        <div className="flex justify-between items-center mb-8">
+      <div className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-8">
+        <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter italic">Velocity Tracker</h3>
             <p className="text-gray-400 text-xs">Daily sales & cost fluctuations for {period}</p>
