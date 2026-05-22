@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.models.domain import Customer, DailySales, DiningTable, Invoice, RestaurantOrder
+from app.models.domain import Customer, DailySales, DiningTable, Invoice, Promotion, RestaurantOrder
 from app.services.payment_gateway import create_payment_session
 
 
@@ -38,6 +38,7 @@ class OrderCreate(BaseModel):
     customer_phone: Optional[str] = None
     items: List[OrderItem] = Field(default_factory=list)
     discount_amount: float = 0.0
+    coupon_code: Optional[str] = None
     payment_method: Optional[str] = None
     notes: Optional[str] = None
 
@@ -185,6 +186,49 @@ def order_next_action(order: RestaurantOrder) -> str:
     return "Order is being processed."
 
 
+def normalize_coupon_code(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    code = value.strip().upper().replace(" ", "")
+    return code or None
+
+
+def calculate_promotion_discount(promo: Promotion, subtotal: float) -> float:
+    if promo.discount_type == "percentage":
+        discount = subtotal * (float(promo.discount_value or 0) / 100)
+    else:
+        discount = float(promo.discount_value or 0)
+    return round(min(max(discount, 0), subtotal), 2)
+
+
+def apply_coupon_to_subtotal(
+    db: Session,
+    coupon_code: Optional[str],
+    subtotal: float,
+) -> tuple[float, Optional[Promotion]]:
+    code = normalize_coupon_code(coupon_code)
+    if not code:
+        return 0.0, None
+
+    promo = db.query(Promotion).filter(Promotion.code == code).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Coupon code not found.")
+
+    today = date.today()
+    if promo.start_date > today or promo.end_date < today:
+        raise HTTPException(status_code=409, detail="Coupon is not active today.")
+    if promo.status not in {"active", "scheduled"}:
+        raise HTTPException(status_code=409, detail="Coupon is not active.")
+
+    return calculate_promotion_discount(promo, subtotal), promo
+
+
+def append_order_note(notes: Optional[str], extra: str) -> str:
+    if notes and notes.strip():
+        return f"{notes.strip()} | {extra}"
+    return extra
+
+
 def upsert_customer_from_order(db: Session, order: RestaurantOrder) -> None:
     phone = (order.customer_phone or "").strip()
     if not phone:
@@ -233,13 +277,26 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=409, detail="Table already has an open order.")
 
     subtotal = round(sum(item.price * item.quantity for item in valid_items), 2)
-    discount = round(max(order.discount_amount or 0, 0), 2)
+    coupon_discount, applied_promo = apply_coupon_to_subtotal(
+        db,
+        order.coupon_code,
+        subtotal,
+    )
+    discount = (
+        coupon_discount
+        if applied_promo
+        else round(min(max(order.discount_amount or 0, 0), subtotal), 2)
+    )
     taxable_subtotal = max(subtotal - discount, 0)
     tax = round(taxable_subtotal * 0.05, 2)
     total = round(taxable_subtotal + tax, 2)
     items = [item.model_dump() for item in valid_items]
     payment_method = (order.payment_method or "cash").lower()
     payment_status = "awaiting_payment" if payment_method == "prepaid" else "pending"
+
+    notes = order.notes
+    if applied_promo and applied_promo.code:
+        notes = append_order_note(notes, f"Coupon: {applied_promo.code}")
 
     row = RestaurantOrder(
         order_type=order.order_type,
@@ -253,7 +310,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         total_amount=total,
         payment_method=payment_method,
         payment_status=payment_status,
-        notes=order.notes,
+        notes=notes,
     )
     db.add(row)
     db.flush()
@@ -273,6 +330,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         "total": total,
         "status": row.status,
         "payment_status": row.payment_status,
+        "coupon_code": applied_promo.code if applied_promo else None,
     }
 
 

@@ -217,6 +217,7 @@ export default function PublicOrderPage() {
         customer_phone: customerPhone,
         payment_method: paymentMethod,
         discount_amount: discount,
+        coupon_code: coupon ? coupon.promotion.code || couponCode : null,
         notes: [
           `Customer website order`,
           `Fulfillment: ${orderType}`,

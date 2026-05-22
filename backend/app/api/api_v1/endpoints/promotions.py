@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db
-from app.models.domain import Customer, DailySales, Promotion
+from app.models.domain import Customer, DailySales, Promotion, RestaurantOrder
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date
@@ -234,11 +234,27 @@ def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
         .filter(DailySales.date.between(promo.start_date, promo.end_date))
         .one()
     )
+    coupon_orders = []
+    if promo.code:
+        coupon_orders = (
+            db.query(RestaurantOrder)
+            .filter(RestaurantOrder.notes.like(f"%Coupon: {promo.code}%"))
+            .all()
+        )
     
     return {
         "promotion": promo.name,
         "avg_daily_sale_during": float(avg_sale or 0),
-        "total_revenue_during": float(total_revenue or 0)
+        "total_revenue_during": float(total_revenue or 0),
+        "redemption_count": len(coupon_orders),
+        "redemption_revenue": round(
+            sum(float(order.total_amount or 0) for order in coupon_orders),
+            2,
+        ),
+        "redemption_discount": round(
+            sum(float(order.discount_amount or 0) for order in coupon_orders),
+            2,
+        ),
     }
 
 @router.get("/{promo_id}/outreach")

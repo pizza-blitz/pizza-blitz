@@ -193,6 +193,44 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(coupon.json()["tax"], 16.92)
             self.assertEqual(coupon.json()["total"], 355.22)
 
+            coupon_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "takeaway",
+                    "customer_name": "Coupon Guest",
+                    "payment_method": "upi",
+                    "coupon_code": " weekend 15 ",
+                    "discount_amount": 300,
+                    "items": [
+                        {"name": "Margherita Pizza (R)", "quantity": 2, "price": 199}
+                    ],
+                },
+            )
+            self.assertEqual(coupon_order.status_code, 200)
+            self.assertEqual(coupon_order.json()["discount"], 59.7)
+            self.assertEqual(coupon_order.json()["tax"], 16.92)
+            self.assertEqual(coupon_order.json()["total"], 355.22)
+            self.assertEqual(coupon_order.json()["coupon_code"], "WEEKEND15")
+
+            coupon_order_detail = client.get(
+                f"/api/v1/restaurant/orders/{coupon_order.json()['order_id']}"
+            )
+            self.assertEqual(coupon_order_detail.status_code, 200)
+            self.assertIn("Coupon: WEEKEND15", coupon_order_detail.json()["notes"])
+
+            invalid_coupon_order = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "takeaway",
+                    "payment_method": "upi",
+                    "coupon_code": "NOPE",
+                    "items": [
+                        {"name": "Margherita Pizza (R)", "quantity": 1, "price": 199}
+                    ],
+                },
+            )
+            self.assertEqual(invalid_coupon_order.status_code, 404)
+
             promo_performance = client.get(
                 f"/api/v1/restaurant/promotions/performance/{promo_id}"
             )
@@ -202,6 +240,8 @@ class InternalPortalValidationTest(unittest.TestCase):
                 2217.9,
                 places=2,
             )
+            self.assertEqual(promo_performance.json()["redemption_count"], 1)
+            self.assertEqual(promo_performance.json()["redemption_discount"], 59.7)
 
             shift = client.post(
                 "/api/v1/restaurant/shifts/",
