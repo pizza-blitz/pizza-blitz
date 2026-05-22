@@ -27,6 +27,8 @@ env_vars.yaml
 *.db
 *.db-*
 *.log
+backups/
+backend/backups/
 
 # OS/editor noise
 .DS_Store

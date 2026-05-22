@@ -215,6 +215,17 @@ class AdCampaignLaunch(Base):
     attempted_at = Column(DateTime, default=datetime.utcnow, index=True)
     campaign = relationship("AdCampaign", back_populates="launches")
 
+class BackupRun(Base):
+    __tablename__ = "backup_runs"
+    id = Column(Integer, primary_key=True, index=True)
+    backup_type = Column(String(50), default="sqlite", index=True)
+    status = Column(String(40), default="pending", index=True)
+    file_path = Column(String, nullable=True)
+    size_bytes = Column(Integer, default=0)
+    database_backend = Column(String(80), nullable=True)
+    error = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 class ShiftLog(Base):
     __tablename__ = "shift_log"
     id = Column(Integer, primary_key=True, index=True)

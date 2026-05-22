@@ -6,6 +6,7 @@ from pydantic import AnyHttpUrl, validator
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Restaurant Portal API"
     API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
         "SQLALCHEMY_DATABASE_URI",
         "sqlite:///:memory:",
     )
+    BACKUP_DIR: str = os.getenv("BACKUP_DIR", "backups")
+    BACKUP_RETENTION_DAYS: int = int(os.getenv("BACKUP_RETENTION_DAYS", "14"))
     
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")

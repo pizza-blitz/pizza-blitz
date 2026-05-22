@@ -743,6 +743,27 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(ad_launch_history.status_code, 200)
             self.assertEqual(ad_launch_history.json()["dry_run_count"], 1)
 
+            ops_readiness = client.get("/api/v1/restaurant/ops/readiness")
+            self.assertEqual(ops_readiness.status_code, 200)
+            readiness_payload = ops_readiness.json()
+            self.assertEqual(readiness_payload["database_backend"], "sqlite")
+            self.assertIn(readiness_payload["overall"], ["attention", "ready"])
+            check_status_by_key = {
+                check["key"]: check["status"]
+                for check in readiness_payload["checks"]
+            }
+            self.assertEqual(check_status_by_key["database_connection"], "pass")
+            self.assertEqual(check_status_by_key["database_persistence"], "warn")
+
+            backup_history = client.get("/api/v1/restaurant/ops/backups")
+            self.assertEqual(backup_history.status_code, 200)
+            self.assertEqual(backup_history.json()["backups"], [])
+
+            memory_backup = client.post("/api/v1/restaurant/ops/backups/create")
+            self.assertEqual(memory_backup.status_code, 200)
+            self.assertEqual(memory_backup.json()["backup"]["status"], "skipped")
+            self.assertIn("in-memory", memory_backup.json()["backup"]["error"])
+
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
             )

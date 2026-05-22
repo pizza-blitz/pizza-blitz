@@ -12,10 +12,19 @@ BACKEND_IMAGE="gcr.io/$PROJECT_ID/pizza-blitz-backend"
 FRONTEND_IMAGE="gcr.io/$PROJECT_ID/pizza-blitz-frontend"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -z "${SQLALCHEMY_DATABASE_URI:-}" ]]; then
-  echo "Set SQLALCHEMY_DATABASE_URI before deploying the backend." >&2
-  exit 1
-fi
+require_env() {
+  local name="$1"
+  if [[ -z "${!name:-}" ]]; then
+    echo "Set $name before deploying the backend." >&2
+    exit 1
+  fi
+}
+
+require_env SQLALCHEMY_DATABASE_URI
+require_env RESTAURANT_ADMIN_ID
+require_env RESTAURANT_ADMIN_PASSWORD
+require_env AUTH_SECRET_KEY
+require_env BACKEND_CORS_ORIGINS
 
 echo "Starting Pizza Blitz deployment to Google Cloud Run..."
 
@@ -24,16 +33,24 @@ cd "$ROOT/backend"
 gcloud builds submit --project="$PROJECT_ID" --tag "$BACKEND_IMAGE" .
 
 echo "Deploying backend service..."
-BACKEND_ENV="SQLALCHEMY_DATABASE_URI=$SQLALCHEMY_DATABASE_URI"
+BACKEND_ENV_PAIRS=(
+  "SQLALCHEMY_DATABASE_URI=$SQLALCHEMY_DATABASE_URI"
+  "ENVIRONMENT=production"
+  "RESTAURANT_ADMIN_ID=$RESTAURANT_ADMIN_ID"
+  "RESTAURANT_ADMIN_PASSWORD=$RESTAURANT_ADMIN_PASSWORD"
+  "AUTH_SECRET_KEY=$AUTH_SECRET_KEY"
+  "BACKEND_CORS_ORIGINS=$BACKEND_CORS_ORIGINS"
+)
 if [[ -n "${GEMINI_API_KEY:-}" ]]; then
-  BACKEND_ENV="$BACKEND_ENV,GEMINI_API_KEY=$GEMINI_API_KEY"
+  BACKEND_ENV_PAIRS+=("GEMINI_API_KEY=$GEMINI_API_KEY")
 fi
-if [[ -n "${RESTAURANT_ADMIN_ID:-}" ]]; then
-  BACKEND_ENV="$BACKEND_ENV,RESTAURANT_ADMIN_ID=$RESTAURANT_ADMIN_ID"
+if [[ -n "${BACKUP_DIR:-}" ]]; then
+  BACKEND_ENV_PAIRS+=("BACKUP_DIR=$BACKUP_DIR")
 fi
-if [[ -n "${RESTAURANT_ADMIN_PASSWORD:-}" ]]; then
-  BACKEND_ENV="$BACKEND_ENV,RESTAURANT_ADMIN_PASSWORD=$RESTAURANT_ADMIN_PASSWORD"
+if [[ -n "${BACKUP_RETENTION_DAYS:-}" ]]; then
+  BACKEND_ENV_PAIRS+=("BACKUP_RETENTION_DAYS=$BACKUP_RETENTION_DAYS")
 fi
+BACKEND_ENV="^|^$(IFS='|'; echo "${BACKEND_ENV_PAIRS[*]}")"
 
 DEPLOY_ARGS=(
   run deploy pizza-blitz-backend

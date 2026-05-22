@@ -24,6 +24,7 @@ const adminRoutes = [
   "/promotions",
   "/social",
   "/ads",
+  "/ops",
   "/vendors",
   "/waste",
   "/expenses",
