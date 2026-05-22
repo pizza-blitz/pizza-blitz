@@ -5,17 +5,25 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  CircleDollarSign,
   Globe2,
   Layers,
   LockKeyhole,
+  MapPin,
   Plus,
   RefreshCw,
+  Route,
   Save,
   Shield,
   Trash2,
+  Truck,
   UserCheck,
   Users,
 } from 'lucide-react';
+import { getApiUrl } from '@/lib/api';
+
+const DELIVERY_ZONES_API = getApiUrl('/api/v1/restaurant/delivery/zones');
+const DELIVERY_QUOTE_API = getApiUrl('/api/v1/restaurant/delivery/quote');
 
 type RoleAccess = {
   role: string;
@@ -44,9 +52,40 @@ type SecurityOverview = {
   hardening: HardeningCheck[];
 };
 
+type DeliveryZone = {
+  id: number;
+  name: string;
+  keywords: string[];
+  delivery_fee: number;
+  minimum_order_amount: number;
+  eta_min_minutes: number;
+  eta_max_minutes: number;
+  eta_window: string;
+  is_active: boolean;
+};
+
+type DeliveryQuote = {
+  is_deliverable: boolean;
+  reason?: string | null;
+  address: string;
+  zone?: DeliveryZone | null;
+  delivery_fee: number;
+  eta_window?: string | null;
+};
+
 export default function Settings() {
   const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
   const [isSecurityLoading, setIsSecurityLoading] = useState(true);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [deliveryDrafts, setDeliveryDrafts] = useState<Record<number, DeliveryZone>>({});
+  const [isDeliveryLoading, setIsDeliveryLoading] = useState(true);
+  const [savingZoneId, setSavingZoneId] = useState<number | null>(null);
+  const [deliveryMessage, setDeliveryMessage] = useState("");
+  const [quoteAddress, setQuoteAddress] = useState("Civil Lines market, near main road");
+  const [quoteSubtotal, setQuoteSubtotal] = useState(249);
+  const [quoteZoneId, setQuoteZoneId] = useState<number | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [categories, setCategories] = useState([
     { id: 1, name: "Raw Materials", active: true },
     { id: 2, name: "Electricity", active: true },
@@ -85,10 +124,127 @@ export default function Settings() {
         }
       });
 
+    fetch(DELIVERY_ZONES_API, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: DeliveryZone[]) => {
+        if (isMounted) {
+          setDeliveryZones(data);
+          setDeliveryDrafts(
+            data.reduce<Record<number, DeliveryZone>>((drafts, zone) => {
+              drafts[zone.id] = { ...zone, keywords: [...(zone.keywords || [])] };
+              return drafts;
+            }, {})
+          );
+          setQuoteZoneId(data.find((zone) => zone.is_active)?.id || data[0]?.id || null);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setDeliveryZones([]);
+          setDeliveryDrafts({});
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsDeliveryLoading(false);
+        }
+      });
+
     return () => {
       isMounted = false;
     };
   }, []);
+
+  const activeDeliveryZones = deliveryZones.filter((zone) => zone.is_active);
+  const lowestDeliveryFee = activeDeliveryZones.length
+    ? Math.min(...activeDeliveryZones.map((zone) => Number(zone.delivery_fee || 0)))
+    : 0;
+  const widestDeliveryEta = activeDeliveryZones.length
+    ? Math.max(...activeDeliveryZones.map((zone) => Number(zone.eta_max_minutes || 0)))
+    : 0;
+
+  const updateDeliveryDraft = (zoneId: number, updates: Partial<DeliveryZone>) => {
+    setDeliveryDrafts((current) => ({
+      ...current,
+      [zoneId]: {
+        ...(current[zoneId] || deliveryZones.find((zone) => zone.id === zoneId)!),
+        ...updates,
+      },
+    }));
+  };
+
+  const saveDeliveryZone = async (zoneId: number) => {
+    const draft = deliveryDrafts[zoneId];
+    if (!draft) return;
+
+    setSavingZoneId(zoneId);
+    setDeliveryMessage("");
+    try {
+      const response = await fetch(`${DELIVERY_ZONES_API}/${zoneId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: draft.name,
+          keywords: draft.keywords || [],
+          delivery_fee: Number(draft.delivery_fee || 0),
+          minimum_order_amount: Number(draft.minimum_order_amount || 0),
+          eta_min_minutes: Number(draft.eta_min_minutes || 1),
+          eta_max_minutes: Number(draft.eta_max_minutes || 1),
+          is_active: draft.is_active,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setDeliveryMessage(data.detail || "Could not save delivery zone.");
+        return;
+      }
+      setDeliveryZones((current) =>
+        current.map((zone) => (zone.id === zoneId ? data : zone))
+      );
+      setDeliveryDrafts((current) => ({
+        ...current,
+        [zoneId]: { ...data, keywords: [...(data.keywords || [])] },
+      }));
+      setDeliveryMessage(`${data.name} delivery rules saved.`);
+    } catch {
+      setDeliveryMessage("Delivery zone API is not available right now.");
+    } finally {
+      setSavingZoneId(null);
+    }
+  };
+
+  const testDeliveryQuote = async () => {
+    if (!quoteAddress.trim()) {
+      setDeliveryMessage("Enter a delivery address to test.");
+      return;
+    }
+
+    setIsQuotingDelivery(true);
+    setDeliveryQuote(null);
+    setDeliveryMessage("");
+    try {
+      const response = await fetch(DELIVERY_QUOTE_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: quoteAddress,
+          subtotal: Number(quoteSubtotal || 0),
+          zone_id: quoteZoneId,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setDeliveryQuote(null);
+        setDeliveryMessage(data.detail || "Address could not be validated.");
+        return;
+      }
+      setDeliveryQuote(data);
+    } catch {
+      setDeliveryMessage("Delivery quote API is not available right now.");
+    } finally {
+      setIsQuotingDelivery(false);
+    }
+  };
 
   // Missing Handlers for Categories
   const toggleCategory = (id: number) => {
@@ -273,6 +429,257 @@ export default function Settings() {
             Security overview is unavailable. Check the Next.js API route logs.
           </div>
         )}
+      </div>
+
+      {/* Delivery Zones */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start">
+            <div className="p-2 bg-red-100 rounded-lg mr-3">
+              <Truck className="w-5 h-5 text-red-700" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Delivery Zones & Charges</h3>
+              <p className="text-sm text-gray-500">
+                Manage fee, minimum order, ETA, coverage keywords, and test address validation.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setIsDeliveryLoading(true);
+              fetch(DELIVERY_ZONES_API, { cache: "no-store" })
+                .then((response) => response.json())
+                .then((data: DeliveryZone[]) => {
+                  setDeliveryZones(data);
+                  setDeliveryDrafts(
+                    data.reduce<Record<number, DeliveryZone>>((drafts, zone) => {
+                      drafts[zone.id] = { ...zone, keywords: [...(zone.keywords || [])] };
+                      return drafts;
+                    }, {})
+                  );
+                })
+                .finally(() => setIsDeliveryLoading(false));
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-red-200 hover:bg-red-50"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh Zones
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
+              <Route className="h-4 w-4" /> Active Zones
+            </div>
+            <p className="mt-2 text-2xl font-black text-gray-900">{activeDeliveryZones.length}</p>
+          </div>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
+              <CircleDollarSign className="h-4 w-4" /> Lowest Fee
+            </div>
+            <p className="mt-2 text-2xl font-black text-gray-900">Rs {lowestDeliveryFee}</p>
+          </div>
+          <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-500">
+              <Clock className="h-4 w-4" /> Longest ETA
+            </div>
+            <p className="mt-2 text-2xl font-black text-gray-900">{widestDeliveryEta || 0} min</p>
+          </div>
+        </div>
+
+        {deliveryMessage && (
+          <div className="mt-5 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            {deliveryMessage}
+          </div>
+        )}
+
+        {isDeliveryLoading ? (
+          <div className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm font-semibold text-gray-500">
+            Loading delivery zones...
+          </div>
+        ) : deliveryZones.length ? (
+          <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
+            {deliveryZones.map((zone) => {
+              const draft = deliveryDrafts[zone.id] || zone;
+              return (
+                <div key={zone.id} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <input
+                      value={draft.name}
+                      onChange={(event) =>
+                        updateDeliveryDraft(zone.id, { name: event.target.value })
+                      }
+                      className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+                    />
+                    <label className="inline-flex items-center gap-2 text-xs font-black text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={draft.is_active}
+                        onChange={(event) =>
+                          updateDeliveryDraft(zone.id, { is_active: event.target.checked })
+                        }
+                        className="h-4 w-4 rounded border-gray-300 text-red-600"
+                      />
+                      Active
+                    </label>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <label className="text-xs font-bold text-gray-500">
+                      Fee
+                      <input
+                        type="number"
+                        min="0"
+                        value={draft.delivery_fee}
+                        onChange={(event) =>
+                          updateDeliveryDraft(zone.id, {
+                            delivery_fee: Number(event.target.value) || 0,
+                          })
+                        }
+                        className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-gray-500">
+                      Minimum
+                      <input
+                        type="number"
+                        min="0"
+                        value={draft.minimum_order_amount}
+                        onChange={(event) =>
+                          updateDeliveryDraft(zone.id, {
+                            minimum_order_amount: Number(event.target.value) || 0,
+                          })
+                        }
+                        className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-gray-500">
+                      ETA Min
+                      <input
+                        type="number"
+                        min="1"
+                        value={draft.eta_min_minutes}
+                        onChange={(event) =>
+                          updateDeliveryDraft(zone.id, {
+                            eta_min_minutes: Number(event.target.value) || 1,
+                          })
+                        }
+                        className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+                      />
+                    </label>
+                    <label className="text-xs font-bold text-gray-500">
+                      ETA Max
+                      <input
+                        type="number"
+                        min="1"
+                        value={draft.eta_max_minutes}
+                        onChange={(event) =>
+                          updateDeliveryDraft(zone.id, {
+                            eta_max_minutes: Number(event.target.value) || 1,
+                          })
+                        }
+                        className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="mt-3 block text-xs font-bold text-gray-500">
+                    Coverage Keywords
+                    <textarea
+                      value={(draft.keywords || []).join(", ")}
+                      onChange={(event) =>
+                        updateDeliveryDraft(zone.id, {
+                          keywords: event.target.value
+                            .split(",")
+                            .map((keyword) => keyword.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      rows={3}
+                      className="mt-1 w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 outline-none focus:border-red-500"
+                    />
+                  </label>
+
+                  <button
+                    onClick={() => saveDeliveryZone(zone.id)}
+                    disabled={savingZoneId === zone.id}
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-3 text-sm font-black text-white hover:bg-red-800 disabled:bg-gray-300"
+                  >
+                    <Save className="h-4 w-4" />
+                    {savingZoneId === zone.id ? "Saving" : "Save Zone"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-5 rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            Delivery zones are unavailable. Check the backend delivery API.
+          </div>
+        )}
+
+        <div className="mt-5 rounded-lg border border-gray-100 bg-white p-4">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-red-700" />
+            <div>
+              <p className="font-black text-gray-900">Address Validation Tester</p>
+              <p className="text-sm text-gray-500">
+                Uses the same quote endpoint as customer checkout.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[1.5fr_0.6fr_0.8fr_auto]">
+            <input
+              value={quoteAddress}
+              onChange={(event) => setQuoteAddress(event.target.value)}
+              className="rounded-md border border-gray-200 px-3 py-3 text-sm font-semibold outline-none focus:border-red-500"
+              placeholder="House/building and area"
+            />
+            <input
+              type="number"
+              min="0"
+              value={quoteSubtotal}
+              onChange={(event) => setQuoteSubtotal(Number(event.target.value) || 0)}
+              className="rounded-md border border-gray-200 px-3 py-3 text-sm font-semibold outline-none focus:border-red-500"
+              placeholder="Subtotal"
+            />
+            <select
+              value={quoteZoneId || ""}
+              onChange={(event) => setQuoteZoneId(Number(event.target.value) || null)}
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-bold text-gray-700 outline-none focus:border-red-500"
+            >
+              {deliveryZones.map((zone) => (
+                <option key={`quote-${zone.id}`} value={zone.id}>
+                  {zone.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={testDeliveryQuote}
+              disabled={isQuotingDelivery}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-gray-900 px-5 py-3 text-sm font-black text-white hover:bg-red-700 disabled:bg-gray-300"
+            >
+              <MapPin className="h-4 w-4" />
+              {isQuotingDelivery ? "Testing" : "Test"}
+            </button>
+          </div>
+
+          {deliveryQuote && (
+            <div
+              className={`mt-4 rounded-md border px-4 py-3 text-sm font-semibold ${
+                deliveryQuote.is_deliverable
+                  ? "border-green-100 bg-green-50 text-green-800"
+                  : "border-red-100 bg-red-50 text-red-800"
+              }`}
+            >
+              {deliveryQuote.is_deliverable
+                ? `${deliveryQuote.zone?.name || "Delivery"} is available: Rs ${deliveryQuote.delivery_fee}, ETA ${deliveryQuote.eta_window}.`
+                : deliveryQuote.reason || "This address is not deliverable."}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Google Sheets Integration */}

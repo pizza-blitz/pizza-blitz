@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -21,6 +21,16 @@ class DeliveryQuoteRequest(BaseModel):
     address: str
     subtotal: float = 0.0
     zone_id: Optional[int] = None
+
+
+class DeliveryZoneUpdate(BaseModel):
+    name: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    delivery_fee: Optional[float] = Field(default=None, ge=0)
+    minimum_order_amount: Optional[float] = Field(default=None, ge=0)
+    eta_min_minutes: Optional[int] = Field(default=None, ge=1)
+    eta_max_minutes: Optional[int] = Field(default=None, ge=1)
+    is_active: Optional[bool] = None
 
 
 class DeliveryAssignmentUpdate(BaseModel):
@@ -63,6 +73,59 @@ def list_delivery_zones(db: Session = Depends(get_db)):
         .all()
     )
     return [serialize_delivery_zone(zone) for zone in zones]
+
+
+@router.patch("/zones/{zone_id}")
+def update_delivery_zone(
+    zone_id: int,
+    payload: DeliveryZoneUpdate,
+    db: Session = Depends(get_db),
+):
+    ensure_delivery_zones(db)
+    zone = db.query(DeliveryZone).filter(DeliveryZone.id == zone_id).first()
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Delivery zone not found.")
+
+    if payload.name is not None:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Delivery zone name is required.")
+        duplicate = (
+            db.query(DeliveryZone)
+            .filter(DeliveryZone.name == name)
+            .filter(DeliveryZone.id != zone_id)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="A delivery zone with this name already exists.")
+        zone.name = name
+
+    if payload.keywords is not None:
+        zone.keywords = [
+            keyword.strip().lower()
+            for keyword in payload.keywords
+            if keyword and keyword.strip()
+        ]
+    if payload.delivery_fee is not None:
+        zone.delivery_fee = round(float(payload.delivery_fee), 2)
+    if payload.minimum_order_amount is not None:
+        zone.minimum_order_amount = round(float(payload.minimum_order_amount), 2)
+    if payload.eta_min_minutes is not None:
+        zone.eta_min_minutes = int(payload.eta_min_minutes)
+    if payload.eta_max_minutes is not None:
+        zone.eta_max_minutes = int(payload.eta_max_minutes)
+    if (
+        zone.eta_min_minutes is not None
+        and zone.eta_max_minutes is not None
+        and zone.eta_min_minutes > zone.eta_max_minutes
+    ):
+        raise HTTPException(status_code=422, detail="Minimum ETA cannot be greater than maximum ETA.")
+    if payload.is_active is not None:
+        zone.is_active = payload.is_active
+
+    db.commit()
+    db.refresh(zone)
+    return serialize_delivery_zone(zone)
 
 
 @router.post("/quote")
