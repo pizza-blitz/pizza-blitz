@@ -23,6 +23,7 @@ from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
     normalize_payment_webhook,
+    verify_razorpay_checkout_signature,
 )
 
 
@@ -77,6 +78,14 @@ class PaymentConfirmation(BaseModel):
 class PaymentSessionRequest(BaseModel):
     provider: Optional[str] = None
     return_url: Optional[str] = None
+
+
+class ProviderPaymentVerification(BaseModel):
+    provider: str
+    provider_order_id: Optional[str] = None
+    provider_payment_id: Optional[str] = None
+    provider_signature: Optional[str] = None
+    paid_amount: Optional[float] = None
 
 
 class OrderStatusUpdate(BaseModel):
@@ -695,6 +704,12 @@ def create_order_payment_session(
         provider=payload.provider,
         return_url=payload.return_url,
     )
+    if session.get("status") == "provider_error":
+        raise HTTPException(
+            status_code=502,
+            detail=session.get("message") or "Payment provider failed.",
+        )
+
     order.payment_method = "prepaid"
     order.payment_status = "awaiting_payment"
     order.payment_provider = session["provider"]
@@ -723,6 +738,54 @@ def confirm_order_payment(
         order,
         provider=payload.payment_provider,
         reference=payload.payment_reference or f"PB-PAY-{order.id}",
+        paid_amount=payload.paid_amount,
+    )
+    return payment_order
+
+
+@router.post("/{order_id}/payment-verification")
+def verify_order_payment(
+    order_id: int,
+    payload: ProviderPaymentVerification,
+    db: Session = Depends(get_db),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    provider = payload.provider.strip().lower()
+    if provider != "razorpay":
+        raise HTTPException(
+            status_code=422,
+            detail="Provider verification is available for Razorpay checkout.",
+        )
+
+    provider_order_id = (payload.provider_order_id or "").strip()
+    provider_payment_id = (payload.provider_payment_id or "").strip()
+    provider_signature = (payload.provider_signature or "").strip()
+    if not provider_order_id or not provider_payment_id or not provider_signature:
+        raise HTTPException(
+            status_code=422,
+            detail="Provider order, payment, and signature are required.",
+        )
+    if order.payment_session_id and order.payment_session_id != provider_order_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Payment order does not match this restaurant order.",
+        )
+
+    if not verify_razorpay_checkout_signature(
+        provider_order_id=provider_order_id,
+        provider_payment_id=provider_payment_id,
+        provider_signature=provider_signature,
+    ):
+        raise HTTPException(status_code=401, detail="Payment signature is invalid.")
+
+    payment_order, _ = apply_order_payment(
+        db,
+        order,
+        provider="razorpay",
+        reference=provider_payment_id,
         paid_amount=payload.paid_amount,
     )
     return payment_order

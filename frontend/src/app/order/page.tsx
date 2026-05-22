@@ -114,8 +114,30 @@ type PendingPayment = {
   provider: string;
   reference: string;
   sessionId?: string;
+  providerOrderId?: string | null;
+  paymentSessionId?: string | null;
   checkoutUrl?: string | null;
+  checkoutPayload?: CheckoutPayload | null;
   sessionStatus?: string;
+  message?: string;
+};
+
+type CheckoutPayload = {
+  provider?: string;
+  mode?: string;
+  payment_session_id?: string;
+  provider_order_id?: string;
+  key?: string;
+  amount?: number;
+  currency?: string;
+  name?: string;
+  description?: string;
+  order_id?: string;
+  prefill?: {
+    name?: string;
+    contact?: string;
+    email?: string;
+  };
 };
 
 type ReorderDraft = {
@@ -147,6 +169,31 @@ const categoryImages: Record<string, string> = {
 const fallbackImage =
   "https://images.unsplash.com/photo-1548365328-9f547fb09530?auto=format&fit=crop&w=900&q=80";
 
+const loadExternalScript = (src: string) =>
+  new Promise<void>((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${src}"]`);
+    if (existingScript) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.body.appendChild(script);
+  });
+
+declare global {
+  interface Window {
+    Cashfree?: (options: { mode: string }) => {
+      checkout: (options: { paymentSessionId: string; redirectTarget?: string }) => unknown;
+    };
+    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
+  }
+}
+
 export default function PublicOrderPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [activePromotions, setActivePromotions] = useState<ActivePromotion[]>([]);
@@ -172,6 +219,7 @@ export default function PublicOrderPage() {
   const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [isStartingGatewayPayment, setIsStartingGatewayPayment] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [isCheckoutVisible, setIsCheckoutVisible] = useState(false);
   const checkoutRef = useRef<HTMLElement | null>(null);
@@ -670,7 +718,6 @@ export default function PublicOrderPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider: "manual",
           return_url: `${window.location.origin}/account`,
         }),
       });
@@ -682,7 +729,10 @@ export default function PublicOrderPage() {
       }
 
       const paymentSession = sessionData.payment_session;
-      const paymentReferenceValue = paymentSession.session_id || `WEB-${orderId}-${Date.now()}`;
+      const paymentReferenceValue =
+        paymentSession.provider_order_id ||
+        paymentSession.session_id ||
+        `WEB-${orderId}-${Date.now()}`;
       setOrderId(orderId);
       setCart([]);
       setCoupon(null);
@@ -694,8 +744,12 @@ export default function PublicOrderPage() {
         provider: paymentSession.provider || "manual",
         reference: paymentReferenceValue,
         sessionId: paymentSession.session_id,
+        providerOrderId: paymentSession.provider_order_id,
+        paymentSessionId: paymentSession.payment_session_id,
         checkoutUrl: paymentSession.checkout_url,
+        checkoutPayload: paymentSession.checkout_payload,
         sessionStatus: paymentSession.status,
+        message: paymentSession.message,
       });
       setMessage(`Order #${orderId} created. Confirm prepaid payment to mark it paid.`);
     } else {
@@ -732,6 +786,86 @@ export default function PublicOrderPage() {
 
     setPendingPayment(null);
     setMessage(`Payment confirmed for order #${data.id}. Estimated ${eta}.`);
+  };
+
+  const startGatewayPayment = async () => {
+    if (!pendingPayment) return;
+
+    const provider = pendingPayment.provider.toLowerCase();
+    const checkoutPayload = pendingPayment.checkoutPayload;
+    setIsStartingGatewayPayment(true);
+
+    try {
+      if (provider === "cashfree" && pendingPayment.paymentSessionId) {
+        await loadExternalScript("https://sdk.cashfree.com/js/v3/cashfree.js");
+        const cashfree = window.Cashfree?.({
+          mode: checkoutPayload?.mode === "production" ? "production" : "sandbox",
+        });
+        if (!cashfree) {
+          throw new Error("Cashfree checkout was not available.");
+        }
+        cashfree.checkout({
+          paymentSessionId: pendingPayment.paymentSessionId,
+          redirectTarget: "_modal",
+        });
+        setMessage("Cashfree payment window opened.");
+        return;
+      }
+
+      if (provider === "razorpay" && checkoutPayload?.order_id) {
+        await loadExternalScript("https://checkout.razorpay.com/v1/checkout.js");
+        if (!window.Razorpay) {
+          throw new Error("Razorpay checkout was not available.");
+        }
+        const checkout = new window.Razorpay({
+          ...checkoutPayload,
+          handler: async (response: Record<string, string>) => {
+            setIsConfirmingPayment(true);
+            try {
+              const verificationResponse = await fetch(
+                `${ORDER_API}${pendingPayment.orderId}/payment-verification`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    provider: "razorpay",
+                    provider_order_id: response.razorpay_order_id || checkoutPayload.order_id,
+                    provider_payment_id: response.razorpay_payment_id,
+                    provider_signature: response.razorpay_signature,
+                    paid_amount: pendingPayment.total,
+                  }),
+                }
+              );
+              const verificationData = await verificationResponse.json();
+
+              if (!verificationResponse.ok) {
+                setMessage(verificationData.detail || "Payment verification failed.");
+                return;
+              }
+
+              setPendingPayment(null);
+              setMessage(`Payment confirmed for order #${verificationData.id}. Estimated ${eta}.`);
+            } catch {
+              setMessage("Payment verification failed.");
+            } finally {
+              setIsConfirmingPayment(false);
+            }
+          },
+          modal: {
+            ondismiss: () => setMessage("Payment window closed."),
+          },
+        });
+        checkout.open();
+        setMessage("Razorpay payment window opened.");
+        return;
+      }
+
+      setMessage("Online checkout is not ready for this payment session.");
+    } catch {
+      setMessage("Payment window could not be opened.");
+    } finally {
+      setIsStartingGatewayPayment(false);
+    }
   };
 
   return (
@@ -971,30 +1105,54 @@ export default function PublicOrderPage() {
               <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
                 <p className="font-black text-amber-900">Prepaid payment pending</p>
                 <p className="mt-1 text-sm font-semibold text-amber-800">
-                  Amount: Rs {pendingPayment.total}. Session: {pendingPayment.sessionStatus || "ready"}.
+                  Amount: Rs {pendingPayment.total}. Provider: {pendingPayment.provider.toUpperCase()}.
                 </p>
-                {pendingPayment.checkoutUrl && (
+                <div className="mt-2 grid gap-1 text-xs font-bold text-amber-900">
+                  <span>Session: {pendingPayment.sessionStatus || "ready"}</span>
+                  {pendingPayment.providerOrderId && (
+                    <span className="break-all">Provider order: {pendingPayment.providerOrderId}</span>
+                  )}
+                  {pendingPayment.paymentSessionId &&
+                    pendingPayment.paymentSessionId !== pendingPayment.providerOrderId && (
+                      <span className="break-all">Payment session: {pendingPayment.paymentSessionId}</span>
+                    )}
+                </div>
+                {pendingPayment.provider !== "manual" && pendingPayment.sessionStatus === "ready" && (
+                  <button
+                    type="button"
+                    onClick={startGatewayPayment}
+                    disabled={isStartingGatewayPayment || isConfirmingPayment}
+                    className="mt-3 w-full rounded-md bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-slate-800 disabled:bg-slate-300"
+                  >
+                    {isStartingGatewayPayment ? "Opening Gateway" : "Pay Online"}
+                  </button>
+                )}
+                {pendingPayment.provider !== "manual" && pendingPayment.checkoutUrl && (
                   <a
                     href={pendingPayment.checkoutUrl}
                     className="mt-2 inline-flex text-sm font-black text-amber-900 underline"
                   >
-                    Open payment return page
+                    Open payment page
                   </a>
                 )}
-                <input
-                  value={paymentReference}
-                  onChange={(event) => setPaymentReference(event.target.value)}
-                  className="mt-3 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-600"
-                  placeholder="Payment reference"
-                />
-                <button
-                  type="button"
-                  onClick={confirmPayment}
-                  disabled={isConfirmingPayment}
-                  className="mt-3 w-full rounded-md bg-amber-600 px-4 py-3 text-sm font-black text-white hover:bg-amber-700 disabled:bg-slate-300"
-                >
-                  {isConfirmingPayment ? "Confirming" : "Confirm Payment"}
-                </button>
+                {(pendingPayment.provider === "manual" || pendingPayment.sessionStatus !== "ready") && (
+                  <>
+                    <input
+                      value={paymentReference}
+                      onChange={(event) => setPaymentReference(event.target.value)}
+                      className="mt-3 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-600"
+                      placeholder="Payment reference"
+                    />
+                    <button
+                      type="button"
+                      onClick={confirmPayment}
+                      disabled={isConfirmingPayment}
+                      className="mt-3 w-full rounded-md bg-amber-600 px-4 py-3 text-sm font-black text-white hover:bg-amber-700 disabled:bg-slate-300"
+                    >
+                      {isConfirmingPayment ? "Confirming" : "Confirm Payment"}
+                    </button>
+                  </>
+                )}
               </div>
             )}
 

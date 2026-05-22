@@ -39,9 +39,13 @@ class Settings(BaseSettings):
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
     CASHFREE_WEBHOOK_SECRET: str | None = os.getenv("CASHFREE_WEBHOOK_SECRET")
+    CASHFREE_ENVIRONMENT: str = os.getenv("CASHFREE_ENVIRONMENT", "sandbox")
+    CASHFREE_API_VERSION: str = os.getenv("CASHFREE_API_VERSION", "2025-01-01")
+    CASHFREE_BASE_URL: str | None = os.getenv("CASHFREE_BASE_URL")
     RAZORPAY_KEY_ID: str | None = os.getenv("RAZORPAY_KEY_ID")
     RAZORPAY_KEY_SECRET: str | None = os.getenv("RAZORPAY_KEY_SECRET")
     RAZORPAY_WEBHOOK_SECRET: str | None = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+    RAZORPAY_BASE_URL: str = os.getenv("RAZORPAY_BASE_URL", "https://api.razorpay.com")
     CAMPAIGN_SEND_ENABLED: bool = os.getenv("CAMPAIGN_SEND_ENABLED", "false").lower() in {
         "1",
         "true",

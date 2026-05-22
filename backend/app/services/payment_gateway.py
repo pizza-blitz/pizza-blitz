@@ -5,11 +5,31 @@ import json
 import re
 from datetime import datetime
 from typing import Any, Mapping, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from app.core.config import settings
 
 
 SUPPORTED_PAYMENT_PROVIDERS = {"manual", "cashfree", "razorpay"}
+ZERO_DECIMAL_CURRENCIES = {
+    "BIF",
+    "CLP",
+    "DJF",
+    "GNF",
+    "JPY",
+    "KMF",
+    "KRW",
+    "MGA",
+    "PYG",
+    "RWF",
+    "UGX",
+    "VND",
+    "VUV",
+    "XAF",
+    "XOF",
+    "XPF",
+}
 
 
 class PaymentWebhookError(ValueError):
@@ -55,6 +75,7 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
     return {
         "provider": selected_provider,
         "currency": settings.PAYMENT_CURRENCY,
+        "environment": provider_environment(selected_provider),
         "return_url": settings.PAYMENT_RETURN_URL,
         "checkout_configured": selected_provider == "manual" or not missing_checkout,
         "webhook_configured": selected_provider == "manual" or not missing_webhook,
@@ -62,8 +83,16 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
         "missing_webhook_settings": missing_webhook,
         "session_endpoint": "/api/v1/restaurant/orders/{order_id}/payment-session",
         "webhook_endpoint": f"/api/v1/restaurant/orders/payments/webhook/{selected_provider}",
-        "mode": "manual" if selected_provider == "manual" else "provider_adapter",
+        "mode": "manual" if selected_provider == "manual" else "provider_order_creation",
     }
+
+
+def provider_environment(provider: str) -> str:
+    if provider == "cashfree":
+        return (settings.CASHFREE_ENVIRONMENT or "sandbox").strip().lower()
+    if provider == "razorpay":
+        return "live_or_test_key"
+    return "local_manual"
 
 
 def _header_value(headers: Mapping[str, str], key: str) -> Optional[str]:
@@ -295,6 +324,372 @@ def normalize_payment_webhook(
     return _normalize_razorpay_webhook(payload)
 
 
+def _safe_provider_order_id(prefix: str, order_id: int, created_at: datetime) -> str:
+    raw_value = f"{prefix}_{order_id}_{int(created_at.timestamp())}"
+    return re.sub(r"[^A-Za-z0-9_-]", "_", raw_value)[:45]
+
+
+def _customer_id(order_id: int, customer_phone: Optional[str]) -> str:
+    digits = re.sub(r"\D", "", customer_phone or "")
+    return f"PB{digits[-10:]}" if digits else f"PB_GUEST_{order_id}"
+
+
+def _customer_phone(customer_phone: Optional[str]) -> str:
+    digits = re.sub(r"\D", "", customer_phone or "")
+    if len(digits) >= 10:
+        return digits[-10:]
+    return "9999999999"
+
+
+def _provider_error_message(provider: str, status_code: int, payload: Any) -> str:
+    if isinstance(payload, dict):
+        for key in ("message", "error_description", "error", "reason"):
+            value = payload.get(key)
+            if value:
+                return f"{provider.title()} returned {status_code}: {value}"
+        nested_error = payload.get("error")
+        if isinstance(nested_error, dict):
+            description = nested_error.get("description") or nested_error.get("message")
+            if description:
+                return f"{provider.title()} returned {status_code}: {description}"
+    if isinstance(payload, str) and payload.strip():
+        return f"{provider.title()} returned {status_code}: {payload.strip()[:220]}"
+    if status_code <= 0:
+        return f"{provider.title()} could not be reached."
+    return f"{provider.title()} returned HTTP {status_code}."
+
+
+def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tuple[int, Any]:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw_body = response.read().decode("utf-8")
+            return response.status, json.loads(raw_body) if raw_body else {}
+    except HTTPError as exc:
+        raw_body = exc.read().decode("utf-8", errors="replace")
+        try:
+            return exc.code, json.loads(raw_body) if raw_body else {}
+        except json.JSONDecodeError:
+            return exc.code, raw_body
+    except (URLError, TimeoutError) as exc:
+        return 0, {"message": str(exc)}
+
+
+def _cashfree_base_url() -> str:
+    configured_url = (settings.CASHFREE_BASE_URL or "").strip().rstrip("/")
+    if configured_url:
+        return configured_url
+    environment = (settings.CASHFREE_ENVIRONMENT or "sandbox").strip().lower()
+    if environment == "production":
+        return "https://api.cashfree.com/pg"
+    return "https://sandbox.cashfree.com/pg"
+
+
+def _amount_in_subunits(amount: float, currency: str) -> int:
+    normalized_currency = (currency or "INR").strip().upper()
+    multiplier = 1 if normalized_currency in ZERO_DECIMAL_CURRENCIES else 100
+    return int(round(float(amount or 0) * multiplier))
+
+
+def _base_session(
+    *,
+    provider: str,
+    order_id: int,
+    amount: float,
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    created_at: datetime,
+    session_id: str,
+    return_url: Optional[str],
+) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "session_id": session_id,
+        "provider_order_id": session_id,
+        "payment_session_id": session_id,
+        "checkout_url": return_url,
+        "checkout_payload": None,
+        "status": "ready",
+        "currency": settings.PAYMENT_CURRENCY,
+        "amount": round(float(amount or 0), 2),
+        "order_id": order_id,
+        "customer_name": customer_name,
+        "customer_phone": customer_phone,
+        "created_at": created_at.isoformat(),
+        "message": "Manual payment session ready.",
+    }
+
+
+def _configuration_required_session(
+    *,
+    provider: str,
+    order_id: int,
+    amount: float,
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    created_at: datetime,
+    session_id: str,
+) -> dict[str, Any]:
+    session = _base_session(
+        provider=provider,
+        order_id=order_id,
+        amount=amount,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        created_at=created_at,
+        session_id=session_id,
+        return_url=None,
+    )
+    session.update(
+        {
+            "checkout_url": None,
+            "payment_session_id": None,
+            "status": "configuration_required",
+            "message": f"{provider.title()} credentials are not configured.",
+        }
+    )
+    return session
+
+
+def _provider_error_session(
+    *,
+    provider: str,
+    order_id: int,
+    amount: float,
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    created_at: datetime,
+    session_id: str,
+    status_code: int,
+    response_payload: Any,
+) -> dict[str, Any]:
+    session = _base_session(
+        provider=provider,
+        order_id=order_id,
+        amount=amount,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        created_at=created_at,
+        session_id=session_id,
+        return_url=None,
+    )
+    session.update(
+        {
+            "checkout_url": None,
+            "payment_session_id": None,
+            "status": "provider_error",
+            "provider_status_code": status_code,
+            "message": _provider_error_message(provider, status_code, response_payload),
+        }
+    )
+    return session
+
+
+def _create_cashfree_session(
+    *,
+    order_id: int,
+    amount: float,
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    created_at: datetime,
+    return_url: Optional[str],
+) -> dict[str, Any]:
+    provider_order_id = _safe_provider_order_id("PB", order_id, created_at)
+    payload: dict[str, Any] = {
+        "order_id": provider_order_id,
+        "order_amount": round(float(amount or 0), 2),
+        "order_currency": settings.PAYMENT_CURRENCY,
+        "customer_details": {
+            "customer_id": _customer_id(order_id, customer_phone),
+            "customer_phone": _customer_phone(customer_phone),
+        },
+        "order_meta": {
+            "return_url": return_url or settings.PAYMENT_RETURN_URL,
+        },
+        "order_note": str(order_id),
+        "order_tags": {
+            "order_id": str(order_id),
+            "source": "pizza_blitz",
+        },
+    }
+    if customer_name:
+        payload["customer_details"]["customer_name"] = customer_name
+
+    status_code, response_payload = _post_json(
+        f"{_cashfree_base_url()}/orders",
+        payload,
+        {
+            "x-api-version": settings.CASHFREE_API_VERSION,
+            "x-client-id": settings.CASHFREE_APP_ID or "",
+            "x-client-secret": settings.CASHFREE_SECRET_KEY or "",
+        },
+    )
+    if not (200 <= status_code < 300) or not isinstance(response_payload, dict):
+        return _provider_error_session(
+            provider="cashfree",
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            session_id=provider_order_id,
+            status_code=status_code,
+            response_payload=response_payload,
+        )
+
+    payment_session_id = response_payload.get("payment_session_id")
+    if not payment_session_id:
+        return _provider_error_session(
+            provider="cashfree",
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            session_id=provider_order_id,
+            status_code=status_code,
+            response_payload=response_payload,
+        )
+
+    session = _base_session(
+        provider="cashfree",
+        order_id=order_id,
+        amount=amount,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        created_at=created_at,
+        session_id=str(response_payload.get("order_id") or provider_order_id),
+        return_url=response_payload.get("payment_link"),
+    )
+    session.update(
+        {
+            "provider_order_id": str(response_payload.get("order_id") or provider_order_id),
+            "payment_session_id": str(payment_session_id),
+            "checkout_payload": {
+                "provider": "cashfree",
+                "mode": provider_environment("cashfree"),
+                "payment_session_id": str(payment_session_id),
+                "provider_order_id": str(response_payload.get("order_id") or provider_order_id),
+            },
+            "message": "Cashfree order created.",
+        }
+    )
+    return session
+
+
+def _create_razorpay_session(
+    *,
+    order_id: int,
+    amount: float,
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    created_at: datetime,
+) -> dict[str, Any]:
+    currency = settings.PAYMENT_CURRENCY
+    amount_subunits = _amount_in_subunits(amount, currency)
+    receipt = _safe_provider_order_id("PB", order_id, created_at)
+    payload: dict[str, Any] = {
+        "amount": amount_subunits,
+        "currency": currency,
+        "receipt": receipt,
+        "notes": {
+            "order_id": str(order_id),
+            "restaurant_order_id": str(order_id),
+            "source": "pizza_blitz",
+        },
+    }
+    auth_token = base64.b64encode(
+        f"{settings.RAZORPAY_KEY_ID}:{settings.RAZORPAY_KEY_SECRET}".encode("utf-8")
+    ).decode("utf-8")
+    base_url = (settings.RAZORPAY_BASE_URL or "https://api.razorpay.com").rstrip("/")
+    status_code, response_payload = _post_json(
+        f"{base_url}/v1/orders",
+        payload,
+        {"Authorization": f"Basic {auth_token}"},
+    )
+    if not (200 <= status_code < 300) or not isinstance(response_payload, dict):
+        return _provider_error_session(
+            provider="razorpay",
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            session_id=receipt,
+            status_code=status_code,
+            response_payload=response_payload,
+        )
+
+    provider_order_id = response_payload.get("id")
+    if not provider_order_id:
+        return _provider_error_session(
+            provider="razorpay",
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            session_id=receipt,
+            status_code=status_code,
+            response_payload=response_payload,
+        )
+
+    session = _base_session(
+        provider="razorpay",
+        order_id=order_id,
+        amount=amount,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        created_at=created_at,
+        session_id=str(provider_order_id),
+        return_url=None,
+    )
+    session.update(
+        {
+            "provider_order_id": str(provider_order_id),
+            "payment_session_id": str(provider_order_id),
+            "checkout_url": None,
+            "checkout_payload": {
+                "provider": "razorpay",
+                "key": settings.RAZORPAY_KEY_ID,
+                "amount": response_payload.get("amount") or amount_subunits,
+                "currency": response_payload.get("currency") or currency,
+                "name": "Pizza Blitz",
+                "description": f"Order #{order_id}",
+                "order_id": str(provider_order_id),
+                "prefill": {
+                    "name": customer_name or "",
+                    "contact": _customer_phone(customer_phone),
+                },
+            },
+            "message": "Razorpay order created.",
+        }
+    )
+    return session
+
+
+def verify_razorpay_checkout_signature(
+    *,
+    provider_order_id: str,
+    provider_payment_id: str,
+    provider_signature: str,
+) -> bool:
+    if not settings.RAZORPAY_KEY_SECRET:
+        return False
+    signed_value = f"{provider_order_id}|{provider_payment_id}"
+    expected = hmac.new(
+        settings.RAZORPAY_KEY_SECRET.encode("utf-8"),
+        signed_value.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return _secure_compare(provider_signature, expected)
+
+
 def create_payment_session(
     *,
     order_id: int,
@@ -314,31 +709,42 @@ def create_payment_session(
     is_configured = _configured(selected_provider)
 
     if selected_provider == "manual":
-        status = "ready"
-        checkout_url = callback_url
-        message = "Manual payment session ready."
-    elif is_configured:
-        status = "ready"
-        checkout_url = callback_url
-        message = (
-            f"{selected_provider.title()} credentials are configured. "
-            "Replace this adapter with the provider checkout API call."
+        return _base_session(
+            provider=selected_provider,
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            session_id=session_id,
+            return_url=callback_url,
         )
-    else:
-        status = "configuration_required"
-        checkout_url = None
-        message = f"{selected_provider.title()} credentials are not configured."
 
-    return {
-        "provider": selected_provider,
-        "session_id": session_id,
-        "checkout_url": checkout_url,
-        "status": status,
-        "currency": settings.PAYMENT_CURRENCY,
-        "amount": round(float(amount or 0), 2),
-        "order_id": order_id,
-        "customer_name": customer_name,
-        "customer_phone": customer_phone,
-        "created_at": created_at.isoformat(),
-        "message": message,
-    }
+    if not is_configured:
+        return _configuration_required_session(
+            provider=selected_provider,
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            session_id=session_id,
+        )
+
+    if selected_provider == "cashfree":
+        return _create_cashfree_session(
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            return_url=callback_url,
+        )
+
+    return _create_razorpay_session(
+        order_id=order_id,
+        amount=amount,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        created_at=created_at,
+    )
