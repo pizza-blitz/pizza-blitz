@@ -12,7 +12,9 @@ import {
   Printer,
   ReceiptText,
   RefreshCw,
+  Send,
   ShoppingBag,
+  Truck,
   Utensils,
   Users,
   X,
@@ -21,6 +23,7 @@ import { getApiUrl } from "@/lib/api";
 
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
+const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
 
 type MenuItem = {
   id: number;
@@ -45,6 +48,16 @@ type Order = {
   source?: string | null;
   fulfillment_type?: string | null;
   delivery_address?: string | null;
+  delivery_zone?: string | null;
+  delivery_fee?: number;
+  delivery_assignment?: {
+    assigned_to?: string | null;
+    status: string;
+    notes?: string | null;
+    assigned_at?: string | null;
+    out_for_delivery_at?: string | null;
+    delivered_at?: string | null;
+  } | null;
   eta_window?: string | null;
   payment_due?: boolean;
   table_number?: string | null;
@@ -78,6 +91,8 @@ export default function OrdersPage() {
   const [formData, setFormData] = useState(emptyCustomer);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
+  const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
 
   const selectedItems = useMemo(
     () => menuItems.filter((item) => Number(item.quantity || 0) > 0),
@@ -92,6 +107,12 @@ export default function OrdersPage() {
   const tax = taxableSubtotal * 0.05;
   const total = taxableSubtotal + tax;
   const openOrders = orders.filter((order) => order.status !== "closed");
+  const deliveryOrders = openOrders.filter(
+    (order) => (order.fulfillment_type || order.order_type) === "delivery"
+  );
+  const unassignedDeliveryCount = deliveryOrders.filter(
+    (order) => !order.delivery_assignment?.assigned_to
+  ).length;
   const closedTotal = orders
     .filter((order) => order.status === "closed")
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
@@ -210,6 +231,40 @@ export default function OrdersPage() {
     );
   };
 
+  const updateDeliveryAssignment = async (
+    order: Order,
+    status: "assigned" | "out_for_delivery" | "delivered"
+  ) => {
+    const assignedTo =
+      assignmentDrafts[order.id] ??
+      order.delivery_assignment?.assigned_to ??
+      "";
+    if (!assignedTo.trim()) {
+      setMessage(`Add a delivery partner for order #${order.id}.`);
+      return;
+    }
+
+    setBusyDeliveryAction(`${order.id}-${status}`);
+    const response = await fetch(`${DELIVERY_API}/orders/${order.id}/assignment`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        assigned_to: assignedTo,
+        status,
+      }),
+    });
+    const data = await response.json();
+    setBusyDeliveryAction(null);
+
+    if (!response.ok) {
+      setMessage(data.detail || "Could not update delivery assignment.");
+      return;
+    }
+
+    setMessage(`Delivery for order #${order.id} moved to ${status.replaceAll("_", " ")}.`);
+    await fetchData();
+  };
+
   return (
     <div className="p-8 bg-[#0a0a0b] min-h-screen text-white">
       <div className="flex flex-wrap justify-between gap-4 items-center mb-8">
@@ -278,86 +333,181 @@ export default function OrdersPage() {
           </div>
         </section>
 
-        <aside className="xl:col-span-4 bg-[#1a1a1c] border border-white/5 rounded-xl p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <Clock className="w-5 h-5 text-orange-400" /> Today Orders
-            </h2>
-            <span className="text-xs text-gray-500 font-bold">{orders.length} total</span>
-          </div>
-          <div className="space-y-3 max-h-[650px] overflow-y-auto pr-1">
-            {orders.map((order) => (
-              <div key={order.id} className="bg-black/25 rounded-xl border border-white/5 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-black">Order #{order.id}</p>
-                    <p className="text-xs text-gray-500">
-                      {order.table_number
-                        ? `Table ${order.table_number}`
-                        : order.fulfillment_type || order.order_type || "Takeaway"}
-                      {order.customer_name ? ` | ${order.customer_name}` : ""}
-                    </p>
+        <aside className="space-y-4 xl:col-span-4">
+          <section className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold">
+                <Truck className="h-5 w-5 text-orange-400" /> Delivery Handoff
+              </h2>
+              <span className="text-xs font-bold text-gray-500">
+                {unassignedDeliveryCount} unassigned
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border border-white/5 bg-black/25 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Active</p>
+                <p className="mt-2 text-2xl font-black">{deliveryOrders.length}</p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-black/25 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Need Rider</p>
+                <p className="mt-2 text-2xl font-black text-orange-400">{unassignedDeliveryCount}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {deliveryOrders.slice(0, 3).map((order) => {
+                const assignment = order.delivery_assignment;
+                const deliveryStatus = assignment?.status?.replaceAll("_", " ") || "unassigned";
+                return (
+                  <div key={`delivery-${order.id}`} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black">Order #{order.id}</p>
+                        <p className="mt-1 line-clamp-2 text-xs font-semibold text-gray-500">
+                          {order.delivery_address || "Address pending"}
+                        </p>
+                        <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-gray-600">
+                          {order.delivery_zone || "Zone pending"} | {order.eta_window || "ETA pending"}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-orange-500/10 px-3 py-1 text-[10px] font-black uppercase text-orange-300">
+                        {deliveryStatus}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                      <input
+                        value={assignmentDrafts[order.id] ?? assignment?.assigned_to ?? ""}
+                        onChange={(event) =>
+                          setAssignmentDrafts((current) => ({
+                            ...current,
+                            [order.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Rider name"
+                        className="min-w-0 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold outline-none focus:border-orange-500"
+                      />
+                      <button
+                        onClick={() => updateDeliveryAssignment(order, "assigned")}
+                        disabled={busyDeliveryAction === `${order.id}-assigned`}
+                        className="rounded-lg bg-orange-500 px-3 py-2 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-50"
+                      >
+                        Assign
+                      </button>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => updateDeliveryAssignment(order, "out_for_delivery")}
+                        disabled={busyDeliveryAction === `${order.id}-out_for_delivery`}
+                        className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" /> Dispatch
+                      </button>
+                      <button
+                        onClick={() => updateDeliveryAssignment(order, "delivered")}
+                        disabled={busyDeliveryAction === `${order.id}-delivered`}
+                        className="flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Delivered
+                      </button>
+                    </div>
                   </div>
-                  <span className={`text-[10px] font-black uppercase ${order.status === "closed" ? "text-green-400" : "text-orange-400"}`}>
-                    {order.status}
-                  </span>
+                );
+              })}
+              {!deliveryOrders.length && (
+                <div className="rounded-xl border border-dashed border-white/10 p-5 text-center text-sm font-semibold text-gray-500">
+                  No active delivery orders.
                 </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-sm text-gray-400">{order.items.length} item types</span>
-                  <span className="font-black">Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {order.source === "customer_website" && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-300">
-                      <Globe2 className="h-3 w-3" /> Online
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-bold">
+                <Clock className="h-5 w-5 text-orange-400" /> Today Orders
+              </h2>
+              <span className="text-xs font-bold text-gray-500">{orders.length} total</span>
+            </div>
+            <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
+              {orders.map((order) => (
+                <div key={order.id} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">Order #{order.id}</p>
+                      <p className="text-xs text-gray-500">
+                        {order.table_number
+                          ? `Table ${order.table_number}`
+                          : order.fulfillment_type || order.order_type || "Takeaway"}
+                        {order.customer_name ? ` | ${order.customer_name}` : ""}
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-black uppercase ${order.status === "closed" ? "text-green-400" : "text-orange-400"}`}>
+                      {order.status}
                     </span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-sm text-gray-400">{order.items.length} item types</span>
+                    <span className="font-black">Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {order.source === "customer_website" && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-300">
+                        <Globe2 className="h-3 w-3" /> Online
+                      </span>
+                    )}
+                    {order.eta_window && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-gray-400">
+                        <Clock className="h-3 w-3" /> {order.eta_window}
+                      </span>
+                    )}
+                    {order.delivery_assignment?.assigned_to && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">
+                        <Truck className="h-3 w-3" /> {order.delivery_assignment.assigned_to}
+                      </span>
+                    )}
+                    {order.payment_due && (
+                      <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300">
+                        Payment due
+                      </span>
+                    )}
+                  </div>
+                  {order.delivery_address && (
+                    <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-gray-500">
+                      <MapPin className="h-3 w-3 text-orange-400" />
+                      {order.delivery_address}
+                    </p>
                   )}
-                  {order.eta_window && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-gray-400">
-                      <Clock className="h-3 w-3" /> {order.eta_window}
-                    </span>
-                  )}
-                  {order.payment_due && (
-                    <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300">
-                      Payment due
-                    </span>
-                  )}
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <Link
+                      href={`/receipt/${order.id}`}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
+                    >
+                      <ReceiptText className="h-4 w-4" /> Bill
+                    </Link>
+                    <button
+                      onClick={() => generateInvoice(order)}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
+                    >
+                      <FileText className="h-4 w-4" /> Invoice
+                    </button>
+                    <button
+                      onClick={() => closeOrder(order)}
+                      disabled={order.status === "closed"}
+                      className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Close
+                    </button>
+                  </div>
                 </div>
-                {order.delivery_address && (
-                  <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-gray-500">
-                    <MapPin className="h-3 w-3 text-orange-400" />
-                    {order.delivery_address}
-                  </p>
-                )}
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <Link
-                    href={`/receipt/${order.id}`}
-                    className="rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 flex items-center justify-center gap-2"
-                  >
-                    <ReceiptText className="w-4 h-4" /> Bill
-                  </Link>
-                  <button
-                    onClick={() => generateInvoice(order)}
-                    className="rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 flex items-center justify-center gap-2"
-                  >
-                    <FileText className="w-4 h-4" /> Invoice
-                  </button>
-                  <button
-                    onClick={() => closeOrder(order)}
-                    disabled={order.status === "closed"}
-                    className="col-span-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40 flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> Close
-                  </button>
+              ))}
+              {!orders.length && (
+                <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-gray-500">
+                  No orders yet today.
                 </div>
-              </div>
-            ))}
-            {!orders.length && (
-              <div className="text-sm text-gray-500 border border-dashed border-white/10 rounded-xl p-6 text-center">
-                No orders yet today.
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </section>
         </aside>
       </div>
 
