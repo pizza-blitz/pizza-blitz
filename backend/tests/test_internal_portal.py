@@ -58,6 +58,30 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(comparison_payload["change_percent"], 50.0)
             self.assertEqual(comparison_payload["direction"], "up")
 
+            performance_dashboard = client.get(
+                "/api/v1/restaurant/stats/compare/performance-dashboard?period=7days"
+            )
+            self.assertEqual(performance_dashboard.status_code, 200)
+            performance_payload = performance_dashboard.json()
+            self.assertEqual(performance_payload["period"]["days"], 7)
+            performance_cards = {
+                card["key"]: card
+                for card in performance_payload["summary_cards"]
+            }
+            self.assertEqual(performance_cards["revenue"]["current"], 1800)
+            self.assertEqual(performance_cards["revenue"]["last_year"], 1200)
+            self.assertEqual(performance_cards["revenue"]["yoy_change_percent"], 50.0)
+            self.assertEqual(performance_cards["profit"]["current"], 1150)
+            self.assertEqual(
+                performance_payload["daily_comparison"][-1]["current_sale"],
+                1000,
+            )
+            self.assertEqual(
+                performance_payload["daily_comparison"][-1]["last_year_sale"],
+                500,
+            )
+            self.assertEqual(len(performance_payload["weekday_breakdown"]), 7)
+
             lifetime = client.get("/api/v1/restaurant/stats/insights/lifetime-summary")
             self.assertEqual(lifetime.status_code, 200)
             lifetime_payload = lifetime.json()

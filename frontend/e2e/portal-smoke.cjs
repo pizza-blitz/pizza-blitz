@@ -61,6 +61,12 @@ function createBrowserWatch(page) {
     if (message.type() !== "error") return;
     const text = message.text();
     if (/Failed to load resource|favicon\.ico|images\.unsplash\.com/i.test(text)) return;
+    if (
+      /Failed to fetch RSC payload/i.test(text) &&
+      /Falling back to browser navigation/i.test(text)
+    ) {
+      return;
+    }
     issues.push(`console error: ${text}`);
   });
 

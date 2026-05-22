@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Calendar, Download, Share2, Filter, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2 } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const Award = ({className}: {className?: string}) => (
@@ -19,18 +19,21 @@ export default function Reports() {
   const fetchReports = async () => {
     setIsLoading(true);
     try {
-      const [statsRes, salesRes, forecastRes, trendRes] = await Promise.all([
+      const comparisonPeriod = period === "lifetime" ? "1year" : period;
+      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes] = await Promise.all([
         fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`)).then(r => r.json()),
         fetch(getApiUrl('/api/v1/restaurant/sales/')).then(r => r.json()),
         fetch(getApiUrl('/api/v1/restaurant/stats/insights/monthly-forecast')).then(r => r.json()),
-        fetch(getApiUrl('/api/v1/restaurant/stats/insights/profit-trend?months=12')).then(r => r.json())
+        fetch(getApiUrl('/api/v1/restaurant/stats/insights/profit-trend?months=12')).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`)).then(r => r.json())
       ]);
       
       setData({
         summary: statsRes.metrics,
         records: salesRes.reverse().slice(0, 10),
         forecast: forecastRes,
-        trends: trendRes.trend
+        trends: trendRes.trend,
+        comparison: comparisonRes
       });
     } catch (err) { 
       console.error(err); 
@@ -41,6 +44,12 @@ export default function Reports() {
 
   const handleExport = () => {
     window.location.href = getApiUrl('/api/v1/restaurant/sales/export/csv');
+  };
+
+  const formatComparisonValue = (key: string, value: number) => {
+    const nextValue = Number(value || 0);
+    if (key === "margin") return `${nextValue.toFixed(1)}%`;
+    return `Rs ${nextValue.toLocaleString()}`;
   };
 
   return (
@@ -85,6 +94,104 @@ export default function Reports() {
         </div>
       ) : (
         <>
+          {data?.comparison && (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+              <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Comparison Dashboard</p>
+                    <h2 className="mt-1 text-xl font-black text-gray-950">Current vs Previous vs Last Year</h2>
+                  </div>
+                  <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black text-gray-500">
+                    <BarChart3 className="h-4 w-4 text-orange-600" />
+                    {data.comparison.period.current_start} to {data.comparison.period.current_end}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                  {data.comparison.summary_cards.map((card: any) => {
+                    const positive = card.yoy_change_percent >= 0;
+                    const DirectionIcon = positive ? ArrowUpRight : ArrowDownRight;
+                    return (
+                      <div key={card.key} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{card.label}</p>
+                        <p className="mt-2 text-xl font-black text-gray-950">{formatComparisonValue(card.key, card.current)}</p>
+                        <div className="mt-3 grid gap-1 text-[11px] font-bold text-gray-500">
+                          <div className="flex items-center justify-between">
+                            <span>Previous</span>
+                            <span>{formatComparisonValue(card.key, card.previous)}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span>Last year</span>
+                            <span>{formatComparisonValue(card.key, card.last_year)}</span>
+                          </div>
+                        </div>
+                        <div className={`mt-3 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-black ${positive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                          <DirectionIcon className="h-3.5 w-3.5" />
+                          {card.yoy_change_percent > 0 ? "+" : ""}{card.yoy_change_percent}% YoY
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-5 overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full min-w-[720px] text-left">
+                    <thead className="bg-gray-950 text-white">
+                      <tr>
+                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Day</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Current</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Previous</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Last Year</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {data.comparison.daily_comparison.slice(-7).map((row: any) => (
+                        <tr key={row.date} className="hover:bg-orange-50/50">
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-black text-gray-900">{row.label}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.weekday}</p>
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-black text-gray-900">Rs {Number(row.current_sale || 0).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-gray-500">Rs {Number(row.previous_sale || 0).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-gray-500">Rs {Number(row.last_year_sale || 0).toLocaleString()}</td>
+                          <td className="px-4 py-3 text-right text-sm font-black text-green-700">Rs {Number(row.current_profit || 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <aside className="space-y-4">
+                <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400">Best Day</p>
+                  <h3 className="mt-2 text-2xl font-black text-gray-950">{data.comparison.best_day?.label || "No data"}</h3>
+                  <p className="mt-1 text-sm font-bold text-gray-500">{data.comparison.best_day?.weekday || "Awaiting sales entries"}</p>
+                  <div className="mt-4 rounded-lg bg-green-50 p-4 text-green-800">
+                    <p className="text-[10px] font-black uppercase tracking-widest">Revenue</p>
+                    <p className="mt-1 text-xl font-black">Rs {Number(data.comparison.best_day?.current_sale || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-700" />
+                    <h3 className="text-sm font-black uppercase tracking-widest text-amber-900">Signals</h3>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {data.comparison.risk_flags.map((flag: string) => (
+                      <p key={flag} className="rounded-md bg-white px-3 py-2 text-sm font-bold text-amber-900">
+                        {flag}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-50 border-t-8 border-t-orange-500 relative overflow-hidden group">
               <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
@@ -215,4 +322,3 @@ export default function Reports() {
     </div>
   );
 }
-

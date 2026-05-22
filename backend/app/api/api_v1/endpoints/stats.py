@@ -7,6 +7,71 @@ from datetime import datetime, timedelta
 
 router = APIRouter()
 
+def _period_days(period: str) -> int:
+    if period == "7days":
+        return 7
+    if period in ["90days", "3months"]:
+        return 90
+    if period == "1year":
+        return 365
+    return 30
+
+def _percent_change(current: float, baseline: float) -> float:
+    if baseline == 0:
+        return 0
+    return round(((current - baseline) / baseline) * 100, 2)
+
+def _direction(change_percent: float) -> str:
+    return "up" if change_percent >= 0 else "down"
+
+def _aggregate_range(db: Session, start_date, end_date):
+    row = db.query(
+        func.sum(DailySales.total_sale).label("sales"),
+        func.sum(DailySales.total_expense).label("expenses"),
+        func.count(DailySales.id).label("days"),
+    ).filter(DailySales.date >= start_date, DailySales.date <= end_date).first()
+
+    revenue = float(row.sales or 0)
+    expenses = float(row.expenses or 0)
+    profit = revenue - expenses
+    days_with_entries = int(row.days or 0)
+    margin = (profit / revenue * 100) if revenue > 0 else 0
+
+    return {
+        "revenue": round(revenue, 2),
+        "expenses": round(expenses, 2),
+        "profit": round(profit, 2),
+        "margin_percent": round(margin, 2),
+        "daily_average": round(revenue / days_with_entries, 2) if days_with_entries else 0,
+        "days_with_entries": days_with_entries,
+    }
+
+def _daily_map(db: Session, start_date, end_date):
+    rows = db.query(DailySales).filter(
+        DailySales.date >= start_date,
+        DailySales.date <= end_date,
+    ).all()
+    return {row.date: row for row in rows}
+
+def _metric_card(key: str, label: str, value_key: str, current: dict, previous: dict, last_year: dict):
+    current_value = current[value_key]
+    previous_value = previous[value_key]
+    last_year_value = last_year[value_key]
+    previous_change = _percent_change(current_value, previous_value)
+    yoy_change = _percent_change(current_value, last_year_value)
+
+    return {
+        "key": key,
+        "label": label,
+        "current": current_value,
+        "previous": previous_value,
+        "last_year": last_year_value,
+        "previous_change_percent": previous_change,
+        "previous_direction": _direction(previous_change),
+        "yoy_change_percent": yoy_change,
+        "yoy_direction": _direction(yoy_change),
+    }
+
 @router.get("/dashboard-stats")
 def get_dashboard_stats(period: str = "30days", db: Session = Depends(get_db)):
     today = datetime.utcnow().date()
@@ -150,12 +215,7 @@ def get_lifetime_summary(db: Session = Depends(get_db)):
 
 @router.get("/compare/same-period")
 def compare_same_period(period: str = "7days", db: Session = Depends(get_db)):
-    if period == "7days":
-        days = 7
-    elif period == "3months":
-        days = 90
-    else:
-        days = 30
+    days = _period_days(period)
     
     today = datetime.utcnow().date()
     current_start = today - timedelta(days=days - 1)
@@ -178,6 +238,142 @@ def compare_same_period(period: str = "7days", db: Session = Depends(get_db)):
         "last_year_total": float(last_year),
         "change_percent": round(change_percent, 2),
         "direction": "up" if change_percent >= 0 else "down"
+    }
+
+@router.get("/compare/performance-dashboard")
+def performance_comparison_dashboard(period: str = "30days", db: Session = Depends(get_db)):
+    days = _period_days(period)
+    today = datetime.utcnow().date()
+    current_start = today - timedelta(days=days - 1)
+    current_end = today
+    previous_start = current_start - timedelta(days=days)
+    previous_end = current_start - timedelta(days=1)
+    last_year_start = current_start - timedelta(days=365)
+    last_year_end = current_end - timedelta(days=365)
+
+    current = _aggregate_range(db, current_start, current_end)
+    previous = _aggregate_range(db, previous_start, previous_end)
+    last_year = _aggregate_range(db, last_year_start, last_year_end)
+
+    current_rows = _daily_map(db, current_start, current_end)
+    previous_rows = _daily_map(db, previous_start, previous_end)
+    last_year_rows = _daily_map(db, last_year_start, last_year_end)
+
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekday_totals = {
+        index: {"current": 0.0, "previous": 0.0, "last_year": 0.0, "days": 0}
+        for index in range(7)
+    }
+    daily_comparison = []
+
+    for index in range(days):
+        current_date = current_start + timedelta(days=index)
+        previous_date = previous_start + timedelta(days=index)
+        last_year_date = last_year_start + timedelta(days=index)
+        current_row = current_rows.get(current_date)
+        previous_row = previous_rows.get(previous_date)
+        last_year_row = last_year_rows.get(last_year_date)
+
+        current_sale = float(current_row.total_sale or 0) if current_row else 0.0
+        previous_sale = float(previous_row.total_sale or 0) if previous_row else 0.0
+        last_year_sale = float(last_year_row.total_sale or 0) if last_year_row else 0.0
+        current_profit = (
+            float((current_row.profit if current_row else 0) or 0)
+            if current_row
+            else 0.0
+        )
+        previous_profit = (
+            float((previous_row.profit if previous_row else 0) or 0)
+            if previous_row
+            else 0.0
+        )
+        last_year_profit = (
+            float((last_year_row.profit if last_year_row else 0) or 0)
+            if last_year_row
+            else 0.0
+        )
+
+        weekday_index = current_date.weekday()
+        weekday_totals[weekday_index]["current"] += current_sale
+        weekday_totals[weekday_index]["previous"] += previous_sale
+        weekday_totals[weekday_index]["last_year"] += last_year_sale
+        weekday_totals[weekday_index]["days"] += 1
+
+        daily_comparison.append({
+            "day_index": index + 1,
+            "date": current_date.isoformat(),
+            "label": current_date.strftime("%d %b"),
+            "weekday": day_names[weekday_index],
+            "current_sale": round(current_sale, 2),
+            "previous_sale": round(previous_sale, 2),
+            "last_year_sale": round(last_year_sale, 2),
+            "current_profit": round(current_profit, 2),
+            "previous_profit": round(previous_profit, 2),
+            "last_year_profit": round(last_year_profit, 2),
+        })
+
+    summary_cards = [
+        _metric_card("revenue", "Revenue", "revenue", current, previous, last_year),
+        _metric_card("expenses", "Expenses", "expenses", current, previous, last_year),
+        _metric_card("profit", "Profit", "profit", current, previous, last_year),
+        _metric_card("margin", "Margin %", "margin_percent", current, previous, last_year),
+        _metric_card("daily_average", "Daily Average", "daily_average", current, previous, last_year),
+    ]
+
+    best_day = max(daily_comparison, key=lambda row: row["current_sale"], default=None)
+    slowest_day = min(daily_comparison, key=lambda row: row["current_sale"], default=None)
+
+    revenue_card = next(card for card in summary_cards if card["key"] == "revenue")
+    expense_ratio = (current["expenses"] / current["revenue"] * 100) if current["revenue"] > 0 else 0
+    risk_flags = []
+    if current["revenue"] <= 0:
+        risk_flags.append("No revenue captured in this period.")
+    if current["margin_percent"] < 20 and current["revenue"] > 0:
+        risk_flags.append("Profit margin is below 20%.")
+    if revenue_card["previous_change_percent"] < -5:
+        risk_flags.append("Revenue is down more than 5% vs the previous period.")
+    if revenue_card["yoy_change_percent"] < 0:
+        risk_flags.append("Revenue is behind the same period last year.")
+    if expense_ratio > 65:
+        risk_flags.append("Expenses are consuming more than 65% of revenue.")
+    if not risk_flags:
+        risk_flags.append("Performance is stable against comparison baselines.")
+
+    weekday_breakdown = []
+    for weekday_index, values in weekday_totals.items():
+        current_total = round(values["current"], 2)
+        previous_total = round(values["previous"], 2)
+        last_year_total = round(values["last_year"], 2)
+        weekday_breakdown.append({
+            "weekday": day_names[weekday_index],
+            "current_sale": current_total,
+            "previous_sale": previous_total,
+            "last_year_sale": last_year_total,
+            "previous_change_percent": _percent_change(current_total, previous_total),
+            "yoy_change_percent": _percent_change(current_total, last_year_total),
+            "days": values["days"],
+        })
+
+    return {
+        "period": {
+            "label": period,
+            "days": days,
+            "current_start": current_start.isoformat(),
+            "current_end": current_end.isoformat(),
+            "previous_start": previous_start.isoformat(),
+            "previous_end": previous_end.isoformat(),
+            "last_year_start": last_year_start.isoformat(),
+            "last_year_end": last_year_end.isoformat(),
+        },
+        "current": current,
+        "previous": previous,
+        "last_year": last_year,
+        "summary_cards": summary_cards,
+        "daily_comparison": daily_comparison,
+        "weekday_breakdown": weekday_breakdown,
+        "best_day": best_day,
+        "slowest_day": slowest_day,
+        "risk_flags": risk_flags,
     }
 
 @router.get("/insights/day-of-week")
