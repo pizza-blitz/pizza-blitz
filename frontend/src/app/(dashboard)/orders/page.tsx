@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   Clock,
   FileText,
   Plus,
   Printer,
+  ReceiptText,
   RefreshCw,
   ShoppingBag,
   Utensils,
@@ -291,6 +293,12 @@ export default function OrdersPage() {
                   <span className="font-black">Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Link
+                    href={`/receipt/${order.id}`}
+                    className="rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 flex items-center justify-center gap-2"
+                  >
+                    <ReceiptText className="w-4 h-4" /> Bill
+                  </Link>
                   <button
                     onClick={() => generateInvoice(order)}
                     className="rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10 flex items-center justify-center gap-2"
@@ -300,7 +308,7 @@ export default function OrdersPage() {
                   <button
                     onClick={() => closeOrder(order)}
                     disabled={order.status === "closed"}
-                    className="rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40 flex items-center justify-center gap-2"
+                    className="col-span-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40 flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" /> Close
                   </button>

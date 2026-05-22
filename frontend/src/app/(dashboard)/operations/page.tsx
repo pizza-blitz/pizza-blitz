@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Check,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   FileText,
   Flame,
   Loader2,
+  ReceiptText,
   RefreshCw,
   TimerReset,
   Truck,
@@ -272,7 +274,7 @@ export default function OperationsPage() {
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="min-w-[900px]">
-          <div className="grid grid-cols-[1fr_140px_150px_180px] gap-4 border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500">
+          <div className="grid grid-cols-[1fr_140px_150px_230px] gap-4 border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500">
             <span>Order</span>
             <span>Payment</span>
             <span>Status</span>
@@ -305,7 +307,7 @@ export default function OperationsPage() {
               return (
                 <div
                   key={order.id}
-                  className="grid grid-cols-[1fr_140px_150px_180px] gap-4 border-b border-gray-100 px-4 py-4 last:border-b-0"
+                  className="grid grid-cols-[1fr_140px_150px_230px] gap-4 border-b border-gray-100 px-4 py-4 last:border-b-0"
                 >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -348,6 +350,14 @@ export default function OperationsPage() {
                 </div>
 
                 <div className="flex items-start justify-end gap-2">
+                  <Link
+                    title="Print bill"
+                    aria-label={`Print bill for order ${order.id}`}
+                    href={`/receipt/${order.id}`}
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                  >
+                    <ReceiptText className="h-4 w-4" />
+                  </Link>
                   <button
                     title="Mark preparing"
                     aria-label={`Mark order ${order.id} preparing`}

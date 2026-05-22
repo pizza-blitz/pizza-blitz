@@ -12,6 +12,7 @@ const protectedRoutes = [
   "/daily",
   "/sales",
   "/reports",
+  "/receipt",
   "/invoices",
   "/breakeven",
   "/menu",
