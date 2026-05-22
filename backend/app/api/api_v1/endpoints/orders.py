@@ -9,6 +9,7 @@ from app.api.deps import get_db
 from app.models.domain import (
     Customer,
     DailySales,
+    DeliveryAssignment,
     DiningTable,
     InventoryItem,
     InventoryTransaction,
@@ -17,6 +18,7 @@ from app.models.domain import (
     Recipe,
     RestaurantOrder,
 )
+from app.services.delivery_service import delivery_quote
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -58,6 +60,8 @@ class OrderCreate(BaseModel):
     discount_amount: float = 0.0
     coupon_code: Optional[str] = None
     payment_method: Optional[str] = None
+    delivery_address: Optional[str] = None
+    delivery_zone_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -115,6 +119,7 @@ def serialize_invoice(invoice: Invoice) -> dict:
 
 def serialize_order(order: RestaurantOrder) -> dict:
     metadata = order_metadata(order)
+    assignment = order.delivery_assignment
     return {
         "id": order.id,
         "date": order.date.isoformat() if order.date else None,
@@ -122,6 +127,9 @@ def serialize_order(order: RestaurantOrder) -> dict:
         "source": metadata["source"],
         "fulfillment_type": metadata["fulfillment_type"],
         "delivery_address": metadata["delivery_address"],
+        "delivery_zone": metadata["delivery_zone"],
+        "delivery_fee": metadata["delivery_fee"],
+        "delivery_assignment": serialize_delivery_assignment(assignment),
         "eta_window": order_eta_window(order),
         "payment_due": (
             (order.payment_method or "").lower() == "prepaid"
@@ -173,10 +181,19 @@ def note_value(notes: Optional[str], label: str) -> Optional[str]:
 def order_metadata(order: RestaurantOrder) -> dict:
     notes = order.notes or ""
     fulfillment_type = note_value(notes, "Fulfillment") or order.order_type or "takeaway"
+    delivery_fee = 0.0
+    fee_note = note_value(notes, "Delivery Fee")
+    if fee_note:
+        try:
+            delivery_fee = round(float(fee_note.replace("Rs", "").strip()), 2)
+        except ValueError:
+            delivery_fee = 0.0
     return {
         "source": "customer_website" if "customer website order" in notes.lower() else "counter",
         "fulfillment_type": fulfillment_type,
         "delivery_address": note_value(notes, "Address"),
+        "delivery_zone": note_value(notes, "Delivery Zone"),
+        "delivery_fee": delivery_fee,
     }
 
 
@@ -193,6 +210,23 @@ def order_eta_window(order: RestaurantOrder) -> str:
     if (order.order_type or "").lower() == "delivery":
         return "35-45 min"
     return "20-25 min"
+
+
+def serialize_delivery_assignment(assignment: Optional[DeliveryAssignment]) -> Optional[dict]:
+    if assignment is None:
+        return None
+    return {
+        "assigned_to": assignment.assigned_to,
+        "status": assignment.status,
+        "notes": assignment.notes,
+        "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+        "out_for_delivery_at": (
+            assignment.out_for_delivery_at.isoformat()
+            if assignment.out_for_delivery_at
+            else None
+        ),
+        "delivered_at": assignment.delivered_at.isoformat() if assignment.delivered_at else None,
+    }
 
 
 def order_tracking_steps(order: RestaurantOrder) -> list[dict]:
@@ -461,7 +495,27 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     )
     taxable_subtotal = max(subtotal - discount, 0)
     tax = round(taxable_subtotal * 0.05, 2)
-    total = round(taxable_subtotal + tax, 2)
+    delivery_fee = 0.0
+    delivery_zone_name = None
+    delivery_eta = None
+    delivery_address = order.delivery_address or note_value(order.notes, "Address")
+    if (order.order_type or "").lower() == "delivery":
+        try:
+            quote = delivery_quote(
+                db,
+                address=delivery_address,
+                subtotal=subtotal,
+                zone_id=order.delivery_zone_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not quote["is_deliverable"]:
+            raise HTTPException(status_code=409, detail=quote["reason"])
+        delivery_fee = float(quote["delivery_fee"] or 0)
+        delivery_zone_name = quote["zone"]["name"] if quote.get("zone") else None
+        delivery_eta = quote.get("eta_window")
+        delivery_address = quote["address"]
+    total = round(taxable_subtotal + tax + delivery_fee, 2)
     items = [item.model_dump() for item in valid_items]
     payment_method = (order.payment_method or "cash").lower()
     payment_status = "awaiting_payment" if payment_method == "prepaid" else "pending"
@@ -469,6 +523,15 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     notes = order.notes
     if applied_promo and applied_promo.code:
         notes = append_order_note(notes, f"Coupon: {applied_promo.code}")
+    if (order.order_type or "").lower() == "delivery":
+        if delivery_address and not note_value(notes, "Address"):
+            notes = append_order_note(notes, f"Address: {delivery_address}")
+        if delivery_zone_name and not note_value(notes, "Delivery Zone"):
+            notes = append_order_note(notes, f"Delivery Zone: {delivery_zone_name}")
+        if not note_value(notes, "Delivery Fee"):
+            notes = append_order_note(notes, f"Delivery Fee: {delivery_fee}")
+        if delivery_eta and not note_value(notes, "ETA"):
+            notes = append_order_note(notes, f"ETA: {delivery_eta}")
 
     row = RestaurantOrder(
         order_type=order.order_type,
@@ -504,6 +567,8 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         "subtotal": subtotal,
         "discount": discount,
         "tax": tax,
+        "delivery_fee": delivery_fee,
+        "delivery_zone": delivery_zone_name,
         "total": total,
         "status": row.status,
         "payment_status": row.payment_status,

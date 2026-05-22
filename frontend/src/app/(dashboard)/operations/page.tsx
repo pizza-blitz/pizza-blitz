@@ -21,6 +21,7 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
+const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
 
 type OrderItem = {
   name: string;
@@ -34,6 +35,16 @@ type Order = {
   source?: string | null;
   fulfillment_type?: string | null;
   delivery_address?: string | null;
+  delivery_zone?: string | null;
+  delivery_fee?: number;
+  delivery_assignment?: {
+    assigned_to?: string | null;
+    status: string;
+    notes?: string | null;
+    assigned_at?: string | null;
+    out_for_delivery_at?: string | null;
+    delivered_at?: string | null;
+  } | null;
   eta_window?: string | null;
   payment_due?: boolean;
   table_number?: string | null;
@@ -99,12 +110,16 @@ export default function OperationsPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
 
   const activeOrders = orders.filter((order) => order.status !== "closed");
   const paymentDueOrders = activeOrders.filter(
     (order) =>
       (order.payment_method || "").toLowerCase() === "prepaid" &&
       order.payment_status !== "paid"
+  );
+  const deliveryOrders = activeOrders.filter(
+    (order) => (order.fulfillment_type || order.order_type) === "delivery"
   );
 
   const stats = useMemo(() => {
@@ -115,8 +130,11 @@ export default function OperationsPage() {
       (sum, order) => sum + Number(order.total_amount || 0),
       0
     );
-    return { ready, preparing, fresh, activeValue };
-  }, [activeOrders]);
+    const unassignedDelivery = deliveryOrders.filter(
+      (order) => !order.delivery_assignment?.assigned_to
+    ).length;
+    return { ready, preparing, fresh, activeValue, unassignedDelivery };
+  }, [activeOrders, deliveryOrders]);
 
   const visibleOrders = useMemo(() => {
     if (filter === "active") return activeOrders;
@@ -210,6 +228,40 @@ export default function OperationsPage() {
     }
   };
 
+  const updateDeliveryAssignment = async (
+    order: Order,
+    status: "assigned" | "out_for_delivery" | "delivered" | "failed"
+  ) => {
+    const assignedTo =
+      assignmentDrafts[order.id] ??
+      order.delivery_assignment?.assigned_to ??
+      "";
+    if (status === "assigned" && !assignedTo.trim()) {
+      setMessage(`Add a delivery partner for order #${order.id}.`);
+      return;
+    }
+
+    setBusyAction(`${order.id}-delivery-${status}`);
+    try {
+      const response = await fetch(`${DELIVERY_API}/orders/${order.id}/assignment`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assigned_to: assignedTo,
+          status,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not update delivery.");
+      setMessage(`Delivery for order #${order.id} moved to ${status.replaceAll("_", " ")}.`);
+      await fetchOrders();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update delivery.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -229,7 +281,7 @@ export default function OperationsPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-500">New</p>
           <div className="mt-2 flex items-end justify-between">
@@ -249,6 +301,13 @@ export default function OperationsPage() {
           <div className="mt-2 flex items-end justify-between">
             <span className="text-2xl font-black text-gray-950">{stats.ready}</span>
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+          </div>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Delivery</p>
+          <div className="mt-2 flex items-end justify-between">
+            <span className="text-2xl font-black text-gray-950">{stats.unassignedDelivery}</span>
+            <Truck className="h-5 w-5 text-red-600" />
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -280,6 +339,80 @@ export default function OperationsPage() {
         <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-medium text-orange-800">
           {message}
         </div>
+      )}
+
+      {deliveryOrders.length > 0 && (
+        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-gray-950">Delivery Assignment</h2>
+              <p className="text-sm text-gray-500">
+                Active delivery orders with rider handoff status.
+              </p>
+            </div>
+            <Truck className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {deliveryOrders.map((order) => {
+              const assignment = order.delivery_assignment;
+              return (
+                <article
+                  key={`delivery-${order.id}`}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-gray-950">Order #{order.id}</p>
+                      <p className="mt-1 max-w-md text-sm font-semibold text-gray-600">
+                        {order.delivery_address || "Address pending"}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-gray-500">
+                        {order.delivery_zone || "Zone pending"} | Fee {money(order.delivery_fee || 0)} | {order.eta_window}
+                      </p>
+                    </div>
+                    <span className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-black text-red-700">
+                      {assignment?.status?.replaceAll("_", " ") || "unassigned"}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
+                    <input
+                      value={assignmentDrafts[order.id] ?? assignment?.assigned_to ?? ""}
+                      onChange={(event) =>
+                        setAssignmentDrafts((current) => ({
+                          ...current,
+                          [order.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Delivery partner"
+                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-red-600"
+                    />
+                    <button
+                      onClick={() => updateDeliveryAssignment(order, "assigned")}
+                      disabled={busyAction === `${order.id}-delivery-assigned`}
+                      className="rounded-md bg-slate-950 px-3 py-2 text-sm font-black text-white hover:bg-red-700 disabled:bg-slate-300"
+                    >
+                      Assign
+                    </button>
+                    <button
+                      onClick={() => updateDeliveryAssignment(order, "out_for_delivery")}
+                      disabled={busyAction === `${order.id}-delivery-out_for_delivery`}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:border-red-600"
+                    >
+                      Dispatch
+                    </button>
+                    <button
+                      onClick={() => updateDeliveryAssignment(order, "delivered")}
+                      disabled={busyAction === `${order.id}-delivery-delivered`}
+                      className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700 hover:bg-emerald-100"
+                    >
+                      Delivered
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">

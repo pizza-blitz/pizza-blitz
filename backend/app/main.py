@@ -6,6 +6,7 @@ from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.models import domain
 from app.models.domain import DiningTable, ExpenseCategory, MenuItem, Vendor
+from app.services.delivery_service import seed_default_delivery_zones
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
@@ -75,6 +76,7 @@ def seed_baseline_data() -> None:
             if category_name not in existing_categories:
                 db.add(ExpenseCategory(name=category_name, is_active=True))
 
+        seed_default_delivery_zones(db)
         db.commit()
     finally:
         db.close()

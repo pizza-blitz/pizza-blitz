@@ -444,6 +444,29 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(customer_session.status_code, 200)
             self.assertEqual(customer_session.json()["role"], "customer")
 
+            zones = client.get("/api/v1/restaurant/delivery/zones")
+            self.assertEqual(zones.status_code, 200)
+            self.assertIn("City Core", [zone["name"] for zone in zones.json()])
+            city_core_zone = next(zone for zone in zones.json() if zone["name"] == "City Core")
+
+            delivery_quote = client.post(
+                "/api/v1/restaurant/delivery/quote",
+                json={
+                    "address": "12 Park Street",
+                    "subtotal": 119,
+                    "zone_id": city_core_zone["id"],
+                },
+            )
+            self.assertEqual(delivery_quote.status_code, 200)
+            self.assertEqual(delivery_quote.json()["is_deliverable"], True)
+            self.assertEqual(delivery_quote.json()["delivery_fee"], 39)
+
+            invalid_delivery_quote = client.post(
+                "/api/v1/restaurant/delivery/quote",
+                json={"address": "Park", "subtotal": 119},
+            )
+            self.assertEqual(invalid_delivery_quote.status_code, 422)
+
             delivery = client.post(
                 "/api/v1/restaurant/orders/",
                 json={
@@ -453,6 +476,7 @@ class InternalPortalValidationTest(unittest.TestCase):
                     "customer_email": "walkin@example.com",
                     "opt_in_marketing": True,
                     "payment_method": "prepaid",
+                    "delivery_zone_id": city_core_zone["id"],
                     "notes": (
                         "Customer website order | Fulfillment: delivery | "
                         "ETA: 35-45 min | Address: 12 Park Street"
@@ -463,6 +487,9 @@ class InternalPortalValidationTest(unittest.TestCase):
                 },
             )
             self.assertEqual(delivery.status_code, 200)
+            self.assertEqual(delivery.json()["delivery_fee"], 39)
+            self.assertEqual(delivery.json()["delivery_zone"], "City Core")
+            self.assertEqual(delivery.json()["total"], 163.95)
             delivery_id = delivery.json()["order_id"]
 
             delivery_detail = client.get(f"/api/v1/restaurant/orders/{delivery_id}")
@@ -470,6 +497,8 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(delivery_detail.json()["source"], "customer_website")
             self.assertEqual(delivery_detail.json()["fulfillment_type"], "delivery")
             self.assertEqual(delivery_detail.json()["delivery_address"], "12 Park Street")
+            self.assertEqual(delivery_detail.json()["delivery_zone"], "City Core")
+            self.assertEqual(delivery_detail.json()["delivery_fee"], 39)
             self.assertEqual(delivery_detail.json()["eta_window"], "35-45 min")
             self.assertEqual(delivery_detail.json()["payment_due"], True)
 
@@ -479,6 +508,22 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(delivery_tracking.status_code, 200)
             self.assertEqual(delivery_tracking.json()["tracking_steps"][1]["complete"], False)
             self.assertIn("Payment is pending", delivery_tracking.json()["next_action"])
+
+            assignment = client.patch(
+                f"/api/v1/restaurant/delivery/orders/{delivery_id}/assignment",
+                json={"assigned_to": "Ravi", "status": "assigned"},
+            )
+            self.assertEqual(assignment.status_code, 200)
+            self.assertEqual(assignment.json()["assignment"]["assigned_to"], "Ravi")
+            self.assertEqual(assignment.json()["assignment"]["status"], "assigned")
+
+            delivery_queue = client.get("/api/v1/restaurant/delivery/queue")
+            self.assertEqual(delivery_queue.status_code, 200)
+            self.assertEqual(delivery_queue.json()["count"], 1)
+            self.assertEqual(
+                delivery_queue.json()["orders"][0]["assignment"]["assigned_to"],
+                "Ravi",
+            )
 
             promo_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
             self.assertEqual(promo_outreach.status_code, 200)

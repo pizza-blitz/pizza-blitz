@@ -23,6 +23,8 @@ const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
 const ACTIVE_PROMOS_API = getApiUrl("/api/v1/restaurant/promotions/active");
+const DELIVERY_ZONES_API = getApiUrl("/api/v1/restaurant/delivery/zones");
+const DELIVERY_QUOTE_API = getApiUrl("/api/v1/restaurant/delivery/quote");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
 const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
 
@@ -57,6 +59,24 @@ type ActivePromotion = {
   description?: string | null;
   discount_type: "percentage" | "fixed";
   discount_value: number;
+};
+
+type DeliveryZone = {
+  id: number;
+  name: string;
+  delivery_fee: number;
+  minimum_order_amount: number;
+  eta_window: string;
+  is_active: boolean;
+};
+
+type DeliveryQuote = {
+  is_deliverable: boolean;
+  reason?: string | null;
+  address: string;
+  zone?: DeliveryZone | null;
+  delivery_fee: number;
+  eta_window?: string | null;
 };
 
 type PendingPayment = {
@@ -101,6 +121,9 @@ const fallbackImage =
 export default function PublicOrderPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [activePromotions, setActivePromotions] = useState<ActivePromotion[]>([]);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [selectedDeliveryZoneId, setSelectedDeliveryZoneId] = useState<number | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
@@ -119,6 +142,7 @@ export default function PublicOrderPage() {
   const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
 
   useEffect(() => {
     fetch(MENU_API)
@@ -134,6 +158,17 @@ export default function PublicOrderPage() {
       .then((response) => response.json())
       .then((data: ActivePromotion[]) => setActivePromotions(data.filter((promotion) => promotion.code)))
       .catch(() => setActivePromotions([]));
+
+    fetch(DELIVERY_ZONES_API)
+      .then((response) => response.json())
+      .then((data: DeliveryZone[]) => {
+        const activeZones = data.filter((zone) => zone.is_active);
+        setDeliveryZones(activeZones);
+        if (activeZones[0]) {
+          setSelectedDeliveryZoneId(activeZones[0].id);
+        }
+      })
+      .catch(() => setDeliveryZones([]));
 
     const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
     if (savedCustomer) {
@@ -214,8 +249,20 @@ export default function PublicOrderPage() {
   const discount = coupon ? coupon.discount : 0;
   const taxableSubtotal = Math.max(roundMoney(subtotal - discount), 0);
   const tax = coupon ? coupon.tax : roundMoney(taxableSubtotal * 0.05);
-  const total = coupon ? coupon.total : roundMoney(taxableSubtotal + tax);
-  const eta = orderType === "pickup" ? "20-25 min" : "35-45 min";
+  const deliveryFee =
+    orderType === "delivery" && deliveryQuote?.is_deliverable
+      ? Number(deliveryQuote.delivery_fee || 0)
+      : 0;
+  const total = coupon
+    ? roundMoney(coupon.total + deliveryFee)
+    : roundMoney(taxableSubtotal + tax + deliveryFee);
+  const selectedDeliveryZone = deliveryZones.find(
+    (zone) => zone.id === selectedDeliveryZoneId
+  );
+  const eta =
+    orderType === "pickup"
+      ? "20-25 min"
+      : deliveryQuote?.eta_window || selectedDeliveryZone?.eta_window || "35-45 min";
 
   const filteredMenu = useMemo(
     () =>
@@ -232,6 +279,45 @@ export default function PublicOrderPage() {
     orderId && customerPhone.trim()
       ? `/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`
       : "/account";
+
+  useEffect(() => {
+    if (orderType !== "delivery") {
+      setDeliveryQuote(null);
+      return;
+    }
+    if (!address.trim() || !selectedDeliveryZoneId) {
+      setDeliveryQuote(null);
+      return;
+    }
+
+    const quoteTimer = window.setTimeout(async () => {
+      setIsQuotingDelivery(true);
+      try {
+        const response = await fetch(DELIVERY_QUOTE_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address,
+            subtotal,
+            zone_id: selectedDeliveryZoneId,
+          }),
+        });
+        const data = await response.json();
+        setDeliveryQuote(data);
+      } catch {
+        setDeliveryQuote({
+          is_deliverable: false,
+          reason: "Delivery quote is not available right now.",
+          address,
+          delivery_fee: 0,
+        });
+      } finally {
+        setIsQuotingDelivery(false);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(quoteTimer);
+  }, [address, orderType, selectedDeliveryZoneId, subtotal]);
 
   const saveCustomerSession = async () => {
     if (!customerPhone.trim()) return;
@@ -325,6 +411,14 @@ export default function PublicOrderPage() {
       setMessage("Delivery address is required.");
       return;
     }
+    if (orderType === "delivery" && !selectedDeliveryZoneId) {
+      setMessage("Choose a delivery zone.");
+      return;
+    }
+    if (orderType === "delivery" && deliveryQuote && !deliveryQuote.is_deliverable) {
+      setMessage(deliveryQuote.reason || "This address is outside the delivery area.");
+      return;
+    }
 
     setIsSubmitting(true);
     const response = await fetch(ORDER_API, {
@@ -339,11 +433,16 @@ export default function PublicOrderPage() {
         payment_method: paymentMethod,
         discount_amount: discount,
         coupon_code: coupon ? coupon.promotion.code || couponCode : null,
+        delivery_address: address,
+        delivery_zone_id: selectedDeliveryZoneId,
         notes: [
           `Customer website order`,
           `Fulfillment: ${orderType}`,
           `ETA: ${eta}`,
           address ? `Address: ${address}` : "",
+          orderType === "delivery" && selectedDeliveryZone
+            ? `Delivery Zone: ${selectedDeliveryZone.name}`
+            : "",
           coupon ? `Coupon: ${coupon.promotion.code || couponCode.toUpperCase()}` : "",
         ]
           .filter(Boolean)
@@ -743,6 +842,9 @@ export default function PublicOrderPage() {
               <PriceRow label="Subtotal" value={subtotal} />
               <PriceRow label="Discount" value={discount} />
               <PriceRow label="Tax" value={tax} />
+              {orderType === "delivery" && (
+                <PriceRow label="Delivery" value={deliveryFee} />
+              )}
               <div className="flex justify-between text-lg font-black">
                 <span>Total</span>
                 <span>Rs {total}</span>
@@ -787,14 +889,42 @@ export default function PublicOrderPage() {
                 Send me Pizza Blitz offers and order updates on my saved contact details.
               </label>
               {orderType === "delivery" && (
-                <FieldIcon icon={MapPin}>
-                  <input
-                    value={address}
-                    onChange={(event) => setAddress(event.target.value)}
-                    placeholder="Delivery address"
-                    className="w-full outline-none"
-                  />
-                </FieldIcon>
+                <>
+                  <FieldIcon icon={MapPin}>
+                    <input
+                      value={address}
+                      onChange={(event) => setAddress(event.target.value)}
+                      placeholder="Delivery address"
+                      className="w-full outline-none"
+                    />
+                  </FieldIcon>
+                  <select
+                    value={selectedDeliveryZoneId || ""}
+                    onChange={(event) =>
+                      setSelectedDeliveryZoneId(Number(event.target.value) || null)
+                    }
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-red-600"
+                  >
+                    {deliveryZones.map((zone) => (
+                      <option key={zone.id} value={zone.id}>
+                        {zone.name} | Rs {zone.delivery_fee} | {zone.eta_window}
+                      </option>
+                    ))}
+                  </select>
+                  <div
+                    className={`rounded-md border px-3 py-2 text-sm font-semibold ${
+                      deliveryQuote?.is_deliverable
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {isQuotingDelivery
+                      ? "Checking delivery"
+                      : deliveryQuote?.is_deliverable
+                      ? `Delivery ${deliveryQuote.zone?.name || ""}: Rs ${deliveryFee}, ETA ${eta}`
+                      : deliveryQuote?.reason || "Delivery fee appears after address and zone."}
+                  </div>
+                </>
               )}
               <div className="grid grid-cols-2 gap-2">
                 <SegmentButton

@@ -157,6 +157,18 @@ class DiningTable(Base):
     current_order_id = Column(Integer, nullable=True)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class DeliveryZone(Base):
+    __tablename__ = "delivery_zones"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, index=True, nullable=False)
+    keywords = Column(JSON, default=list)
+    delivery_fee = Column(Float, default=0.0)
+    minimum_order_amount = Column(Float, default=0.0)
+    eta_min_minutes = Column(Integer, default=25)
+    eta_max_minutes = Column(Integer, default=45)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class RestaurantOrder(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
@@ -182,6 +194,23 @@ class RestaurantOrder(Base):
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     closed_at = Column(DateTime, nullable=True)
+    delivery_assignment = relationship("DeliveryAssignment", back_populates="order", uselist=False)
+
+class DeliveryAssignment(Base):
+    __tablename__ = "delivery_assignments"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), unique=True, index=True, nullable=False)
+    zone_id = Column(Integer, ForeignKey("delivery_zones.id"), nullable=True)
+    assigned_to = Column(String(120), nullable=True)
+    status = Column(String(30), default="unassigned")
+    notes = Column(String, nullable=True)
+    assigned_at = Column(DateTime, nullable=True)
+    out_for_delivery_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    order = relationship("RestaurantOrder", back_populates="delivery_assignment")
+    zone = relationship("DeliveryZone")
 
 class Invoice(Base):
     __tablename__ = "invoices"
