@@ -344,6 +344,34 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(closed_takeaway.status_code, 200)
             self.assertEqual(closed_takeaway.json()["status"], "closed")
 
+            prepaid = client.post(
+                "/api/v1/restaurant/orders/",
+                json={
+                    "order_type": "pickup",
+                    "customer_name": "Prepaid Guest",
+                    "customer_phone": "9888888888",
+                    "payment_method": "prepaid",
+                    "items": [
+                        {"name": "Garlic Bread", "quantity": 1, "price": 119}
+                    ],
+                },
+            )
+            self.assertEqual(prepaid.status_code, 200)
+            self.assertEqual(prepaid.json()["payment_status"], "awaiting_payment")
+
+            prepaid_id = prepaid.json()["order_id"]
+            payment = client.post(
+                f"/api/v1/restaurant/orders/{prepaid_id}/payment-confirmation",
+                json={
+                    "payment_provider": "manual",
+                    "payment_reference": "TEST-PAY-001",
+                    "paid_amount": prepaid.json()["total"],
+                },
+            )
+            self.assertEqual(payment.status_code, 200)
+            self.assertEqual(payment.json()["payment_status"], "paid")
+            self.assertEqual(payment.json()["payment_reference"], "TEST-PAY-001")
+
 
 if __name__ == "__main__":
     unittest.main()

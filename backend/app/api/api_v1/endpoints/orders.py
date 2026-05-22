@@ -41,6 +41,12 @@ class OrderCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class PaymentConfirmation(BaseModel):
+    payment_provider: str = "manual"
+    payment_reference: Optional[str] = None
+    paid_amount: Optional[float] = None
+
+
 def ensure_default_tables(db: Session) -> None:
     existing = {row.table_number for row in db.query(DiningTable).all()}
     for table_number, capacity in DEFAULT_TABLES:
@@ -93,6 +99,13 @@ def serialize_order(order: RestaurantOrder) -> dict:
         "total_amount": order.total_amount,
         "payment_status": order.payment_status,
         "payment_method": order.payment_method,
+        "payment_provider": order.payment_provider,
+        "payment_reference": order.payment_reference,
+        "payment_confirmed_at": (
+            order.payment_confirmed_at.isoformat()
+            if order.payment_confirmed_at
+            else None
+        ),
         "status": order.status,
         "notes": order.notes,
         "created_at": order.created_at.isoformat() if order.created_at else None,
@@ -153,6 +166,8 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     tax = round(taxable_subtotal * 0.05, 2)
     total = round(taxable_subtotal + tax, 2)
     items = [item.model_dump() for item in valid_items]
+    payment_method = (order.payment_method or "cash").lower()
+    payment_status = "awaiting_payment" if payment_method == "prepaid" else "pending"
 
     row = RestaurantOrder(
         order_type=order.order_type,
@@ -164,7 +179,8 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         discount_amount=discount,
         tax_amount=tax,
         total_amount=total,
-        payment_method=order.payment_method,
+        payment_method=payment_method,
+        payment_status=payment_status,
         notes=order.notes,
     )
     db.add(row)
@@ -184,6 +200,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         "tax": tax,
         "total": total,
         "status": row.status,
+        "payment_status": row.payment_status,
     }
 
 
@@ -235,6 +252,34 @@ def close_order(
 
     db.commit()
     return {"status": "closed", "total_collected": order.total_amount}
+
+
+@router.post("/{order_id}/payment-confirmation")
+def confirm_order_payment(
+    order_id: int,
+    payload: PaymentConfirmation,
+    db: Session = Depends(get_db),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    paid_amount = payload.paid_amount if payload.paid_amount is not None else order.total_amount
+    if round(float(paid_amount or 0), 2) < round(float(order.total_amount or 0), 2):
+        raise HTTPException(status_code=422, detail="Paid amount is below order total.")
+
+    order.payment_method = "prepaid"
+    order.payment_status = "paid"
+    order.payment_provider = payload.payment_provider.strip() or "manual"
+    order.payment_reference = (
+        payload.payment_reference.strip()
+        if payload.payment_reference
+        else f"PB-PAY-{order.id}"
+    )
+    order.payment_confirmed_at = datetime.utcnow()
+    db.commit()
+    db.refresh(order)
+    return serialize_order(order)
 
 
 @router.post("/{order_id}/invoice")

@@ -46,6 +46,13 @@ type CouponResult = {
   };
 };
 
+type PendingPayment = {
+  orderId: number;
+  total: number;
+  provider: string;
+  reference: string;
+};
+
 const categoryImages: Record<string, string> = {
   Pizza:
     "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=80",
@@ -78,7 +85,10 @@ export default function PublicOrderPage() {
   const [coupon, setCoupon] = useState<CouponResult | null>(null);
   const [message, setMessage] = useState("");
   const [orderId, setOrderId] = useState<number | null>(null);
+  const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
   useEffect(() => {
     fetch(MENU_API)
@@ -128,6 +138,7 @@ export default function PublicOrderPage() {
 
   const addToCart = (item: MenuItem) => {
     setOrderId(null);
+    setPendingPayment(null);
     setMessage("");
     setCoupon(null);
     setCart((current) => {
@@ -227,11 +238,50 @@ export default function PublicOrderPage() {
       CUSTOMER_STORAGE_KEY,
       JSON.stringify({ name: customerName, phone: customerPhone })
     );
-    setOrderId(data.order_id);
+    const orderId = Number(data.order_id);
+    const paymentReferenceValue = `WEB-${orderId}-${Date.now()}`;
+    setOrderId(orderId);
     setCart([]);
     setCoupon(null);
     setCouponCode("");
-    setMessage(`Order #${data.order_id} placed. Estimated ${eta}.`);
+    if (paymentMethod === "prepaid") {
+      setPaymentReference(paymentReferenceValue);
+      setPendingPayment({
+        orderId,
+        total: Number(data.total || 0),
+        provider: "manual",
+        reference: paymentReferenceValue,
+      });
+      setMessage(`Order #${orderId} created. Confirm prepaid payment to mark it paid.`);
+    } else {
+      setPendingPayment(null);
+      setMessage(`Order #${orderId} placed. Estimated ${eta}.`);
+    }
+  };
+
+  const confirmPayment = async () => {
+    if (!pendingPayment) return;
+
+    setIsConfirmingPayment(true);
+    const response = await fetch(`${ORDER_API}${pendingPayment.orderId}/payment-confirmation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payment_provider: pendingPayment.provider,
+        payment_reference: paymentReference || pendingPayment.reference,
+        paid_amount: pendingPayment.total,
+      }),
+    });
+    const data = await response.json();
+    setIsConfirmingPayment(false);
+
+    if (!response.ok) {
+      setMessage(data.detail || "Payment could not be confirmed.");
+      return;
+    }
+
+    setPendingPayment(null);
+    setMessage(`Payment confirmed for order #${data.id}. Estimated ${eta}.`);
   };
 
   return (
@@ -360,6 +410,29 @@ export default function PublicOrderPage() {
             {orderId && (
               <div className="mb-4 flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
                 <CheckCircle2 className="h-4 w-4" /> Order #{orderId} confirmed
+              </div>
+            )}
+
+            {pendingPayment && (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
+                <p className="font-black text-amber-900">Prepaid payment pending</p>
+                <p className="mt-1 text-sm font-semibold text-amber-800">
+                  Amount: Rs {pendingPayment.total}. Confirm after collecting payment.
+                </p>
+                <input
+                  value={paymentReference}
+                  onChange={(event) => setPaymentReference(event.target.value)}
+                  className="mt-3 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-600"
+                  placeholder="Payment reference"
+                />
+                <button
+                  type="button"
+                  onClick={confirmPayment}
+                  disabled={isConfirmingPayment}
+                  className="mt-3 w-full rounded-md bg-amber-600 px-4 py-3 text-sm font-black text-white hover:bg-amber-700 disabled:bg-slate-300"
+                >
+                  {isConfirmingPayment ? "Confirming" : "Confirm Payment"}
+                </button>
               </div>
             )}
 
