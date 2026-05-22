@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  CreditCard,
   Database,
   HardDrive,
+  KeyRound,
+  Link as LinkIcon,
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
@@ -28,10 +31,24 @@ type Readiness = {
   database_path?: string | null;
   backup_dir: string;
   backup_retention_days: number;
+  payment?: PaymentStatus;
   overall: "ready" | "attention" | "blocked";
   failed_checks: number;
   warning_checks: number;
   checks: ReadinessCheck[];
+};
+
+type PaymentStatus = {
+  provider: string;
+  currency: string;
+  return_url: string;
+  checkout_configured: boolean;
+  webhook_configured: boolean;
+  missing_checkout_settings: string[];
+  missing_webhook_settings: string[];
+  session_endpoint: string;
+  webhook_endpoint: string;
+  mode: string;
 };
 
 type BackupRun = {
@@ -127,7 +144,7 @@ export default function ProductionOpsPage() {
         </div>
       )}
 
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Metric
           label="Readiness"
           value={readiness?.overall || "checking"}
@@ -135,6 +152,11 @@ export default function ProductionOpsPage() {
         />
         <Metric label="Database" value={readiness?.database_backend || "checking"} icon={Database} />
         <Metric label="Warnings" value={readiness?.warning_checks || 0} icon={AlertTriangle} />
+        <Metric
+          label="Payments"
+          value={readiness?.payment?.provider || "checking"}
+          icon={CreditCard}
+        />
         <Metric
           label="Latest Backup"
           value={latestBackup ? latestBackup.status : "none"}
@@ -179,6 +201,62 @@ export default function ProductionOpsPage() {
         </div>
 
         <div className="xl:col-span-5">
+          <div className="mb-6 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-black">Payment Gateway</h2>
+              <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+                readiness?.payment?.checkout_configured && readiness?.payment?.webhook_configured
+                  ? "bg-green-500/15 text-green-300"
+                  : "bg-yellow-500/15 text-yellow-300"
+              }`}>
+                {readiness?.payment?.checkout_configured && readiness?.payment?.webhook_configured
+                  ? "ready"
+                  : "setup needed"}
+              </span>
+            </div>
+
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <GatewayTile
+                icon={CreditCard}
+                label="Checkout"
+                value={readiness?.payment?.checkout_configured ? "Configured" : "Missing"}
+                ok={Boolean(readiness?.payment?.checkout_configured)}
+              />
+              <GatewayTile
+                icon={KeyRound}
+                label="Webhook"
+                value={readiness?.payment?.webhook_configured ? "Configured" : "Missing"}
+                ok={Boolean(readiness?.payment?.webhook_configured)}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <Detail label="Provider" value={readiness?.payment?.provider || "checking"} />
+              <Detail label="Currency" value={readiness?.payment?.currency || "checking"} />
+              <Detail label="Return URL" value={readiness?.payment?.return_url || "checking"} />
+              <Detail
+                label="Session Endpoint"
+                value={readiness?.payment?.session_endpoint || "checking"}
+              />
+              <Detail
+                label="Webhook Endpoint"
+                value={readiness?.payment?.webhook_endpoint || "checking"}
+              />
+            </div>
+
+            {readiness?.payment &&
+              (!readiness.payment.checkout_configured || !readiness.payment.webhook_configured) && (
+                <div className="mt-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                  <p className="mb-2 flex items-center gap-2 text-sm font-black text-yellow-200">
+                    <LinkIcon className="h-4 w-4" /> Missing payment configuration
+                  </p>
+                  <p className="text-sm leading-6 text-yellow-100/80">
+                    {[...readiness.payment.missing_checkout_settings, ...readiness.payment.missing_webhook_settings].join(", ") || "No missing settings listed."}
+                  </p>
+                </div>
+              )}
+          </div>
+
           <div className="mb-6 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
             <h2 className="mb-4 text-lg font-black">Deployment Context</h2>
             <div className="space-y-3">
@@ -277,6 +355,30 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-white/5 bg-black/25 p-4">
       <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 break-all text-sm font-bold text-gray-200">{value}</p>
+    </div>
+  );
+}
+
+function GatewayTile({
+  icon: Icon,
+  label,
+  value,
+  ok,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  ok: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-4">
+      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${
+        ok ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"
+      }`}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 font-black">{value}</p>
     </div>
   );
 }

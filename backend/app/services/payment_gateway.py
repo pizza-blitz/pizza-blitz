@@ -26,6 +26,46 @@ def _configured(provider: str) -> bool:
     return False
 
 
+def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
+    selected_provider = (provider or settings.PAYMENT_PROVIDER or "manual").strip().lower()
+    if selected_provider not in SUPPORTED_PAYMENT_PROVIDERS:
+        selected_provider = "manual"
+
+    checkout_settings = {
+        "manual": [],
+        "cashfree": ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY"],
+        "razorpay": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+    }[selected_provider]
+    webhook_settings = {
+        "manual": [],
+        "cashfree": ["CASHFREE_WEBHOOK_SECRET"],
+        "razorpay": ["RAZORPAY_WEBHOOK_SECRET"],
+    }[selected_provider]
+    values = {
+        "CASHFREE_APP_ID": settings.CASHFREE_APP_ID,
+        "CASHFREE_SECRET_KEY": settings.CASHFREE_SECRET_KEY,
+        "CASHFREE_WEBHOOK_SECRET": settings.CASHFREE_WEBHOOK_SECRET,
+        "RAZORPAY_KEY_ID": settings.RAZORPAY_KEY_ID,
+        "RAZORPAY_KEY_SECRET": settings.RAZORPAY_KEY_SECRET,
+        "RAZORPAY_WEBHOOK_SECRET": settings.RAZORPAY_WEBHOOK_SECRET,
+    }
+    missing_checkout = [name for name in checkout_settings if not values.get(name)]
+    missing_webhook = [name for name in webhook_settings if not values.get(name)]
+
+    return {
+        "provider": selected_provider,
+        "currency": settings.PAYMENT_CURRENCY,
+        "return_url": settings.PAYMENT_RETURN_URL,
+        "checkout_configured": selected_provider == "manual" or not missing_checkout,
+        "webhook_configured": selected_provider == "manual" or not missing_webhook,
+        "missing_checkout_settings": missing_checkout,
+        "missing_webhook_settings": missing_webhook,
+        "session_endpoint": "/api/v1/restaurant/orders/{order_id}/payment-session",
+        "webhook_endpoint": f"/api/v1/restaurant/orders/payments/webhook/{selected_provider}",
+        "mode": "manual" if selected_provider == "manual" else "provider_adapter",
+    }
+
+
 def _header_value(headers: Mapping[str, str], key: str) -> Optional[str]:
     lowered_key = key.lower()
     for header_key, value in headers.items():

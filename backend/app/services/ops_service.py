@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.domain import BackupRun
+from app.services.payment_gateway import payment_provider_status
 
 
 DEFAULT_SECRET_VALUES = {
@@ -45,12 +46,15 @@ def sqlite_database_path() -> Optional[Path]:
 
 def readiness_report(db: Session) -> dict:
     environment = settings.ENVIRONMENT.lower()
+    payment_status = payment_provider_status()
     checks = [
         _database_check(db),
         _database_persistence_check(environment),
         _admin_password_check(environment),
         _auth_secret_check(environment),
         _cors_check(environment),
+        _payment_gateway_check(environment, payment_status),
+        _payment_webhook_check(environment, payment_status),
         _backup_storage_check(),
     ]
     failed = sum(1 for check in checks if check["status"] == "fail")
@@ -67,6 +71,7 @@ def readiness_report(db: Session) -> dict:
         "database_path": str(sqlite_database_path()) if sqlite_database_path() else None,
         "backup_dir": str(_backup_dir().resolve()),
         "backup_retention_days": settings.BACKUP_RETENTION_DAYS,
+        "payment": payment_status,
         "overall": overall,
         "failed_checks": failed,
         "warning_checks": warnings,
@@ -254,6 +259,42 @@ def _backup_storage_check() -> dict:
         "detail": f"Backup directory: {backup_dir.resolve()}"
         if writable
         else f"Backup directory is not writable: {backup_dir}",
+    }
+
+
+def _payment_gateway_check(environment: str, status: dict) -> dict:
+    if status["checkout_configured"]:
+        return {
+            "key": "payment_checkout",
+            "label": "Payment checkout",
+            "status": "pass",
+            "detail": f"{status['provider']} checkout settings are configured.",
+        }
+    next_status = "fail" if environment == "production" else "warn"
+    return {
+        "key": "payment_checkout",
+        "label": "Payment checkout",
+        "status": next_status,
+        "detail": "Missing checkout settings: "
+        + ", ".join(status["missing_checkout_settings"]),
+    }
+
+
+def _payment_webhook_check(environment: str, status: dict) -> dict:
+    if status["webhook_configured"]:
+        return {
+            "key": "payment_webhook",
+            "label": "Payment webhook",
+            "status": "pass",
+            "detail": f"Webhook endpoint available at {status['webhook_endpoint']}.",
+        }
+    next_status = "fail" if environment == "production" else "warn"
+    return {
+        "key": "payment_webhook",
+        "label": "Payment webhook",
+        "status": next_status,
+        "detail": "Missing webhook settings: "
+        + ", ".join(status["missing_webhook_settings"]),
     }
 
 
