@@ -1,16 +1,18 @@
 "use client";
-"use client";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Package, Plus, Search, AlertTriangle, RefreshCw, Upload, Save, CheckCircle2, History, TrendingUp, Camera, Sparkles } from 'lucide-react';
+import { Package, Plus, Search, AlertTriangle, RefreshCw, Upload, Save, CheckCircle2, History, TrendingUp, Camera, Sparkles, ShoppingCart } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 export default function Inventory() {
   const [items, setItems] = useState<any[]>([]);
+  const [lowStock, setLowStock] = useState<any>({ count: 0, items: [], groups: [], total_estimated_cost: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
+  const [isCreatingPO, setIsCreatingPO] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     fetchItems();
@@ -18,7 +20,10 @@ export default function Inventory() {
 
   const fetchItems = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/inventory/items'));
+      const [res, lowStockRes] = await Promise.all([
+        fetch(getApiUrl('/api/v1/restaurant/inventory/items')),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock')),
+      ]);
       if (res.ok) {
         const data = await res.json();
         setItems(data);
@@ -31,8 +36,33 @@ export default function Inventory() {
         ];
         setItems(mockItems);
       }
+      if (lowStockRes.ok) {
+        setLowStock(await lowStockRes.json());
+      }
       setIsLoading(false);
     } catch (err) { console.error(err); setIsLoading(false); }
+  };
+
+  const createPurchaseDrafts = async () => {
+    setIsCreatingPO(true);
+    setMessage("");
+    try {
+      const response = await fetch(getApiUrl('/api/v1/restaurant/purchase-orders/from-low-stock'), {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not create purchase order drafts.");
+      setMessage(
+        data.created
+          ? `Created ${data.created} purchase order draft${data.created === 1 ? "" : "s"}.`
+          : "No low-stock items need reorder drafts."
+      );
+      await fetchItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create purchase order drafts.");
+    } finally {
+      setIsCreatingPO(false);
+    }
   };
 
   const handleAdjust = async (type: 'purchase' | 'usage' | 'wastage', qty: number) => {
@@ -61,6 +91,27 @@ export default function Inventory() {
            <button className="bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-100 flex items-center hover:bg-orange-700 transition-all">
              <Plus className="w-5 h-5 mr-2" /> Add Item
            </button>
+        </div>
+      </div>
+
+      {message && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
+          {message}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-widest text-gray-400">Total Items</p>
+          <p className="mt-2 text-2xl font-black text-gray-900">{items.length}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-red-100 p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-widest text-red-500">Low Stock</p>
+          <p className="mt-2 text-2xl font-black text-red-600">{lowStock.count || 0}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-widest text-gray-400">Reorder Estimate</p>
+          <p className="mt-2 text-2xl font-black text-gray-900">Rs {Math.round(lowStock.total_estimated_cost || 0).toLocaleString()}</p>
         </div>
       </div>
 
@@ -128,6 +179,60 @@ export default function Inventory() {
 
         {/* Sidebar Tools */}
         <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-bold text-gray-900 flex items-center">
+                  <AlertTriangle className="w-5 h-5 mr-2 text-red-600" />
+                  Reorder Queue
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">Generated from stock below minimum level.</p>
+              </div>
+              <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-black text-red-600">
+                {lowStock.count || 0}
+              </span>
+            </div>
+
+            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+              {(lowStock.items || []).map((item: any) => (
+                <div key={item.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                  <div className="flex justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-gray-900">{item.name}</p>
+                      <p className="text-xs text-gray-500">{item.supplier_name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-red-600">
+                        {item.reorder_quantity} {item.unit}
+                      </p>
+                      <p className="text-xs text-gray-500">Rs {Math.round(item.estimated_cost || 0).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {!lowStock.count && (
+                <div className="rounded-xl border border-dashed border-gray-200 p-5 text-center text-sm font-semibold text-gray-500">
+                  All items are above minimum stock.
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={createPurchaseDrafts}
+              disabled={isCreatingPO || !lowStock.count}
+              className="mt-4 w-full rounded-xl bg-red-600 px-4 py-3 text-sm font-black text-white hover:bg-red-700 disabled:bg-gray-300 flex items-center justify-center gap-2"
+            >
+              {isCreatingPO ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ShoppingCart className="h-4 w-4" />}
+              Create PO Drafts
+            </button>
+            <Link
+              href="/purchase-orders"
+              className="mt-3 block text-center text-xs font-black text-orange-700 hover:text-orange-900"
+            >
+              Open purchase orders
+            </Link>
+          </div>
+
           {/* Quick Adjustment Form */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-orange-100">
             <h3 className="font-bold text-gray-900 mb-4 flex items-center">

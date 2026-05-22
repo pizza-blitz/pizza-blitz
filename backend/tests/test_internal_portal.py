@@ -441,6 +441,55 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(repeat_stock_by_name["Mozzarella"], 760)
             self.assertEqual(repeat_stock_by_name["Pizza Base"], 98)
 
+            for low_stock_item in [
+                {
+                    "name": "Tomato Sauce",
+                    "category": "Sauces",
+                    "unit": "liters",
+                    "current_stock": 3,
+                    "minimum_stock": 10,
+                    "cost_per_unit": 120,
+                    "supplier_name": "Fresh Farms",
+                    "supplier_whatsapp": "919999999999",
+                },
+                {
+                    "name": "Basil",
+                    "category": "Herbs",
+                    "unit": "bunch",
+                    "current_stock": 1,
+                    "minimum_stock": 5,
+                    "cost_per_unit": 20,
+                    "supplier_name": "Fresh Farms",
+                    "supplier_whatsapp": "919999999999",
+                },
+            ]:
+                low_stock_response = client.post(
+                    "/api/v1/restaurant/inventory/items",
+                    json=low_stock_item,
+                )
+                self.assertEqual(low_stock_response.status_code, 200)
+
+            low_stock_summary = client.get("/api/v1/restaurant/inventory/low-stock")
+            self.assertEqual(low_stock_summary.status_code, 200)
+            low_stock_payload = low_stock_summary.json()
+            self.assertEqual(low_stock_payload["count"], 2)
+            reorder_by_name = {
+                item["name"]: item["reorder_quantity"]
+                for item in low_stock_payload["items"]
+            }
+            self.assertEqual(reorder_by_name["Tomato Sauce"], 17)
+            self.assertEqual(reorder_by_name["Basil"], 9)
+
+            reorder_drafts = client.post(
+                "/api/v1/restaurant/purchase-orders/from-low-stock"
+            )
+            self.assertEqual(reorder_drafts.status_code, 200)
+            self.assertEqual(reorder_drafts.json()["created"], 1)
+            draft = reorder_drafts.json()["purchase_orders"][0]
+            self.assertEqual(draft["supplier_name"], "Fresh Farms")
+            self.assertEqual(draft["total_amount"], 2220)
+            self.assertEqual(len(draft["items"]), 2)
+
             closed_status_update = client.patch(
                 f"/api/v1/restaurant/orders/{takeaway_id}/status",
                 json={"status": "open"},

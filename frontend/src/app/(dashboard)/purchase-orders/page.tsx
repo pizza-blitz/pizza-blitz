@@ -6,8 +6,11 @@ import { getApiUrl } from '@/lib/api';
 
 export default function PurchaseOrders() {
   const [orders, setOrders] = useState<any[]>([]);
+  const [reorderGroups, setReorderGroups] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCreatingDrafts, setIsCreatingDrafts] = useState(false);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     fetchOrders();
@@ -15,9 +18,16 @@ export default function PurchaseOrders() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/purchase-orders/'));
-      const data = await res.json();
+      const [ordersRes, lowStockRes] = await Promise.all([
+        fetch(getApiUrl('/api/v1/restaurant/purchase-orders/')),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock')),
+      ]);
+      const data = await ordersRes.json();
       setOrders(data);
+      if (lowStockRes.ok) {
+        const lowStock = await lowStockRes.json();
+        setReorderGroups(lowStock.groups || []);
+      }
     } catch (error) {
       console.error("Failed to fetch orders", error);
     } finally {
@@ -25,11 +35,27 @@ export default function PurchaseOrders() {
     }
   };
 
-  const suggestedItems = [
-    { id: 1, name: "Tomato Sauce", supplier: "Fresh Farms Inc.", whatsapp: "919876543210", needed: 10, unit: "kg" },
-    { id: 2, name: "Pizza Base (9 inch)", supplier: "Bakers World", whatsapp: "919988776655", needed: 50, unit: "pcs" },
-    { id: 3, name: "Mozzarella Cheese", supplier: "Dairy Best", whatsapp: "919988776655", needed: 8, unit: "kg" },
-  ];
+  const createDrafts = async () => {
+    setIsCreatingDrafts(true);
+    setMessage("");
+    try {
+      const response = await fetch(getApiUrl('/api/v1/restaurant/purchase-orders/from-low-stock'), {
+        method: 'POST',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not create purchase order drafts.");
+      setMessage(
+        data.created
+          ? `Created ${data.created} purchase order draft${data.created === 1 ? "" : "s"}.`
+          : "No low-stock items need reorder drafts."
+      );
+      await fetchOrders();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create purchase order drafts.");
+    } finally {
+      setIsCreatingDrafts(false);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -54,17 +80,11 @@ export default function PurchaseOrders() {
   };
 
   const getWhatsAppLink = (supplier: string, phone: string, items: any[]) => {
-    const text = `Hello ${supplier},\n\nPlease send the following supplies for Pizza Blitz today:\n\n` + 
-      items.map(i => `- ${i.name}: ${i.needed} ${i.unit}`).join('\n') + 
+    const text = `Hello ${supplier},\n\nPlease send the following supplies for Pizza Blitz today:\n\n` +
+      items.map(i => `- ${i.name}: ${i.reorder_quantity || i.needed} ${i.unit}`).join('\n') +
       `\n\nPlease confirm availability and total bill.\nRegards,\nPizza Blitz`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   };
-
-  const ordersBySupplier = suggestedItems.reduce((acc: any, item) => {
-    if (!acc[item.whatsapp]) acc[item.whatsapp] = { supplier: item.supplier, items: [] };
-    acc[item.whatsapp].items.push(item);
-    return acc;
-  }, {});
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -79,8 +99,22 @@ export default function PurchaseOrders() {
              {isUploading ? "Processing..." : "Upload Handwritten Note (PDF)"}
              <input type="file" className="hidden" accept="application/pdf" onChange={handleFileUpload} />
           </label>
+          <button
+            onClick={createDrafts}
+            disabled={isCreatingDrafts || reorderGroups.length === 0}
+            className="px-4 py-2 bg-orange-600 text-white hover:bg-orange-700 rounded-lg font-bold shadow-sm transition-colors flex items-center disabled:bg-gray-300"
+          >
+            {isCreatingDrafts ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+            Draft Low-Stock POs
+          </button>
         </div>
       </div>
+
+      {message && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
+          {message}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
@@ -89,17 +123,23 @@ export default function PurchaseOrders() {
             Smart Suggestions <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-600 rounded-full text-xs font-bold">Low Stock</span>
           </h3>
           
-          {Object.entries(ordersBySupplier).map(([phone, data]: [string, any]) => (
-            <div key={phone} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          {reorderGroups.map((data: any) => (
+            <div key={`${data.supplier_name}-${data.supplier_whatsapp}`} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                  <div>
-                    <h4 className="font-bold text-gray-900">{data.supplier}</h4>
-                    <p className="text-xs text-gray-500 mt-0.5">WhatsApp: +{phone}</p>
+                    <h4 className="font-bold text-gray-900">{data.supplier_name}</h4>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {data.supplier_whatsapp ? `WhatsApp: +${data.supplier_whatsapp}` : "No WhatsApp saved"}
+                    </p>
                  </div>
-                 <Link 
-                    href={getWhatsAppLink(data.supplier, phone, data.items)}
+                 <Link
+                    href={data.supplier_whatsapp ? getWhatsAppLink(data.supplier_name, data.supplier_whatsapp, data.items) : "#"}
                     target="_blank"
-                    className="px-4 py-2 bg-[#25D366] hover:bg-[#128C7E] text-white rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center"
+                    className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center ${
+                      data.supplier_whatsapp
+                        ? "bg-[#25D366] hover:bg-[#128C7E] text-white"
+                        : "bg-gray-100 text-gray-400 pointer-events-none"
+                    }`}
                  >
                     <Send className="w-4 h-4 mr-2" />
                     Send via WhatsApp
@@ -113,13 +153,18 @@ export default function PurchaseOrders() {
                       <span className="font-medium">{item.name}</span>
                     </div>
                     <div className="font-bold border border-gray-200 bg-gray-50 px-3 py-1 rounded-md text-gray-900">
-                      {item.needed} {item.unit}
+                      {item.reorder_quantity} {item.unit}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ))}
+          {reorderGroups.length === 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-dashed border-gray-200 p-8 text-center text-gray-500 font-semibold">
+              No low-stock purchase suggestions right now.
+            </div>
+          )}
         </div>
 
         <div>

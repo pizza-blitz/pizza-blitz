@@ -30,9 +30,69 @@ class TransactionRequest(BaseModel):
     unit_cost: Optional[float] = None
     notes: Optional[str] = None
 
+
+def _reorder_quantity(item: InventoryItem) -> float:
+    current_stock = float(item.current_stock or 0)
+    minimum_stock = float(item.minimum_stock or 0)
+    target_stock = minimum_stock * 2
+    return round(max(target_stock - current_stock, minimum_stock - current_stock, 0), 4)
+
+
+def _low_stock_item_dict(item: InventoryItem) -> dict:
+    reorder_quantity = _reorder_quantity(item)
+    unit_cost = float(item.cost_per_unit or 0)
+    return {
+        "id": item.id,
+        "name": item.name,
+        "category": item.category,
+        "unit": item.unit,
+        "current_stock": float(item.current_stock or 0),
+        "minimum_stock": float(item.minimum_stock or 0),
+        "reorder_quantity": reorder_quantity,
+        "estimated_cost": round(reorder_quantity * unit_cost, 2),
+        "cost_per_unit": unit_cost,
+        "supplier_name": item.supplier_name or "Default Supplier",
+        "supplier_whatsapp": item.supplier_whatsapp or "",
+    }
+
 @router.get("/items", response_model=List[InventoryItemSchema])
 def get_inventory_items(db: Session = Depends(get_db)):
     return db.query(InventoryItem).all()
+
+@router.get("/low-stock")
+def low_stock_summary(db: Session = Depends(get_db)):
+    items = (
+        db.query(InventoryItem)
+        .filter(InventoryItem.current_stock < InventoryItem.minimum_stock)
+        .order_by(InventoryItem.name.asc())
+        .all()
+    )
+    suggestions = [_low_stock_item_dict(item) for item in items]
+    grouped = {}
+    for item in suggestions:
+        key = item["supplier_whatsapp"] or item["supplier_name"]
+        if key not in grouped:
+            grouped[key] = {
+                "supplier_name": item["supplier_name"],
+                "supplier_whatsapp": item["supplier_whatsapp"],
+                "items": [],
+                "total_amount": 0.0,
+            }
+        grouped[key]["items"].append(item)
+        grouped[key]["total_amount"] = round(
+            grouped[key]["total_amount"] + item["estimated_cost"],
+            2,
+        )
+
+    return {
+        "count": len(suggestions),
+        "items": suggestions,
+        "groups": list(grouped.values()),
+        "total_estimated_cost": round(
+            sum(item["estimated_cost"] for item in suggestions),
+            2,
+        ),
+    }
 
 @router.post("/items", response_model=InventoryItemSchema)
 def update_or_create_item(item: InventoryItemSchema, db: Session = Depends(get_db)):
