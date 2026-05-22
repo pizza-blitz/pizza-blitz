@@ -89,6 +89,30 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(today_orders.status_code, 200)
             self.assertEqual(today_orders.json()["total_collected_today"], 417.9)
 
+            for inventory_item in [
+                {
+                    "name": "Mozzarella",
+                    "category": "Dairy",
+                    "unit": "gm",
+                    "current_stock": 1000,
+                    "minimum_stock": 200,
+                    "cost_per_unit": 0.5,
+                },
+                {
+                    "name": "Pizza Base",
+                    "category": "Bakery",
+                    "unit": "unit",
+                    "current_stock": 100,
+                    "minimum_stock": 20,
+                    "cost_per_unit": 20,
+                },
+            ]:
+                inventory_response = client.post(
+                    "/api/v1/restaurant/inventory/items",
+                    json=inventory_item,
+                )
+                self.assertEqual(inventory_response.status_code, 200)
+
             recipe = client.post(
                 "/api/v1/restaurant/recipes/",
                 json={
@@ -107,6 +131,18 @@ class InternalPortalValidationTest(unittest.TestCase):
                 item["ingredient_name"] for item in prediction.json()["predictions"]
             }
             self.assertIn("Mozzarella", prediction_names)
+
+            profitability = client.get("/api/v1/restaurant/menu/profitability")
+            self.assertEqual(profitability.status_code, 200)
+            margherita_profit = next(
+                item
+                for item in profitability.json()["items"]
+                if item["item"] == "Margherita Pizza (R)"
+            )
+            self.assertEqual(margherita_profit["cost_to_make"], 80)
+            self.assertEqual(margherita_profit["cost_source"], "recipe")
+            self.assertEqual(margherita_profit["margin"], 119)
+            self.assertEqual(margherita_profit["rating"], "Good")
 
             waste = client.post(
                 "/api/v1/restaurant/sales/waste",

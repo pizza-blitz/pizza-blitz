@@ -1,207 +1,394 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, CheckCircle, XCircle, IndianRupee, Save, X } from 'lucide-react';
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  BarChart3,
+  CheckCircle,
+  Edit2,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
+  X,
+  XCircle,
+} from "lucide-react";
+import { getApiUrl } from "@/lib/api";
+
+const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
+const PROFITABILITY_API = getApiUrl("/api/v1/restaurant/menu/profitability");
+
+type MenuItem = {
+  id?: number;
+  name: string;
+  category: string;
+  selling_price: number;
+  cost_price: number;
+  is_available: boolean;
+};
+
+type ProfitabilityItem = {
+  id: number;
+  item: string;
+  category: string;
+  selling_price: number;
+  cost_to_make: number;
+  margin: number;
+  margin_percent: number;
+  cost_source: string;
+  rating: string;
+};
+
+type ProfitabilityResponse = {
+  items: ProfitabilityItem[];
+  total_items: number;
+};
+
+const emptyForm: MenuItem = {
+  name: "",
+  category: "Pizza",
+  selling_price: 0,
+  cost_price: 0,
+  is_available: true,
+};
 
 export default function MenuManagement() {
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [profitability, setProfitability] = useState<ProfitabilityResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [formData, setFormData] = useState<MenuItem>(emptyForm);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     fetchMenu();
   }, []);
 
   const fetchMenu = async () => {
-    try {
-      // In production: const res = await fetch('/api/v1/restaurant/sync/menu');
-      // const data = await res.json();
-      
-      const mockItems = [
-        { id: 1, name: "Margherita Pizza (R)", category: "Pizza", selling_price: 199, cost_price: 80, is_available: true },
-        { id: 2, name: "Cheese Burst Burger", category: "Burgers", selling_price: 149, cost_price: 60, is_available: true },
-        { id: 3, name: "French Fries", category: "Sides", selling_price: 89, cost_price: 25, is_available: true },
-      ];
-      setItems(mockItems);
-      setIsLoading(false);
-    } catch (err) {
-      console.error(err);
-      setIsLoading(false);
-    }
+    setIsLoading(true);
+    const [menuRes, profitabilityRes] = await Promise.all([
+      fetch(MENU_API),
+      fetch(PROFITABILITY_API),
+    ]);
+    setItems(await menuRes.json());
+    setProfitability(await profitabilityRes.json());
+    setIsLoading(false);
   };
 
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.category.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) => {
+        const query = searchTerm.toLowerCase();
+        return (
+          item.name.toLowerCase().includes(query) ||
+          item.category.toLowerCase().includes(query)
+        );
+      }),
+    [items, searchTerm]
   );
 
+  const openNewItem = () => {
+    setFormData(emptyForm);
+    setIsModalOpen(true);
+  };
+
+  const openEditItem = (item: MenuItem) => {
+    setFormData(item);
+    setIsModalOpen(true);
+  };
+
+  const saveItem = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const response = await fetch(MENU_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData),
+    });
+    if (!response.ok) {
+      const data = await response.json();
+      setMessage(data.detail || "Menu item could not be saved.");
+      return;
+    }
+    setMessage(`Saved ${formData.name}.`);
+    setIsModalOpen(false);
+    await fetchMenu();
+  };
+
+  const deleteItem = async (item: MenuItem) => {
+    if (!item.id || !window.confirm(`Delete ${item.name}?`)) return;
+    const response = await fetch(`${MENU_API}/${item.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      setMessage("Menu item could not be deleted.");
+      return;
+    }
+    setMessage(`Deleted ${item.name}.`);
+    await fetchMenu();
+  };
+
+  const topProfitItems = profitability?.items.slice(0, 5) || [];
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
+    <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Menu Management</h1>
-          <p className="text-gray-500 mt-1">Manage items, categories, and pricing for Pizza Blitz.</p>
+          <h1 className="text-3xl font-bold text-orange-400 underline decoration-orange-500/20 underline-offset-8">
+            Menu Intelligence
+          </h1>
+          <p className="mt-3 text-sm text-gray-500">
+            Live menu pricing, availability, and margin visibility.
+          </p>
         </div>
-        <button 
-          onClick={() => { setEditingItem(null); setIsModalOpen(true); }}
-          className="bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-100 flex items-center transition-all"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Add New Item
-        </button>
-      </div>
-
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input 
-            type="text" 
-            placeholder="Search by item name or category..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-          />
+        <div className="flex gap-3">
+          <button
+            onClick={fetchMenu}
+            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh
+          </button>
+          <button
+            onClick={openNewItem}
+            className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white"
+          >
+            <Plus className="h-4 w-4" /> Add Item
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="px-6 py-4 font-bold text-gray-700">Item Name</th>
-              <th className="px-6 py-4 font-bold text-gray-700">Category</th>
-              <th className="px-6 py-4 font-bold text-gray-700 text-right">Selling Price</th>
-              <th className="px-6 py-4 font-bold text-gray-700 text-right">Cost Price</th>
-              <th className="px-6 py-4 font-bold text-gray-700 text-center">Status</th>
-              <th className="px-6 py-4 font-bold text-gray-700 text-center">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {filteredItems.map((item) => (
-              <tr key={item.id} className="hover:bg-orange-50/30 transition-colors">
-                <td className="px-6 py-4 font-bold text-gray-900">{item.name}</td>
-                <td className="px-6 py-4">
-                  <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-xs font-bold">
-                    {item.category}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-right font-bold text-orange-600">₹{item.selling_price}</td>
-                <td className="px-6 py-4 text-right text-gray-500">₹{item.cost_price}</td>
-                <td className="px-6 py-4">
-                  <div className="flex justify-center">
-                    {item.is_available ? (
-                      <span className="flex items-center text-green-600 text-xs font-bold">
-                        <CheckCircle className="w-4 h-4 mr-1" /> Available
-                      </span>
-                    ) : (
-                      <span className="flex items-center text-red-500 text-xs font-bold">
-                        <XCircle className="w-4 h-4 mr-1" /> Out of Stock
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex justify-center space-x-2">
-                    <button 
-                      onClick={() => { setEditingItem(item); setIsModalOpen(true); }}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {message && (
+        <div className="mb-6 rounded-xl border border-orange-500/20 bg-orange-500/10 px-5 py-3 text-sm text-orange-100">
+          {message}
+        </div>
+      )}
+
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Metric label="Menu Items" value={items.length} />
+        <Metric label="Available" value={items.filter((item) => item.is_available).length} />
+        <Metric
+          label="Avg Margin"
+          value={`${Math.round(avgMargin(profitability?.items || []))}%`}
+        />
+        <Metric label="Tracked Costs" value={profitability?.total_items || 0} />
       </div>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-orange-50">
-              <h3 className="text-xl font-bold text-gray-900">{editingItem ? 'Edit Item' : 'Add New Item'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="space-y-1">
-                <label className="text-sm font-bold text-gray-700">Item Name</label>
-                <input 
-                  type="text" 
-                  defaultValue={editingItem?.name}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
-                  placeholder="e.g. Farmhouse Pizza (M)"
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <div className="xl:col-span-8">
+          <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search item or category"
+                  className="w-full rounded-xl border border-white/10 bg-black/30 py-3 pl-11 pr-4 outline-none focus:border-orange-500"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-sm font-bold text-gray-700">Category</label>
-                  <select 
-                    defaultValue={editingItem?.category || "Pizza"}
-                    className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
-                  >
-                    <option>Pizza</option>
-                    <option>Burgers</option>
-                    <option>Beverages</option>
-                    <option>Sides</option>
-                    <option>Desserts</option>
-                  </select>
-                </div>
-                <div className="space-y-1 text-center">
-                  <label className="text-sm font-bold text-gray-700">Available</label>
-                  <div className="flex items-center justify-center h-12">
-                    <input type="checkbox" defaultChecked={editingItem?.is_available ?? true} className="w-6 h-6 text-orange-600" />
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-sm font-bold text-gray-700">Selling Price</label>
-                  <div className="relative">
-                    <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input 
-                      type="number" 
-                      defaultValue={editingItem?.selling_price}
-                      className="w-full pl-10 pr-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-bold text-gray-700">Cost Price</label>
-                  <div className="relative">
-                    <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input 
-                      type="number" 
-                      defaultValue={editingItem?.cost_price}
-                      className="w-full pl-10 pr-3 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-              </div>
             </div>
-            <div className="p-6 bg-gray-50 flex space-x-3">
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="flex-1 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-100 transition-all"
-              >
-                Cancel
-              </button>
-              <button className="flex-1 py-3 bg-orange-600 text-white font-bold rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-100 flex items-center justify-center transition-all">
-                <Save className="w-5 h-5 mr-2" />
-                {editingItem ? 'Save Changes' : 'Add Item'}
-              </button>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left">
+                <thead>
+                  <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-gray-500">
+                    <th className="px-4 py-3">Item</th>
+                    <th className="px-4 py-3">Category</th>
+                    <th className="px-4 py-3 text-right">Selling</th>
+                    <th className="px-4 py-3 text-right">Cost</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredItems.map((item) => (
+                    <tr key={item.id || item.name} className="hover:bg-white/[0.03]">
+                      <td className="px-4 py-4 font-black">{item.name}</td>
+                      <td className="px-4 py-4">
+                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-gray-300">
+                          {item.category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right font-black text-orange-400">
+                        Rs {Number(item.selling_price || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-4 text-right text-gray-400">
+                        Rs {Number(item.cost_price || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-center">
+                          {item.is_available ? (
+                            <span className="flex items-center gap-1 text-xs font-bold text-green-400">
+                              <CheckCircle className="h-4 w-4" /> Available
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-xs font-bold text-red-400">
+                              <XCircle className="h-4 w-4" /> Out
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => openEditItem(item)}
+                            className="rounded-lg bg-white/5 p-2 text-blue-300 hover:bg-blue-500/20"
+                            title="Edit"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteItem(item)}
+                            className="rounded-lg bg-white/5 p-2 text-red-300 hover:bg-red-500/20"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
+
+        <div className="xl:col-span-4">
+          <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <h2 className="mb-5 flex items-center gap-2 text-lg font-black">
+              <BarChart3 className="h-5 w-5 text-orange-400" /> Profitability
+            </h2>
+            <div className="space-y-3">
+              {topProfitItems.map((item) => (
+                <div key={item.id} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-black">{item.item}</p>
+                      <p className="mt-1 text-xs text-gray-500">{item.rating}</p>
+                    </div>
+                    <span className="text-lg font-black text-green-400">
+                      {item.margin_percent}%
+                    </span>
+                  </div>
+                  <div className="mt-3 flex justify-between text-xs text-gray-400">
+                    <span>Cost: Rs {item.cost_to_make.toLocaleString()}</span>
+                    <span>Margin: Rs {item.margin.toLocaleString()}</span>
+                  </div>
+                </div>
+              ))}
+              {!topProfitItems.length && (
+                <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-gray-500">
+                  No profitability data yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={saveItem}
+            className="w-full max-w-xl rounded-xl border border-white/10 bg-[#1a1a1c] p-8"
+          >
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="text-xl font-black">{formData.id ? "Edit Item" : "Add Item"}</h2>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="text-gray-500 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <Input
+                label="Item Name"
+                value={formData.name}
+                onChange={(value) => setFormData({ ...formData, name: value })}
+                required
+              />
+              <Input
+                label="Category"
+                value={formData.category}
+                onChange={(value) => setFormData({ ...formData, category: value })}
+                required
+              />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Input
+                  label="Selling Price"
+                  type="number"
+                  value={String(formData.selling_price)}
+                  onChange={(value) => setFormData({ ...formData, selling_price: Number(value) })}
+                  required
+                />
+                <Input
+                  label="Cost Price"
+                  type="number"
+                  value={String(formData.cost_price)}
+                  onChange={(value) => setFormData({ ...formData, cost_price: Number(value) })}
+                  required
+                />
+              </div>
+              <label className="flex items-center gap-3 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={formData.is_available}
+                  onChange={(event) =>
+                    setFormData({ ...formData, is_available: event.target.checked })
+                  }
+                />
+                Available for sale
+              </label>
+            </div>
+
+            <button className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 py-4 font-black text-white hover:bg-orange-600">
+              <Save className="h-4 w-4" /> Save Menu Item
+            </button>
+          </form>
+        </div>
       )}
     </div>
+  );
+}
+
+function avgMargin(items: ProfitabilityItem[]) {
+  if (!items.length) return 0;
+  return items.reduce((total, item) => total + item.margin_percent, 0) / items.length;
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-5">
+      <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function Input({
+  label,
+  value,
+  onChange,
+  required,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  type?: string;
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</span>
+      <input
+        type={type}
+        value={value}
+        min={type === "number" ? "0" : undefined}
+        step={type === "number" ? "0.01" : undefined}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-white/10 bg-black/30 p-4 outline-none focus:border-orange-500"
+        required={required}
+      />
+    </label>
   );
 }
