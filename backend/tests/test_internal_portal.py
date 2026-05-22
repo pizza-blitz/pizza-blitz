@@ -678,6 +678,71 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(social_delivery_history.status_code, 200)
             self.assertEqual(social_delivery_history.json()["dry_run_count"], 2)
 
+            ads_provider_status = client.get("/api/v1/restaurant/ads/provider-status")
+            self.assertEqual(ads_provider_status.status_code, 200)
+            self.assertFalse(ads_provider_status.json()["configured"])
+            self.assertIn(
+                "ADS_LAUNCH_ENABLED=true",
+                ads_provider_status.json()["missing_settings"],
+            )
+
+            ad_campaign = client.post(
+                "/api/v1/restaurant/ads/campaigns",
+                json={
+                    "name": "Weekend Combo Traffic Push",
+                    "objective": "traffic",
+                    "platforms": ["facebook", "instagram"],
+                    "audience": "Local pizza lovers and repeat customers",
+                    "location": "Indore",
+                    "creative_message": "Weekend Combo is live. Order now and use WEEKEND15.",
+                    "link_url": "https://pizzablitz.example/order",
+                    "image_url": "https://pizzablitz.example/assets/weekend.jpg",
+                    "daily_budget": 500,
+                    "start_date": today.isoformat(),
+                    "end_date": today.isoformat(),
+                    "status": "ready",
+                },
+            )
+            self.assertEqual(ad_campaign.status_code, 200)
+            ad_campaign_id = ad_campaign.json()["campaign"]["id"]
+            self.assertEqual(ad_campaign.json()["campaign"]["objective"], "traffic")
+            self.assertEqual(ad_campaign.json()["campaign"]["daily_budget"], 500)
+
+            dry_ad_launch = client.post(
+                f"/api/v1/restaurant/ads/campaigns/{ad_campaign_id}/launch",
+                json={"dry_run": True},
+            )
+            self.assertEqual(dry_ad_launch.status_code, 200)
+            self.assertEqual(dry_ad_launch.json()["dry_run_count"], 1)
+            self.assertEqual(dry_ad_launch.json()["launches"][0]["status"], "dry_run")
+
+            updated_ad_metrics = client.patch(
+                f"/api/v1/restaurant/ads/campaigns/{ad_campaign_id}/metrics",
+                json={
+                    "impressions": 10000,
+                    "clicks": 250,
+                    "conversions": 25,
+                    "spend": 1250,
+                    "revenue": 6250,
+                },
+            )
+            self.assertEqual(updated_ad_metrics.status_code, 200)
+            self.assertEqual(updated_ad_metrics.json()["ctr"], 2.5)
+            self.assertEqual(updated_ad_metrics.json()["roas"], 5)
+            self.assertEqual(updated_ad_metrics.json()["cpa"], 50)
+
+            ads_summary = client.get("/api/v1/restaurant/ads/summary")
+            self.assertEqual(ads_summary.status_code, 200)
+            self.assertEqual(ads_summary.json()["total_campaigns"], 1)
+            self.assertEqual(ads_summary.json()["total_spend"], 1250)
+            self.assertEqual(ads_summary.json()["roas"], 5)
+
+            ad_launch_history = client.get(
+                f"/api/v1/restaurant/ads/campaigns/{ad_campaign_id}/launches"
+            )
+            self.assertEqual(ad_launch_history.status_code, 200)
+            self.assertEqual(ad_launch_history.json()["dry_run_count"], 1)
+
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
             )

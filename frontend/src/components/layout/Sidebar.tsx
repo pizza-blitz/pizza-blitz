@@ -24,6 +24,7 @@ export default function Sidebar() {
     { name: "Customers", href: "/customers", icon: Users },
     { name: "Promotions", href: "/promotions", icon: Megaphone },
     { name: "Social Publishing", href: "/social", icon: Share2 },
+    { name: "Ad Campaigns", href: "/ads", icon: Target },
     { name: "Vendors", href: "/vendors", icon: Truck },
     { name: "Waste Log", href: "/waste", icon: Trash2 },
     { name: "Expenses", href: "/expenses", icon: Receipt },

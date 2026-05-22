@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     FACEBOOK_PAGE_ACCESS_TOKEN: str | None = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str | None = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID")
     INSTAGRAM_ACCESS_TOKEN: str | None = os.getenv("INSTAGRAM_ACCESS_TOKEN")
+    ADS_LAUNCH_ENABLED: bool = os.getenv("ADS_LAUNCH_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    META_AD_ACCOUNT_ID: str | None = os.getenv("META_AD_ACCOUNT_ID")
+    META_AD_ACCESS_TOKEN: str | None = os.getenv("META_AD_ACCESS_TOKEN")
 
     class Config:
         case_sensitive = True

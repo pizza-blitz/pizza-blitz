@@ -176,6 +176,45 @@ class SocialPostDelivery(Base):
     attempted_at = Column(DateTime, default=datetime.utcnow, index=True)
     post = relationship("SocialPost", back_populates="deliveries")
 
+class AdCampaign(Base):
+    __tablename__ = "ad_campaigns"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    objective = Column(String(80), default="traffic", index=True)
+    platforms = Column(JSON, default=list)
+    audience = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    creative_message = Column(String, nullable=False)
+    link_url = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    daily_budget = Column(Float, default=0.0)
+    lifetime_budget = Column(Float, default=0.0)
+    start_date = Column(Date, nullable=True, index=True)
+    end_date = Column(Date, nullable=True, index=True)
+    status = Column(String(40), default="draft", index=True)
+    external_campaign_id = Column(String(255), nullable=True)
+    impressions = Column(Integer, default=0)
+    clicks = Column(Integer, default=0)
+    conversions = Column(Integer, default=0)
+    spend = Column(Float, default=0.0)
+    revenue = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    launches = relationship("AdCampaignLaunch", back_populates="campaign")
+
+class AdCampaignLaunch(Base):
+    __tablename__ = "ad_campaign_launches"
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("ad_campaigns.id"), index=True, nullable=False)
+    provider = Column(String(80), nullable=True)
+    status = Column(String(40), index=True, default="pending")
+    external_campaign_id = Column(String(255), nullable=True)
+    error = Column(String, nullable=True)
+    dry_run = Column(Boolean, default=False)
+    response_payload = Column(JSON, nullable=True)
+    attempted_at = Column(DateTime, default=datetime.utcnow, index=True)
+    campaign = relationship("AdCampaign", back_populates="launches")
+
 class ShiftLog(Base):
     __tablename__ = "shift_log"
     id = Column(Integer, primary_key=True, index=True)
