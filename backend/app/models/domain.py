@@ -149,6 +149,33 @@ class CampaignDelivery(Base):
     promotion = relationship("Promotion")
     customer = relationship("Customer")
 
+class SocialPost(Base):
+    __tablename__ = "social_posts"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(String, nullable=False)
+    link_url = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    platforms = Column(JSON, default=list)
+    status = Column(String(40), default="draft", index=True)
+    scheduled_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    deliveries = relationship("SocialPostDelivery", back_populates="post")
+
+class SocialPostDelivery(Base):
+    __tablename__ = "social_post_deliveries"
+    id = Column(Integer, primary_key=True, index=True)
+    social_post_id = Column(Integer, ForeignKey("social_posts.id"), index=True, nullable=False)
+    platform = Column(String(50), index=True, nullable=False)
+    provider = Column(String(80), nullable=True)
+    status = Column(String(40), index=True, default="pending")
+    external_id = Column(String(255), nullable=True)
+    error = Column(String, nullable=True)
+    dry_run = Column(Boolean, default=False)
+    response_payload = Column(JSON, nullable=True)
+    attempted_at = Column(DateTime, default=datetime.utcnow, index=True)
+    post = relationship("SocialPost", back_populates="deliveries")
+
 class ShiftLog(Base):
     __tablename__ = "shift_log"
     id = Column(Integer, primary_key=True, index=True)

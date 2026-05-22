@@ -637,6 +637,47 @@ class InternalPortalValidationTest(unittest.TestCase):
                 "dry_run",
             )
 
+            social_provider_status = client.get("/api/v1/restaurant/social/provider-status")
+            self.assertEqual(social_provider_status.status_code, 200)
+            self.assertFalse(social_provider_status.json()["facebook"]["configured"])
+            self.assertIn(
+                "SOCIAL_PUBLISH_ENABLED=true",
+                social_provider_status.json()["facebook"]["missing_settings"],
+            )
+
+            social_post = client.post(
+                "/api/v1/restaurant/social/posts",
+                json={
+                    "title": "Weekend offer post",
+                    "message": "Weekend Combo is live at Pizza Blitz. Use WEEKEND15 today.",
+                    "link_url": "https://pizzablitz.example/order",
+                    "image_url": "https://pizzablitz.example/assets/weekend.jpg",
+                    "platforms": ["facebook", "instagram"],
+                    "status": "ready",
+                },
+            )
+            self.assertEqual(social_post.status_code, 200)
+            social_post_id = social_post.json()["post"]["id"]
+            self.assertEqual(social_post.json()["post"]["platforms"], ["facebook", "instagram"])
+
+            dry_social_publish = client.post(
+                f"/api/v1/restaurant/social/posts/{social_post_id}/publish",
+                json={"dry_run": True},
+            )
+            self.assertEqual(dry_social_publish.status_code, 200)
+            self.assertEqual(dry_social_publish.json()["attempted_count"], 2)
+            self.assertEqual(dry_social_publish.json()["dry_run_count"], 2)
+            self.assertEqual(
+                {delivery["platform"] for delivery in dry_social_publish.json()["deliveries"]},
+                {"facebook", "instagram"},
+            )
+
+            social_delivery_history = client.get(
+                f"/api/v1/restaurant/social/posts/{social_post_id}/deliveries"
+            )
+            self.assertEqual(social_delivery_history.status_code, 200)
+            self.assertEqual(social_delivery_history.json()["dry_run_count"], 2)
+
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
             )

@@ -22,6 +22,7 @@ const adminRoutes = [
   "/recipes",
   "/customers",
   "/promotions",
+  "/social",
   "/vendors",
   "/waste",
   "/expenses",

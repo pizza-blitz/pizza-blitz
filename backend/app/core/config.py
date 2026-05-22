@@ -60,6 +60,17 @@ class Settings(BaseSettings):
     WHATSAPP_GRAPH_VERSION: str = os.getenv("WHATSAPP_GRAPH_VERSION", "v25.0")
     WHATSAPP_TEMPLATE_NAME: str | None = os.getenv("WHATSAPP_TEMPLATE_NAME")
     WHATSAPP_TEMPLATE_LANGUAGE: str = os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
+    SOCIAL_PUBLISH_ENABLED: bool = os.getenv("SOCIAL_PUBLISH_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    META_GRAPH_VERSION: str = os.getenv("META_GRAPH_VERSION", "v25.0")
+    FACEBOOK_PAGE_ID: str | None = os.getenv("FACEBOOK_PAGE_ID")
+    FACEBOOK_PAGE_ACCESS_TOKEN: str | None = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: str | None = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID")
+    INSTAGRAM_ACCESS_TOKEN: str | None = os.getenv("INSTAGRAM_ACCESS_TOKEN")
 
     class Config:
         case_sensitive = True

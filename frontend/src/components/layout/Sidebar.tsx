@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Package, Receipt, ShoppingCart, 
   BarChart3, Settings, PlusCircle, Utensils, 
   Sparkles, DollarSign, Trash2, Crown, 
-  Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame
+  Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -23,6 +23,7 @@ export default function Sidebar() {
     { name: "Recipes", href: "/recipes", icon: ClipboardList },
     { name: "Customers", href: "/customers", icon: Users },
     { name: "Promotions", href: "/promotions", icon: Megaphone },
+    { name: "Social Publishing", href: "/social", icon: Share2 },
     { name: "Vendors", href: "/vendors", icon: Truck },
     { name: "Waste Log", href: "/waste", icon: Trash2 },
     { name: "Expenses", href: "/expenses", icon: Receipt },
