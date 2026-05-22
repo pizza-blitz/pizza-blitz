@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Send, Upload, Plus, FileText, CheckCircle2, Search, CornerDownRight, Loader2 } from 'lucide-react';
+import { Send, Plus, FileText, CheckCircle2, Search, CornerDownRight, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { getApiUrl } from '@/lib/api';
 
@@ -10,6 +10,7 @@ export default function PurchaseOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isCreatingDrafts, setIsCreatingDrafts] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState("");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -55,6 +56,37 @@ export default function PurchaseOrders() {
     } finally {
       setIsCreatingDrafts(false);
     }
+  };
+
+  const updatePurchaseOrder = async (orderId: number, action: "sent" | "receive") => {
+    const updateKey = `${action}-${orderId}`;
+    setUpdatingOrderId(updateKey);
+    setMessage("");
+    try {
+      const response = await fetch(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}/${action}`), {
+        method: 'PATCH',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not update purchase order.");
+
+      const updatedItems = data.inventory_updates?.length || 0;
+      setMessage(
+        action === "receive"
+          ? `Received PO-${orderId} and updated ${updatedItems} inventory item${updatedItems === 1 ? "" : "s"}.`
+          : `Marked PO-${orderId} as sent.`
+      );
+      await fetchOrders();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update purchase order.");
+    } finally {
+      setUpdatingOrderId("");
+    }
+  };
+
+  const statusClass = (status: string) => {
+    if (status === "received") return "bg-green-100 text-green-700";
+    if (status === "sent") return "bg-blue-100 text-blue-700";
+    return "bg-orange-100 text-orange-700";
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,7 +154,7 @@ export default function PurchaseOrders() {
             <span className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mr-3 text-sm">1</span>
             Smart Suggestions <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-600 rounded-full text-xs font-bold">Low Stock</span>
           </h3>
-          
+
           {reorderGroups.map((data: any) => (
             <div key={`${data.supplier_name}-${data.supplier_whatsapp}`} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
@@ -176,7 +208,7 @@ export default function PurchaseOrders() {
                  <input type="text" placeholder="Search orders..." className="pl-9 pr-3 py-1.5 border border-gray-200 rounded-md text-sm outline-none focus:border-orange-500" />
                </div>
             </div>
-            
+
             <div className="p-4 flex-1 overflow-y-auto">
               {isLoading ? (
                 <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
@@ -185,20 +217,43 @@ export default function PurchaseOrders() {
               ) : (
                 <div className="space-y-4">
                   {orders.map((order) => (
-                    <div key={order.id} className="flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:border-orange-200 hover:shadow-sm transition-all group cursor-pointer">
+                    <div key={order.id} className="flex justify-between items-center gap-4 p-3 border border-gray-100 rounded-lg hover:border-orange-200 hover:shadow-sm transition-all group">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-gray-900">PO-{order.id}</span>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex items-center ${
-                            order.status === 'received' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold flex items-center ${statusClass(order.status)}`}>
                             <CheckCircle2 className="w-3 h-3 mr-1" /> {order.status}
                           </span>
                         </div>
                         <p className="text-sm text-gray-500 mt-1">{order.supplier_name} &bull; {new Date(order.created_at).toLocaleDateString()}</p>
+                        <p className="text-xs text-gray-400 mt-1">{order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"} in this PO</p>
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-gray-900">₹{order.total_amount?.toLocaleString()}</div>
+                      <div className="text-right space-y-2">
+                        <div className="font-bold text-gray-900">Rs. {order.total_amount?.toLocaleString()}</div>
+                        {order.status !== "received" && (
+                          <div className="flex flex-wrap justify-end gap-2">
+                            {order.status !== "sent" && (
+                              <button
+                                type="button"
+                                onClick={() => updatePurchaseOrder(order.id, "sent")}
+                                disabled={updatingOrderId === `sent-${order.id}`}
+                                className="px-3 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60 flex items-center"
+                              >
+                                {updatingOrderId === `sent-${order.id}` ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Send className="w-3 h-3 mr-1" />}
+                                Mark Sent
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => updatePurchaseOrder(order.id, "receive")}
+                              disabled={updatingOrderId === `receive-${order.id}`}
+                              className="px-3 py-1.5 rounded-md border border-green-200 bg-green-50 text-xs font-bold text-green-700 hover:bg-green-100 disabled:opacity-60 flex items-center"
+                            >
+                              {updatingOrderId === `receive-${order.id}` ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+                              Receive
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

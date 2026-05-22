@@ -486,9 +486,43 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(reorder_drafts.status_code, 200)
             self.assertEqual(reorder_drafts.json()["created"], 1)
             draft = reorder_drafts.json()["purchase_orders"][0]
+            draft_id = draft["id"]
             self.assertEqual(draft["supplier_name"], "Fresh Farms")
             self.assertEqual(draft["total_amount"], 2220)
             self.assertEqual(len(draft["items"]), 2)
+
+            sent_po = client.patch(
+                f"/api/v1/restaurant/purchase-orders/{draft_id}/sent"
+            )
+            self.assertEqual(sent_po.status_code, 200)
+            self.assertEqual(sent_po.json()["purchase_order"]["status"], "sent")
+            self.assertIsNotNone(
+                sent_po.json()["purchase_order"]["whatsapp_sent_at"]
+            )
+
+            received_po = client.patch(
+                f"/api/v1/restaurant/purchase-orders/{draft_id}/receive"
+            )
+            self.assertEqual(received_po.status_code, 200)
+            self.assertEqual(received_po.json()["purchase_order"]["status"], "received")
+            updates_by_name = {
+                item["name"]: item
+                for item in received_po.json()["inventory_updates"]
+            }
+            self.assertEqual(updates_by_name["Tomato Sauce"]["new_stock"], 20)
+            self.assertEqual(updates_by_name["Basil"]["new_stock"], 10)
+
+            low_stock_after_receive = client.get(
+                "/api/v1/restaurant/inventory/low-stock"
+            )
+            self.assertEqual(low_stock_after_receive.status_code, 200)
+            self.assertEqual(low_stock_after_receive.json()["count"], 0)
+
+            repeated_receive = client.patch(
+                f"/api/v1/restaurant/purchase-orders/{draft_id}/receive"
+            )
+            self.assertEqual(repeated_receive.status_code, 200)
+            self.assertEqual(repeated_receive.json()["inventory_updates"], [])
 
             closed_status_update = client.patch(
                 f"/api/v1/restaurant/orders/{takeaway_id}/status",

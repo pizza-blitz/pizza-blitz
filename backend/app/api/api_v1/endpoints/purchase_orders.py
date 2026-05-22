@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Any
 from app.api.deps import get_db
-from app.models.domain import InventoryItem, PurchaseOrder
+from app.models.domain import InventoryItem, InventoryTransaction, PurchaseOrder
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -14,6 +14,10 @@ class PurchaseOrderCreate(BaseModel):
     items: List[Any]
     total_amount: float
     status: str = "draft"
+
+
+class PurchaseOrderStatusUpdate(BaseModel):
+    status: str
 
 
 def _reorder_quantity(item: InventoryItem) -> float:
@@ -37,6 +41,134 @@ def _purchase_order_item(item: InventoryItem) -> dict:
         "current_stock": float(item.current_stock or 0),
         "minimum_stock": float(item.minimum_stock or 0),
     }
+
+
+def _line_number(line: dict, keys: List[str], default: float = 0.0) -> float:
+    for key in keys:
+        try:
+            value = line.get(key)
+            if value is not None and value != "":
+                return float(value)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def _line_name(line: dict) -> str:
+    return str(line.get("name") or line.get("item_name") or "").strip()
+
+
+def _find_or_create_inventory_item(db: Session, line: dict) -> InventoryItem | None:
+    item_id = line.get("inventory_item_id") or line.get("item_id")
+    inventory_item = None
+    if item_id:
+        inventory_item = (
+            db.query(InventoryItem)
+            .filter(InventoryItem.id == item_id)
+            .first()
+        )
+    if inventory_item:
+        return inventory_item
+
+    name = _line_name(line)
+    if not name:
+        return None
+
+    inventory_item = (
+        db.query(InventoryItem)
+        .filter(InventoryItem.name == name)
+        .first()
+    )
+    if inventory_item:
+        return inventory_item
+
+    inventory_item = InventoryItem(
+        name=name,
+        category=line.get("category") or "Purchased",
+        unit=line.get("unit") or "unit",
+        current_stock=0.0,
+        minimum_stock=0.0,
+        cost_per_unit=_line_number(
+            line,
+            ["unit_cost", "price_per_unit", "cost_per_unit"],
+            0.0,
+        ),
+        supplier_name=line.get("supplier_name"),
+        supplier_whatsapp=line.get("supplier_whatsapp"),
+    )
+    db.add(inventory_item)
+    db.flush()
+    return inventory_item
+
+
+def _get_purchase_order_or_404(order_id: int, db: Session) -> PurchaseOrder:
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+
+def _receive_inventory(order: PurchaseOrder, db: Session) -> tuple[list[dict], list[dict]]:
+    inventory_updates = []
+    skipped_items = []
+
+    for line in order.items or []:
+        if not isinstance(line, dict):
+            skipped_items.append({"reason": "Invalid line item", "item": line})
+            continue
+
+        quantity = _line_number(
+            line,
+            ["received_quantity", "quantity", "reorder_quantity", "needed"],
+            0.0,
+        )
+        if quantity <= 0:
+            skipped_items.append({
+                "name": _line_name(line) or "Unknown item",
+                "reason": "Quantity must be greater than zero",
+            })
+            continue
+
+        inventory_item = _find_or_create_inventory_item(db, line)
+        if not inventory_item:
+            skipped_items.append({
+                "name": _line_name(line) or "Unknown item",
+                "reason": "Inventory item could not be resolved",
+            })
+            continue
+
+        unit_cost = _line_number(
+            line,
+            ["unit_cost", "price_per_unit", "cost_per_unit"],
+            float(inventory_item.cost_per_unit or 0),
+        )
+        previous_stock = float(inventory_item.current_stock or 0)
+        inventory_item.current_stock = round(previous_stock + quantity, 4)
+        if unit_cost > 0:
+            inventory_item.cost_per_unit = unit_cost
+
+        total_cost = round(quantity * unit_cost, 2)
+        db.add(InventoryTransaction(
+            item_id=inventory_item.id,
+            transaction_type="purchase",
+            quantity=quantity,
+            unit_cost=unit_cost,
+            total_cost=total_cost,
+            notes=f"Purchase order #{order.id} received from {order.supplier_name}",
+        ))
+        inventory_updates.append({
+            "inventory_item_id": inventory_item.id,
+            "name": inventory_item.name,
+            "quantity": quantity,
+            "unit": inventory_item.unit,
+            "previous_stock": previous_stock,
+            "new_stock": inventory_item.current_stock,
+            "unit_cost": unit_cost,
+            "total_cost": total_cost,
+        })
+
+    return inventory_updates, skipped_items
+
 
 @router.get("/", response_model=List[Any])
 def get_purchase_orders(db: Session = Depends(get_db)):
@@ -100,9 +232,68 @@ def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
         "purchase_orders": created_orders,
     }
 
+@router.patch("/{order_id}/sent")
+def mark_purchase_order_sent(order_id: int, db: Session = Depends(get_db)):
+    order = _get_purchase_order_or_404(order_id, db)
+    if order.status == "received":
+        raise HTTPException(status_code=409, detail="Received purchase orders cannot be marked sent")
+
+    order.status = "sent"
+    order.whatsapp_sent_at = order.whatsapp_sent_at or datetime.utcnow()
+    db.commit()
+    db.refresh(order)
+    return {"status": order.status, "purchase_order": order}
+
+
+@router.patch("/{order_id}/receive")
+def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
+    order = _get_purchase_order_or_404(order_id, db)
+    if order.status == "received":
+        return {
+            "status": order.status,
+            "purchase_order": order,
+            "inventory_updates": [],
+            "skipped_items": [],
+            "message": "Purchase order was already received.",
+        }
+
+    inventory_updates, skipped_items = _receive_inventory(order, db)
+    order.status = "received"
+    db.commit()
+    db.refresh(order)
+
+    return {
+        "status": order.status,
+        "purchase_order": order,
+        "inventory_updates": inventory_updates,
+        "skipped_items": skipped_items,
+    }
+
+
+@router.patch("/{order_id}/status")
+def update_purchase_order_status(
+    order_id: int,
+    obj_in: PurchaseOrderStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    requested_status = obj_in.status.strip().lower()
+    if requested_status == "sent":
+        return mark_purchase_order_sent(order_id, db)
+    if requested_status == "received":
+        return receive_purchase_order(order_id, db)
+    if requested_status != "draft":
+        raise HTTPException(status_code=422, detail="Status must be draft, sent, or received")
+
+    order = _get_purchase_order_or_404(order_id, db)
+    if order.status == "received":
+        raise HTTPException(status_code=409, detail="Received purchase orders cannot be changed to draft")
+
+    order.status = "draft"
+    db.commit()
+    db.refresh(order)
+    return {"status": order.status, "purchase_order": order}
+
+
 @router.get("/{order_id}")
 def get_purchase_order(order_id: int, db: Session = Depends(get_db)):
-    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return order
+    return _get_purchase_order_or_404(order_id, db)
