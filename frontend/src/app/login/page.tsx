@@ -28,7 +28,7 @@ export default function Login() {
     }
 
     const next = new URLSearchParams(window.location.search).get("next");
-    router.push(next || "/");
+    router.push(next || "/dashboard");
     router.refresh();
   };
 

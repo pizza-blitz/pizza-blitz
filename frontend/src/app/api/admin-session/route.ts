@@ -1,36 +1,46 @@
 import { NextResponse } from "next/server";
+import { ADMIN_COOKIE, createSessionToken, maxAgeForRole } from "@/lib/session";
 
-const ADMIN_COOKIE = "pb_admin_session";
-const SESSION_SECONDS = 60 * 60 * 8;
+function validAdminCredentials(id: string, password: string) {
+  const configuredId = process.env.PIZZA_BLITZ_ADMIN_ID || "admin";
+  const configuredPassword = process.env.PIZZA_BLITZ_ADMIN_PASSWORD || "admin123";
+  return id === configuredId && password === configuredPassword;
+}
 
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
   const id = String(payload.id || "").trim();
-  const password = String(payload.password || "").trim();
+  const password = String(payload.password || "");
 
-  const configuredId = process.env.PIZZA_BLITZ_ADMIN_ID;
-  const configuredPassword = process.env.PIZZA_BLITZ_ADMIN_PASSWORD;
-  const hasConfiguredCredentials = Boolean(configuredId && configuredPassword);
-  const credentialsValid = hasConfiguredCredentials
-    ? id === configuredId && password === configuredPassword
-    : Boolean(id && password);
-
-  if (!credentialsValid) {
+  if (!validAdminCredentials(id, password)) {
     return NextResponse.json(
       { detail: "Invalid admin credentials." },
       { status: 401 }
     );
   }
 
-  const response = NextResponse.json({ ok: true });
+  const maxAge = maxAgeForRole("admin");
+  const token = await createSessionToken(
+    {
+      role: "admin",
+      subject: `admin:${id}`,
+      displayName: "Restaurant Admin",
+    },
+    maxAge
+  );
+  const response = NextResponse.json({
+    ok: true,
+    role: "admin",
+    displayName: "Restaurant Admin",
+  });
   response.cookies.set({
     name: ADMIN_COOKIE,
-    value: "local-admin",
+    value: token,
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_SECONDS,
+    maxAge,
   });
   return response;
 }

@@ -407,6 +407,43 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(customer_history.json()["customer"]["total_orders"], 1)
             self.assertEqual(customer_history.json()["orders"][0]["id"], takeaway_id)
 
+            missing_auth = client.get("/api/v1/auth/me")
+            self.assertEqual(missing_auth.status_code, 401)
+
+            invalid_admin_login = client.post(
+                "/api/v1/auth/admin/login",
+                json={"id": "admin", "password": "wrong"},
+            )
+            self.assertEqual(invalid_admin_login.status_code, 401)
+
+            admin_login = client.post(
+                "/api/v1/auth/admin/login",
+                json={"id": "admin", "password": "admin123"},
+            )
+            self.assertEqual(admin_login.status_code, 200)
+            self.assertEqual(admin_login.json()["role"], "admin")
+            admin_token = admin_login.json()["access_token"]
+            admin_session = client.get(
+                "/api/v1/auth/me",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            self.assertEqual(admin_session.status_code, 200)
+            self.assertEqual(admin_session.json()["role"], "admin")
+
+            customer_login = client.post(
+                "/api/v1/auth/customer/login",
+                json={"phone": "9999999999"},
+            )
+            self.assertEqual(customer_login.status_code, 200)
+            self.assertEqual(customer_login.json()["role"], "customer")
+            self.assertEqual(customer_login.json()["phone"], "9999999999")
+            customer_session = client.get(
+                "/api/v1/auth/me",
+                headers={"Authorization": f"Bearer {customer_login.json()['access_token']}"},
+            )
+            self.assertEqual(customer_session.status_code, 200)
+            self.assertEqual(customer_session.json()["role"], "customer")
+
             delivery = client.post(
                 "/api/v1/restaurant/orders/",
                 json={

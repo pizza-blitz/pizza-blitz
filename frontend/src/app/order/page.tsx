@@ -233,6 +233,19 @@ export default function PublicOrderPage() {
       ? `/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`
       : "/account";
 
+  const saveCustomerSession = async () => {
+    if (!customerPhone.trim()) return;
+    await fetch("/api/customer-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: customerName,
+        phone: customerPhone,
+        email: customerEmail || null,
+      }),
+    }).catch(() => undefined);
+  };
+
   const addToCart = (item: MenuItem) => {
     setOrderId(null);
     setPendingPayment(null);
@@ -359,6 +372,7 @@ export default function PublicOrderPage() {
         opt_in_marketing: optInMarketing,
       })
     );
+    await saveCustomerSession();
     if (paymentMethod === "prepaid") {
       const orderId = Number(data.order_id);
       const sessionResponse = await fetch(`${ORDER_API}${orderId}/payment-session`, {

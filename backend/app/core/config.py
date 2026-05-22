@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")
+    AUTH_SECRET_KEY: str = os.getenv(
+        "AUTH_SECRET_KEY",
+        os.getenv("RESTAURANT_ADMIN_PASSWORD", "pizza-blitz-local-secret"),
+    )
+    AUTH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "480"))
+    CUSTOMER_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("CUSTOMER_TOKEN_EXPIRE_MINUTES", "43200"))
     PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "manual")
     PAYMENT_CURRENCY: str = os.getenv("PAYMENT_CURRENCY", "INR")
     PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://localhost:3000/account")

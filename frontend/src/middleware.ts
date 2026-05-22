@@ -1,8 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  ADMIN_COOKIE,
+  CUSTOMER_COOKIE,
+  verifySessionToken,
+} from "@/lib/session";
 
-const ADMIN_COOKIE = "pb_admin_session";
-
-const protectedRoutes = [
+const adminRoutes = [
   "/dashboard",
   "/ceo",
   "/orders",
@@ -27,25 +30,65 @@ const protectedRoutes = [
   "/settings",
 ];
 
-function isProtectedPath(pathname: string) {
-  return protectedRoutes.some((route) => {
-    if (route === "/") return pathname === "/";
-    return pathname === route || pathname.startsWith(`${route}/`);
-  });
+function isPathIn(pathname: string, routes: string[]) {
+  return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const hasAdminSession = request.cookies.has(ADMIN_COOKIE);
+function redirectWithClearedCookie(
+  request: NextRequest,
+  pathname: string,
+  cookieName: string,
+  nextPath?: string
+) {
+  const url = new URL(pathname, request.url);
+  if (nextPath) {
+    url.searchParams.set("next", nextPath);
+  }
+  const response = NextResponse.redirect(url);
+  response.cookies.set({
+    name: cookieName,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  return response;
+}
 
-  if (pathname === "/login" && hasAdminSession) {
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const adminSession = await verifySessionToken(
+    request.cookies.get(ADMIN_COOKIE)?.value,
+    "admin"
+  );
+  const customerSession = await verifySessionToken(
+    request.cookies.get(CUSTOMER_COOKIE)?.value,
+    "customer"
+  );
+
+  if (pathname === "/login" && adminSession) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (isProtectedPath(pathname) && !hasAdminSession) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+  if (pathname === "/account/login" && customerSession) {
+    return NextResponse.redirect(new URL("/account", request.url));
+  }
+
+  if (isPathIn(pathname, adminRoutes) && !adminSession) {
+    return redirectWithClearedCookie(request, "/login", ADMIN_COOKIE, pathname);
+  }
+
+  if ((pathname === "/account" || pathname.startsWith("/account/")) && pathname !== "/account/login") {
+    if (!customerSession) {
+      return redirectWithClearedCookie(
+        request,
+        "/account/login",
+        CUSTOMER_COOKIE,
+        pathname
+      );
+    }
   }
 
   return NextResponse.next();

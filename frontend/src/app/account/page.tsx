@@ -55,25 +55,15 @@ export default function CustomerAccountPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
-    if (!savedCustomer) return;
+  const lookupOrdersByPhone = async (lookupPhone: string) => {
+    const normalizedPhone = lookupPhone.trim();
+    if (!normalizedPhone) return;
 
-    try {
-      const parsed = JSON.parse(savedCustomer);
-      setPhone(parsed.phone || "");
-    } catch {
-      window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
-    }
-  }, []);
-
-  const lookupOrders = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
     setIsLoading(true);
     setMessage("");
     setHistory(null);
 
-    const response = await fetch(`${HISTORY_API}/${encodeURIComponent(phone.trim())}`);
+    const response = await fetch(`${HISTORY_API}/${encodeURIComponent(normalizedPhone)}`);
     const data = await response.json();
     setIsLoading(false);
 
@@ -91,6 +81,26 @@ export default function CustomerAccountPage() {
       })
     );
     setHistory(data);
+  };
+
+  useEffect(() => {
+    fetch("/api/customer-session")
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.session?.phone) {
+          router.replace("/account/login");
+          return;
+        }
+        setPhone(data.session.phone);
+        lookupOrdersByPhone(data.session.phone);
+      })
+      .catch(() => router.replace("/account/login"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const lookupOrders = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    lookupOrdersByPhone(phone);
   };
 
   const reorder = (order: Order) => {
@@ -141,6 +151,12 @@ export default function CustomerAccountPage() {
             >
               Admin Portal
             </Link>
+            <Link
+              href="/logout?role=customer"
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
+            >
+              Sign Out
+            </Link>
           </div>
         </div>
       </header>
@@ -151,8 +167,8 @@ export default function CustomerAccountPage() {
             <p className="mb-2 text-sm font-bold text-red-700">Customer account</p>
             <h2 className="text-3xl font-black">Track your recent Pizza Blitz orders.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-              Enter the same phone number used during checkout to see order status, totals,
-              and previous items.
+              You are signed in with the phone number used during checkout. Refresh your
+              saved orders, track status, and repeat previous items.
             </p>
             <form onSubmit={lookupOrders} className="mt-6 flex max-w-xl gap-2">
               <label className="flex flex-1 items-center gap-3 rounded-md border border-slate-300 bg-white px-3 py-3 focus-within:border-red-600">
@@ -161,12 +177,13 @@ export default function CustomerAccountPage() {
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   placeholder="Phone number"
+                  readOnly
                   required
                   className="w-full outline-none"
                 />
               </label>
               <button className="flex items-center gap-2 rounded-md bg-slate-950 px-5 py-3 font-bold text-white hover:bg-red-700">
-                <Search className="h-4 w-4" /> {isLoading ? "Checking" : "Find"}
+                <Search className="h-4 w-4" /> {isLoading ? "Checking" : "Refresh"}
               </button>
             </form>
           </div>

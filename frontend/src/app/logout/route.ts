@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
+import { ADMIN_COOKIE, CUSTOMER_COOKIE } from "@/lib/session";
 
-const ADMIN_COOKIE = "pb_admin_session";
-
-export function GET(request: Request) {
-  const response = NextResponse.redirect(new URL("/login", request.url));
+function expireCookie(response: NextResponse, name: string) {
   response.cookies.set({
-    name: ADMIN_COOKIE,
+    name,
     value: "",
     httpOnly: true,
     sameSite: "lax",
@@ -13,5 +11,14 @@ export function GET(request: Request) {
     path: "/",
     maxAge: 0,
   });
+}
+
+export function GET(request: Request) {
+  const url = new URL(request.url);
+  const role = url.searchParams.get("role");
+  const redirectTo = role === "customer" ? "/account/login" : "/login";
+  const response = NextResponse.redirect(new URL(redirectTo, request.url));
+  expireCookie(response, ADMIN_COOKIE);
+  expireCookie(response, CUSTOMER_COOKIE);
   return response;
 }
