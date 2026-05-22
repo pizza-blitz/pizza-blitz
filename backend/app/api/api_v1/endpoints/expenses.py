@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
-from app.models.domain import Expense, ExpenseCategory
+from app.models.domain import DailySales, Expense, ExpenseCategory
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
@@ -37,6 +37,13 @@ def get_categories(db: Session = Depends(get_db)):
 
 @router.post("/expenses", response_model=ExpenseSchema)
 def add_expense(req: ExpenseSchema, db: Session = Depends(get_db)):
+    category = db.query(ExpenseCategory).filter(
+        ExpenseCategory.id == req.category_id,
+        ExpenseCategory.is_active == True,
+    ).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Expense category not found")
+
     db_expense = Expense(
         date=req.date,
         category_id=req.category_id,
@@ -45,6 +52,23 @@ def add_expense(req: ExpenseSchema, db: Session = Depends(get_db)):
         receipt_photo_url=req.receipt_photo_url
     )
     db.add(db_expense)
+
+    expense_day = req.date.date()
+    daily = db.query(DailySales).filter(DailySales.date == expense_day).first()
+    if daily:
+        daily.total_expense = round(float(daily.total_expense or 0) + req.amount, 2)
+        daily.profit = round(float(daily.total_sale or 0) - float(daily.total_expense or 0), 2)
+    else:
+        db.add(DailySales(
+            date=expense_day,
+            cash_collected=0,
+            total_sale=0,
+            total_expense=req.amount,
+            profit=round(-req.amount, 2),
+            payment_method="mixed",
+            notes=f"Manual expense: {req.description or category.name}",
+        ))
+
     db.commit()
     db.refresh(db_expense)
     return db_expense

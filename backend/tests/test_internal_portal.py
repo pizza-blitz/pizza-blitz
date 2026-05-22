@@ -570,6 +570,27 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(len(posted_po_expenses), 1)
             self.assertEqual(posted_po_expenses[0]["amount"], 2156)
 
+            expense_categories = client.get("/api/v1/restaurant/expenses/categories")
+            self.assertEqual(expense_categories.status_code, 200)
+            category_by_name = {
+                category["name"]: category["id"]
+                for category in expense_categories.json()
+            }
+            self.assertIn("Inventory Purchase", category_by_name)
+            self.assertIn("Marketing", category_by_name)
+
+            manual_expense = client.post(
+                "/api/v1/restaurant/expenses/expenses",
+                json={
+                    "date": f"{today.isoformat()}T12:00:00",
+                    "category_id": category_by_name["Marketing"],
+                    "amount": 123,
+                    "description": "Local flyer campaign",
+                },
+            )
+            self.assertEqual(manual_expense.status_code, 200)
+            self.assertEqual(manual_expense.json()["amount"], 123)
+
             received_reconcile = client.patch(
                 f"/api/v1/restaurant/purchase-orders/{draft_id}/items",
                 json={"items": reconciled_items},

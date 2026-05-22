@@ -5,7 +5,7 @@ from app.api.api_v1.api import api_router
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
 from app.models import domain
-from app.models.domain import DiningTable, MenuItem, Vendor
+from app.models.domain import DiningTable, ExpenseCategory, MenuItem, Vendor
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
@@ -40,6 +40,17 @@ DEFAULT_VENDORS = [
     {"name": "Bakery Base Partner", "contact_person": "Kitchen Supplies", "category": "Bakery"},
 ]
 
+DEFAULT_EXPENSE_CATEGORIES = [
+    "Inventory Purchase",
+    "Staff & Ops",
+    "Utilities",
+    "Rent",
+    "Marketing",
+    "Maintenance",
+    "Packaging",
+    "Delivery",
+]
+
 
 def seed_baseline_data() -> None:
     db = SessionLocal()
@@ -58,6 +69,11 @@ def seed_baseline_data() -> None:
         for vendor in DEFAULT_VENDORS:
             if vendor["name"] not in existing_vendors:
                 db.add(Vendor(**vendor))
+
+        existing_categories = {row.name for row in db.query(ExpenseCategory).all()}
+        for category_name in DEFAULT_EXPENSE_CATEGORIES:
+            if category_name not in existing_categories:
+                db.add(ExpenseCategory(name=category_name, is_active=True))
 
         db.commit()
     finally:
