@@ -6,6 +6,7 @@ from app.models.domain import Customer, DailySales, Promotion, RestaurantOrder
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date
+from urllib.parse import quote
 
 router = APIRouter()
 
@@ -133,6 +134,48 @@ def _render_message(promo: Promotion, customer: Optional[Customer] = None) -> st
             status_code=422,
             detail=f"Unknown message placeholder: {exc.args[0]}",
         ) from exc
+
+def _message_destination(customer: Customer, channel: str) -> Optional[str]:
+    if channel == "email":
+        return customer.email.strip() if customer.email else None
+    if channel == "whatsapp":
+        phone = _whatsapp_phone(customer.phone or "")
+        return phone or None
+    if channel == "sms":
+        return customer.phone.strip() if customer.phone else None
+    return None
+
+def _whatsapp_phone(value: str) -> str:
+    return "".join(character for character in value if character.isdigit())
+
+def _action_url(channel: str, destination: str, message: str, promo: Promotion) -> str:
+    encoded_message = quote(message, safe="")
+    if channel == "whatsapp":
+        return f"https://wa.me/{destination}?text={encoded_message}"
+    if channel == "sms":
+        return f"sms:{destination}?&body={encoded_message}"
+    subject = quote(promo.name, safe="")
+    return f"mailto:{destination}?subject={subject}&body={encoded_message}"
+
+def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
+    message = _render_message(promo, customer)
+    destination = _message_destination(customer, promo.channel)
+    send_ready = bool(destination)
+    missing_reason = None
+    action_url = None
+    if send_ready:
+        action_url = _action_url(promo.channel, destination, message, promo)
+    else:
+        missing_reason = "Missing email address" if promo.channel == "email" else "Missing phone number"
+
+    return {
+        **_customer_dict(customer),
+        "message": message,
+        "destination": destination,
+        "action_url": action_url,
+        "send_ready": send_ready,
+        "missing_reason": missing_reason,
+    }
 
 @router.post("/")
 def create_promotion(promo: PromotionCreate, db: Session = Depends(get_db)):
@@ -287,4 +330,36 @@ def promotion_outreach(
             }
             for customer in contacts
         ],
+    }
+
+@router.get("/{promo_id}/dispatch")
+def promotion_dispatch(
+    promo_id: int,
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+
+    query = _audience_query(db, promo.audience or "marketing_opt_in")
+    total = query.count()
+    customers = (
+        query.order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
+        .limit(limit)
+        .all()
+    )
+    contacts = [_dispatch_contact(customer, promo) for customer in customers]
+    send_ready_count = sum(1 for contact in contacts if contact["send_ready"])
+    missing_destination_count = len(contacts) - send_ready_count
+
+    return {
+        "promotion": _promotion_dict(promo),
+        "audience": promo.audience,
+        "audience_count": total,
+        "channel": promo.channel,
+        "message_preview": _render_message(promo, customers[0] if customers else None),
+        "send_ready_count": send_ready_count,
+        "missing_destination_count": missing_destination_count,
+        "contacts": contacts,
     }

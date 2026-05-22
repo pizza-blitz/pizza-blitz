@@ -441,6 +441,20 @@ class InternalPortalValidationTest(unittest.TestCase):
                 [contact["phone"] for contact in opt_out_outreach.json()["contacts"]],
             )
 
+            promo_dispatch = client.get(f"/api/v1/restaurant/promotions/{promo_id}/dispatch")
+            self.assertEqual(promo_dispatch.status_code, 200)
+            dispatch_payload = promo_dispatch.json()
+            self.assertEqual(dispatch_payload["audience_count"], 1)
+            self.assertEqual(dispatch_payload["send_ready_count"], 1)
+            self.assertEqual(dispatch_payload["missing_destination_count"], 0)
+            self.assertEqual(dispatch_payload["contacts"][0]["destination"], "9999999999")
+            self.assertTrue(
+                dispatch_payload["contacts"][0]["action_url"].startswith(
+                    "https://wa.me/9999999999?text="
+                )
+            )
+            self.assertIn("WEEKEND15", dispatch_payload["contacts"][0]["message"])
+
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"
             )

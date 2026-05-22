@@ -5,6 +5,7 @@ import {
   Calendar,
   CheckCircle2,
   Copy,
+  ExternalLink,
   Megaphone,
   Plus,
   RefreshCw,
@@ -39,6 +40,10 @@ type Contact = {
   total_orders: number;
   total_spend: number;
   message: string;
+  destination?: string | null;
+  action_url?: string | null;
+  send_ready?: boolean;
+  missing_reason?: string | null;
 };
 
 type Outreach = {
@@ -46,6 +51,11 @@ type Outreach = {
   channel: ChannelKey;
   message_preview: string;
   contacts: Contact[];
+};
+
+type Dispatch = Outreach & {
+  send_ready_count: number;
+  missing_destination_count: number;
 };
 
 type AudienceKey = "all_customers" | "marketing_opt_in" | "repeat_customers" | "high_spenders";
@@ -106,6 +116,7 @@ export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [outreach, setOutreach] = useState<Outreach | null>(null);
+  const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
@@ -131,11 +142,16 @@ export default function PromotionsPage() {
     const nextSelectedId = selectedId || data[0]?.id || null;
     setSelectedId(nextSelectedId);
     if (nextSelectedId) {
-      await fetchOutreach(nextSelectedId);
+      await fetchCampaignDetails(nextSelectedId);
     } else {
       setOutreach(null);
+      setDispatch(null);
     }
     setLoading(false);
+  };
+
+  const fetchCampaignDetails = async (promotionId: number) => {
+    await Promise.all([fetchOutreach(promotionId), fetchDispatch(promotionId)]);
   };
 
   const fetchOutreach = async (promotionId: number) => {
@@ -147,9 +163,18 @@ export default function PromotionsPage() {
     setOutreach(await response.json());
   };
 
+  const fetchDispatch = async (promotionId: number) => {
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/dispatch`);
+    if (!response.ok) {
+      setDispatch(null);
+      return;
+    }
+    setDispatch(await response.json());
+  };
+
   const selectPromotion = (promotionId: number) => {
     setSelectedId(promotionId);
-    fetchOutreach(promotionId);
+    fetchCampaignDetails(promotionId);
   };
 
   const savePromotion = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -177,15 +202,29 @@ export default function PromotionsPage() {
   };
 
   const copyOutreach = async () => {
-    if (!outreach?.contacts.length) {
+    if (!dispatch?.contacts.length) {
       setMessage("No contacts available for this audience yet.");
       return;
     }
-    const rows = outreach.contacts.map((contact) =>
-      [contact.phone, contact.email || "", contact.name || "", contact.message].join("\t")
+    const rows = dispatch.contacts.map((contact) =>
+      [
+        dispatch.channel,
+        contact.destination || "",
+        contact.phone,
+        contact.email || "",
+        contact.name || "",
+        contact.message,
+        contact.action_url || "",
+        contact.missing_reason || "",
+      ].join("\t")
     );
-    await navigator.clipboard.writeText(["phone\temail\tname\tmessage", ...rows].join("\n"));
-    setMessage(`Copied ${outreach.contacts.length} outreach rows.`);
+    await navigator.clipboard.writeText(
+      [
+        "channel\tdestination\tphone\temail\tname\tmessage\taction_url\tmissing_reason",
+        ...rows,
+      ].join("\n")
+    );
+    setMessage(`Copied ${dispatch.contacts.length} send-prep rows.`);
   };
 
   return (
@@ -293,14 +332,19 @@ export default function PromotionsPage() {
                     onClick={copyOutreach}
                     className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-bold text-white hover:bg-orange-600"
                   >
-                    <Copy className="h-4 w-4" /> Copy Outreach
+                    <Copy className="h-4 w-4" /> Copy Send Links
                   </button>
                 </div>
 
-                <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <Detail label="Audience" value={`${outreach?.audience_count || 0} contacts`} />
                   <Detail label="Channel" value={channelLabel(selectedPromotion.channel)} />
                   <Detail label="Offer" value={offerLabel(selectedPromotion)} />
+                  <Detail label="Ready" value={`${dispatch?.send_ready_count || 0} contacts`} />
+                  <Detail
+                    label="Missing"
+                    value={`${dispatch?.missing_destination_count || 0} contacts`}
+                  />
                 </div>
 
                 <div className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
@@ -313,20 +357,49 @@ export default function PromotionsPage() {
                 </div>
 
                 <div className="space-y-3">
-                  {(outreach?.contacts || []).map((contact) => (
+                  {(dispatch?.contacts || outreach?.contacts || []).map((contact) => (
                     <div
                       key={contact.id}
                       className="grid grid-cols-1 items-center gap-4 rounded-xl border border-white/5 bg-black/25 p-4 lg:grid-cols-12"
                     >
-                      <div className="lg:col-span-4">
+                      <div className="lg:col-span-3">
                         <p className="font-black">{contact.name || "Walk-in Customer"}</p>
                         <p className="text-xs text-gray-500">{contact.phone}</p>
                       </div>
-                      <div className="text-sm text-gray-400 lg:col-span-3">
+                      <div className="text-sm text-gray-400 lg:col-span-2">
                         Rs {Math.round(contact.total_spend || 0).toLocaleString()} spend
                       </div>
-                      <div className="text-sm text-gray-400 lg:col-span-5">
+                      <div className="text-sm text-gray-400 lg:col-span-3">
+                        <p className="text-xs font-black uppercase tracking-widest text-gray-600">
+                          Destination
+                        </p>
+                        <p className={contact.send_ready === false ? "text-red-300" : "text-gray-300"}>
+                          {contact.destination || contact.missing_reason || "Not prepared"}
+                        </p>
+                      </div>
+                      <div className="text-sm text-gray-400 lg:col-span-3">
                         {contact.message}
+                      </div>
+                      <div className="flex lg:col-span-1 lg:justify-end">
+                        {contact.action_url ? (
+                          <a
+                            href={contact.action_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Open ${channelLabel(selectedPromotion.channel)} send link`}
+                            aria-label={`Open ${channelLabel(selectedPromotion.channel)} send link`}
+                            className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-black hover:bg-orange-500 hover:text-white"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </a>
+                        ) : (
+                          <span
+                            title={contact.missing_reason || "Send link unavailable"}
+                            className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/5 text-gray-600"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
