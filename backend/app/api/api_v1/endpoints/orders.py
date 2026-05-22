@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.models.domain import Customer, DailySales, DiningTable, Invoice, RestaurantOrder
+from app.services.payment_gateway import create_payment_session
 
 
 router = APIRouter()
@@ -45,6 +46,11 @@ class PaymentConfirmation(BaseModel):
     payment_provider: str = "manual"
     payment_reference: Optional[str] = None
     paid_amount: Optional[float] = None
+
+
+class PaymentSessionRequest(BaseModel):
+    provider: Optional[str] = None
+    return_url: Optional[str] = None
 
 
 def ensure_default_tables(db: Session) -> None:
@@ -100,6 +106,13 @@ def serialize_order(order: RestaurantOrder) -> dict:
         "payment_status": order.payment_status,
         "payment_method": order.payment_method,
         "payment_provider": order.payment_provider,
+        "payment_session_id": order.payment_session_id,
+        "payment_session_url": order.payment_session_url,
+        "payment_session_created_at": (
+            order.payment_session_created_at.isoformat()
+            if order.payment_session_created_at
+            else None
+        ),
         "payment_reference": order.payment_reference,
         "payment_confirmed_at": (
             order.payment_confirmed_at.isoformat()
@@ -252,6 +265,41 @@ def close_order(
 
     db.commit()
     return {"status": "closed", "total_collected": order.total_amount}
+
+
+@router.post("/{order_id}/payment-session")
+def create_order_payment_session(
+    order_id: int,
+    payload: PaymentSessionRequest,
+    db: Session = Depends(get_db),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "closed":
+        raise HTTPException(status_code=409, detail="Closed orders cannot start payment.")
+    if order.payment_status == "paid":
+        raise HTTPException(status_code=409, detail="Order is already paid.")
+
+    session = create_payment_session(
+        order_id=order.id,
+        amount=order.total_amount or 0,
+        customer_name=order.customer_name,
+        customer_phone=order.customer_phone,
+        provider=payload.provider,
+        return_url=payload.return_url,
+    )
+    order.payment_method = "prepaid"
+    order.payment_status = "awaiting_payment"
+    order.payment_provider = session["provider"]
+    order.payment_session_id = session["session_id"]
+    order.payment_session_url = session["checkout_url"]
+    order.payment_session_created_at = datetime.utcnow()
+    db.commit()
+    return {
+        "order": serialize_order(order),
+        "payment_session": session,
+    }
 
 
 @router.post("/{order_id}/payment-confirmation")

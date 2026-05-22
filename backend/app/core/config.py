@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")
+    PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "manual")
+    PAYMENT_CURRENCY: str = os.getenv("PAYMENT_CURRENCY", "INR")
+    PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://localhost:3000/account")
+    CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
+    CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
+    RAZORPAY_KEY_ID: str | None = os.getenv("RAZORPAY_KEY_ID")
+    RAZORPAY_KEY_SECRET: str | None = os.getenv("RAZORPAY_KEY_SECRET")
 
     class Config:
         case_sensitive = True

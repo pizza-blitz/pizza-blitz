@@ -360,6 +360,20 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(prepaid.json()["payment_status"], "awaiting_payment")
 
             prepaid_id = prepaid.json()["order_id"]
+            payment_session = client.post(
+                f"/api/v1/restaurant/orders/{prepaid_id}/payment-session",
+                json={"provider": "manual", "return_url": "http://localhost:3000/account"},
+            )
+            self.assertEqual(payment_session.status_code, 200)
+            self.assertEqual(
+                payment_session.json()["payment_session"]["provider"],
+                "manual",
+            )
+            self.assertEqual(
+                payment_session.json()["order"]["payment_status"],
+                "awaiting_payment",
+            )
+
             payment = client.post(
                 f"/api/v1/restaurant/orders/{prepaid_id}/payment-confirmation",
                 json={

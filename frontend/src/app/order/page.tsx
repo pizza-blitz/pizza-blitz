@@ -51,6 +51,9 @@ type PendingPayment = {
   total: number;
   provider: string;
   reference: string;
+  sessionId?: string;
+  checkoutUrl?: string | null;
+  sessionStatus?: string;
 };
 
 const categoryImages: Record<string, string> = {
@@ -238,22 +241,46 @@ export default function PublicOrderPage() {
       CUSTOMER_STORAGE_KEY,
       JSON.stringify({ name: customerName, phone: customerPhone })
     );
-    const orderId = Number(data.order_id);
-    const paymentReferenceValue = `WEB-${orderId}-${Date.now()}`;
-    setOrderId(orderId);
-    setCart([]);
-    setCoupon(null);
-    setCouponCode("");
     if (paymentMethod === "prepaid") {
+      const orderId = Number(data.order_id);
+      const sessionResponse = await fetch(`${ORDER_API}${orderId}/payment-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "manual",
+          return_url: `${window.location.origin}/account`,
+        }),
+      });
+      const sessionData = await sessionResponse.json();
+
+      if (!sessionResponse.ok) {
+        setMessage(sessionData.detail || "Payment session could not be created.");
+        return;
+      }
+
+      const paymentSession = sessionData.payment_session;
+      const paymentReferenceValue = paymentSession.session_id || `WEB-${orderId}-${Date.now()}`;
+      setOrderId(orderId);
+      setCart([]);
+      setCoupon(null);
+      setCouponCode("");
       setPaymentReference(paymentReferenceValue);
       setPendingPayment({
         orderId,
         total: Number(data.total || 0),
-        provider: "manual",
+        provider: paymentSession.provider || "manual",
         reference: paymentReferenceValue,
+        sessionId: paymentSession.session_id,
+        checkoutUrl: paymentSession.checkout_url,
+        sessionStatus: paymentSession.status,
       });
       setMessage(`Order #${orderId} created. Confirm prepaid payment to mark it paid.`);
     } else {
+      const orderId = Number(data.order_id);
+      setOrderId(orderId);
+      setCart([]);
+      setCoupon(null);
+      setCouponCode("");
       setPendingPayment(null);
       setMessage(`Order #${orderId} placed. Estimated ${eta}.`);
     }
@@ -417,8 +444,16 @@ export default function PublicOrderPage() {
               <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
                 <p className="font-black text-amber-900">Prepaid payment pending</p>
                 <p className="mt-1 text-sm font-semibold text-amber-800">
-                  Amount: Rs {pendingPayment.total}. Confirm after collecting payment.
+                  Amount: Rs {pendingPayment.total}. Session: {pendingPayment.sessionStatus || "ready"}.
                 </p>
+                {pendingPayment.checkoutUrl && (
+                  <a
+                    href={pendingPayment.checkoutUrl}
+                    className="mt-2 inline-flex text-sm font-black text-amber-900 underline"
+                  >
+                    Open payment return page
+                  </a>
+                )}
                 <input
                   value={paymentReference}
                   onChange={(event) => setPaymentReference(event.target.value)}
