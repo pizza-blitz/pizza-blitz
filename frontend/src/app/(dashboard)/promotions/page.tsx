@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   Send,
+  Share2,
   Tag,
   Users,
 } from "lucide-react";
@@ -138,6 +139,9 @@ const statusOptions: { value: StatusKey; label: string }[] = [
   { value: "completed", label: "Completed" },
 ];
 
+const defaultSocialImage =
+  "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80";
+
 const emptyForm: CampaignForm = {
   name: "",
   code: "",
@@ -165,6 +169,7 @@ export default function PromotionsPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<"dry_run" | "send" | null>(null);
+  const [creatingSocialPost, setCreatingSocialPost] = useState(false);
 
   useEffect(() => {
     fetchPromotions();
@@ -317,6 +322,33 @@ export default function PromotionsPage() {
     setSending(null);
   };
 
+  const createSocialPost = async () => {
+    if (!selectedPromotion) return;
+    setCreatingSocialPost(true);
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/social-post`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          link_url: `${window.location.origin}/order`,
+          image_url: defaultSocialImage,
+          platforms: ["facebook", "instagram"],
+          status: "ready",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail || "Social post could not be created.");
+        return;
+      }
+      setMessage(`Created social post #${data.post.id} from ${selectedPromotion.name}.`);
+    } catch {
+      setMessage("Social post could not be created.");
+    } finally {
+      setCreatingSocialPost(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -459,6 +491,13 @@ export default function PromotionsPage() {
                     className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-bold text-white hover:bg-orange-600"
                   >
                     <Copy className="h-4 w-4" /> Copy Send Links
+                  </button>
+                  <button
+                    onClick={createSocialPost}
+                    disabled={creatingSocialPost}
+                    className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Share2 className="h-4 w-4" /> {creatingSocialPost ? "Creating" : "Create Social Post"}
                   </button>
                   <button
                     onClick={() => sendCampaign(true)}

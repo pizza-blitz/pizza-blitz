@@ -2,7 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db
-from app.models.domain import CampaignDelivery, Customer, DailySales, Promotion, RestaurantOrder
+from app.models.domain import (
+    CampaignDelivery,
+    Customer,
+    DailySales,
+    Promotion,
+    RestaurantOrder,
+    SocialPost,
+)
 from app.services.campaign_dispatch_service import (
     campaign_provider_status,
     normalize_campaign_destination,
@@ -19,9 +26,15 @@ VALID_DISCOUNT_TYPES = {"percentage", "fixed"}
 VALID_AUDIENCES = {"all_customers", "marketing_opt_in", "repeat_customers", "high_spenders"}
 VALID_CHANNELS = {"whatsapp", "sms", "email"}
 VALID_STATUSES = {"draft", "scheduled", "active", "paused", "completed"}
+VALID_SOCIAL_PLATFORMS = {"facebook", "instagram"}
+VALID_SOCIAL_POST_STATUSES = {"draft", "scheduled", "ready"}
 DEFAULT_MESSAGE_TEMPLATE = (
     "Hi {name}, Pizza Blitz has {offer} for you. Use code {code} before {end_date}. "
     "Reply or visit us to order."
+)
+DEFAULT_SOCIAL_MESSAGE_TEMPLATE = (
+    "{promo_name} at Pizza Blitz: {offer}. Use code {code} before {end_date}. "
+    "Order online or visit us today."
 )
 
 class PromotionCreate(BaseModel):
@@ -46,6 +59,17 @@ class CampaignSendRequest(BaseModel):
     dry_run: bool = False
     force_resend: bool = False
     mark_completed: bool = False
+
+
+class PromotionSocialPostCreate(BaseModel):
+    title: Optional[str] = None
+    message_template: Optional[str] = None
+    link_url: Optional[str] = None
+    image_url: Optional[str] = None
+    platforms: list[str] = Field(default_factory=lambda: ["facebook", "instagram"])
+    status: str = "ready"
+    scheduled_at: Optional[str] = None
+
 
 def _parse_date(value: str) -> date:
     try:
@@ -145,6 +169,68 @@ def _render_message(promo: Promotion, customer: Optional[Customer] = None) -> st
             status_code=422,
             detail=f"Unknown message placeholder: {exc.args[0]}",
         ) from exc
+
+
+def _render_social_message(promo: Promotion, template: Optional[str] = None) -> str:
+    values = {
+        "offer": _offer_label(promo),
+        "code": promo.code or "PIZZABLITZ",
+        "end_date": promo.end_date.isoformat(),
+        "promo_name": promo.name,
+        "description": promo.description or "",
+    }
+    try:
+        return (template or DEFAULT_SOCIAL_MESSAGE_TEMPLATE).format(**values)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown social message placeholder: {exc.args[0]}",
+        ) from exc
+
+
+def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid scheduled_at: {value}") from exc
+
+
+def _normalize_social_platforms(platforms: list[str]) -> list[str]:
+    cleaned = []
+    for platform in platforms:
+        normalized = platform.strip().lower()
+        if normalized and normalized not in cleaned:
+            cleaned.append(normalized)
+    invalid = [platform for platform in cleaned if platform not in VALID_SOCIAL_PLATFORMS]
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Unsupported platform: {', '.join(invalid)}")
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="At least one social platform is required.")
+    return cleaned
+
+
+def _normalize_social_post_status(status: str) -> str:
+    normalized = status.strip().lower()
+    if normalized not in VALID_SOCIAL_POST_STATUSES:
+        raise HTTPException(status_code=422, detail="Unsupported social post status.")
+    return normalized
+
+
+def _social_post_dict(post: SocialPost) -> dict:
+    return {
+        "id": post.id,
+        "title": post.title,
+        "message": post.message,
+        "link_url": post.link_url,
+        "image_url": post.image_url,
+        "platforms": post.platforms or [],
+        "status": post.status,
+        "scheduled_at": post.scheduled_at.isoformat() if post.scheduled_at else None,
+        "created_at": post.created_at.isoformat() if post.created_at else None,
+    }
+
 
 def _message_destination(customer: Customer, channel: str) -> Optional[str]:
     if channel == "email":
@@ -411,6 +497,36 @@ def promotion_dispatch(
         "missing_destination_count": missing_destination_count,
         "contacts": contacts,
     }
+
+
+@router.post("/{promo_id}/social-post")
+def create_social_post_from_promotion(
+    promo_id: int,
+    payload: PromotionSocialPostCreate,
+    db: Session = Depends(get_db),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+
+    post = SocialPost(
+        title=(payload.title or f"Pizza Blitz Offer: {promo.name}").strip(),
+        message=_render_social_message(promo, payload.message_template).strip(),
+        link_url=(payload.link_url or "").strip() or None,
+        image_url=(payload.image_url or "").strip() or None,
+        platforms=_normalize_social_platforms(payload.platforms),
+        status=_normalize_social_post_status(payload.status),
+        scheduled_at=_parse_optional_datetime(payload.scheduled_at),
+    )
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return {
+        "status": "social post created",
+        "promotion": _promotion_dict(promo),
+        "post": _social_post_dict(post),
+    }
+
 
 @router.post("/{promo_id}/send")
 def send_promotion_campaign(
