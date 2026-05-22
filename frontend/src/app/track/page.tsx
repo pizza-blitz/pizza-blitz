@@ -156,7 +156,7 @@ export default function TrackOrderPage() {
           <img
             src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=900&q=80"
             alt="Fresh pizza on table"
-            className="h-64 w-full object-cover md:col-span-5 md:h-full"
+            className="hidden h-64 w-full object-cover md:col-span-5 md:block md:h-full"
           />
         </section>
 
