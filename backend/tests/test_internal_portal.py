@@ -543,9 +543,31 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(updates_by_name["Basil"]["new_stock"], 9)
             self.assertEqual(updates_by_name["Basil"]["unit_cost"], 22)
             self.assertEqual(received_po.json()["expense"]["amount"], 2156)
+            self.assertEqual(len(received_po.json()["vendor_prices"]), 2)
             self.assertIn(
                 f"Purchase order #{draft_id}",
                 received_po.json()["expense"]["description"],
+            )
+
+            tomato_price_history = client.get(
+                "/api/v1/restaurant/vendors/prices/history/Tomato Sauce"
+            )
+            self.assertEqual(tomato_price_history.status_code, 200)
+            latest_tomato_price = tomato_price_history.json()[0]
+            self.assertEqual(latest_tomato_price["vendor_name"], "Fresh Farms")
+            self.assertEqual(latest_tomato_price["price_per_unit"], 110)
+            self.assertIn(
+                f"Purchase order #{draft_id}",
+                latest_tomato_price["notes"],
+            )
+
+            recent_vendor_prices = client.get(
+                "/api/v1/restaurant/vendors/prices/recent?limit=5"
+            )
+            self.assertEqual(recent_vendor_prices.status_code, 200)
+            self.assertIn(
+                "Tomato Sauce",
+                [item["item_name"] for item in recent_vendor_prices.json()],
             )
 
             low_stock_after_receive = client.get(

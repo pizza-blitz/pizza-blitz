@@ -9,6 +9,8 @@ from app.models.domain import (
     InventoryItem,
     InventoryTransaction,
     PurchaseOrder,
+    Vendor,
+    VendorPriceHistory,
 )
 from pydantic import BaseModel
 from datetime import date, datetime
@@ -281,6 +283,63 @@ def _post_purchase_order_expense(order: PurchaseOrder, db: Session) -> Expense |
     return expense
 
 
+def _find_or_create_vendor_for_order(order: PurchaseOrder, db: Session) -> Vendor:
+    vendor_name = (order.supplier_name or "Default Supplier").strip() or "Default Supplier"
+    vendor = db.query(Vendor).filter(Vendor.name == vendor_name).first()
+    if vendor:
+        if order.supplier_whatsapp and not vendor.whatsapp:
+            vendor.whatsapp = order.supplier_whatsapp
+        return vendor
+
+    vendor = Vendor(
+        name=vendor_name,
+        contact_person="Procurement Desk",
+        phone=order.supplier_whatsapp or None,
+        whatsapp=order.supplier_whatsapp or None,
+        category="Inventory",
+        is_active=True,
+    )
+    db.add(vendor)
+    db.flush()
+    return vendor
+
+
+def _post_vendor_price_history(order: PurchaseOrder, db: Session) -> list[dict]:
+    vendor = _find_or_create_vendor_for_order(order, db)
+    logged_prices = []
+
+    for line in order.items or []:
+        if not isinstance(line, dict):
+            continue
+
+        item_name = _line_name(line)
+        unit_cost = _line_number(
+            line,
+            ["unit_cost", "price_per_unit", "cost_per_unit"],
+            0.0,
+        )
+        if not item_name or unit_cost <= 0:
+            continue
+
+        history = VendorPriceHistory(
+            vendor_id=vendor.id,
+            item_name=item_name,
+            price_per_unit=unit_cost,
+            unit=line.get("unit") or "unit",
+            notes=f"Purchase order #{order.id} received",
+        )
+        db.add(history)
+        logged_prices.append({
+            "vendor_id": vendor.id,
+            "vendor_name": vendor.name,
+            "item_name": item_name,
+            "price_per_unit": unit_cost,
+            "unit": line.get("unit") or "unit",
+        })
+
+    return logged_prices
+
+
 @router.get("/", response_model=List[Any])
 def get_purchase_orders(db: Session = Depends(get_db)):
     return db.query(PurchaseOrder).all()
@@ -389,12 +448,14 @@ def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
             "purchase_order": order,
             "inventory_updates": [],
             "skipped_items": [],
+            "vendor_prices": [],
             "message": "Purchase order was already received.",
         }
 
     inventory_updates, skipped_items = _receive_inventory(order, db)
     order.status = "received"
     expense = _post_purchase_order_expense(order, db)
+    vendor_prices = _post_vendor_price_history(order, db)
     db.commit()
     db.refresh(order)
     if expense:
@@ -406,6 +467,7 @@ def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
         "inventory_updates": inventory_updates,
         "skipped_items": skipped_items,
         "expense": expense,
+        "vendor_prices": vendor_prices,
     }
 
 

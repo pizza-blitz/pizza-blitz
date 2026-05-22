@@ -141,9 +141,10 @@ export default function PurchaseOrderDetail() {
       setLines((data.purchase_order.items || []).map(normalizeLine));
       const updatedCount = data.inventory_updates?.length || 0;
       const expenseAmount = Number(data.expense?.amount || 0);
+      const vendorPriceCount = data.vendor_prices?.length || 0;
       setMessage(
         action === "receive"
-          ? `Received PO-${orderId}; inventory updated for ${updatedCount} item${updatedCount === 1 ? "" : "s"} and expense posted for Rs. ${expenseAmount.toLocaleString()}.`
+          ? `Received PO-${orderId}; inventory updated for ${updatedCount} item${updatedCount === 1 ? "" : "s"}, expense posted for Rs. ${expenseAmount.toLocaleString()}, and ${vendorPriceCount} supplier price${vendorPriceCount === 1 ? "" : "s"} logged.`
           : `Marked PO-${orderId} as sent.`
       );
       if (action === "receive") router.refresh();

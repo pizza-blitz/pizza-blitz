@@ -1,8 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Truck, TrendingUp, AlertTriangle, Search, Info, Plus, ChevronRight } from "lucide-react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  Loader2,
+  Search,
+  TrendingUp,
+  Truck,
+} from "lucide-react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/vendors");
@@ -10,111 +24,266 @@ const API_BASE = getApiUrl("/api/v1/restaurant/vendors");
 type PriceAlert = {
   item_name: string;
   vendor_name: string;
+  prev_price: number;
+  price_per_unit: number;
   pct_increase: number;
 };
 
 type PriceHistory = {
+  id: number;
+  vendor_name: string;
+  item_name: string;
   recorded_date: string;
   price_per_unit: number;
+  unit: string;
+  notes?: string;
 };
 
 type CheapestVendor = {
   vendor_name: string;
   price_per_unit: number;
+  unit: string;
 };
 
 export default function VendorPricePage() {
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [history, setHistory] = useState<PriceHistory[]>([]);
-  const [itemSearch, setItemSearch] = useState("Amul Cheese");
+  const [recentPrices, setRecentPrices] = useState<PriceHistory[]>([]);
+  const [itemSearch, setItemSearch] = useState("Tomato Sauce");
   const [cheapest, setCheapest] = useState<CheapestVendor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetch(`${API_BASE}/prices/alerts/increases`).then(res => res.json()).then(setAlerts);
-    loadItemData(itemSearch);
+    refreshDashboard();
   }, []);
 
+  const trendData = useMemo(() => {
+    return [...history]
+      .reverse()
+      .map((row) => ({
+        ...row,
+        label: row.recorded_date ? new Date(row.recorded_date).toLocaleDateString() : "",
+      }));
+  }, [history]);
+
+  const refreshDashboard = async () => {
+    setIsLoading(true);
+    setMessage("");
+    try {
+      const [alertsRes, recentRes] = await Promise.all([
+        fetch(`${API_BASE}/prices/alerts/increases`),
+        fetch(`${API_BASE}/prices/recent?limit=12`),
+      ]);
+      const [alertsData, recentData] = await Promise.all([
+        alertsRes.json(),
+        recentRes.json(),
+      ]);
+      setAlerts(alertsData || []);
+      setRecentPrices(recentData || []);
+      const defaultItem = recentData?.[0]?.item_name || itemSearch;
+      if (defaultItem !== itemSearch) setItemSearch(defaultItem);
+      await loadItemData(defaultItem);
+    } catch (error) {
+      setMessage("Could not load vendor intelligence.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const loadItemData = async (name: string) => {
-    const [hRes, cRes] = await Promise.all([
-      fetch(`${API_BASE}/prices/history/${name}`),
-      fetch(`${API_BASE}/intelligence/cheapest/${name}`)
+    if (!name.trim()) return;
+    const encodedName = encodeURIComponent(name.trim());
+    const [historyRes, cheapestRes] = await Promise.all([
+      fetch(`${API_BASE}/prices/history/${encodedName}`),
+      fetch(`${API_BASE}/intelligence/cheapest/${encodedName}`),
     ]);
-    setHistory(await hRes.json());
-    setCheapest(await cRes.json());
+    setHistory(await historyRes.json());
+    setCheapest(await cheapestRes.json());
   };
 
   return (
-    <div className="p-8 bg-[#0a0a0b] min-h-screen text-white">
-      <div className="flex justify-between items-center mb-10">
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent underline decoration-blue-500/20 underline-offset-8">
-            Vendor Price Intelligence
-        </h1>
-        <div className="flex items-center gap-3">
-           <input 
-             type="text" value={itemSearch} onChange={(e)=>setItemSearch(e.target.value)}
-             className="bg-white/5 border border-white/10 p-3 px-5 rounded-2xl outline-none focus:border-blue-500"
-             placeholder="Search Item..."
-           />
-           <button onClick={()=>loadItemData(itemSearch)} className="bg-white text-black p-3 px-6 rounded-2xl font-bold hover:bg-blue-500 hover:text-white transition-all">Analyze</button>
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Vendor Price Intelligence</h1>
+          <p className="mt-1 text-gray-500">Supplier rates learned from purchase orders and manual price logs.</p>
+        </div>
+        <div className="flex min-w-full gap-3 sm:min-w-0">
+          <div className="relative min-w-0 flex-1 sm:w-72">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={itemSearch}
+              onChange={(event) => setItemSearch(event.target.value)}
+              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-orange-500"
+              placeholder="Search item"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => loadItemData(itemSearch)}
+            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-bold text-white hover:bg-orange-700"
+          >
+            Analyze
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Alerts & Cheapest */}
-        <div className="lg:col-span-4 space-y-6">
-           <div className="bg-[#1a1a1c] p-6 rounded-[2.5rem] border border-white/5">
-             <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-               <AlertTriangle className="w-4 h-4 text-orange-500" /> Price Spike Alerts
-             </h3>
-             <div className="space-y-4">
-                {alerts.map((a:any, idx) => (
-                  <div key={idx} className="bg-red-500/5 border border-red-500/10 p-4 rounded-2xl flex justify-between items-center">
-                    <div>
-                        <p className="font-bold text-sm">{a.item_name}</p>
-                        <p className="text-[10px] text-gray-500 uppercase">Vendor: {a.vendor_name}</p>
+      {message && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
+          {message}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex min-h-[320px] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+            <div className="space-y-6 xl:col-span-4">
+              <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h3 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-gray-500">
+                  <Truck className="h-4 w-4 text-orange-500" /> Recent Supplier Prices
+                </h3>
+                <div className="space-y-3">
+                  {recentPrices.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-200 p-5 text-center text-sm font-semibold text-gray-400">
+                      No supplier prices logged yet.
                     </div>
-                    <span className="text-red-400 font-black text-xs">+{a.pct_increase.toFixed(1)}%</span>
-                  </div>
-                ))}
-             </div>
-           </div>
-
-           <div className="bg-[#1a1a1c] p-6 rounded-[2.5rem] border border-white/5">
-              <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-6">Vendor Comparison</h3>
-              <div className="space-y-3">
-                {cheapest.map((v:any, idx) => (
-                   <div key={idx} className={`p-4 rounded-2xl border ${idx === 0 ? 'bg-green-500/10 border-green-500/20' : 'bg-white/5 border-white/5'}`}>
-                      <div className="flex justify-between items-center">
-                         <span className="font-bold text-sm">{v.vendor_name}</span>
-                         <span className="font-mono font-black text-sm">₹{v.price_per_unit}</span>
-                      </div>
-                      {idx === 0 && <span className="text-[8px] font-black text-green-500 uppercase tracking-widest mt-1 block">Best Price Found</span>}
-                   </div>
-                ))}
+                  ) : (
+                    recentPrices.map((price) => (
+                      <button
+                        key={price.id}
+                        type="button"
+                        onClick={() => {
+                          setItemSearch(price.item_name);
+                          loadItemData(price.item_name);
+                        }}
+                        className="w-full rounded-lg border border-gray-100 bg-gray-50 p-3 text-left hover:border-orange-200 hover:bg-orange-50"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold text-gray-900">{price.item_name}</p>
+                            <p className="truncate text-xs text-gray-500">{price.vendor_name}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-gray-900">Rs. {price.price_per_unit}</p>
+                            <p className="text-xs font-semibold text-gray-400">per {price.unit}</p>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
-           </div>
-        </div>
 
-        {/* Price History Chart */}
-        <div className="lg:col-span-8 bg-[#1a1a1c] p-8 rounded-[3rem] border border-white/5">
-            <h3 className="text-lg font-bold mb-8 flex items-center gap-2 capitalize">
-              <TrendingUp className="w-5 h-5 text-blue-400" /> {itemSearch} Price Trends
-            </h3>
-            <div className="h-[400px] w-full">
-              <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 900, height: 400 }}>
-                <LineChart data={history.reverse()}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2c" vertical={false} />
-                  <XAxis dataKey="recorded_date" stroke="#666" fontSize={10} tickFormatter={(str)=>str.split(' ')[0]} />
-                  <YAxis stroke="#666" fontSize={10} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '1.5rem', backgroundColor: '#1a1a1c', border: '1px solid rgba(255,255,255,0.1)' }}
-                  />
-                  <Line type="monotone" dataKey="price_per_unit" stroke="#3b82f6" strokeWidth={4} dot={{ r: 6, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 8 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h3 className="mb-4 flex items-center gap-2 text-sm font-black uppercase tracking-wide text-gray-500">
+                  <AlertTriangle className="h-4 w-4 text-red-500" /> Price Spike Alerts
+                </h3>
+                <div className="space-y-3">
+                  {alerts.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-200 p-5 text-center text-sm font-semibold text-gray-400">
+                      No price spikes above 5%.
+                    </div>
+                  ) : (
+                    alerts.slice(0, 6).map((alert, index) => (
+                      <div key={`${alert.item_name}-${index}`} className="rounded-lg border border-red-100 bg-red-50 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-bold text-gray-900">{alert.item_name}</p>
+                            <p className="text-xs text-gray-500">{alert.vendor_name}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-black text-red-600">+{alert.pct_increase.toFixed(1)}%</p>
+                            <p className="text-xs text-gray-500">Rs. {alert.prev_price} to {alert.price_per_unit}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
-        </div>
-      </div>
+
+            <div className="space-y-6 xl:col-span-8">
+              <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-lg font-bold text-gray-900">
+                      <TrendingUp className="h-5 w-5 text-blue-500" /> {itemSearch} Price Trend
+                    </h3>
+                    <p className="text-sm text-gray-500">{history.length} logged price point{history.length === 1 ? "" : "s"}</p>
+                  </div>
+                </div>
+                <div className="h-[360px] w-full">
+                  {trendData.length === 0 ? (
+                    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-gray-200 text-sm font-semibold text-gray-400">
+                      No price history for this item yet.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 900, height: 360 }}>
+                      <LineChart data={trendData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "12px",
+                            border: "1px solid #e5e7eb",
+                            boxShadow: "0 16px 40px -20px rgb(0 0 0 / 0.35)",
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="price_per_unit"
+                          stroke="#2563EB"
+                          strokeWidth={4}
+                          dot={{ r: 5, fill: "#2563EB", strokeWidth: 0 }}
+                          activeDot={{ r: 7 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h3 className="mb-4 text-sm font-black uppercase tracking-wide text-gray-500">Vendor Comparison</h3>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {cheapest.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-200 p-5 text-center text-sm font-semibold text-gray-400 md:col-span-2">
+                      No vendor comparison for this item yet.
+                    </div>
+                  ) : (
+                    cheapest.map((vendor, index) => (
+                      <div
+                        key={`${vendor.vendor_name}-${index}`}
+                        className={`rounded-lg border p-4 ${
+                          index === 0
+                            ? "border-green-200 bg-green-50"
+                            : "border-gray-100 bg-gray-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-gray-900">{vendor.vendor_name}</p>
+                            {index === 0 && <p className="text-xs font-bold uppercase text-green-700">Best current price</p>}
+                          </div>
+                          <p className="text-lg font-black text-gray-900">Rs. {vendor.price_per_unit}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

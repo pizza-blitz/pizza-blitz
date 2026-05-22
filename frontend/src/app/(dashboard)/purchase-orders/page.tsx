@@ -71,9 +71,10 @@ export default function PurchaseOrders() {
 
       const updatedItems = data.inventory_updates?.length || 0;
       const expenseAmount = Number(data.expense?.amount || 0);
+      const vendorPriceCount = data.vendor_prices?.length || 0;
       setMessage(
         action === "receive"
-          ? `Received PO-${orderId}, updated ${updatedItems} inventory item${updatedItems === 1 ? "" : "s"}, and posted expense Rs. ${expenseAmount.toLocaleString()}.`
+          ? `Received PO-${orderId}, updated ${updatedItems} inventory item${updatedItems === 1 ? "" : "s"}, posted expense Rs. ${expenseAmount.toLocaleString()}, and logged ${vendorPriceCount} supplier price${vendorPriceCount === 1 ? "" : "s"}.`
           : `Marked PO-${orderId} as sent.`
       );
       await fetchOrders();

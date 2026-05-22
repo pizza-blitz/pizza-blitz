@@ -104,6 +104,21 @@ def price_increase_alerts(db: Session = Depends(get_db)):
 
     return sorted(alerts, key=lambda row: row["recorded_date"] or "", reverse=True)
 
+@router.get("/prices/recent")
+def recent_vendor_prices(limit: int = 20, db: Session = Depends(get_db)):
+    capped_limit = min(max(limit, 1), 50)
+    rows = (
+        db.query(VendorPriceHistory)
+        .join(Vendor)
+        .order_by(
+            VendorPriceHistory.recorded_date.desc(),
+            VendorPriceHistory.id.desc(),
+        )
+        .limit(capped_limit)
+        .all()
+    )
+    return [_history_dict(row) for row in rows]
+
 @router.get("/intelligence/cheapest/{item_name}")
 def find_cheapest_vendor(item_name: str, db: Session = Depends(get_db)):
     rows = (
