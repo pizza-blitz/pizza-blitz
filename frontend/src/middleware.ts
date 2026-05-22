@@ -7,6 +7,7 @@ const protectedRoutes = [
   "/dashboard",
   "/ceo",
   "/orders",
+  "/operations",
   "/shifts",
   "/daily",
   "/sales",

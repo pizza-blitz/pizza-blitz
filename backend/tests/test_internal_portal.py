@@ -308,6 +308,20 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(fetched_order.status_code, 200)
             self.assertEqual(fetched_order.json()["customer_phone"], "9999999999")
 
+            preparing = client.patch(
+                f"/api/v1/restaurant/orders/{takeaway_id}/status",
+                json={"status": "preparing"},
+            )
+            self.assertEqual(preparing.status_code, 200)
+            self.assertEqual(preparing.json()["status"], "preparing")
+
+            ready = client.patch(
+                f"/api/v1/restaurant/orders/{takeaway_id}/status",
+                json={"status": "ready"},
+            )
+            self.assertEqual(ready.status_code, 200)
+            self.assertEqual(ready.json()["status"], "ready")
+
             customers = client.get("/api/v1/restaurant/customers/")
             self.assertEqual(customers.status_code, 200)
             customer_phones = [customer["phone"] for customer in customers.json()]
@@ -344,6 +358,12 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(closed_takeaway.status_code, 200)
             self.assertEqual(closed_takeaway.json()["status"], "closed")
 
+            closed_status_update = client.patch(
+                f"/api/v1/restaurant/orders/{takeaway_id}/status",
+                json={"status": "open"},
+            )
+            self.assertEqual(closed_status_update.status_code, 409)
+
             prepaid = client.post(
                 "/api/v1/restaurant/orders/",
                 json={
@@ -373,6 +393,11 @@ class InternalPortalValidationTest(unittest.TestCase):
                 payment_session.json()["order"]["payment_status"],
                 "awaiting_payment",
             )
+
+            unpaid_prepaid_close = client.patch(
+                f"/api/v1/restaurant/orders/{prepaid_id}/close?payment_method=prepaid"
+            )
+            self.assertEqual(unpaid_prepaid_close.status_code, 409)
 
             payment = client.post(
                 f"/api/v1/restaurant/orders/{prepaid_id}/payment-confirmation",

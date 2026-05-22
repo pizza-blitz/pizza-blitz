@@ -53,6 +53,10 @@ class PaymentSessionRequest(BaseModel):
     return_url: Optional[str] = None
 
 
+class OrderStatusUpdate(BaseModel):
+    status: str
+
+
 def ensure_default_tables(db: Session) -> None:
     existing = {row.table_number for row in db.query(DiningTable).all()}
     for table_number, capacity in DEFAULT_TABLES:
@@ -228,10 +232,22 @@ def close_order(
         raise HTTPException(status_code=404, detail="Order not found")
 
     if order.status != "closed":
-        if payment_method:
-            order.payment_method = payment_method
-        if not order.payment_method:
-            order.payment_method = "cash"
+        requested_payment_method = (
+            payment_method.strip().lower()
+            if payment_method
+            else (order.payment_method or "cash").strip().lower()
+        ) or "cash"
+        if (
+            (order.payment_method or "").lower() == "prepaid"
+            and order.payment_status != "paid"
+            and requested_payment_method == "prepaid"
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Prepaid orders must be confirmed before closing.",
+            )
+
+        order.payment_method = requested_payment_method
         order.payment_status = "paid"
         order.status = "closed"
         order.closed_at = datetime.utcnow()
@@ -265,6 +281,32 @@ def close_order(
 
     db.commit()
     return {"status": "closed", "total_collected": order.total_amount}
+
+
+@router.patch("/{order_id}/status")
+def update_order_status(
+    order_id: int,
+    payload: OrderStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "closed":
+        raise HTTPException(status_code=409, detail="Closed orders cannot be moved.")
+
+    status = payload.status.strip().lower()
+    allowed_statuses = {"open", "preparing", "ready"}
+    if status not in allowed_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Status must be one of: {', '.join(sorted(allowed_statuses))}.",
+        )
+
+    order.status = status
+    db.commit()
+    db.refresh(order)
+    return serialize_order(order)
 
 
 @router.post("/{order_id}/payment-session")
