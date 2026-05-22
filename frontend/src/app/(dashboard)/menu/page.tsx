@@ -16,7 +16,26 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
+const CUSTOMIZED_MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
+const CUSTOMIZATIONS_API = getApiUrl("/api/v1/restaurant/menu/customizations");
 const PROFITABILITY_API = getApiUrl("/api/v1/restaurant/menu/profitability");
+
+type CustomizationOption = {
+  id: number;
+  name: string;
+  price_delta: number;
+  is_default: boolean;
+};
+
+type CustomizationGroup = {
+  id: number;
+  name: string;
+  applies_to_categories: string[];
+  selection_type: "single" | "multiple";
+  min_select: number;
+  max_select: number;
+  options: CustomizationOption[];
+};
 
 type MenuItem = {
   id?: number;
@@ -25,6 +44,7 @@ type MenuItem = {
   selling_price: number;
   cost_price: number;
   is_available: boolean;
+  customization_groups?: CustomizationGroup[];
 };
 
 type ProfitabilityItem = {
@@ -54,6 +74,7 @@ const emptyForm: MenuItem = {
 
 export default function MenuManagement() {
   const [items, setItems] = useState<MenuItem[]>([]);
+  const [customizationGroups, setCustomizationGroups] = useState<CustomizationGroup[]>([]);
   const [profitability, setProfitability] = useState<ProfitabilityResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -67,12 +88,14 @@ export default function MenuManagement() {
 
   const fetchMenu = async () => {
     setIsLoading(true);
-    const [menuRes, profitabilityRes] = await Promise.all([
-      fetch(MENU_API),
+    const [menuRes, profitabilityRes, customizationsRes] = await Promise.all([
+      fetch(CUSTOMIZED_MENU_API),
       fetch(PROFITABILITY_API),
+      fetch(CUSTOMIZATIONS_API),
     ]);
     setItems(await menuRes.json());
     setProfitability(await profitabilityRes.json());
+    setCustomizationGroups(await customizationsRes.json());
     setIsLoading(false);
   };
 
@@ -164,11 +187,11 @@ export default function MenuManagement() {
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Metric label="Menu Items" value={items.length} />
         <Metric label="Available" value={items.filter((item) => item.is_available).length} />
+        <Metric label="Option Sets" value={customizationGroups.length} />
         <Metric
           label="Avg Margin"
           value={`${Math.round(avgMargin(profitability?.items || []))}%`}
         />
-        <Metric label="Tracked Costs" value={profitability?.total_items || 0} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
@@ -188,13 +211,14 @@ export default function MenuManagement() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-left">
+              <table className="w-full min-w-[980px] text-left">
                 <thead>
                   <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-gray-500">
                     <th className="px-4 py-3">Item</th>
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3 text-right">Selling</th>
                     <th className="px-4 py-3 text-right">Cost</th>
+                    <th className="px-4 py-3">Customizations</th>
                     <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -213,6 +237,23 @@ export default function MenuManagement() {
                       </td>
                       <td className="px-4 py-4 text-right text-gray-400">
                         Rs {Number(item.cost_price || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex max-w-md flex-wrap gap-2">
+                          {(item.customization_groups || []).map((group) => (
+                            <span
+                              key={`${item.id}-${group.id}`}
+                              className="rounded-full border border-orange-400/20 bg-orange-400/10 px-3 py-1 text-xs font-black text-orange-200"
+                            >
+                              {group.name}
+                            </span>
+                          ))}
+                          {!(item.customization_groups || []).length && (
+                            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold text-gray-500">
+                              Fixed item
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex justify-center">
@@ -253,7 +294,48 @@ export default function MenuManagement() {
           </div>
         </div>
 
-        <div className="xl:col-span-4">
+        <div className="space-y-6 xl:col-span-4">
+          <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <h2 className="mb-5 text-lg font-black">Customization Matrix</h2>
+            <div className="space-y-3">
+              {customizationGroups.map((group) => (
+                <div key={group.id} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">{group.name}</p>
+                      <p className="mt-1 text-xs font-bold text-gray-500">
+                        {group.applies_to_categories.join(", ")} | {group.selection_type}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-gray-300">
+                      max {group.max_select}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {group.options.map((option) => (
+                      <span
+                        key={option.id}
+                        className={`rounded-md px-2 py-1 text-xs font-bold ${
+                          option.is_default
+                            ? "bg-green-500/15 text-green-300"
+                            : "bg-white/5 text-gray-300"
+                        }`}
+                      >
+                        {option.name}
+                        {option.price_delta > 0 ? ` +Rs ${option.price_delta}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!customizationGroups.length && (
+                <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-gray-500">
+                  No customization sets configured yet.
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
             <h2 className="mb-5 flex items-center gap-2 text-lg font-black">
               <BarChart3 className="h-5 w-5 text-orange-400" /> Profitability
