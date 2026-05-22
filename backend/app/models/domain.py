@@ -131,6 +131,24 @@ class Promotion(Base):
     message_template = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class CampaignDelivery(Base):
+    __tablename__ = "campaign_deliveries"
+    id = Column(Integer, primary_key=True, index=True)
+    promotion_id = Column(Integer, ForeignKey("promotions.id"), index=True, nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=True)
+    channel = Column(String(50), index=True, nullable=False)
+    destination = Column(String(255), nullable=True)
+    message = Column(String, nullable=False)
+    provider = Column(String(80), nullable=True)
+    status = Column(String(40), index=True, default="pending")
+    external_id = Column(String(255), nullable=True)
+    error = Column(String, nullable=True)
+    dry_run = Column(Boolean, default=False)
+    response_payload = Column(JSON, nullable=True)
+    attempted_at = Column(DateTime, default=datetime.utcnow, index=True)
+    promotion = relationship("Promotion")
+    customer = relationship("Customer")
+
 class ShiftLog(Base):
     __tablename__ = "shift_log"
     id = Column(Integer, primary_key=True, index=True)

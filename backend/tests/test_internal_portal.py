@@ -597,6 +597,11 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(dispatch_payload["audience_count"], 1)
             self.assertEqual(dispatch_payload["send_ready_count"], 1)
             self.assertEqual(dispatch_payload["missing_destination_count"], 0)
+            self.assertFalse(dispatch_payload["provider_status"]["configured"])
+            self.assertIn(
+                "CAMPAIGN_SEND_ENABLED=true",
+                dispatch_payload["provider_status"]["missing_settings"],
+            )
             self.assertEqual(dispatch_payload["contacts"][0]["destination"], "9999999999")
             self.assertTrue(
                 dispatch_payload["contacts"][0]["action_url"].startswith(
@@ -604,6 +609,33 @@ class InternalPortalValidationTest(unittest.TestCase):
                 )
             )
             self.assertIn("WEEKEND15", dispatch_payload["contacts"][0]["message"])
+
+            dry_run_campaign_send = client.post(
+                f"/api/v1/restaurant/promotions/{promo_id}/send",
+                json={"dry_run": True, "limit": 10},
+            )
+            self.assertEqual(dry_run_campaign_send.status_code, 200)
+            self.assertEqual(dry_run_campaign_send.json()["attempted_count"], 1)
+            self.assertEqual(dry_run_campaign_send.json()["dry_run_count"], 1)
+            self.assertEqual(dry_run_campaign_send.json()["sent_count"], 0)
+            self.assertEqual(
+                dry_run_campaign_send.json()["deliveries"][0]["destination"],
+                "919999999999",
+            )
+            self.assertEqual(
+                dry_run_campaign_send.json()["deliveries"][0]["provider"],
+                "dry_run",
+            )
+
+            delivery_history = client.get(
+                f"/api/v1/restaurant/promotions/{promo_id}/deliveries"
+            )
+            self.assertEqual(delivery_history.status_code, 200)
+            self.assertEqual(delivery_history.json()["dry_run_count"], 1)
+            self.assertEqual(
+                delivery_history.json()["deliveries"][0]["status"],
+                "dry_run",
+            )
 
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"

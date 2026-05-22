@@ -56,11 +56,42 @@ type Outreach = {
 type Dispatch = Outreach & {
   send_ready_count: number;
   missing_destination_count: number;
+  provider_status?: ProviderStatus;
 };
 
 type AudienceKey = "all_customers" | "marketing_opt_in" | "repeat_customers" | "high_spenders";
 type ChannelKey = "whatsapp" | "sms" | "email";
 type StatusKey = "draft" | "scheduled" | "active" | "paused" | "completed";
+
+type ProviderStatus = {
+  channel: ChannelKey;
+  provider: string;
+  enabled: boolean;
+  configured: boolean;
+  unsupported: boolean;
+  missing_settings: string[];
+};
+
+type CampaignDelivery = {
+  id: number;
+  channel: ChannelKey;
+  destination?: string | null;
+  provider?: string | null;
+  status: "sent" | "dry_run" | "failed" | "skipped" | "pending";
+  external_id?: string | null;
+  error?: string | null;
+  dry_run: boolean;
+  attempted_at?: string | null;
+};
+
+type DeliveryHistory = {
+  attempted_count: number;
+  sent_count: number;
+  dry_run_count: number;
+  failed_count: number;
+  skipped_count: number;
+  deliveries: CampaignDelivery[];
+};
 
 type CampaignForm = {
   name: string;
@@ -117,10 +148,12 @@ export default function PromotionsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [outreach, setOutreach] = useState<Outreach | null>(null);
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
+  const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState<"dry_run" | "send" | null>(null);
 
   useEffect(() => {
     fetchPromotions();
@@ -151,7 +184,7 @@ export default function PromotionsPage() {
   };
 
   const fetchCampaignDetails = async (promotionId: number) => {
-    await Promise.all([fetchOutreach(promotionId), fetchDispatch(promotionId)]);
+    await Promise.all([fetchOutreach(promotionId), fetchDispatch(promotionId), fetchDeliveries(promotionId)]);
   };
 
   const fetchOutreach = async (promotionId: number) => {
@@ -170,6 +203,15 @@ export default function PromotionsPage() {
       return;
     }
     setDispatch(await response.json());
+  };
+
+  const fetchDeliveries = async (promotionId: number) => {
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/deliveries`);
+    if (!response.ok) {
+      setDeliveryHistory(null);
+      return;
+    }
+    setDeliveryHistory(await response.json());
   };
 
   const selectPromotion = (promotionId: number) => {
@@ -225,6 +267,33 @@ export default function PromotionsPage() {
       ].join("\n")
     );
     setMessage(`Copied ${dispatch.contacts.length} send-prep rows.`);
+  };
+
+  const sendCampaign = async (dryRun: boolean) => {
+    if (!selectedPromotion) return;
+    if (!dryRun) {
+      const confirmed = window.confirm(`Send ${selectedPromotion.name} to ready ${channelLabel(selectedPromotion.channel)} contacts?`);
+      if (!confirmed) return;
+    }
+    setSending(dryRun ? "dry_run" : "send");
+    const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: dryRun, limit: 50 }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Campaign send failed.");
+      setSending(null);
+      return;
+    }
+    setMessage(
+      dryRun
+        ? `Dry run checked ${data.attempted_count} contacts.`
+        : `Send finished: ${data.sent_count} sent, ${data.skipped_count} skipped, ${data.failed_count} failed.`
+    );
+    await fetchCampaignDetails(selectedPromotion.id);
+    setSending(null);
   };
 
   return (
@@ -334,9 +403,28 @@ export default function PromotionsPage() {
                   >
                     <Copy className="h-4 w-4" /> Copy Send Links
                   </button>
+                  <button
+                    onClick={() => sendCampaign(true)}
+                    disabled={sending !== null}
+                    className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> Dry Run
+                  </button>
+                  <button
+                    onClick={() => sendCampaign(false)}
+                    disabled={sending !== null || !dispatch?.provider_status?.configured}
+                    title={
+                      dispatch?.provider_status?.configured
+                        ? "Send campaign"
+                        : `Missing: ${dispatch?.provider_status?.missing_settings.join(", ") || "provider setup"}`
+                    }
+                    className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Send className="h-4 w-4" /> Send Now
+                  </button>
                 </div>
 
-                <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                   <Detail label="Audience" value={`${outreach?.audience_count || 0} contacts`} />
                   <Detail label="Channel" value={channelLabel(selectedPromotion.channel)} />
                   <Detail label="Offer" value={offerLabel(selectedPromotion)} />
@@ -344,6 +432,10 @@ export default function PromotionsPage() {
                   <Detail
                     label="Missing"
                     value={`${dispatch?.missing_destination_count || 0} contacts`}
+                  />
+                  <Detail
+                    label="Provider"
+                    value={providerLabel(dispatch?.provider_status)}
                   />
                 </div>
 
@@ -409,6 +501,41 @@ export default function PromotionsPage() {
                     </div>
                   )}
                 </div>
+
+                {deliveryHistory?.deliveries.length ? (
+                  <div className="mt-6 rounded-xl border border-white/5 bg-black/25 p-5">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h3 className="font-black">Recent Delivery Attempts</h3>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                        {deliveryHistory.sent_count} sent / {deliveryHistory.failed_count} failed
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {deliveryHistory.deliveries.slice(0, 6).map((delivery) => (
+                        <div
+                          key={delivery.id}
+                          className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-sm md:grid-cols-12"
+                        >
+                          <div className="md:col-span-3">
+                            <p className="font-bold text-white">{delivery.destination || "No destination"}</p>
+                            <p className="text-xs text-gray-500">{delivery.provider || "No provider"}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(delivery.status)}`}>
+                              {delivery.status}
+                            </span>
+                          </div>
+                          <div className="text-gray-500 md:col-span-3">
+                            {delivery.attempted_at ? new Date(delivery.attempted_at).toLocaleString() : "Not attempted"}
+                          </div>
+                          <div className="text-gray-400 md:col-span-4">
+                            {delivery.external_id || delivery.error || "Ready"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="rounded-xl border border-dashed border-white/10 p-12 text-center text-gray-500">
@@ -546,6 +673,19 @@ function audienceLabel(value: AudienceKey) {
 
 function channelLabel(value: ChannelKey) {
   return channelOptions.find((option) => option.value === value)?.label || value;
+}
+
+function providerLabel(status?: ProviderStatus) {
+  if (!status) return "Checking";
+  return status.configured ? `${status.provider} ready` : `${status.provider} setup needed`;
+}
+
+function statusClass(status: CampaignDelivery["status"]) {
+  if (status === "sent") return "bg-green-500/15 text-green-300";
+  if (status === "dry_run") return "bg-blue-500/15 text-blue-300";
+  if (status === "failed") return "bg-red-500/15 text-red-300";
+  if (status === "skipped") return "bg-yellow-500/15 text-yellow-300";
+  return "bg-white/10 text-gray-300";
 }
 
 function Metric({

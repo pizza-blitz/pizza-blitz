@@ -39,6 +39,27 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID: str | None = os.getenv("RAZORPAY_KEY_ID")
     RAZORPAY_KEY_SECRET: str | None = os.getenv("RAZORPAY_KEY_SECRET")
     RAZORPAY_WEBHOOK_SECRET: str | None = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+    CAMPAIGN_SEND_ENABLED: bool = os.getenv("CAMPAIGN_SEND_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    CAMPAIGN_DEFAULT_COUNTRY_CODE: str = os.getenv("CAMPAIGN_DEFAULT_COUNTRY_CODE", "91")
+    EMAIL_PROVIDER: str = os.getenv("EMAIL_PROVIDER", "resend")
+    RESEND_API_KEY: str | None = os.getenv("RESEND_API_KEY")
+    RESEND_FROM_EMAIL: str | None = os.getenv("RESEND_FROM_EMAIL")
+    SMS_PROVIDER: str = os.getenv("SMS_PROVIDER", "twilio")
+    TWILIO_ACCOUNT_SID: str | None = os.getenv("TWILIO_ACCOUNT_SID")
+    TWILIO_AUTH_TOKEN: str | None = os.getenv("TWILIO_AUTH_TOKEN")
+    TWILIO_FROM_NUMBER: str | None = os.getenv("TWILIO_FROM_NUMBER")
+    TWILIO_MESSAGING_SERVICE_SID: str | None = os.getenv("TWILIO_MESSAGING_SERVICE_SID")
+    WHATSAPP_PROVIDER: str = os.getenv("WHATSAPP_PROVIDER", "meta")
+    WHATSAPP_ACCESS_TOKEN: str | None = os.getenv("WHATSAPP_ACCESS_TOKEN")
+    WHATSAPP_PHONE_NUMBER_ID: str | None = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
+    WHATSAPP_GRAPH_VERSION: str = os.getenv("WHATSAPP_GRAPH_VERSION", "v25.0")
+    WHATSAPP_TEMPLATE_NAME: str | None = os.getenv("WHATSAPP_TEMPLATE_NAME")
+    WHATSAPP_TEMPLATE_LANGUAGE: str = os.getenv("WHATSAPP_TEMPLATE_LANGUAGE", "en_US")
 
     class Config:
         case_sensitive = True

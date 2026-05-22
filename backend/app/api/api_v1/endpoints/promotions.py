@@ -2,10 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db
-from app.models.domain import Customer, DailySales, Promotion, RestaurantOrder
+from app.models.domain import CampaignDelivery, Customer, DailySales, Promotion, RestaurantOrder
+from app.services.campaign_dispatch_service import (
+    campaign_provider_status,
+    normalize_campaign_destination,
+    send_campaign_message,
+)
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from urllib.parse import quote
 
 router = APIRouter()
@@ -35,6 +40,12 @@ class PromotionCreate(BaseModel):
 class CouponValidationRequest(BaseModel):
     code: str = Field(..., min_length=1)
     subtotal: float = Field(..., ge=0)
+
+class CampaignSendRequest(BaseModel):
+    limit: int = Field(50, ge=1, le=500)
+    dry_run: bool = False
+    force_resend: bool = False
+    mark_completed: bool = False
 
 def _parse_date(value: str) -> date:
     try:
@@ -175,6 +186,30 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
         "action_url": action_url,
         "send_ready": send_ready,
         "missing_reason": missing_reason,
+    }
+
+def _delivery_dict(delivery: CampaignDelivery) -> dict:
+    return {
+        "id": delivery.id,
+        "promotion_id": delivery.promotion_id,
+        "customer_id": delivery.customer_id,
+        "channel": delivery.channel,
+        "destination": delivery.destination,
+        "provider": delivery.provider,
+        "status": delivery.status,
+        "external_id": delivery.external_id,
+        "error": delivery.error,
+        "dry_run": delivery.dry_run,
+        "attempted_at": delivery.attempted_at.isoformat() if delivery.attempted_at else None,
+    }
+
+def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
+    return {
+        "attempted_count": len(deliveries),
+        "sent_count": sum(1 for delivery in deliveries if delivery.status == "sent"),
+        "dry_run_count": sum(1 for delivery in deliveries if delivery.status == "dry_run"),
+        "failed_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
+        "skipped_count": sum(1 for delivery in deliveries if delivery.status == "skipped"),
     }
 
 @router.post("/")
@@ -358,8 +393,141 @@ def promotion_dispatch(
         "audience": promo.audience,
         "audience_count": total,
         "channel": promo.channel,
+        "provider_status": campaign_provider_status(promo.channel),
         "message_preview": _render_message(promo, customers[0] if customers else None),
         "send_ready_count": send_ready_count,
         "missing_destination_count": missing_destination_count,
         "contacts": contacts,
+    }
+
+@router.post("/{promo_id}/send")
+def send_promotion_campaign(
+    promo_id: int,
+    payload: CampaignSendRequest,
+    db: Session = Depends(get_db),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    if promo.status not in {"active", "scheduled"} and not payload.force_resend:
+        raise HTTPException(
+            status_code=409,
+            detail="Only active or scheduled campaigns can be sent.",
+        )
+
+    customers = (
+        _audience_query(db, promo.audience or "marketing_opt_in")
+        .order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
+        .limit(payload.limit)
+        .all()
+    )
+    deliveries: list[CampaignDelivery] = []
+    provider_status = campaign_provider_status(promo.channel)
+
+    for customer in customers:
+        contact = _dispatch_contact(customer, promo)
+        destination = normalize_campaign_destination(promo.channel, contact["destination"])
+        message = contact["message"]
+        delivery_kwargs = {
+            "promotion_id": promo.id,
+            "customer_id": customer.id,
+            "channel": promo.channel,
+            "destination": destination or contact["destination"],
+            "message": message,
+            "attempted_at": datetime.utcnow(),
+        }
+
+        if not contact["send_ready"] or not destination:
+            delivery = CampaignDelivery(
+                **delivery_kwargs,
+                provider=provider_status["provider"],
+                status="skipped",
+                error=contact["missing_reason"] or "Missing destination",
+                dry_run=payload.dry_run,
+                response_payload={"provider_status": provider_status},
+            )
+        else:
+            existing_sent = None
+            if not payload.force_resend:
+                existing_sent = (
+                    db.query(CampaignDelivery)
+                    .filter(CampaignDelivery.promotion_id == promo.id)
+                    .filter(CampaignDelivery.customer_id == customer.id)
+                    .filter(CampaignDelivery.status == "sent")
+                    .first()
+                )
+            if existing_sent:
+                delivery = CampaignDelivery(
+                    **delivery_kwargs,
+                    provider=existing_sent.provider,
+                    status="skipped",
+                    error=f"Already sent in delivery #{existing_sent.id}",
+                    response_payload={"previous_delivery_id": existing_sent.id},
+                )
+            elif payload.dry_run:
+                delivery = CampaignDelivery(
+                    **delivery_kwargs,
+                    provider="dry_run",
+                    status="dry_run",
+                    dry_run=True,
+                    response_payload={"provider_status": provider_status},
+                )
+            else:
+                result = send_campaign_message(
+                    channel=promo.channel,
+                    destination=destination,
+                    message=message,
+                    subject=promo.name,
+                )
+                delivery = CampaignDelivery(
+                    **delivery_kwargs,
+                    provider=result.provider,
+                    status=result.status,
+                    external_id=result.external_id,
+                    error=result.error,
+                    dry_run=False,
+                    response_payload=result.response_payload,
+                )
+
+        db.add(delivery)
+        deliveries.append(delivery)
+
+    if payload.mark_completed and deliveries and not any(
+        delivery.status == "failed" for delivery in deliveries
+    ):
+        promo.status = "completed"
+
+    db.commit()
+    for delivery in deliveries:
+        db.refresh(delivery)
+    return {
+        "promotion": _promotion_dict(promo),
+        "provider_status": provider_status,
+        "channel": promo.channel,
+        "dry_run": payload.dry_run,
+        **_delivery_counts(deliveries),
+        "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
+    }
+
+@router.get("/{promo_id}/deliveries")
+def promotion_deliveries(
+    promo_id: int,
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+
+    deliveries = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.promotion_id == promo.id)
+        .order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "promotion": _promotion_dict(promo),
+        **_delivery_counts(deliveries),
+        "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
     }
