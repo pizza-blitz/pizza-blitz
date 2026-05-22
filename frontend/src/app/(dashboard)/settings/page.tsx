@@ -1,9 +1,52 @@
 "use client";
 export const dynamic = "force-dynamic";
-import React, { useState } from 'react';
-import { Plus, Trash2, Save, RefreshCw, Shield, Layers, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Globe2,
+  Layers,
+  LockKeyhole,
+  Plus,
+  RefreshCw,
+  Save,
+  Shield,
+  Trash2,
+  UserCheck,
+  Users,
+} from 'lucide-react';
+
+type RoleAccess = {
+  role: string;
+  access: string;
+  entry: string;
+  protection: string;
+};
+
+type SessionStatus = {
+  name: string;
+  cookie: string;
+  duration: string;
+  protectedRoutes: number;
+  status: string;
+};
+
+type HardeningCheck = {
+  name: string;
+  status: string;
+  detail: string;
+};
+
+type SecurityOverview = {
+  roles: RoleAccess[];
+  sessions: SessionStatus[];
+  hardening: HardeningCheck[];
+};
 
 export default function Settings() {
+  const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
+  const [isSecurityLoading, setIsSecurityLoading] = useState(true);
   const [categories, setCategories] = useState([
     { id: 1, name: "Raw Materials", active: true },
     { id: 2, name: "Electricity", active: true },
@@ -21,6 +64,31 @@ export default function Settings() {
   // Missing State for Admin Credentials
   const [adminId, setAdminId] = useState("admin");
   const [adminPassword, setAdminPassword] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch("/api/security-overview", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: SecurityOverview) => {
+        if (isMounted) {
+          setSecurityOverview(data);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setSecurityOverview(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsSecurityLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Missing Handlers for Categories
   const toggleCategory = (id: number) => {
@@ -67,10 +135,144 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl animate-in fade-in duration-300">
+    <div className="space-y-6 max-w-6xl animate-in fade-in duration-300">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
         <p className="text-gray-500 mt-1">Configure portal preferences, data sources, and security.</p>
+      </div>
+
+      {/* Access Control */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start">
+            <div className="p-2 bg-indigo-100 rounded-lg mr-3">
+              <LockKeyhole className="w-5 h-5 text-indigo-700" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Access Control & Roles</h3>
+              <p className="text-sm text-gray-500">
+                Admin and customer sessions are separated today; staff-specific permissions are the next hardening step.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-bold">
+            <span className="inline-flex items-center gap-1 rounded-md bg-green-50 px-3 py-2 text-green-700">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Admin protected
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-2 text-blue-700">
+              <UserCheck className="h-3.5 w-3.5" /> Customer protected
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-3 py-2 text-amber-700">
+              <AlertTriangle className="h-3.5 w-3.5" /> Staff split pending
+            </span>
+          </div>
+        </div>
+
+        {isSecurityLoading ? (
+          <div className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm font-semibold text-gray-500">
+            Loading security overview...
+          </div>
+        ) : securityOverview ? (
+          <div className="mt-5 space-y-5">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {securityOverview.sessions.map((session) => (
+                <div key={session.cookie} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-gray-900">{session.name}</p>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">{session.cookie}</p>
+                    </div>
+                    <span
+                      className={`rounded-md px-2.5 py-1 text-xs font-black ${
+                        session.status === "Ready"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {session.status}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-md bg-white p-3">
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <Clock className="h-4 w-4" />
+                        Session
+                      </div>
+                      <p className="mt-1 font-black text-gray-900">{session.duration}</p>
+                    </div>
+                    <div className="rounded-md bg-white p-3">
+                      <div className="flex items-center gap-2 text-gray-500">
+                        <Shield className="h-4 w-4" />
+                        Routes
+                      </div>
+                      <p className="mt-1 font-black text-gray-900">{session.protectedRoutes} protected</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="overflow-hidden rounded-lg border border-gray-100">
+              <div className="grid grid-cols-12 bg-gray-50 px-4 py-3 text-xs font-black uppercase text-gray-500">
+                <div className="col-span-12 md:col-span-3">Role</div>
+                <div className="hidden md:col-span-5 md:block">Access</div>
+                <div className="hidden md:col-span-2 md:block">Entry</div>
+                <div className="hidden md:col-span-2 md:block">Protection</div>
+              </div>
+              {securityOverview.roles.map((role) => (
+                <div key={role.role} className="grid grid-cols-12 gap-2 border-t border-gray-100 px-4 py-3 text-sm">
+                  <div className="col-span-12 font-black text-gray-900 md:col-span-3">
+                    <span className="inline-flex items-center gap-2">
+                      {role.role === "Public Visitor" ? (
+                        <Globe2 className="h-4 w-4 text-gray-400" />
+                      ) : role.role === "Customer" ? (
+                        <Users className="h-4 w-4 text-blue-500" />
+                      ) : (
+                        <Shield className="h-4 w-4 text-indigo-600" />
+                      )}
+                      {role.role}
+                    </span>
+                  </div>
+                  <div className="col-span-12 text-gray-600 md:col-span-5">{role.access}</div>
+                  <div className="col-span-6 font-semibold text-gray-700 md:col-span-2">{role.entry}</div>
+                  <div className="col-span-6 text-gray-600 md:col-span-2">{role.protection}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {securityOverview.hardening.map((item) => {
+                const needsAction = ["Default", "Fallback", "Planned"].includes(item.status);
+                return (
+                  <div
+                    key={item.name}
+                    className={`rounded-lg border p-4 ${
+                      needsAction
+                        ? "border-amber-100 bg-amber-50"
+                        : "border-green-100 bg-green-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-black text-gray-900">{item.name}</p>
+                      <span
+                        className={`rounded-md px-2 py-1 text-xs font-black ${
+                          needsAction ? "bg-white text-amber-700" : "bg-white text-green-700"
+                        }`}
+                      >
+                        {item.status}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-600">{item.detail}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            Security overview is unavailable. Check the Next.js API route logs.
+          </div>
+        )}
       </div>
 
       {/* Google Sheets Integration */}
