@@ -22,6 +22,7 @@ import { getApiUrl } from "@/lib/api";
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
+const ACTIVE_PROMOS_API = getApiUrl("/api/v1/restaurant/promotions/active");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
 const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
 
@@ -46,6 +47,16 @@ type CouponResult = {
     code?: string | null;
     name: string;
   };
+};
+
+type ActivePromotion = {
+  id: number;
+  name: string;
+  code?: string | null;
+  end_date: string;
+  description?: string | null;
+  discount_type: "percentage" | "fixed";
+  discount_value: number;
 };
 
 type PendingPayment = {
@@ -89,6 +100,7 @@ const fallbackImage =
 
 export default function PublicOrderPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [activePromotions, setActivePromotions] = useState<ActivePromotion[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
@@ -117,6 +129,11 @@ export default function PublicOrderPage() {
         applySavedReorder(availableMenu);
       })
       .catch(() => setMessage("Menu is not available right now."));
+
+    fetch(ACTIVE_PROMOS_API)
+      .then((response) => response.json())
+      .then((data: ActivePromotion[]) => setActivePromotions(data.filter((promotion) => promotion.code)))
+      .catch(() => setActivePromotions([]));
 
     const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
     if (savedCustomer) {
@@ -245,19 +262,22 @@ export default function PublicOrderPage() {
     );
   };
 
-  const applyCoupon = async () => {
-    if (!couponCode.trim()) {
+  const applyCouponCode = async (code: string) => {
+    const nextCode = code.trim();
+    if (!nextCode) {
       setMessage("Enter a coupon code.");
       return;
     }
+    setCouponCode(nextCode);
     if (!cart.length) {
+      setCoupon(null);
       setMessage("Add items before applying a coupon.");
       return;
     }
     const response = await fetch(COUPON_API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: couponCode, subtotal }),
+      body: JSON.stringify({ code: nextCode, subtotal }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -266,7 +286,20 @@ export default function PublicOrderPage() {
       return;
     }
     setCoupon(data);
-    setMessage(`Applied ${data.promotion.code || couponCode.toUpperCase()}.`);
+    setCouponCode(data.promotion.code || nextCode.toUpperCase());
+    setMessage(`Applied ${data.promotion.code || nextCode.toUpperCase()}.`);
+  };
+
+  const applyCoupon = async () => {
+    await applyCouponCode(couponCode);
+  };
+
+  const applyPromotion = async (promotion: ActivePromotion) => {
+    if (!promotion.code) {
+      setMessage("This offer is active but does not have a coupon code yet.");
+      return;
+    }
+    await applyCouponCode(promotion.code);
   };
 
   const placeOrder = async (event: FormEvent<HTMLFormElement>) => {
@@ -444,6 +477,49 @@ export default function PublicOrderPage() {
               className="h-64 w-full object-cover md:col-span-5 md:h-full"
             />
           </div>
+
+          {activePromotions.length > 0 && (
+            <div className="mb-5 rounded-lg border border-red-100 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-red-700">
+                    Live Offers
+                  </p>
+                  <h3 className="text-lg font-black">Tap a coupon and apply it at checkout</h3>
+                </div>
+                <Percent className="h-5 w-5 text-red-700" />
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {activePromotions.slice(0, 4).map((promotion) => (
+                  <button
+                    key={promotion.id}
+                    type="button"
+                    onClick={() => applyPromotion(promotion)}
+                    className={`rounded-md border p-4 text-left transition ${
+                      coupon?.promotion.code === promotion.code
+                        ? "border-red-700 bg-red-50"
+                        : "border-slate-200 bg-slate-50 hover:border-red-600 hover:bg-white"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-slate-950">{promotion.name}</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-600">
+                          {promotion.description || offerLabel(promotion)}
+                        </p>
+                      </div>
+                      <span className="rounded-md bg-red-700 px-2 py-1 text-xs font-black text-white">
+                        {promotion.code}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs font-bold text-slate-500">
+                      {offerLabel(promotion)} until {promotion.end_date}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1">
@@ -634,6 +710,21 @@ export default function PublicOrderPage() {
               )}
             </div>
 
+            {activePromotions.length > 0 && (
+              <div className="mb-5 flex flex-wrap gap-2">
+                {activePromotions.slice(0, 3).map((promotion) => (
+                  <button
+                    key={`checkout-${promotion.id}`}
+                    type="button"
+                    onClick={() => applyPromotion(promotion)}
+                    className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-xs font-black text-red-700 hover:border-red-700"
+                  >
+                    Use {promotion.code}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="mb-5 space-y-2 border-y border-slate-200 py-4 text-sm">
               <PriceRow label="Subtotal" value={subtotal} />
               <PriceRow label="Discount" value={discount} />
@@ -720,6 +811,11 @@ export default function PublicOrderPage() {
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function offerLabel(promotion: ActivePromotion) {
+  const value = Number(promotion.discount_value || 0).toLocaleString();
+  return promotion.discount_type === "percentage" ? `${value}% off` : `Rs ${value} off`;
 }
 
 function InfoBadge({
