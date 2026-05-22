@@ -25,13 +25,37 @@ type ReadinessCheck = {
   detail: string;
 };
 
+type GoLiveItem = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  detail: string;
+  missing_settings: string[];
+};
+
+type GoLiveSection = {
+  key: string;
+  title: string;
+  description: string;
+  items: GoLiveItem[];
+};
+
 type Readiness = {
   environment: string;
   database_backend: string;
   database_path?: string | null;
   backup_dir: string;
   backup_retention_days: number;
+  backup_freshness?: {
+    status: CheckStatus;
+    latest_backup_at?: string | null;
+    detail: string;
+  };
   payment?: PaymentStatus;
+  readiness_score: number;
+  launch_blockers: GoLiveItem[];
+  setup_actions: GoLiveItem[];
+  go_live_sections: GoLiveSection[];
   overall: "ready" | "attention" | "blocked";
   failed_checks: number;
   warning_checks: number;
@@ -144,7 +168,12 @@ export default function ProductionOpsPage() {
         </div>
       )}
 
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <Metric
+          label="Go-Live Score"
+          value={readiness ? `${readiness.readiness_score}%` : "checking"}
+          icon={ShieldCheck}
+        />
         <Metric
           label="Readiness"
           value={readiness?.overall || "checking"}
@@ -163,6 +192,94 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {readiness && (
+        <section className="mb-8 space-y-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black">Production Go-Live Checklist</h2>
+              <p className="mt-2 text-sm text-gray-500">
+                Launch blockers, missing environment variables, and deployment readiness sections.
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-[#1a1a1c] px-5 py-4 text-right">
+              <p className="text-xs font-black uppercase tracking-widest text-gray-500">Current Score</p>
+              <p className="mt-1 text-3xl font-black text-orange-400">{readiness.readiness_score}%</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-300" />
+                <h3 className="font-black">Launch Blockers</h3>
+              </div>
+              <p className="text-3xl font-black text-red-200">{readiness.launch_blockers.length}</p>
+              <p className="mt-2 text-sm leading-6 text-red-100/80">
+                {readiness.launch_blockers[0]?.detail || "No hard blockers in the current environment."}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-yellow-300" />
+                <h3 className="font-black">Setup Actions</h3>
+              </div>
+              <p className="text-3xl font-black text-yellow-100">{readiness.setup_actions.length}</p>
+              <p className="mt-2 text-sm leading-6 text-yellow-100/80">
+                {readiness.setup_actions[0]?.label || "No setup actions are pending."}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-green-300" />
+                <h3 className="font-black">Backup Freshness</h3>
+              </div>
+              <p className="text-lg font-black capitalize text-green-100">
+                {readiness.backup_freshness?.status || "checking"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-green-100/80">
+                {readiness.backup_freshness?.detail || "Backup freshness is loading."}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {readiness.go_live_sections.map((section) => (
+              <div key={section.key} className="rounded-xl border border-white/5 bg-[#1a1a1c] p-5">
+                <div className="mb-4">
+                  <h3 className="font-black">{section.title}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{section.description}</p>
+                </div>
+                <div className="space-y-3">
+                  {section.items.map((item) => (
+                    <div key={item.key} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <p className="font-black">{item.label}</p>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <p className="text-sm leading-6 text-gray-400">{item.detail}</p>
+                      {item.missing_settings.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {item.missing_settings.slice(0, 5).map((setting) => (
+                            <span
+                              key={`${item.key}-${setting}`}
+                              className="rounded-md bg-white/5 px-2 py-1 text-xs font-bold text-gray-300"
+                            >
+                              {setting}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="xl:col-span-7">
@@ -321,6 +438,16 @@ function backupStatusClass(status: string) {
   if (status === "failed") return "bg-red-500/15 text-red-300";
   if (status === "skipped" || status === "external_required") return "bg-yellow-500/15 text-yellow-300";
   return "bg-white/10 text-gray-300";
+}
+
+function StatusBadge({ status }: { status: CheckStatus }) {
+  const Icon = status === "pass" ? CheckCircle2 : AlertTriangle;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(status)}`}>
+      <Icon className="h-3.5 w-3.5" />
+      {status}
+    </span>
+  );
 }
 
 function formatBytes(value: number) {

@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.domain import BackupRun
+from app.services.ad_campaign_service import ad_provider_status
+from app.services.campaign_dispatch_service import campaign_provider_status
 from app.services.payment_gateway import payment_provider_status
+from app.services.social_publish_service import social_provider_status
 
 
 DEFAULT_SECRET_VALUES = {
@@ -47,6 +50,7 @@ def sqlite_database_path() -> Optional[Path]:
 def readiness_report(db: Session) -> dict:
     environment = settings.ENVIRONMENT.lower()
     payment_status = payment_provider_status()
+    backup_freshness = _backup_freshness(db)
     checks = [
         _database_check(db),
         _database_persistence_check(environment),
@@ -57,6 +61,23 @@ def readiness_report(db: Session) -> dict:
         _payment_webhook_check(environment, payment_status),
         _backup_storage_check(),
     ]
+    go_live_sections = _go_live_sections(
+        checks=checks,
+        environment=environment,
+        payment_status=payment_status,
+        backup_freshness=backup_freshness,
+    )
+    go_live_items = [
+        item
+        for section in go_live_sections
+        for item in section["items"]
+    ]
+    launch_blockers = [item for item in go_live_items if item["status"] == "fail"]
+    setup_actions = [
+        item
+        for item in go_live_items
+        if item["status"] in {"fail", "warn"}
+    ][:8]
     failed = sum(1 for check in checks if check["status"] == "fail")
     warnings = sum(1 for check in checks if check["status"] == "warn")
     overall = "ready"
@@ -72,6 +93,11 @@ def readiness_report(db: Session) -> dict:
         "backup_dir": str(_backup_dir().resolve()),
         "backup_retention_days": settings.BACKUP_RETENTION_DAYS,
         "payment": payment_status,
+        "backup_freshness": backup_freshness,
+        "readiness_score": _readiness_score(go_live_items),
+        "launch_blockers": launch_blockers,
+        "setup_actions": setup_actions,
+        "go_live_sections": go_live_sections,
         "overall": overall,
         "failed_checks": failed,
         "warning_checks": warnings,
@@ -262,6 +288,36 @@ def _backup_storage_check() -> dict:
     }
 
 
+def _backup_freshness(db: Session) -> dict:
+    latest_success = (
+        db.query(BackupRun)
+        .filter(BackupRun.status == "success")
+        .order_by(BackupRun.created_at.desc(), BackupRun.id.desc())
+        .first()
+    )
+    if not latest_success or not latest_success.created_at:
+        return {
+            "status": "warn",
+            "latest_backup_at": None,
+            "detail": "No successful backup run is recorded yet.",
+        }
+
+    age = datetime.utcnow() - latest_success.created_at
+    max_age = timedelta(days=max(settings.BACKUP_RETENTION_DAYS, 1))
+    if age > max_age:
+        return {
+            "status": "warn",
+            "latest_backup_at": latest_success.created_at.isoformat(),
+            "detail": f"Latest successful backup is older than {settings.BACKUP_RETENTION_DAYS} days.",
+        }
+
+    return {
+        "status": "pass",
+        "latest_backup_at": latest_success.created_at.isoformat(),
+        "detail": "Latest successful backup is inside the retention window.",
+    }
+
+
 def _payment_gateway_check(environment: str, status: dict) -> dict:
     if status["checkout_configured"]:
         return {
@@ -296,6 +352,194 @@ def _payment_webhook_check(environment: str, status: dict) -> dict:
         "detail": "Missing webhook settings: "
         + ", ".join(status["missing_webhook_settings"]),
     }
+
+
+def _go_live_sections(
+    *,
+    checks: list[dict],
+    environment: str,
+    payment_status: dict,
+    backup_freshness: dict,
+) -> list[dict]:
+    check_by_key = {check["key"]: check for check in checks}
+    campaign_statuses = [campaign_provider_status(channel) for channel in ["whatsapp", "sms", "email"]]
+    social_statuses = [social_provider_status(platform) for platform in ["facebook", "instagram"]]
+    ads_status = ad_provider_status()
+
+    campaign_missing = _missing_settings(campaign_statuses)
+    social_missing = _missing_settings(social_statuses)
+
+    return [
+        {
+            "key": "core",
+            "title": "Core Deployment",
+            "description": "Database mode, API environment, and frontend access controls.",
+            "items": [
+                {
+                    "key": "environment_mode",
+                    "label": "Production environment",
+                    "status": "pass" if environment == "production" else "warn",
+                    "detail": (
+                        "API is running with ENVIRONMENT=production."
+                        if environment == "production"
+                        else "Set ENVIRONMENT=production before public launch."
+                    ),
+                    "missing_settings": [] if environment == "production" else ["ENVIRONMENT=production"],
+                },
+                _database_go_live_item(environment),
+                _item_from_check(check_by_key["cors_origins"]),
+            ],
+        },
+        {
+            "key": "security",
+            "title": "Environment Security",
+            "description": "Admin credentials and signed session secrets.",
+            "items": [
+                _item_from_check(check_by_key["admin_password"]),
+                _item_from_check(check_by_key["auth_secret"]),
+            ],
+        },
+        {
+            "key": "payments",
+            "title": "Payment Gateway",
+            "description": "Checkout sessions and webhook verification.",
+            "items": [
+                {
+                    "key": "payment_gateway_full",
+                    "label": "Checkout and webhook",
+                    "status": _required_status(
+                        environment,
+                        payment_status["checkout_configured"] and payment_status["webhook_configured"],
+                    ),
+                    "detail": (
+                        f"{payment_status['provider']} checkout and webhook are configured."
+                        if payment_status["checkout_configured"] and payment_status["webhook_configured"]
+                        else "Payment launch needs checkout and webhook secrets configured."
+                    ),
+                    "missing_settings": [
+                        *payment_status["missing_checkout_settings"],
+                        *payment_status["missing_webhook_settings"],
+                    ],
+                }
+            ],
+        },
+        {
+            "key": "growth_channels",
+            "title": "Growth Channels",
+            "description": "Campaign sending, social publishing, and Meta ads launch settings.",
+            "items": [
+                {
+                    "key": "campaign_sending",
+                    "label": "WhatsApp/SMS/email sending",
+                    "status": _required_status(environment, any(status["configured"] for status in campaign_statuses)),
+                    "detail": _configured_detail(campaign_statuses, "campaign channels"),
+                    "missing_settings": campaign_missing,
+                },
+                {
+                    "key": "social_publishing",
+                    "label": "Social auto-posting",
+                    "status": _required_status(environment, any(status["configured"] for status in social_statuses)),
+                    "detail": _configured_detail(social_statuses, "social platforms"),
+                    "missing_settings": social_missing,
+                },
+                {
+                    "key": "ads_launch",
+                    "label": "Meta ads launch",
+                    "status": _required_status(environment, ads_status["configured"]),
+                    "detail": (
+                        "Meta Ads can create paused campaign shells."
+                        if ads_status["configured"]
+                        else "Meta Ads launch requires account and access token settings."
+                    ),
+                    "missing_settings": ads_status["missing_settings"],
+                },
+            ],
+        },
+        {
+            "key": "backups",
+            "title": "Backups",
+            "description": "Backup storage and latest successful backup freshness.",
+            "items": [
+                _item_from_check(check_by_key["backup_storage"]),
+                {
+                    "key": "backup_freshness",
+                    "label": "Backup freshness",
+                    "status": backup_freshness["status"],
+                    "detail": backup_freshness["detail"],
+                    "missing_settings": [],
+                },
+            ],
+        },
+    ]
+
+
+def _database_go_live_item(environment: str) -> dict:
+    backend = database_backend()
+    if backend == "sqlite":
+        return {
+            "key": "managed_database",
+            "label": "Managed production database",
+            "status": "fail" if environment == "production" else "warn",
+            "detail": "SQLite is useful locally; production should use a managed database with backups.",
+            "missing_settings": ["SQLALCHEMY_DATABASE_URI=postgresql+psycopg://..."],
+        }
+    if backend == "unknown":
+        return {
+            "key": "managed_database",
+            "label": "Managed production database",
+            "status": "fail",
+            "detail": "Database URI could not be parsed.",
+            "missing_settings": ["SQLALCHEMY_DATABASE_URI"],
+        }
+    return {
+        "key": "managed_database",
+        "label": "Managed production database",
+        "status": "pass",
+        "detail": f"Database backend is {backend}.",
+        "missing_settings": [],
+    }
+
+
+def _item_from_check(check: dict) -> dict:
+    return {
+        "key": check["key"],
+        "label": check["label"],
+        "status": check["status"],
+        "detail": check["detail"],
+        "missing_settings": [],
+    }
+
+
+def _required_status(environment: str, configured: bool) -> str:
+    if configured:
+        return "pass"
+    return "fail" if environment == "production" else "warn"
+
+
+def _configured_detail(statuses: list[dict], label: str) -> str:
+    configured = [
+        status.get("channel") or status.get("platform")
+        for status in statuses
+        if status.get("configured")
+    ]
+    if configured:
+        return f"Configured {label}: {', '.join(configured)}."
+    return f"No {label} are fully configured yet."
+
+
+def _missing_settings(statuses: list[dict]) -> list[str]:
+    missing: list[str] = []
+    for status in statuses:
+        missing.extend(status.get("missing_settings") or [])
+    return sorted(set(missing))
+
+
+def _readiness_score(items: list[dict]) -> int:
+    if not items:
+        return 0
+    weights = {"pass": 1.0, "warn": 0.5, "fail": 0.0}
+    score = sum(weights.get(item["status"], 0) for item in items) / len(items)
+    return round(score * 100)
 
 
 def _backup_dir() -> Path:
