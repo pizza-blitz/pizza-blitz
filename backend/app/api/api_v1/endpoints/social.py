@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.models.domain import SocialPost, SocialPostDelivery
+from app.services.social_autopublish_service import (
+    publish_due_social_posts,
+    social_auto_publish_status,
+)
 from app.services.social_publish_service import publish_social_post, social_provider_status
 
 router = APIRouter()
@@ -30,6 +34,10 @@ class SocialPublishRequest(BaseModel):
     platforms: Optional[list[str]] = None
     force_repost: bool = False
     mark_published: bool = True
+
+
+class SocialAutoPublishRequest(BaseModel):
+    limit: int = Field(20, ge=1, le=100)
 
 
 def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -106,6 +114,22 @@ def social_provider_statuses():
         platform: social_provider_status(platform)
         for platform in sorted(VALID_SOCIAL_PLATFORMS)
     }
+
+
+@router.get("/auto-publish/status")
+def social_auto_publish_readiness(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return social_auto_publish_status(db, limit=limit)
+
+
+@router.post("/auto-publish/run")
+def run_social_auto_publish(
+    payload: SocialAutoPublishRequest,
+    db: Session = Depends(get_db),
+):
+    return publish_due_social_posts(limit=payload.limit, db=db)
 
 
 @router.post("/posts")

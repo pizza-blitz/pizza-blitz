@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Calendar,
   CheckCircle2,
+  Clock,
   Image,
   Link as LinkIcon,
   Plus,
@@ -59,6 +61,25 @@ type DeliveryHistory = {
   deliveries: SocialDelivery[];
 };
 
+type AutoPublishPost = {
+  id: number;
+  title: string;
+  status: SocialStatus;
+  scheduled_at?: string | null;
+  platforms: PlatformKey[];
+  eligible: boolean;
+  blockers: string[];
+};
+
+type AutoPublishStatus = {
+  interval_minutes: number;
+  due_count: number;
+  eligible_count: number;
+  blocked_count: number;
+  provider_status: Record<PlatformKey, ProviderStatus>;
+  due_posts: AutoPublishPost[];
+};
+
 type SocialForm = {
   title: string;
   message: string;
@@ -87,6 +108,7 @@ const platformLabels: Record<PlatformKey, string> = {
 export default function SocialPublishingPage() {
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [providerStatus, setProviderStatus] = useState<Record<PlatformKey, ProviderStatus> | null>(null);
+  const [autoPublishStatus, setAutoPublishStatus] = useState<AutoPublishStatus | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<DeliveryHistory | null>(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -94,6 +116,7 @@ export default function SocialPublishingPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState<"dry_run" | "publish" | null>(null);
+  const [autoPublishing, setAutoPublishing] = useState(false);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.id === selectedId) || null,
@@ -106,12 +129,16 @@ export default function SocialPublishingPage() {
 
   const fetchSocial = async () => {
     setLoading(true);
-    const [statusResponse, postsResponse] = await Promise.all([
+    const [statusResponse, postsResponse, autoResponse] = await Promise.all([
       fetch(`${SOCIAL_API}/provider-status`),
       fetch(`${SOCIAL_API}/posts`),
+      fetch(`${SOCIAL_API}/auto-publish/status`),
     ]);
     if (statusResponse.ok) {
       setProviderStatus(await statusResponse.json());
+    }
+    if (autoResponse.ok) {
+      setAutoPublishStatus(await autoResponse.json());
     }
     if (postsResponse.ok) {
       const data: SocialPost[] = await postsResponse.json();
@@ -125,6 +152,33 @@ export default function SocialPublishingPage() {
       }
     }
     setLoading(false);
+  };
+
+  const runAutoPublish = async () => {
+    if (!autoPublishStatus?.eligible_count) {
+      setMessage("No due social posts are eligible for auto-publishing.");
+      return;
+    }
+    const confirmed = window.confirm("Run auto-publish now for due social posts?");
+    if (!confirmed) return;
+
+    setAutoPublishing(true);
+    const response = await fetch(`${SOCIAL_API}/auto-publish/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ limit: 20 }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Auto-publish run failed.");
+      setAutoPublishing(false);
+      return;
+    }
+    setMessage(
+      `Auto-publish checked ${data.attempted_post_count} due post${data.attempted_post_count === 1 ? "" : "s"}: ${data.published_post_count} published, ${data.blocked_post_count} blocked.`
+    );
+    await fetchSocial();
+    setAutoPublishing(false);
   };
 
   const fetchDeliveries = async (postId: number) => {
@@ -251,6 +305,77 @@ export default function SocialPublishingPage() {
           icon={Image}
         />
       </div>
+
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-black">Auto-Posting Console</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Scheduled social posts are checked every {autoPublishStatus?.interval_minutes || 5} minutes and only publish when Meta credentials are ready.
+            </p>
+          </div>
+          <button
+            onClick={runAutoPublish}
+            disabled={autoPublishing || !autoPublishStatus?.eligible_count}
+            title={
+              autoPublishStatus?.eligible_count
+                ? "Run due social posts now"
+                : "No eligible due posts or provider setup is incomplete"
+            }
+            className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Send className="h-4 w-4" />
+            {autoPublishing ? "Running" : "Run Due Posts"}
+          </button>
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <AutoMetric label="Due Posts" value={autoPublishStatus?.due_count || 0} icon={Clock} />
+          <AutoMetric label="Eligible" value={autoPublishStatus?.eligible_count || 0} icon={CheckCircle2} />
+          <AutoMetric label="Blocked" value={autoPublishStatus?.blocked_count || 0} icon={AlertTriangle} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {(["facebook", "instagram"] as PlatformKey[]).map((platform) => (
+            <SocialProviderCard
+              key={platform}
+              platform={platform}
+              status={autoPublishStatus?.provider_status?.[platform] || providerStatus?.[platform]}
+            />
+          ))}
+        </div>
+
+        {autoPublishStatus?.due_posts.length ? (
+          <div className="mt-5 rounded-xl border border-white/5 bg-black/25 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="font-black">Due Queue</h3>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                {autoPublishStatus.due_posts.length} due
+              </span>
+            </div>
+            <div className="space-y-2">
+              {autoPublishStatus.due_posts.slice(0, 4).map((post) => (
+                <div key={`auto-${post.id}`} className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-sm md:grid-cols-12">
+                  <div className="md:col-span-4">
+                    <p className="font-bold text-white">{post.title}</p>
+                    <p className="text-xs text-gray-500">
+                      {post.scheduled_at ? new Date(post.scheduled_at).toLocaleString() : "No schedule"}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${post.eligible ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"}`}>
+                      {post.eligible ? "eligible" : "blocked"}
+                    </span>
+                  </div>
+                  <div className="text-gray-400 md:col-span-6">
+                    {post.eligible ? post.platforms.map((platform) => platformLabels[platform]).join(", ") : post.blockers.join(", ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="xl:col-span-5">
@@ -490,6 +615,63 @@ function providerLabel(status?: ProviderStatus) {
   return status.configured ? "Ready" : "Setup needed";
 }
 
+function SocialProviderCard({
+  platform,
+  status,
+}: {
+  platform: PlatformKey;
+  status?: ProviderStatus;
+}) {
+  const Icon = platform === "instagram" ? Image : Share2;
+  const ready = Boolean(status?.configured);
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+              ready ? "bg-green-500/10 text-green-300" : "bg-yellow-500/10 text-yellow-300"
+            }`}
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-black">{platformLabels[platform]}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              {status?.provider || "checking provider"}
+            </p>
+          </div>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+            ready ? "bg-green-500/10 text-green-300" : "bg-yellow-500/10 text-yellow-300"
+          }`}
+        >
+          {ready ? "Ready" : "Setup"}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-white/5 bg-black/30 p-3">
+        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-500">
+          {ready ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-300" />
+          ) : (
+            <AlertTriangle className="h-3.5 w-3.5 text-yellow-300" />
+          )}
+          {ready ? "Auto-post available" : "Missing setup"}
+        </div>
+        <p className="text-sm font-semibold leading-6 text-gray-400">
+          {ready
+            ? `${platformLabels[platform]} can publish through ${status?.provider}.`
+            : status?.missing_settings?.join(", ") || "Provider status is loading."}
+          {platform === "instagram" ? " Instagram also requires an image URL on each post." : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function canPublishSelected(post: SocialPost, statuses: Record<PlatformKey, ProviderStatus> | null) {
   if (!statuses) return false;
   return post.platforms.every((platform) => statuses[platform]?.configured);
@@ -533,6 +715,25 @@ function Metric({
       </div>
       <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function AutoMetric({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-4">
+      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-500">
+        <Icon className="h-4 w-4 text-orange-400" /> {label}
+      </div>
+      <p className="mt-3 text-2xl font-black">{value}</p>
     </div>
   );
 }
