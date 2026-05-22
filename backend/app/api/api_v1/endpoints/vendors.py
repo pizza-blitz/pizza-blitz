@@ -67,7 +67,7 @@ def item_price_history(item_name: str, db: Session = Depends(get_db)):
         db.query(VendorPriceHistory)
         .join(Vendor)
         .filter(VendorPriceHistory.item_name == item_name)
-        .order_by(VendorPriceHistory.recorded_date.desc())
+        .order_by(VendorPriceHistory.recorded_date.desc(), VendorPriceHistory.id.desc())
         .all()
     )
     return [_history_dict(row) for row in history]
@@ -110,7 +110,7 @@ def find_cheapest_vendor(item_name: str, db: Session = Depends(get_db)):
         db.query(VendorPriceHistory)
         .join(Vendor)
         .filter(VendorPriceHistory.item_name == item_name)
-        .order_by(VendorPriceHistory.recorded_date.desc())
+        .order_by(VendorPriceHistory.recorded_date.desc(), VendorPriceHistory.id.desc())
         .all()
     )
 

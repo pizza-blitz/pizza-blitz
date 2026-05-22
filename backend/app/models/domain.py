@@ -94,11 +94,16 @@ class Promotion(Base):
     __tablename__ = "promotions"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True, nullable=False)
+    code = Column(String(50), unique=True, index=True, nullable=True)
     start_date = Column(Date, index=True, nullable=False)
     end_date = Column(Date, index=True, nullable=False)
     description = Column(String, nullable=True)
     discount_type = Column(String, default="percentage")
     discount_value = Column(Float, default=0.0)
+    audience = Column(String(50), default="marketing_opt_in")
+    channel = Column(String(50), default="whatsapp")
+    status = Column(String(30), default="draft")
+    message_template = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class ShiftLog(Base):

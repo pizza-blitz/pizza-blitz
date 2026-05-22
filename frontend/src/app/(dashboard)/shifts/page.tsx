@@ -6,9 +6,26 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/shifts/");
 
+type ShiftLog = {
+  id: number;
+  date: string;
+  staff_name: string;
+  role?: string | null;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  notes?: string | null;
+};
+
+type StaffPerformance = {
+  staff_name: string;
+  days_worked: number;
+  avg_revenue_on_shift_days: number;
+  best_day_revenue: number;
+};
+
 export default function ShiftLogPage() {
-  const [shifts, setShifts] = useState([]);
-  const [performance, setPerformance] = useState([]);
+  const [shifts, setShifts] = useState<ShiftLog[]>([]);
+  const [performance, setPerformance] = useState<StaffPerformance[]>([]);
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     staff_name: "",
@@ -31,7 +48,7 @@ export default function ShiftLogPage() {
     setPerformance(await pRes.json());
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     await fetch(API_BASE, {
       method: 'POST',

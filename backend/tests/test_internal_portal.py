@@ -129,14 +129,20 @@ class InternalPortalValidationTest(unittest.TestCase):
                 "/api/v1/restaurant/promotions/",
                 json={
                     "name": "Weekend Combo",
+                    "code": "WEEKEND15",
                     "start_date": yesterday.isoformat(),
                     "end_date": today.isoformat(),
                     "discount_type": "percentage",
                     "discount_value": 15,
+                    "audience": "marketing_opt_in",
+                    "channel": "whatsapp",
+                    "status": "active",
+                    "message_template": "Hi {name}, use {code} for {offer} at Pizza Blitz.",
                 },
             )
             self.assertEqual(promo.status_code, 200)
             promo_id = promo.json()["promotion"]["id"]
+            self.assertEqual(promo.json()["promotion"]["code"], "WEEKEND15")
 
             active_promos = client.get("/api/v1/restaurant/promotions/active")
             self.assertEqual(active_promos.status_code, 200)
@@ -265,6 +271,13 @@ class InternalPortalValidationTest(unittest.TestCase):
             customer_summary = client.get("/api/v1/restaurant/customers/summary")
             self.assertEqual(customer_summary.status_code, 200)
             self.assertEqual(customer_summary.json()["total_customers"], 1)
+
+            promo_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
+            self.assertEqual(promo_outreach.status_code, 200)
+            outreach_payload = promo_outreach.json()
+            self.assertEqual(outreach_payload["audience_count"], 1)
+            self.assertEqual(outreach_payload["contacts"][0]["phone"], "9999999999")
+            self.assertIn("WEEKEND15", outreach_payload["message_preview"])
 
             takeaway_invoice = client.post(
                 f"/api/v1/restaurant/orders/{takeaway_id}/invoice?customer_name=Walk-in"

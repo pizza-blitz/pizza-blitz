@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Calculate, Save, TrendingUp, DollarSign, PieChart, Info, Settings } from "lucide-react";
+import { PieChart, Settings } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats/breakeven");

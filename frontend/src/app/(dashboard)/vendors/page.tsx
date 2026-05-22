@@ -7,18 +7,34 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/vendors");
 
+type PriceAlert = {
+  item_name: string;
+  vendor_name: string;
+  pct_increase: number;
+};
+
+type PriceHistory = {
+  recorded_date: string;
+  price_per_unit: number;
+};
+
+type CheapestVendor = {
+  vendor_name: string;
+  price_per_unit: number;
+};
+
 export default function VendorPricePage() {
-  const [alerts, setAlerts] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [alerts, setAlerts] = useState<PriceAlert[]>([]);
+  const [history, setHistory] = useState<PriceHistory[]>([]);
   const [itemSearch, setItemSearch] = useState("Amul Cheese");
-  const [cheapest, setCheapest] = useState([]);
+  const [cheapest, setCheapest] = useState<CheapestVendor[]>([]);
 
   useEffect(() => {
     fetch(`${API_BASE}/prices/alerts/increases`).then(res => res.json()).then(setAlerts);
     loadItemData(itemSearch);
   }, []);
 
-  const loadItemData = async (name) => {
+  const loadItemData = async (name: string) => {
     const [hRes, cRes] = await Promise.all([
       fetch(`${API_BASE}/prices/history/${name}`),
       fetch(`${API_BASE}/intelligence/cheapest/${name}`)
