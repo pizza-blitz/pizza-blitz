@@ -1,7 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Copy, Filter, Mail, Phone, Plus, RefreshCw, Search, Users, XCircle } from "lucide-react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  Copy,
+  Filter,
+  Mail,
+  MessageCircle,
+  Phone,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  TrendingUp,
+  Users,
+  XCircle,
+} from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
 const CUSTOMERS_API = getApiUrl("/api/v1/restaurant/customers");
@@ -177,6 +192,54 @@ export default function CustomersPage() {
         <Metric label="Recorded Spend" value={`Rs ${Math.round(summary?.recorded_spend || 0).toLocaleString()}`} />
       </div>
 
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-black">Campaign Readiness</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Audience health before launching WhatsApp, SMS, or email offers.
+            </p>
+          </div>
+          <Link
+            href="/promotions"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white"
+          >
+            <Send className="h-4 w-4" /> Open Campaigns
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <ReadinessCard
+            icon={MessageCircle}
+            label="WhatsApp/SMS Ready"
+            value={summary?.opted_in_customers || 0}
+            helper="Opted-in contacts with saved phone numbers."
+            tone="orange"
+          />
+          <ReadinessCard
+            icon={Mail}
+            label="Email Ready"
+            value={summary?.email_ready_customers || 0}
+            helper={`${summary?.missing_email_customers || 0} contacts still need email capture.`}
+            tone="blue"
+          />
+          <ReadinessCard
+            icon={TrendingUp}
+            label="High Spenders"
+            value={summary?.high_spenders || 0}
+            helper="Best audience for premium bundles and party packs."
+            tone="green"
+          />
+          <ReadinessCard
+            icon={Users}
+            label="Repeat Buyers"
+            value={summary?.repeat_customers || 0}
+            helper="Good fit for loyalty coupons and win-back offers."
+            tone="violet"
+          />
+        </div>
+      </section>
+
       <div className="bg-[#1a1a1c] border border-white/5 rounded-xl p-6">
         <div className="grid grid-cols-1 gap-3 mb-6 xl:grid-cols-12">
           <div className="relative xl:col-span-6">
@@ -324,6 +387,38 @@ function Metric({ label, value }: { label: string; value: string | number }) {
     <div className="bg-[#1a1a1c] border border-white/5 rounded-xl p-5">
       <p className="text-xs text-gray-500 font-black uppercase tracking-widest">{label}</p>
       <p className="text-2xl font-black mt-2">{value}</p>
+    </div>
+  );
+}
+
+function ReadinessCard({
+  icon: Icon,
+  label,
+  value,
+  helper,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  helper: string;
+  tone: "orange" | "blue" | "green" | "violet";
+}) {
+  const toneClass = {
+    orange: "bg-orange-500/10 text-orange-300",
+    blue: "bg-blue-500/10 text-blue-300",
+    green: "bg-green-500/10 text-green-300",
+    violet: "bg-violet-500/10 text-violet-300",
+  }[tone];
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+      <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl ${toneClass}`}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 text-3xl font-black">{value}</p>
+      <p className="mt-3 min-h-10 text-sm font-semibold leading-5 text-gray-500">{helper}</p>
     </div>
   );
 }
