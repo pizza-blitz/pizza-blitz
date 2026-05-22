@@ -6,41 +6,41 @@ import {
   Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2, ShieldCheck
 } from "lucide-react";
 
-export default function Sidebar() {
-  const navItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    { name: "CEO Command", href: "/ceo", icon: Crown },
-    { name: "POS (Orders)", href: "/orders", icon: ShoppingCart },
-    { name: "Kitchen Ops", href: "/operations", icon: Flame },
-    { name: "Shift Log", href: "/shifts", icon: Activity },
-    { name: "Daily Entry", href: "/daily", icon: PlusCircle },
-    { name: "Sales History", href: "/sales", icon: DollarSign },
-    { name: "Reports", href: "/reports", icon: BarChart3 },
-    { name: "Invoices", href: "/invoices", icon: FileText },
-    { name: "Breakeven", href: "/breakeven", icon: Target },
-    { name: "Menu Intelligence", href: "/menu", icon: Utensils },
-    { name: "Inventory", href: "/inventory", icon: Package },
-    { name: "Recipes", href: "/recipes", icon: ClipboardList },
-    { name: "Customers", href: "/customers", icon: Users },
-    { name: "Promotions", href: "/promotions", icon: Megaphone },
-    { name: "Social Publishing", href: "/social", icon: Share2 },
-    { name: "Ad Campaigns", href: "/ads", icon: Target },
-    { name: "Production Ops", href: "/ops", icon: ShieldCheck },
-    { name: "Vendors", href: "/vendors", icon: Truck },
-    { name: "Waste Log", href: "/waste", icon: Trash2 },
-    { name: "Expenses", href: "/expenses", icon: Receipt },
-    { name: "AI Insights", href: "/ai-insights", icon: Sparkles },
-    { name: "Settings", href: "/settings", icon: Settings },
-  ];
+export const portalNavItems = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "CEO Command", href: "/ceo", icon: Crown },
+  { name: "POS (Orders)", href: "/orders", icon: ShoppingCart },
+  { name: "Kitchen Ops", href: "/operations", icon: Flame },
+  { name: "Shift Log", href: "/shifts", icon: Activity },
+  { name: "Daily Entry", href: "/daily", icon: PlusCircle },
+  { name: "Sales History", href: "/sales", icon: DollarSign },
+  { name: "Reports", href: "/reports", icon: BarChart3 },
+  { name: "Invoices", href: "/invoices", icon: FileText },
+  { name: "Breakeven", href: "/breakeven", icon: Target },
+  { name: "Menu Intelligence", href: "/menu", icon: Utensils },
+  { name: "Inventory", href: "/inventory", icon: Package },
+  { name: "Recipes", href: "/recipes", icon: ClipboardList },
+  { name: "Customers", href: "/customers", icon: Users },
+  { name: "Promotions", href: "/promotions", icon: Megaphone },
+  { name: "Social Publishing", href: "/social", icon: Share2 },
+  { name: "Ad Campaigns", href: "/ads", icon: Target },
+  { name: "Production Ops", href: "/ops", icon: ShieldCheck },
+  { name: "Vendors", href: "/vendors", icon: Truck },
+  { name: "Waste Log", href: "/waste", icon: Trash2 },
+  { name: "Expenses", href: "/expenses", icon: Receipt },
+  { name: "AI Insights", href: "/ai-insights", icon: Sparkles },
+  { name: "Settings", href: "/settings", icon: Settings },
+];
 
+export default function Sidebar() {
   return (
-    <div className="flex h-screen w-64 shrink-0 flex-col border-r bg-white shadow-sm">
+    <div className="hidden h-screen w-64 shrink-0 flex-col border-r bg-white shadow-sm md:flex">
       <div className="border-b px-5 py-4">
         <h1 className="text-xl font-bold text-orange-600">Pizza Blitz</h1>
         <p className="mt-1 text-xs font-semibold text-gray-400">Restaurant Portal</p>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        {navItems.map((item) => {
+        {portalNavItems.map((item) => {
           const Icon = item.icon;
           return (
             <Link
