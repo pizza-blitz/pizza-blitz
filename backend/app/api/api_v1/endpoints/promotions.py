@@ -301,6 +301,18 @@ def audience_summary(
         "customers": [_customer_dict(customer) for customer in customers],
     }
 
+
+@router.get("/providers/status")
+def campaign_provider_statuses():
+    channels = ["whatsapp", "sms", "email"]
+    statuses = [campaign_provider_status(channel) for channel in channels]
+    return {
+        "send_enabled": all(status["enabled"] for status in statuses),
+        "configured_count": sum(1 for status in statuses if status["configured"]),
+        "channels": statuses,
+    }
+
+
 @router.get("/performance/{promo_id}")
 def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
     promo = db.get(Promotion, promo_id)

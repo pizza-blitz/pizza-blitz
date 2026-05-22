@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Calendar,
   CheckCircle2,
   Copy,
   ExternalLink,
+  Mail,
   Megaphone,
+  MessageCircle,
+  Phone,
   Plus,
   RefreshCw,
   Send,
@@ -70,6 +74,12 @@ type ProviderStatus = {
   configured: boolean;
   unsupported: boolean;
   missing_settings: string[];
+};
+
+type ProviderReadiness = {
+  send_enabled: boolean;
+  configured_count: number;
+  channels: ProviderStatus[];
 };
 
 type CampaignDelivery = {
@@ -146,6 +156,7 @@ const emptyForm: CampaignForm = {
 export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [providerReadiness, setProviderReadiness] = useState<ProviderReadiness | null>(null);
   const [outreach, setOutreach] = useState<Outreach | null>(null);
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
@@ -157,6 +168,7 @@ export default function PromotionsPage() {
 
   useEffect(() => {
     fetchPromotions();
+    fetchProviderReadiness();
   }, []);
 
   const selectedPromotion = useMemo(
@@ -166,6 +178,15 @@ export default function PromotionsPage() {
 
   const activeCount = promotions.filter((promotion) => promotion.status === "active").length;
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
+
+  const fetchProviderReadiness = async () => {
+    const response = await fetch(`${PROMOTIONS_API}/providers/status`);
+    if (!response.ok) {
+      setProviderReadiness(null);
+      return;
+    }
+    setProviderReadiness(await response.json());
+  };
 
   const fetchPromotions = async () => {
     setLoading(true);
@@ -309,7 +330,10 @@ export default function PromotionsPage() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchPromotions}
+            onClick={() => {
+              fetchPromotions();
+              fetchProviderReadiness();
+            }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -335,6 +359,39 @@ export default function PromotionsPage() {
         <Metric label="Scheduled" value={scheduledCount} icon={Calendar} />
         <Metric label="Audience" value={outreach?.audience_count || 0} icon={Users} />
       </div>
+
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-black">Provider Send Console</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Live sending stays disabled until the channel credentials and global send switch are ready.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-4 py-2 text-xs font-black uppercase ${
+              providerReadiness?.send_enabled
+                ? "bg-green-500/10 text-green-300"
+                : "bg-yellow-500/10 text-yellow-300"
+            }`}
+          >
+            {providerReadiness?.send_enabled ? "Send switch on" : "Send switch off"}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {(["whatsapp", "sms", "email"] as ChannelKey[]).map((channel) => {
+            const status = providerReadiness?.channels.find((item) => item.channel === channel);
+            return (
+              <ProviderCard
+                key={channel}
+                status={status}
+                channel={channel}
+              />
+            );
+          })}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="xl:col-span-5">
@@ -678,6 +735,67 @@ function channelLabel(value: ChannelKey) {
 function providerLabel(status?: ProviderStatus) {
   if (!status) return "Checking";
   return status.configured ? `${status.provider} ready` : `${status.provider} setup needed`;
+}
+
+function ProviderCard({
+  channel,
+  status,
+}: {
+  channel: ChannelKey;
+  status?: ProviderStatus;
+}) {
+  const iconMap = {
+    whatsapp: MessageCircle,
+    sms: Phone,
+    email: Mail,
+  };
+  const Icon = iconMap[channel];
+  const ready = Boolean(status?.configured);
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+              ready ? "bg-green-500/10 text-green-300" : "bg-yellow-500/10 text-yellow-300"
+            }`}
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-black">{channelLabel(channel)}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              {status?.provider || "checking provider"}
+            </p>
+          </div>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+            ready ? "bg-green-500/10 text-green-300" : "bg-yellow-500/10 text-yellow-300"
+          }`}
+        >
+          {ready ? "Ready" : "Setup"}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-white/5 bg-black/30 p-3">
+        <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-500">
+          {ready ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-300" />
+          ) : (
+            <AlertTriangle className="h-3.5 w-3.5 text-yellow-300" />
+          )}
+          {ready ? "Live send available" : "Missing setup"}
+        </div>
+        <p className="text-sm font-semibold leading-6 text-gray-400">
+          {ready
+            ? `${channelLabel(channel)} can send through ${status?.provider}.`
+            : status?.missing_settings?.join(", ") || "Provider status is loading."}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function statusClass(status: CampaignDelivery["status"]) {
