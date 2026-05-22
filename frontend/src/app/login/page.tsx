@@ -6,13 +6,30 @@ import Link from "next/link";
 export default function Login() {
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (id && password) {
-      router.push("/");
+    setIsSubmitting(true);
+    setMessage("");
+    const response = await fetch("/api/admin-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, password }),
+    });
+    setIsSubmitting(false);
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setMessage(data.detail || "Could not sign in.");
+      return;
     }
+
+    const next = new URLSearchParams(window.location.search).get("next");
+    router.push(next || "/");
+    router.refresh();
   };
 
   return (
@@ -23,6 +40,11 @@ export default function Login() {
           <p className="text-gray-500 font-medium">Restaurant Management Portal</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-6">
+          {message && (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {message}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">Admin ID</label>
             <input 
@@ -47,9 +69,10 @@ export default function Login() {
           </div>
           <button 
             type="submit"
+            disabled={isSubmitting}
             className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-orange-200 flex justify-center items-center transform hover:-translate-y-0.5"
           >
-            Sign In to Portal
+            {isSubmitting ? "Signing In" : "Sign In to Portal"}
           </button>
         </form>
         <div className="mt-6 border-t border-gray-100 pt-5 text-center">

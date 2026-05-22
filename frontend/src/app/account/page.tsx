@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Clock,
@@ -14,6 +14,7 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const HISTORY_API = getApiUrl("/api/v1/restaurant/orders/customer-history");
+const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
 
 type Order = {
   id: number;
@@ -48,6 +49,18 @@ export default function CustomerAccountPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
+    if (!savedCustomer) return;
+
+    try {
+      const parsed = JSON.parse(savedCustomer);
+      setPhone(parsed.phone || "");
+    } catch {
+      window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+    }
+  }, []);
+
   const lookupOrders = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -62,6 +75,10 @@ export default function CustomerAccountPage() {
       setMessage(data.detail || "Could not find orders for this phone number.");
       return;
     }
+    window.localStorage.setItem(
+      CUSTOMER_STORAGE_KEY,
+      JSON.stringify({ name: data.customer.name || "", phone: data.customer.phone })
+    );
     setHistory(data);
   };
 

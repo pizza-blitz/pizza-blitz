@@ -21,6 +21,7 @@ import { getApiUrl } from "@/lib/api";
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
+const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
 
 type MenuItem = {
   id: number;
@@ -84,6 +85,17 @@ export default function PublicOrderPage() {
       .then((response) => response.json())
       .then((data: MenuItem[]) => setMenu(data.filter((item) => item.is_available)))
       .catch(() => setMessage("Menu is not available right now."));
+
+    const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
+    if (savedCustomer) {
+      try {
+        const parsed = JSON.parse(savedCustomer);
+        setCustomerName(parsed.name || "");
+        setCustomerPhone(parsed.phone || "");
+      } catch {
+        window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
+      }
+    }
   }, []);
 
   const categories = useMemo(
@@ -211,6 +223,10 @@ export default function PublicOrderPage() {
       return;
     }
 
+    window.localStorage.setItem(
+      CUSTOMER_STORAGE_KEY,
+      JSON.stringify({ name: customerName, phone: customerPhone })
+    );
     setOrderId(data.order_id);
     setCart([]);
     setCoupon(null);

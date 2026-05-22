@@ -50,7 +50,7 @@ export default function Sidebar() {
         })}
       </nav>
       <div className="p-4 border-t">
-        <Link href="/login" className="flex items-center justify-center w-full px-4 py-2 text-sm text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
+        <Link href="/logout" className="flex items-center justify-center w-full px-4 py-2 text-sm text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
           Logout
         </Link>
       </div>
