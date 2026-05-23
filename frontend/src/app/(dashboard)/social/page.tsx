@@ -136,9 +136,9 @@ export default function SocialPublishingPage() {
   const fetchSocial = async (preferredPostId?: number | null) => {
     setLoading(true);
     const [statusResponse, postsResponse, autoResponse] = await Promise.all([
-      fetch(`${SOCIAL_API}/provider-status`),
-      fetch(`${SOCIAL_API}/posts`),
-      fetch(`${SOCIAL_API}/auto-publish/status`),
+      fetch(`${SOCIAL_API}/provider-status`, { credentials: "include" }),
+      fetch(`${SOCIAL_API}/posts`, { credentials: "include" }),
+      fetch(`${SOCIAL_API}/auto-publish/status`, { credentials: "include" }),
     ]);
     if (statusResponse.ok) {
       setProviderStatus(await statusResponse.json());
@@ -180,6 +180,7 @@ export default function SocialPublishingPage() {
     setAutoPublishing(true);
     const response = await fetch(`${SOCIAL_API}/auto-publish/run`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ limit: 20 }),
     });
@@ -197,7 +198,9 @@ export default function SocialPublishingPage() {
   };
 
   const fetchDeliveries = async (postId: number) => {
-    const response = await fetch(`${SOCIAL_API}/posts/${postId}/deliveries`);
+    const response = await fetch(`${SOCIAL_API}/posts/${postId}/deliveries`, {
+      credentials: "include",
+    });
     if (!response.ok) {
       setHistory(null);
       return;
@@ -222,6 +225,7 @@ export default function SocialPublishingPage() {
     event.preventDefault();
     const response = await fetch(`${SOCIAL_API}/posts`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...formData,
@@ -251,6 +255,7 @@ export default function SocialPublishingPage() {
     setPublishing(dryRun ? "dry_run" : "publish");
     const response = await fetch(`${SOCIAL_API}/posts/${selectedPost.id}/publish`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dry_run: dryRun }),
     });

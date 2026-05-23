@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import SocialPost, SocialPostDelivery
 from app.services.social_autopublish_service import (
     publish_due_social_posts,
@@ -109,7 +109,9 @@ def _delivery_counts(deliveries: list[SocialPostDelivery]) -> dict:
 
 
 @router.get("/provider-status")
-def social_provider_statuses():
+def social_provider_statuses(
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     return {
         platform: social_provider_status(platform)
         for platform in sorted(VALID_SOCIAL_PLATFORMS)
@@ -120,6 +122,7 @@ def social_provider_statuses():
 def social_auto_publish_readiness(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     return social_auto_publish_status(db, limit=limit)
 
@@ -128,12 +131,17 @@ def social_auto_publish_readiness(
 def run_social_auto_publish(
     payload: SocialAutoPublishRequest,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     return publish_due_social_posts(limit=payload.limit, db=db)
 
 
 @router.post("/posts")
-def create_social_post(payload: SocialPostCreate, db: Session = Depends(get_db)):
+def create_social_post(
+    payload: SocialPostCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
     post = SocialPost(
         title=payload.title.strip(),
         message=payload.message.strip(),
@@ -153,6 +161,7 @@ def create_social_post(payload: SocialPostCreate, db: Session = Depends(get_db))
 def list_social_posts(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     posts = (
         db.query(SocialPost)
@@ -168,6 +177,7 @@ def social_post_deliveries(
     post_id: int,
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     post = db.get(SocialPost, post_id)
     if not post:
@@ -191,6 +201,7 @@ def publish_post(
     post_id: int,
     payload: SocialPublishRequest,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     post = db.get(SocialPost, post_id)
     if not post:
@@ -221,7 +232,7 @@ def publish_post(
         elif payload.dry_run:
             delivery = SocialPostDelivery(
                 **delivery_kwargs,
-                provider="dry_run",
+                provider=provider_status["provider"],
                 status="dry_run",
                 dry_run=True,
                 response_payload={"provider_status": provider_status},
