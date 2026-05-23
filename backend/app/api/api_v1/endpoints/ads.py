@@ -143,6 +143,124 @@ def _launch_counts(launches: list[AdCampaignLaunch]) -> dict:
     }
 
 
+def _inclusive_days(start: date, end: date) -> int:
+    return max((end - start).days + 1, 1)
+
+
+def _campaign_budget_health(campaign: AdCampaign, today: Optional[date] = None) -> dict:
+    current_date = today or date.today()
+    start_date = campaign.start_date or current_date
+    end_date = campaign.end_date or start_date
+    if end_date < start_date:
+        end_date = start_date
+
+    total_days = _inclusive_days(start_date, end_date)
+    if current_date < start_date:
+        elapsed_days = 0
+        days_left = total_days
+    elif current_date > end_date:
+        elapsed_days = total_days
+        days_left = 0
+    else:
+        elapsed_days = _inclusive_days(start_date, current_date)
+        days_left = _inclusive_days(current_date, end_date)
+
+    lifetime_budget = float(campaign.lifetime_budget or 0)
+    daily_budget = float(campaign.daily_budget or 0)
+    total_budget = lifetime_budget if lifetime_budget > 0 else daily_budget * total_days
+    budget_type = "lifetime" if lifetime_budget > 0 else "daily"
+    spend = float(campaign.spend or 0)
+    revenue = float(campaign.revenue or 0)
+    clicks = int(campaign.clicks or 0)
+    conversions = int(campaign.conversions or 0)
+    elapsed_ratio = elapsed_days / total_days if total_days else 0
+    expected_spend = total_budget * elapsed_ratio if total_budget > 0 else 0
+    remaining_budget = max(total_budget - spend, 0)
+    spend_percent = (spend / total_budget * 100) if total_budget > 0 else 0
+    elapsed_percent = elapsed_ratio * 100
+    pacing_gap = spend - expected_spend
+    pacing_ratio = spend / expected_spend if expected_spend > 0 else 0
+    remaining_daily_budget = remaining_budget / days_left if days_left else 0
+    roas = revenue / spend if spend else 0
+    cpc = spend / clicks if clicks else 0
+    cpa = spend / conversions if conversions else 0
+
+    if total_budget <= 0:
+        pacing_status = "no_budget"
+    elif current_date < start_date:
+        pacing_status = "not_started"
+    elif current_date > end_date or campaign.status == "completed":
+        pacing_status = "completed"
+    elif expected_spend and spend > expected_spend * 1.2:
+        pacing_status = "over_pacing"
+    elif expected_spend and spend < expected_spend * 0.8:
+        pacing_status = "under_pacing"
+    else:
+        pacing_status = "on_track"
+
+    if spend == 0:
+        performance_status = "learning"
+    elif roas >= 3:
+        performance_status = "strong"
+    elif roas >= 1.5:
+        performance_status = "profitable"
+    elif conversions == 0:
+        performance_status = "needs_conversion"
+    else:
+        performance_status = "watch"
+
+    recommendations: list[str] = []
+    if pacing_status == "no_budget":
+        recommendations.append("Add a daily or lifetime budget before launch.")
+    elif pacing_status == "not_started":
+        recommendations.append("Campaign is scheduled but has not started yet.")
+    elif pacing_status == "over_pacing":
+        recommendations.append("Spend is ahead of plan; consider lowering budget or narrowing audience.")
+    elif pacing_status == "under_pacing":
+        recommendations.append("Spend is behind plan; consider widening audience or increasing bid/budget.")
+    elif pacing_status == "completed":
+        recommendations.append("Campaign window is complete; review ROAS before duplicating.")
+    else:
+        recommendations.append("Spend is tracking close to the planned pace.")
+
+    if performance_status == "strong":
+        recommendations.append("ROAS is strong; consider extending the campaign or cloning it.")
+    elif performance_status == "profitable":
+        recommendations.append("Campaign is profitable; keep monitoring CPA before scaling.")
+    elif performance_status == "needs_conversion":
+        recommendations.append("Spend exists without conversions; refresh the offer, landing page, or audience.")
+    elif performance_status == "watch":
+        recommendations.append("Revenue is below spend; review creative and promotion economics.")
+
+    return {
+        "today": current_date.isoformat(),
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "budget_type": budget_type,
+        "total_budget": round(total_budget, 2),
+        "daily_budget": round(daily_budget, 2),
+        "lifetime_budget": round(lifetime_budget, 2),
+        "spend": round(spend, 2),
+        "revenue": round(revenue, 2),
+        "remaining_budget": round(remaining_budget, 2),
+        "remaining_daily_budget": round(remaining_daily_budget, 2),
+        "expected_spend_to_date": round(expected_spend, 2),
+        "pacing_gap": round(pacing_gap, 2),
+        "pacing_ratio": round(pacing_ratio, 2),
+        "elapsed_days": elapsed_days,
+        "total_days": total_days,
+        "days_left": days_left,
+        "elapsed_percent": round(elapsed_percent, 2),
+        "spend_percent": round(spend_percent, 2),
+        "pacing_status": pacing_status,
+        "performance_status": performance_status,
+        "roas": round(roas, 2),
+        "cpc": round(cpc, 2),
+        "cpa": round(cpa, 2),
+        "recommendations": recommendations,
+    }
+
+
 def _campaign_launch_blockers(campaign: AdCampaign, provider_status: dict) -> list[str]:
     blockers: list[str] = []
     if not provider_status.get("configured"):
@@ -316,6 +434,21 @@ def update_ad_campaign_metrics(
     db.commit()
     db.refresh(campaign)
     return _ad_campaign_dict(campaign)
+
+
+@router.get("/campaigns/{campaign_id}/budget-health")
+def ad_campaign_budget_health(
+    campaign_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+    return {
+        "campaign": _ad_campaign_dict(campaign),
+        "budget_health": _campaign_budget_health(campaign),
+    }
 
 
 @router.get("/campaigns/{campaign_id}/launches")

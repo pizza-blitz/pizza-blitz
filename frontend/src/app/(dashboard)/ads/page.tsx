@@ -105,6 +105,34 @@ type LaunchReadiness = {
   campaigns: ReadinessCampaign[];
 };
 
+type BudgetHealth = {
+  today: string;
+  start_date: string;
+  end_date: string;
+  budget_type: "daily" | "lifetime";
+  total_budget: number;
+  daily_budget: number;
+  lifetime_budget: number;
+  spend: number;
+  revenue: number;
+  remaining_budget: number;
+  remaining_daily_budget: number;
+  expected_spend_to_date: number;
+  pacing_gap: number;
+  pacing_ratio: number;
+  elapsed_days: number;
+  total_days: number;
+  days_left: number;
+  elapsed_percent: number;
+  spend_percent: number;
+  pacing_status: "no_budget" | "not_started" | "completed" | "over_pacing" | "under_pacing" | "on_track";
+  performance_status: "learning" | "strong" | "profitable" | "needs_conversion" | "watch";
+  roas: number;
+  cpc: number;
+  cpa: number;
+  recommendations: string[];
+};
+
 type CampaignForm = {
   name: string;
   objective: ObjectiveKey;
@@ -165,6 +193,7 @@ export default function AdsManagerPage() {
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<LaunchHistory | null>(null);
+  const [budgetHealth, setBudgetHealth] = useState<BudgetHealth | null>(null);
   const [campaignForm, setCampaignForm] = useState(emptyCampaign);
   const [metricsForm, setMetricsForm] = useState<MetricsForm>({
     impressions: 0,
@@ -182,6 +211,8 @@ export default function AdsManagerPage() {
     () => campaigns.find((campaign) => campaign.id === selectedId) || null,
     [campaigns, selectedId]
   );
+  const budgetProgressWidth = `${Math.min(100, Math.max(0, budgetHealth?.spend_percent || 0))}%`;
+  const elapsedProgressWidth = `${Math.min(100, Math.max(0, budgetHealth?.elapsed_percent || 0))}%`;
 
   useEffect(() => {
     const campaignParam = new URLSearchParams(window.location.search).get("campaign");
@@ -232,9 +263,10 @@ export default function AdsManagerPage() {
       }
       setSelectedId(nextSelectedId);
       if (nextSelectedId) {
-        await fetchLaunches(nextSelectedId);
+        await Promise.all([fetchLaunches(nextSelectedId), fetchBudgetHealth(nextSelectedId)]);
       } else {
         setHistory(null);
+        setBudgetHealth(null);
       }
     }
     setLoading(false);
@@ -249,10 +281,21 @@ export default function AdsManagerPage() {
     setHistory(await response.json());
   };
 
+  const fetchBudgetHealth = async (campaignId: number) => {
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${campaignId}/budget-health`);
+    if (!response.ok) {
+      setBudgetHealth(null);
+      return;
+    }
+    const data: { budget_health: BudgetHealth } = await response.json();
+    setBudgetHealth(data.budget_health);
+  };
+
   const selectCampaign = (campaignId: number) => {
     setSelectedId(campaignId);
     setSelectedCampaignParam(campaignId);
     fetchLaunches(campaignId);
+    fetchBudgetHealth(campaignId);
   };
 
   const togglePlatform = (platform: PlatformKey) => {
@@ -544,6 +587,75 @@ export default function AdsManagerPage() {
                   <Detail label="ROAS" value={`${selectedCampaign.roas}x`} />
                 </div>
 
+                {budgetHealth && (
+                  <div
+                    data-testid="ad-budget-command"
+                    className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5"
+                  >
+                    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-gray-500">Budget Pacing</p>
+                        <h3 className="mt-2 text-lg font-black">Ad Spend Command</h3>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${pacingStatusClass(budgetHealth.pacing_status)}`}>
+                          {pacingStatusLabel(budgetHealth.pacing_status)}
+                        </span>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${performanceStatusClass(budgetHealth.performance_status)}`}>
+                          {performanceStatusLabel(budgetHealth.performance_status)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-4">
+                      <BudgetMetric label="Spent" value={formatRs(budgetHealth.spend)} />
+                      <BudgetMetric label="Expected" value={formatRs(budgetHealth.expected_spend_to_date)} />
+                      <BudgetMetric label="Remaining" value={formatRs(budgetHealth.remaining_budget)} />
+                      <BudgetMetric label="Days Left" value={budgetHealth.days_left} />
+                    </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <div className="mb-2 flex justify-between text-xs font-black uppercase tracking-widest text-gray-500">
+                          <span>Spend Used</span>
+                          <span>{budgetHealth.spend_percent}%</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full rounded-full bg-orange-500" style={{ width: budgetProgressWidth }} />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-2 flex justify-between text-xs font-black uppercase tracking-widest text-gray-500">
+                          <span>Time Used</span>
+                          <span>{budgetHealth.elapsed_percent}%</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full rounded-full bg-blue-400" style={{ width: elapsedProgressWidth }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-1 gap-3 text-sm text-gray-300 md:grid-cols-2">
+                      <p>
+                        Pace gap: <span className="font-black text-white">{formatSignedRs(budgetHealth.pacing_gap)}</span>
+                      </p>
+                      <p>
+                        Remaining daily pace:{" "}
+                        <span className="font-black text-white">{formatRs(budgetHealth.remaining_daily_budget)}</span>
+                      </p>
+                    </div>
+
+                    <div className="mt-5 rounded-lg border border-white/5 bg-black/30 p-4">
+                      <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-500">Next Actions</p>
+                      <div className="space-y-2 text-sm leading-6 text-gray-300">
+                        {budgetHealth.recommendations.map((recommendation) => (
+                          <p key={recommendation}>{recommendation}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-5">
                   <NumberInput label="Impressions" value={metricsForm.impressions} onChange={(value) => setMetricsForm({ ...metricsForm, impressions: value })} />
                   <NumberInput label="Clicks" value={metricsForm.clicks} onChange={(value) => setMetricsForm({ ...metricsForm, clicks: value })} />
@@ -727,6 +839,54 @@ function launchStatusClass(status: AdLaunch["status"]) {
   return "bg-white/10 text-gray-300";
 }
 
+function pacingStatusLabel(status: BudgetHealth["pacing_status"]) {
+  const labels: Record<BudgetHealth["pacing_status"], string> = {
+    no_budget: "No Budget",
+    not_started: "Not Started",
+    completed: "Completed",
+    over_pacing: "Over Pace",
+    under_pacing: "Under Pace",
+    on_track: "On Track",
+  };
+  return labels[status];
+}
+
+function pacingStatusClass(status: BudgetHealth["pacing_status"]) {
+  if (status === "on_track") return "bg-green-500/15 text-green-300";
+  if (status === "over_pacing") return "bg-red-500/15 text-red-300";
+  if (status === "under_pacing") return "bg-yellow-500/15 text-yellow-300";
+  if (status === "completed") return "bg-blue-500/15 text-blue-300";
+  return "bg-white/10 text-gray-300";
+}
+
+function performanceStatusLabel(status: BudgetHealth["performance_status"]) {
+  const labels: Record<BudgetHealth["performance_status"], string> = {
+    learning: "Learning",
+    strong: "Strong ROAS",
+    profitable: "Profitable",
+    needs_conversion: "Needs Conversion",
+    watch: "Watch",
+  };
+  return labels[status];
+}
+
+function performanceStatusClass(status: BudgetHealth["performance_status"]) {
+  if (status === "strong") return "bg-green-500/15 text-green-300";
+  if (status === "profitable") return "bg-blue-500/15 text-blue-300";
+  if (status === "needs_conversion" || status === "watch") return "bg-red-500/15 text-red-300";
+  return "bg-white/10 text-gray-300";
+}
+
+function formatRs(value: number) {
+  return `Rs ${Math.round(value || 0).toLocaleString()}`;
+}
+
+function formatSignedRs(value: number) {
+  const rounded = Math.round(value || 0);
+  const prefix = rounded > 0 ? "+" : "";
+  return `${prefix}Rs ${rounded.toLocaleString()}`;
+}
+
 function Metric({
   label,
   value,
@@ -762,6 +922,15 @@ function ReadinessMetric({
         <Icon className="h-4 w-4 text-orange-400" /> {label}
       </div>
       <p className="mt-3 text-2xl font-black capitalize">{value}</p>
+    </div>
+  );
+}
+
+function BudgetMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-black/30 p-4">
+      <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 text-xl font-black">{value}</p>
     </div>
   );
 }
