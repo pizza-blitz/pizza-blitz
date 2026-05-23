@@ -89,7 +89,48 @@ export default function Reports() {
   const paymentRows = orderChannels?.payment_mix || [];
   const paymentStatusRows = orderChannels?.payment_status_mix || [];
   const fulfillmentStatusRows = orderChannels?.fulfillment_status_mix || [];
-  const marketingRows = marketing?.campaigns ? marketing.campaigns.slice(0, 6) : [];
+  const campaignRows = marketing?.campaigns || [];
+  const marketingRows = campaignRows.slice(0, 6);
+  const marketingLeader = marketing?.best_campaign || campaignRows[0] || null;
+  const marketingRevenue = Number(marketing?.summary?.redemption_revenue || 0);
+  const marketingDiscount = Number(marketing?.summary?.redemption_discount || 0);
+  const marketingNetValue = Math.max(marketingRevenue - marketingDiscount, 0);
+  const marketingReadyReach = campaignRows.reduce(
+    (total: number, row: any) => total + Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0),
+    0
+  );
+  const marketingAttentionCount = campaignRows.reduce(
+    (total: number, row: any) => total + Number(row.outreach?.needs_attention_count || 0),
+    0
+  );
+  const marketingConversionRate = marketingReadyReach
+    ? Math.round((Number(marketing?.summary?.redemption_orders || 0) / marketingReadyReach) * 1000) / 10
+    : 0;
+  const marketingChannelMix = ["email", "whatsapp", "sms"].map((channel) => {
+    const rows = campaignRows.filter((row: any) => row.promotion_detail?.channel === channel);
+    const revenue = rows.reduce((total: number, row: any) => total + Number(row.redemptions?.revenue || 0), 0);
+    const readyReach = rows.reduce(
+      (total: number, row: any) => total + Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0),
+      0
+    );
+    return {
+      channel,
+      count: rows.length,
+      revenue,
+      readyReach,
+      share: marketingRevenue ? Math.round((revenue / marketingRevenue) * 1000) / 10 : 0,
+    };
+  });
+  const marketingDecisionRows = campaignRows.slice(0, 5).map((row: any) => {
+    const readyReach = Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0);
+    const netValue = Math.max(Number(row.redemptions?.revenue || 0) - Number(row.redemptions?.discount || 0), 0);
+    const conversionRate = Number(row.outreach?.conversion_rate_percent || 0);
+    let action = "Keep warming";
+    if (netValue > 0 && conversionRate >= 1) action = "Scale next offer";
+    else if (Number(row.outreach?.needs_attention_count || 0) > 0) action = "Clean audience";
+    else if (Number(row.ads?.planned_budget || 0) > 0 && netValue === 0) action = "Review ad handoff";
+    return { ...row, readyReach, netValue, conversionRate, action };
+  });
   const weekdayRows = comparison?.weekday_breakdown
     ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
     : [];
@@ -440,6 +481,120 @@ export default function Reports() {
                 />
               </div>
 
+              <div data-testid="marketing-roi-command" className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+                <div className="rounded-lg border border-orange-200 bg-orange-50 p-5">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-700">Marketing ROI Command</p>
+                      <h3 className="mt-1 text-xl font-black text-gray-950">Best campaign to repeat</h3>
+                    </div>
+                    <Award className="h-6 w-6 text-orange-700" />
+                  </div>
+                  {marketingLeader ? (
+                    <div>
+                      <p className="text-2xl font-black leading-tight text-gray-950">{marketingLeader.promotion_detail.name}</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
+                        <span className="rounded-md bg-white px-2 py-1 text-orange-700">{marketingLeader.promotion_detail.code || "No code"}</span>
+                        <span className="rounded-md bg-white px-2 py-1 text-gray-600">{marketingLeader.promotion_detail.channel}</span>
+                        <span className="rounded-md bg-white px-2 py-1 text-gray-600">{marketingLeader.campaign_window.phase}</span>
+                      </div>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <MarketingCommandMetric label="Net Value" value={formatMoney(Math.max(Number(marketingLeader.redemptions.revenue || 0) - Number(marketingLeader.redemptions.discount || 0), 0))} />
+                        <MarketingCommandMetric label="Conversion" value={`${Number(marketingLeader.outreach.conversion_rate_percent || 0).toFixed(1)}%`} />
+                        <MarketingCommandMetric label="Orders" value={`${marketingLeader.redemptions.count || 0}`} />
+                        <MarketingCommandMetric label="Ready Reach" value={`${Number(marketingLeader.outreach.sent_count || 0) + Number(marketingLeader.outreach.dry_run_count || 0)}`} />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-orange-200 bg-white p-5 text-sm font-bold text-orange-900">
+                      Create a coupon campaign and attributed order to choose a repeatable winner.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-5">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-500">Comparison Signals</p>
+                      <h3 className="mt-1 text-xl font-black text-gray-950">Which push deserves attention next</h3>
+                    </div>
+                    <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-600">
+                      {campaignRows.length} campaigns
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                    <MarketingCommandMetric label="Net Coupon Value" value={formatMoney(marketingNetValue)} />
+                    <MarketingCommandMetric label="Ready Reach" value={`${marketingReadyReach}`} />
+                    <MarketingCommandMetric label="Conversion" value={`${marketingConversionRate.toFixed(1)}%`} />
+                    <MarketingCommandMetric label="Needs Cleanup" value={`${marketingAttentionCount}`} />
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-4 2xl:grid-cols-[0.82fr_1.18fr]">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">Channel Mix</p>
+                      <div className="space-y-3">
+                        {marketingChannelMix.map((row) => (
+                          <div key={row.channel}>
+                            <div className="mb-1 flex items-center justify-between gap-3">
+                              <p className="text-xs font-black uppercase tracking-widest text-gray-700">{row.channel}</p>
+                              <p className="text-xs font-black text-gray-950">{formatMoney(row.revenue)}</p>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-100">
+                              <div className="h-2 rounded-full bg-orange-600" style={{ width: `${Math.min(100, Math.max(0, row.share))}%` }} />
+                            </div>
+                            <div className="mt-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                              <span>{row.count} campaigns</span>
+                              <span>{row.readyReach} ready reach</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                      <table className="w-full min-w-[520px] text-left">
+                        <thead className="bg-gray-950 text-white">
+                          <tr>
+                            <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Next Push Ranking</th>
+                            <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Net</th>
+                            <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Conv.</th>
+                            <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {marketingDecisionRows.length ? (
+                            marketingDecisionRows.map((row: any) => (
+                              <tr key={`decision-${row.promotion_detail.id}`} className="hover:bg-orange-50/50">
+                                <td className="px-4 py-3">
+                                  <p className="text-sm font-black text-gray-950">{row.promotion_detail.name}</p>
+                                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                                    {row.readyReach} ready | {row.outreach.needs_attention_count || 0} cleanup
+                                  </p>
+                                </td>
+                                <td className="px-4 py-3 text-right text-sm font-black text-green-700">{formatMoney(row.netValue)}</td>
+                                <td className="px-4 py-3 text-right text-sm font-black text-gray-700">{row.conversionRate.toFixed(1)}%</td>
+                                <td className="px-4 py-3 text-right">
+                                  <span className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-700">
+                                    {row.action}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={4} className="px-4 py-8 text-center text-sm font-bold text-gray-400">
+                                Campaign ranking will appear after marketing activity is recorded.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="mt-5 overflow-x-auto rounded-lg border border-gray-200">
                 <table className="w-full min-w-[860px] text-left">
                   <thead className="bg-gray-950 text-white">
@@ -739,6 +894,15 @@ function MarketingMetric({
       </div>
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-black text-gray-950">{value}</p>
+    </div>
+  );
+}
+
+function MarketingCommandMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-3">
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-1 break-words text-lg font-black text-gray-950">{value}</p>
     </div>
   );
 }
