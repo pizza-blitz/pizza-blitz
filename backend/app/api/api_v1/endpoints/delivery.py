@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import DeliveryAssignment, DeliveryZone, RestaurantOrder
 from app.services.delivery_service import (
     delivery_quote,
@@ -80,6 +80,7 @@ def update_delivery_zone(
     zone_id: int,
     payload: DeliveryZoneUpdate,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     ensure_delivery_zones(db)
     zone = db.query(DeliveryZone).filter(DeliveryZone.id == zone_id).first()
@@ -143,7 +144,10 @@ def quote_delivery(payload: DeliveryQuoteRequest, db: Session = Depends(get_db))
 
 
 @router.get("/queue")
-def delivery_queue(db: Session = Depends(get_db)):
+def delivery_queue(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     ensure_delivery_zones(db)
     orders = (
         db.query(RestaurantOrder)
@@ -179,6 +183,7 @@ def update_delivery_assignment(
     order_id: int,
     payload: DeliveryAssignmentUpdate,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     ensure_delivery_zones(db)
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()

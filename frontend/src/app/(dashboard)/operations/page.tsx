@@ -185,7 +185,10 @@ export default function OperationsPage() {
   const fetchOrders = async (options?: { preserveMessage?: boolean }) => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${ORDERS_API}/today`, { cache: "no-store" });
+      const response = await fetch(`${ORDERS_API}/today`, {
+        cache: "no-store",
+        credentials: "include",
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
       setOrders(data.orders || []);
@@ -202,6 +205,7 @@ export default function OperationsPage() {
     try {
       const response = await fetch(`${ORDERS_API}/${order.id}/status`, {
         method: "PATCH",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
@@ -223,6 +227,7 @@ export default function OperationsPage() {
       if (order.customer_name) params.set("customer_name", order.customer_name);
       const response = await fetch(`${ORDERS_API}/${order.id}/invoice?${params.toString()}`, {
         method: "POST",
+        credentials: "include",
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not generate invoice.");
@@ -248,7 +253,7 @@ export default function OperationsPage() {
       const paymentMethod = order.payment_method || "cash";
       const response = await fetch(
         `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
-        { method: "PATCH" }
+        { method: "PATCH", credentials: "include" }
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not close order.");
@@ -289,6 +294,7 @@ export default function OperationsPage() {
     try {
       const response = await fetch(`${DELIVERY_API}/orders/${order.id}/assignment`, {
         method: "PATCH",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           assigned_to: assignedTo,
@@ -312,7 +318,7 @@ export default function OperationsPage() {
         const paymentMethod = order.payment_method || "cash";
         const closeResponse = await fetch(
           `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
-          { method: "PATCH" }
+          { method: "PATCH", credentials: "include" }
         );
         const closeData = await closeResponse.json();
         if (!closeResponse.ok) {

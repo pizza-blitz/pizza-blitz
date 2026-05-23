@@ -27,6 +27,14 @@ class Settings(BaseSettings):
     
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")
+    PIZZA_BLITZ_ADMIN_ID: str = os.getenv("PIZZA_BLITZ_ADMIN_ID", RESTAURANT_ADMIN_ID)
+    PIZZA_BLITZ_ADMIN_PASSWORD: str = os.getenv(
+        "PIZZA_BLITZ_ADMIN_PASSWORD",
+        RESTAURANT_ADMIN_PASSWORD,
+    )
+    PIZZA_BLITZ_STAFF_ID: str = os.getenv("PIZZA_BLITZ_STAFF_ID", "staff")
+    PIZZA_BLITZ_STAFF_PASSWORD: str = os.getenv("PIZZA_BLITZ_STAFF_PASSWORD", "staff123")
+    PIZZA_BLITZ_SESSION_SECRET: str | None = os.getenv("PIZZA_BLITZ_SESSION_SECRET")
     AUTH_SECRET_KEY: str = os.getenv(
         "AUTH_SECRET_KEY",
         os.getenv("RESTAURANT_ADMIN_PASSWORD", "pizza-blitz-local-secret"),

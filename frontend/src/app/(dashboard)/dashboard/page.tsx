@@ -24,10 +24,10 @@ export default function Dashboard() {
     setIsLoading(true);
     try {
       const [statsRes, insightsRes, monthlyRes, lifetimeRes] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`)).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`), { credentials: "include" }).then(r => r.json()),
         fetchInsights(),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-breakdown`)).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/lifetime-summary`)).then(r => r.json())
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-breakdown`), { credentials: "include" }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/lifetime-summary`), { credentials: "include" }).then(r => r.json())
       ]);
 
       setStats(statsRes);
@@ -43,10 +43,10 @@ export default function Dashboard() {
   const fetchInsights = async () => {
     try {
       const [comparison, dayOfWeek, forecast, profitTrend] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/same-period?period=30days`)).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/day-of-week`)).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-forecast`)).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/profit-trend?months=1`)).then(r => r.json())
+        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/same-period?period=30days`), { credentials: "include" }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/day-of-week`), { credentials: "include" }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-forecast`), { credentials: "include" }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/profit-trend?months=1`), { credentials: "include" }).then(r => r.json())
       ]);
       const data = { comparison, dayOfWeek, forecast, profitTrend };
       setInsights(data);

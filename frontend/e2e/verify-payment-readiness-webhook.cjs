@@ -119,7 +119,7 @@ async function signInAsAdmin(context) {
 
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
-  await waitForHttp(`${apiURL}/api/v1/restaurant/ops/readiness`, "restaurant API");
+  await waitForHttp(`${apiURL}/health`, "restaurant API");
   await waitForHttp(baseURL, "frontend");
 
   const browser = await chromium.launch({ headless: true });

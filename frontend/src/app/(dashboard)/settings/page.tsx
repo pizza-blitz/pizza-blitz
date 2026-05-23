@@ -158,7 +158,10 @@ export default function Settings() {
   const loadPaymentReadiness = async () => {
     setIsPaymentLoading(true);
     try {
-      const response = await fetch(PAYMENT_READINESS_API, { cache: "no-store" });
+      const response = await fetch(PAYMENT_READINESS_API, {
+        cache: "no-store",
+        credentials: "include",
+      });
       if (!response.ok) {
         throw new Error("Payment readiness API failed.");
       }
@@ -218,7 +221,10 @@ export default function Settings() {
         }
       });
 
-    fetch(PAYMENT_READINESS_API, { cache: "no-store" })
+    fetch(PAYMENT_READINESS_API, {
+      cache: "no-store",
+      credentials: "include",
+    })
       .then((response) => response.json())
       .then((data: PaymentReadiness) => {
         if (isMounted) {
@@ -276,6 +282,7 @@ export default function Settings() {
     try {
       const response = await fetch(`${DELIVERY_ZONES_API}/${zoneId}`, {
         method: "PATCH",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: draft.name,
@@ -353,6 +360,7 @@ export default function Settings() {
     try {
       const response = await fetch(MANUAL_PAYMENT_WEBHOOK_API, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           event: "manual.payment.updated",

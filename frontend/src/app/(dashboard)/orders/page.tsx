@@ -153,9 +153,9 @@ export default function OrdersPage() {
 
   const fetchData = async () => {
     const [tablesRes, menuRes, todayRes, zonesRes] = await Promise.all([
-      fetch(`${ORDERS_API}/tables`),
+      fetch(`${ORDERS_API}/tables`, { credentials: "include" }),
       fetch(MENU_API),
-      fetch(`${ORDERS_API}/today`),
+      fetch(`${ORDERS_API}/today`, { credentials: "include" }),
       fetch(`${DELIVERY_API}/zones`),
     ]);
 
@@ -285,6 +285,7 @@ export default function OrdersPage() {
       .join(" | ");
     const response = await fetch(`${ORDERS_API}/`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         order_type: orderType,
@@ -324,7 +325,7 @@ export default function OrdersPage() {
     const paymentMethod = order.payment_method || "cash";
     const response = await fetch(
       `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
-      { method: "PATCH" }
+      { method: "PATCH", credentials: "include" }
     );
     const data = await response.json();
     const usageCount = Array.isArray(data.inventory_usage) ? data.inventory_usage.length : 0;
@@ -341,6 +342,7 @@ export default function OrdersPage() {
     if (order.customer_name) params.set("customer_name", order.customer_name);
     const response = await fetch(`${ORDERS_API}/${order.id}/invoice?${params.toString()}`, {
       method: "POST",
+      credentials: "include",
     });
     const data = await response.json();
     setMessage(
@@ -374,6 +376,7 @@ export default function OrdersPage() {
     setBusyDeliveryAction(`${order.id}-${status}`);
     const response = await fetch(`${DELIVERY_API}/orders/${order.id}/assignment`, {
       method: "PATCH",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         assigned_to: assignedTo,
@@ -402,7 +405,7 @@ export default function OrdersPage() {
       const paymentMethod = order.payment_method || "cash";
       const closeResponse = await fetch(
         `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
-        { method: "PATCH" }
+        { method: "PATCH", credentials: "include" }
       );
       const closeData = await closeResponse.json();
       if (!closeResponse.ok) {

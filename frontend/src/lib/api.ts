@@ -1,9 +1,17 @@
 // src/lib/api.ts
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8010';
+function getBackendUrl() {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8010`;
+  }
+  return "http://localhost:8010";
+}
 
 export const getApiUrl = (endpoint: string) => {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${BACKEND_URL}${cleanEndpoint}`;
+  return `${getBackendUrl()}${cleanEndpoint}`;
 };
 
 export const API_ENDPOINTS = {

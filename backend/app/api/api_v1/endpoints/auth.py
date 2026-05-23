@@ -5,13 +5,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_session, get_db
 from app.core.config import settings
 from app.models.domain import Customer
-from app.services.auth_service import create_access_token, verify_admin_credentials
+from app.services.auth_service import (
+    create_access_token,
+    verify_admin_credentials,
+    verify_staff_credentials,
+)
 
 
 router = APIRouter()
 
 
 class AdminLoginRequest(BaseModel):
+    id: str
+    password: str
+
+
+class StaffLoginRequest(BaseModel):
     id: str
     password: str
 
@@ -30,9 +39,24 @@ def admin_login(payload: AdminLoginRequest):
             detail="Invalid admin credentials.",
         )
     return create_access_token(
-        subject=f"admin:{settings.RESTAURANT_ADMIN_ID}",
+        subject=f"admin:{settings.PIZZA_BLITZ_ADMIN_ID}",
         role="admin",
         display_name="Restaurant Admin",
+        expires_minutes=settings.AUTH_TOKEN_EXPIRE_MINUTES,
+    )
+
+
+@router.post("/staff/login")
+def staff_login(payload: StaffLoginRequest):
+    if not verify_staff_credentials(payload.id, payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid staff credentials.",
+        )
+    return create_access_token(
+        subject=f"staff:{settings.PIZZA_BLITZ_STAFF_ID}",
+        role="staff",
+        display_name="Counter Staff",
         expires_minutes=settings.AUTH_TOKEN_EXPIRE_MINUTES,
     )
 

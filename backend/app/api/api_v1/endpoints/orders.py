@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles, session_from_request
 from app.models.domain import (
     Customer,
     DailySales,
@@ -470,7 +470,10 @@ def upsert_customer_from_order(
 
 
 @router.get("/tables")
-def get_tables(db: Session = Depends(get_db)):
+def get_tables(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     ensure_default_tables(db)
     tables = db.query(DiningTable).order_by(DiningTable.table_number).all()
     return [serialize_table(table) for table in tables]
@@ -593,6 +596,7 @@ def close_order(
     order_id: int,
     payment_method: Optional[str] = None,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
@@ -661,6 +665,7 @@ def update_order_status(
     order_id: int,
     payload: OrderStatusUpdate,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
@@ -797,6 +802,14 @@ async def process_payment_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    if provider.strip().lower() == "manual":
+        session = session_from_request(request)
+        if session["role"] not in {"admin", "staff"}:
+            raise HTTPException(
+                status_code=403,
+                detail="Manual payment webhook requires an admin or staff session.",
+            )
+
     raw_body = await request.body()
     try:
         event = normalize_payment_webhook(provider, raw_body, request.headers)
@@ -846,6 +859,7 @@ def generate_invoice(
     customer_name: str = "Walk-in Customer",
     customer_gstin: Optional[str] = None,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
@@ -879,13 +893,19 @@ def generate_invoice(
 
 
 @router.get("/invoices")
-def list_invoices(db: Session = Depends(get_db)):
+def list_invoices(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
     invoices = db.query(Invoice).order_by(Invoice.created_at.desc()).limit(50).all()
     return [serialize_invoice(invoice) for invoice in invoices]
 
 
 @router.get("/today")
-def todays_orders(db: Session = Depends(get_db)):
+def todays_orders(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     rows = db.query(RestaurantOrder).filter(
         RestaurantOrder.date == date.today()
     ).order_by(RestaurantOrder.created_at.desc()).all()

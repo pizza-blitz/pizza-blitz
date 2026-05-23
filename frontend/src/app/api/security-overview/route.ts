@@ -122,6 +122,16 @@ export async function GET() {
         status: "Configured",
         detail: "Counter staff uses a separate session and can access only POS, kitchen ops, and receipt routes.",
       },
+      {
+        name: "Backend API Role Gates",
+        status: "Configured",
+        detail: "Operations readiness, backups, order status, invoices, delivery assignment, and delivery-zone edits now require signed admin or staff sessions.",
+      },
+      {
+        name: "Manual Payment Webhook",
+        status: "Configured",
+        detail: "Manual paid-webhook testing requires an admin or staff session; signed gateway webhooks remain provider-facing.",
+      },
     ],
   });
 }
