@@ -15,6 +15,7 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const OPS_API = getApiUrl("/api/v1/restaurant/ops");
+const fetchWithAuth = (url: string, init?: RequestInit) => fetch(url, { ...init, credentials: "include" });
 
 type CheckStatus = "pass" | "warn" | "fail";
 
@@ -40,6 +41,29 @@ type GoLiveSection = {
   items: GoLiveItem[];
 };
 
+type EnvironmentVariable = {
+  name: string;
+  required: boolean;
+  sensitive: boolean;
+  configured: boolean;
+  purpose: string;
+  value?: string | null;
+};
+
+type EnvironmentGroup = {
+  key: string;
+  title: string;
+  variables: EnvironmentVariable[];
+};
+
+type EnvironmentSummary = {
+  total: number;
+  configured: number;
+  required_total: number;
+  required_configured: number;
+  missing_required: string[];
+};
+
 type Readiness = {
   environment: string;
   database_backend: string;
@@ -60,6 +84,8 @@ type Readiness = {
   failed_checks: number;
   warning_checks: number;
   checks: ReadinessCheck[];
+  environment_manifest?: EnvironmentGroup[];
+  environment_summary?: EnvironmentSummary;
 };
 
 type PaymentStatus = {
@@ -102,8 +128,8 @@ export default function ProductionOpsPage() {
   const fetchOps = async () => {
     setLoading(true);
     const [readinessResponse, backupResponse] = await Promise.all([
-      fetch(`${OPS_API}/readiness`),
-      fetch(`${OPS_API}/backups`),
+      fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/backups`),
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
@@ -117,7 +143,7 @@ export default function ProductionOpsPage() {
 
   const createBackup = async () => {
     setCreatingBackup(true);
-    const response = await fetch(`${OPS_API}/backups/create`, { method: "POST" });
+    const response = await fetchWithAuth(`${OPS_API}/backups/create`, { method: "POST" });
     const data = await response.json();
     if (!response.ok) {
       setMessage(data.detail || "Backup could not be created.");
@@ -180,7 +206,15 @@ export default function ProductionOpsPage() {
           icon={readiness?.overall === "blocked" ? AlertTriangle : ShieldCheck}
         />
         <Metric label="Database" value={readiness?.database_backend || "checking"} icon={Database} />
-        <Metric label="Warnings" value={readiness?.warning_checks || 0} icon={AlertTriangle} />
+        <Metric
+          label="Env Required"
+          value={
+            readiness?.environment_summary
+              ? `${readiness.environment_summary.required_configured}/${readiness.environment_summary.required_total}`
+              : "checking"
+          }
+          icon={KeyRound}
+        />
         <Metric
           label="Payments"
           value={readiness?.payment?.provider || "checking"}
@@ -278,6 +312,56 @@ export default function ProductionOpsPage() {
               </div>
             ))}
           </div>
+
+          {readiness.environment_manifest?.length ? (
+            <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+              <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-black">Environment Inventory</h2>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Required variables, secret storage status, and launch configuration without exposing secret values.
+                  </p>
+                </div>
+                <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                  {readiness.environment_summary?.configured || 0}/{readiness.environment_summary?.total || 0} configured
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {readiness.environment_manifest.map((group) => (
+                  <div key={group.key} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                    <h3 className="mb-4 font-black">{group.title}</h3>
+                    <div className="space-y-2">
+                      {group.variables.map((variable) => (
+                        <div
+                          key={`${group.key}-${variable.name}`}
+                          className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/25 p-3 text-sm md:grid-cols-12"
+                        >
+                          <div className="md:col-span-4">
+                            <p className="font-black text-white">{variable.name}</p>
+                            <p className="mt-1 text-xs text-gray-500">{variable.required ? "Required" : "Optional"}</p>
+                          </div>
+                          <div className="md:col-span-2">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+                                statusClass(variable.configured ? "pass" : variable.required ? "fail" : "warn")
+                              }`}
+                            >
+                              {variable.configured ? "set" : "missing"}
+                            </span>
+                          </div>
+                          <div className="text-gray-400 md:col-span-6">
+                            <p>{variable.sensitive ? "Secret value hidden" : variable.value || variable.purpose}</p>
+                            <p className="mt-1 text-xs text-gray-500">{variable.purpose}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       )}
 

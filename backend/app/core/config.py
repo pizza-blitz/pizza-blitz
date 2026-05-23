@@ -1,22 +1,27 @@
+import json
 import os
 from pydantic_settings import BaseSettings
-from typing import List, Union, Any
-from pydantic import AnyHttpUrl, validator
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Restaurant Portal API"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",") if i.strip()]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
+    BACKEND_CORS_ORIGINS: str = os.getenv("BACKEND_CORS_ORIGINS", "")
+
+    @property
+    def cors_origins(self) -> list[str]:
+        raw = self.BACKEND_CORS_ORIGINS
+        if not raw:
+            return []
+        if raw.strip().startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(origin).strip() for origin in parsed if str(origin).strip()]
+            except json.JSONDecodeError:
+                return []
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
     SQLALCHEMY_DATABASE_URI: str = os.getenv(
         "SQLALCHEMY_DATABASE_URI",

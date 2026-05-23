@@ -1,0 +1,195 @@
+const fs = require("fs");
+const path = require("path");
+const { chromium } = require("@playwright/test");
+
+const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
+const adminId = process.env.E2E_ADMIN_ID || "admin";
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
+const artifactsDir = path.join(__dirname, "artifacts");
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForHttp(url, label) {
+  const startedAt = Date.now();
+  let lastError = "";
+
+  while (Date.now() - startedAt < 30000) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (response.ok || response.status === 401 || response.status === 403) return;
+      lastError = `${response.status} ${response.statusText}`;
+    } catch (error) {
+      lastError = error.message;
+    }
+    await sleep(750);
+  }
+
+  throw new Error(`${label} did not become ready at ${url}: ${lastError}`);
+}
+
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
+async function portalLogin() {
+  const response = await fetch(`${baseURL}/api/admin-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: adminId, password: adminPassword, role: "admin" }),
+  });
+  const data = await response.json();
+  assert(response.ok, `Admin portal login failed: ${JSON.stringify(data)}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers.get("set-cookie"));
+  assert(cookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
+  return cookie;
+}
+
+async function apiJson(endpoint, options = {}) {
+  const response = await fetch(`${apiURL}${endpoint}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+    },
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
+async function adminJson(endpoint, cookie, options = {}) {
+  return apiJson(endpoint, {
+    ...options,
+    headers: {
+      Cookie: cookie,
+      ...(options.headers || {}),
+    },
+  });
+}
+
+function createBrowserWatch(page) {
+  const issues = [];
+  page.on("pageerror", (error) => issues.push(`page error: ${error.message}`));
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/Failed to load resource|favicon\.ico|images\.unsplash\.com/i.test(text)) return;
+    issues.push(`console error: ${text}`);
+  });
+  page.on("requestfailed", (request) => {
+    const url = request.url();
+    const localRequest = url.startsWith(baseURL) || url.startsWith(apiURL);
+    if (!localRequest) return;
+    const failure = request.failure();
+    if (failure?.errorText === "net::ERR_ABORTED") return;
+    issues.push(`request failed: ${request.method()} ${url} ${failure?.errorText || ""}`.trim());
+  });
+  return {
+    assertClean(label) {
+      assert(!issues.length, `${label} produced browser issues:\n${issues.join("\n")}`);
+    },
+  };
+}
+
+function flattenEnvironmentVariables(readiness) {
+  return (readiness.environment_manifest || []).flatMap((group) => group.variables || []);
+}
+
+async function screenshotProductionOps() {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 1440, height: 1000 },
+  });
+  const page = await context.newPage();
+  const watch = createBrowserWatch(page);
+
+  try {
+    const login = await context.request.post(`${baseURL}/api/admin-session`, {
+      data: { id: adminId, password: adminPassword, role: "admin" },
+    });
+    assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
+
+    const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
+    assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByText("Production Go-Live Checklist", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Environment Inventory", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Portal session secret", { exact: false }).first().waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Create Backup/i }).click();
+    await page
+      .getByText(/Backup created|SQLite backup requires|Use managed database|Backup status/i)
+      .waitFor({ timeout: 15000 });
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-production-ops-readiness.png"),
+      fullPage: true,
+    });
+    watch.assertClean("production ops readiness console");
+  } finally {
+    await browser.close();
+  }
+}
+
+async function main() {
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  await waitForHttp(`${apiURL}/health`, "restaurant API");
+  await waitForHttp(baseURL, "frontend");
+
+  const anonymousReadiness = await apiJson("/api/v1/restaurant/ops/readiness");
+  assert(anonymousReadiness.response.status === 401, `Anonymous ops readiness should be blocked, got ${anonymousReadiness.response.status}.`);
+
+  const anonymousBackup = await apiJson("/api/v1/restaurant/ops/backups/create", { method: "POST" });
+  assert(anonymousBackup.response.status === 401, `Anonymous backup creation should be blocked, got ${anonymousBackup.response.status}.`);
+
+  const cookie = await portalLogin();
+  const readiness = await adminJson("/api/v1/restaurant/ops/readiness", cookie);
+  assert(readiness.response.ok, `Admin ops readiness failed: ${JSON.stringify(readiness.data)}`);
+  assert(Array.isArray(readiness.data.environment_manifest), "Readiness did not include environment manifest.");
+  assert(readiness.data.environment_summary?.required_total >= 1, "Readiness did not include required environment summary.");
+  assert(
+    readiness.data.checks.some((check) => check.key === "staff_password"),
+    "Readiness did not include the staff password check."
+  );
+  assert(
+    readiness.data.checks.some((check) => check.key === "portal_session_secret"),
+    "Readiness did not include the portal session secret check."
+  );
+
+  const variables = flattenEnvironmentVariables(readiness.data);
+  assert(variables.some((variable) => variable.name === "SQLALCHEMY_DATABASE_URI"), "Environment manifest did not include the database URI.");
+  assert(
+    variables.filter((variable) => variable.sensitive).every((variable) => variable.value === null || variable.value === undefined),
+    "Environment manifest leaked a sensitive value."
+  );
+
+  const backup = await adminJson("/api/v1/restaurant/ops/backups/create", cookie, { method: "POST" });
+  assert(backup.response.ok, `Admin backup creation failed: ${JSON.stringify(backup.data)}`);
+  assert(
+    ["success", "skipped", "external_required", "failed"].includes(backup.data.backup?.status),
+    `Unexpected backup status: ${JSON.stringify(backup.data)}`
+  );
+
+  const history = await adminJson("/api/v1/restaurant/ops/backups", cookie);
+  assert(history.response.ok, `Backup history failed: ${JSON.stringify(history.data)}`);
+  assert(history.data.backups.length >= 1, "Backup history did not include the latest backup attempt.");
+
+  await screenshotProductionOps();
+  console.log(`Production ops readiness proof passed with backup status ${backup.data.backup.status}.`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

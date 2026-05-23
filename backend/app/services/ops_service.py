@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -18,12 +19,257 @@ from app.services.social_publish_service import social_provider_status
 DEFAULT_SECRET_VALUES = {
     "",
     "admin123",
+    "staff123",
     "change-me",
     "change-this-long-random-secret",
     "pizza-blitz-local-secret",
+    "pizza-blitz-local-session-secret",
 }
 
 PAYMENT_PROVIDER_ORDER = ("manual", "cashfree", "razorpay")
+
+ENVIRONMENT_VARIABLE_GROUPS = [
+    {
+        "key": "core",
+        "title": "Core Deployment",
+        "variables": [
+            {
+                "name": "ENVIRONMENT",
+                "required": True,
+                "sensitive": False,
+                "purpose": "Run the API in production mode before public launch.",
+            },
+            {
+                "name": "SQLALCHEMY_DATABASE_URI",
+                "required": True,
+                "sensitive": True,
+                "purpose": "Connect the API to the production database.",
+            },
+            {
+                "name": "BACKEND_CORS_ORIGINS",
+                "required": True,
+                "sensitive": False,
+                "purpose": "Restrict browser access to deployed frontend origins.",
+            },
+            {
+                "name": "BACKUP_DIR",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Choose where local SQLite backups are written.",
+            },
+            {
+                "name": "BACKUP_RETENTION_DAYS",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Control local backup retention pruning.",
+            },
+        ],
+    },
+    {
+        "key": "security",
+        "title": "Environment Security",
+        "variables": [
+            {
+                "name": "RESTAURANT_ADMIN_ID",
+                "required": True,
+                "sensitive": False,
+                "purpose": "Configure the admin login id.",
+            },
+            {
+                "name": "RESTAURANT_ADMIN_PASSWORD",
+                "required": True,
+                "sensitive": True,
+                "purpose": "Configure a strong admin password.",
+            },
+            {
+                "name": "PIZZA_BLITZ_STAFF_PASSWORD",
+                "required": True,
+                "sensitive": True,
+                "purpose": "Configure a strong staff password.",
+            },
+            {
+                "name": "AUTH_SECRET_KEY",
+                "required": True,
+                "sensitive": True,
+                "purpose": "Sign API bearer tokens.",
+            },
+            {
+                "name": "PIZZA_BLITZ_SESSION_SECRET",
+                "required": True,
+                "sensitive": True,
+                "purpose": "Sign portal cookies consistently across frontend and backend.",
+            },
+        ],
+    },
+    {
+        "key": "payments",
+        "title": "Payment Gateway",
+        "variables": [
+            {
+                "name": "PAYMENT_PROVIDER",
+                "required": True,
+                "sensitive": False,
+                "purpose": "Select manual, Cashfree, or Razorpay.",
+            },
+            {
+                "name": "PAYMENT_RETURN_URL",
+                "required": True,
+                "sensitive": False,
+                "purpose": "Send customers back after checkout.",
+            },
+            {
+                "name": "CASHFREE_APP_ID",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Cashfree checkout credential.",
+            },
+            {
+                "name": "CASHFREE_SECRET_KEY",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Cashfree checkout signing secret.",
+            },
+            {
+                "name": "CASHFREE_WEBHOOK_SECRET",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Cashfree webhook verification secret.",
+            },
+            {
+                "name": "RAZORPAY_KEY_ID",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Razorpay checkout credential.",
+            },
+            {
+                "name": "RAZORPAY_KEY_SECRET",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Razorpay checkout signing secret.",
+            },
+            {
+                "name": "RAZORPAY_WEBHOOK_SECRET",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Razorpay webhook verification secret.",
+            },
+        ],
+    },
+    {
+        "key": "growth",
+        "title": "Growth Channels",
+        "variables": [
+            {
+                "name": "CAMPAIGN_SEND_ENABLED",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Enable real promotion sends.",
+            },
+            {
+                "name": "RESEND_API_KEY",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Enable real email sending.",
+            },
+            {
+                "name": "RESEND_FROM_EMAIL",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the verified sender email address.",
+            },
+            {
+                "name": "TWILIO_ACCOUNT_SID",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Enable Twilio SMS sending.",
+            },
+            {
+                "name": "TWILIO_AUTH_TOKEN",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Authenticate Twilio SMS sending.",
+            },
+            {
+                "name": "TWILIO_FROM_NUMBER",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the outbound SMS sender number.",
+            },
+            {
+                "name": "TWILIO_MESSAGING_SERVICE_SID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the Twilio messaging service sender.",
+            },
+            {
+                "name": "WHATSAPP_ACCESS_TOKEN",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Enable WhatsApp template sends.",
+            },
+            {
+                "name": "WHATSAPP_PHONE_NUMBER_ID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the WhatsApp business phone number id.",
+            },
+            {
+                "name": "WHATSAPP_TEMPLATE_NAME",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the approved WhatsApp marketing template.",
+            },
+            {
+                "name": "SOCIAL_PUBLISH_ENABLED",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Enable real social posting.",
+            },
+            {
+                "name": "FACEBOOK_PAGE_ID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the Facebook page target for posting.",
+            },
+            {
+                "name": "FACEBOOK_PAGE_ACCESS_TOKEN",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Enable Facebook page publishing.",
+            },
+            {
+                "name": "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the Instagram business account target.",
+            },
+            {
+                "name": "INSTAGRAM_ACCESS_TOKEN",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Enable Instagram publishing.",
+            },
+            {
+                "name": "ADS_LAUNCH_ENABLED",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Enable paused Meta Ads campaign creation.",
+            },
+            {
+                "name": "META_AD_ACCOUNT_ID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Set the Meta ad account for campaign creation.",
+            },
+            {
+                "name": "META_AD_ACCESS_TOKEN",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Authenticate Meta Ads campaign creation.",
+            },
+        ],
+    },
+]
 
 
 def database_backend() -> str:
@@ -58,12 +304,15 @@ def readiness_report(db: Session) -> dict:
         _database_check(db),
         _database_persistence_check(environment),
         _admin_password_check(environment),
+        _staff_password_check(environment),
         _auth_secret_check(environment),
+        _portal_session_secret_check(environment),
         _cors_check(environment),
         _payment_gateway_check(environment, payment_status),
         _payment_webhook_check(environment, payment_status),
         _backup_storage_check(),
     ]
+    environment_manifest = _environment_manifest()
     go_live_sections = _go_live_sections(
         checks=checks,
         environment=environment,
@@ -98,6 +347,8 @@ def readiness_report(db: Session) -> dict:
         "payment": payment_status,
         "payment_providers": payment_providers,
         "payment_webhook_contracts": _payment_webhook_contracts(),
+        "environment_manifest": environment_manifest,
+        "environment_summary": _environment_summary(environment_manifest),
         "backup_freshness": backup_freshness,
         "readiness_score": _readiness_score(go_live_items),
         "launch_blockers": launch_blockers,
@@ -268,6 +519,25 @@ def _admin_password_check(environment: str) -> dict:
     }
 
 
+def _staff_password_check(environment: str) -> dict:
+    password = settings.PIZZA_BLITZ_STAFF_PASSWORD or ""
+    weak = password in DEFAULT_SECRET_VALUES or len(password) < 10
+    if weak and environment == "production":
+        status = "fail"
+    elif weak:
+        status = "warn"
+    else:
+        status = "pass"
+    return {
+        "key": "staff_password",
+        "label": "Staff password",
+        "status": status,
+        "detail": "Use a non-default staff password for counter access."
+        if weak
+        else "Staff password is not a known local default.",
+    }
+
+
 def _auth_secret_check(environment: str) -> dict:
     secret = settings.AUTH_SECRET_KEY or ""
     weak = secret in DEFAULT_SECRET_VALUES or len(secret) < 32
@@ -287,8 +557,27 @@ def _auth_secret_check(environment: str) -> dict:
     }
 
 
+def _portal_session_secret_check(environment: str) -> dict:
+    secret = settings.PIZZA_BLITZ_SESSION_SECRET or ""
+    weak = secret in DEFAULT_SECRET_VALUES or len(secret) < 32
+    if weak and environment == "production":
+        status = "fail"
+    elif weak:
+        status = "warn"
+    else:
+        status = "pass"
+    return {
+        "key": "portal_session_secret",
+        "label": "Portal session secret",
+        "status": status,
+        "detail": "Set the same PIZZA_BLITZ_SESSION_SECRET in frontend and backend."
+        if weak
+        else "Portal cookie signing secret length looks production-ready.",
+    }
+
+
 def _cors_check(environment: str) -> dict:
-    has_origins = bool(settings.BACKEND_CORS_ORIGINS)
+    has_origins = bool(settings.cors_origins)
     if not has_origins and environment == "production":
         status = "fail"
     elif not has_origins:
@@ -430,7 +719,9 @@ def _go_live_sections(
             "description": "Admin credentials and signed session secrets.",
             "items": [
                 _item_from_check(check_by_key["admin_password"]),
+                _item_from_check(check_by_key["staff_password"]),
                 _item_from_check(check_by_key["auth_secret"]),
+                _item_from_check(check_by_key["portal_session_secret"]),
             ],
         },
         {
@@ -605,3 +896,65 @@ def _backup_run_dict(run: BackupRun) -> dict:
         "error": run.error,
         "created_at": run.created_at.isoformat() if run.created_at else None,
     }
+
+
+def _environment_manifest() -> list[dict]:
+    groups = []
+    for group in ENVIRONMENT_VARIABLE_GROUPS:
+        variables = []
+        for variable in group["variables"]:
+            raw_value = os.getenv(variable["name"])
+            configured = raw_value is not None and raw_value.strip() != ""
+            variables.append(
+                {
+                    "name": variable["name"],
+                    "required": variable["required"],
+                    "sensitive": variable["sensitive"],
+                    "configured": configured,
+                    "purpose": variable["purpose"],
+                    "value": None
+                    if variable["sensitive"] or not configured
+                    else _safe_env_value(variable["name"], raw_value),
+                }
+            )
+        groups.append(
+            {
+                "key": group["key"],
+                "title": group["title"],
+                "variables": variables,
+            }
+        )
+    return groups
+
+
+def _environment_summary(groups: list[dict]) -> dict:
+    variables = [
+        variable
+        for group in groups
+        for variable in group["variables"]
+    ]
+    required = [variable for variable in variables if variable["required"]]
+    configured_required = [
+        variable
+        for variable in required
+        if variable["configured"]
+    ]
+    missing_required = [
+        variable["name"]
+        for variable in required
+        if not variable["configured"]
+    ]
+    configured_total = sum(1 for variable in variables if variable["configured"])
+    return {
+        "total": len(variables),
+        "configured": configured_total,
+        "required_total": len(required),
+        "required_configured": len(configured_required),
+        "missing_required": missing_required,
+    }
+
+
+def _safe_env_value(name: str, value: str) -> str:
+    if name.endswith("_URL") or name.endswith("_ORIGINS"):
+        return value[:160]
+    return value
