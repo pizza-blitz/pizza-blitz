@@ -13,6 +13,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Save,
   Search,
   Send,
   ShieldCheck,
@@ -43,6 +44,12 @@ type Customer = {
   total_orders: number;
   total_spend: number;
   last_order_at?: string | null;
+  notes?: string | null;
+};
+
+type CustomerDraft = {
+  email: string;
+  opt_in_marketing: boolean;
 };
 
 type RetentionCustomer = Customer & {
@@ -127,12 +134,16 @@ export default function CustomersPage() {
   const [segment, setSegment] = useState<SegmentKey>("all");
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
+  const [customerDrafts, setCustomerDrafts] = useState<Record<number, CustomerDraft>>({});
+  const [savingCustomerId, setSavingCustomerId] = useState<number | null>(null);
+  const [fromCampaignCleanup, setFromCampaignCleanup] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     const initial = readInitialCustomerFilters();
     setSearch(initial.query);
     setSegment(initial.segment);
+    setFromCampaignCleanup(initial.fromCleanup);
     if (initial.fromCleanup) {
       setMessage(`Opened ${segmentLabel(initial.segment)} cleanup queue from campaign audit.`);
     }
@@ -149,7 +160,18 @@ export default function CustomersPage() {
       fetch(`${CUSTOMERS_API}/summary`, { credentials: "include" }),
       fetch(`${CUSTOMERS_API}/retention`, { credentials: "include" }),
     ]);
-    setCustomers(await customersRes.json());
+    const customerRows = await customersRes.json();
+    setCustomers(customerRows);
+    setCustomerDrafts((current) => {
+      const next = { ...current };
+      customerRows.forEach((customer: Customer) => {
+        next[customer.id] = {
+          email: next[customer.id]?.email ?? customer.email ?? "",
+          opt_in_marketing: next[customer.id]?.opt_in_marketing ?? customer.opt_in_marketing,
+        };
+      });
+      return next;
+    });
     setSummary(await summaryRes.json());
     setRetention(await retentionRes.json());
   };
@@ -167,6 +189,17 @@ export default function CustomersPage() {
       window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
     }
     fetchData(search, value);
+  };
+
+  const updateCustomerDraft = (customerId: number, patch: Partial<CustomerDraft>) => {
+    setCustomerDrafts((current) => ({
+      ...current,
+      [customerId]: {
+        email: current[customerId]?.email ?? "",
+        opt_in_marketing: current[customerId]?.opt_in_marketing ?? false,
+        ...patch,
+      },
+    }));
   };
 
   const copyContacts = async () => {
@@ -193,6 +226,31 @@ export default function CustomersPage() {
       ].join("\n")
     );
     setMessage(`Copied ${customers.length} contacts from ${segmentLabel(segment)}.`);
+  };
+
+  const saveCustomerCleanup = async (customer: Customer) => {
+    const draft = customerDrafts[customer.id] || {
+      email: customer.email || "",
+      opt_in_marketing: customer.opt_in_marketing,
+    };
+    setSavingCustomerId(customer.id);
+    const response = await fetch(`${CUSTOMERS_API}/${customer.id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: draft.email.trim() || null,
+        opt_in_marketing: draft.opt_in_marketing,
+      }),
+    });
+    const data = await response.json();
+    setSavingCustomerId(null);
+    if (!response.ok) {
+      setMessage(data.detail || "Could not update customer cleanup.");
+      return;
+    }
+    setMessage(`Updated ${data.name || data.phone} for campaign cleanup.`);
+    await fetchData(search, segment);
   };
 
   const saveCustomer = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -231,7 +289,15 @@ export default function CustomersPage() {
             Contacts captured from counter orders and manual entries.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          {fromCampaignCleanup && (
+            <Link
+              href="/promotions"
+              className="bg-orange-500 text-white px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-600"
+            >
+              <Send className="w-4 h-4" /> Return To Campaigns
+            </Link>
+          )}
           <button
             onClick={() => fetchData()}
             className="bg-white/5 text-white px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-white/10"
@@ -442,40 +508,89 @@ export default function CustomersPage() {
         </div>
 
         <div className="space-y-3">
-          {customers.map((customer) => (
-            <div key={customer.id} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center bg-black/25 border border-white/5 rounded-xl p-4">
-              <div className="lg:col-span-4">
-                <p className="font-black">{customer.name || "Walk-in Customer"}</p>
-                <p className="text-xs text-gray-500">Last order: {customer.last_order_at ? customer.last_order_at.slice(0, 10) : "Not yet"}</p>
+          {customers.map((customer) => {
+            const draft = customerDrafts[customer.id] || {
+              email: customer.email || "",
+              opt_in_marketing: customer.opt_in_marketing,
+            };
+            const isSaving = savingCustomerId === customer.id;
+            return (
+              <div
+                key={customer.id}
+                data-testid={`customer-row-${customer.id}`}
+                className="space-y-4 bg-black/25 border border-white/5 rounded-xl p-4"
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+                  <div className="lg:col-span-4">
+                    <p className="font-black">{customer.name || "Walk-in Customer"}</p>
+                    <p className="text-xs text-gray-500">
+                      Last order: {customer.last_order_at ? customer.last_order_at.slice(0, 10) : "Not yet"}
+                    </p>
+                  </div>
+                  <div className="lg:col-span-3 flex items-center gap-2 text-sm text-gray-300">
+                    <Phone className="w-4 h-4 text-orange-400" /> {customer.phone}
+                  </div>
+                  <div className="lg:col-span-3 flex items-center gap-2 text-sm text-gray-300">
+                    <Mail className="w-4 h-4 text-orange-400" /> {customer.email || "No email"}
+                  </div>
+                  <div className="lg:col-span-1">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black ${
+                        customer.opt_in_marketing
+                          ? "bg-green-500/10 text-green-300"
+                          : "bg-red-500/10 text-red-300"
+                      }`}
+                    >
+                      {customer.opt_in_marketing ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : (
+                        <XCircle className="h-3 w-3" />
+                      )}
+                      {customer.opt_in_marketing ? "Opt-in" : "Opt-out"}
+                    </span>
+                  </div>
+                  <div className="lg:col-span-1 text-right">
+                    <p className="font-black">Rs {Math.round(customer.total_spend || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">{customer.total_orders || 0} orders</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 border-t border-white/5 pt-4 md:grid-cols-12">
+                  <label className="md:col-span-5">
+                    <span className="mb-2 block text-xs font-black uppercase tracking-widest text-gray-500">
+                      Email
+                    </span>
+                    <input
+                      data-testid={`customer-email-${customer.id}`}
+                      type="email"
+                      value={draft.email}
+                      onChange={(event) => updateCustomerDraft(customer.id, { email: event.target.value })}
+                      placeholder="customer@example.com"
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-3 text-sm outline-none focus:border-orange-500"
+                    />
+                  </label>
+                  <label className="flex items-center gap-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3 text-sm font-bold text-gray-200 md:col-span-4">
+                    <input
+                      data-testid={`customer-consent-${customer.id}`}
+                      type="checkbox"
+                      checked={draft.opt_in_marketing}
+                      onChange={(event) => updateCustomerDraft(customer.id, { opt_in_marketing: event.target.checked })}
+                      className="h-4 w-4"
+                    />
+                    Marketing consent
+                  </label>
+                  <button
+                    data-testid={`customer-save-${customer.id}`}
+                    type="button"
+                    onClick={() => saveCustomerCleanup(customer)}
+                    disabled={isSaving}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-black text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 md:col-span-3"
+                  >
+                    <Save className="h-4 w-4" /> {isSaving ? "Saving..." : "Save Cleanup"}
+                  </button>
+                </div>
               </div>
-              <div className="lg:col-span-3 flex items-center gap-2 text-sm text-gray-300">
-                <Phone className="w-4 h-4 text-orange-400" /> {customer.phone}
-              </div>
-              <div className="lg:col-span-3 flex items-center gap-2 text-sm text-gray-300">
-                <Mail className="w-4 h-4 text-orange-400" /> {customer.email || "No email"}
-              </div>
-              <div className="lg:col-span-1">
-                <span
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black ${
-                    customer.opt_in_marketing
-                      ? "bg-green-500/10 text-green-300"
-                      : "bg-red-500/10 text-red-300"
-                  }`}
-                >
-                  {customer.opt_in_marketing ? (
-                    <CheckCircle2 className="h-3 w-3" />
-                  ) : (
-                    <XCircle className="h-3 w-3" />
-                  )}
-                  {customer.opt_in_marketing ? "Opt-in" : "Opt-out"}
-                </span>
-              </div>
-              <div className="lg:col-span-1 text-right">
-                <p className="font-black">Rs {Math.round(customer.total_spend || 0).toLocaleString()}</p>
-                <p className="text-xs text-gray-500">{customer.total_orders || 0} orders</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {!customers.length && (
             <div className="text-center text-gray-500 border border-dashed border-white/10 rounded-xl p-8">
               No customer contacts yet.

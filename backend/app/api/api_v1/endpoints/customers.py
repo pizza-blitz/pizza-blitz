@@ -36,6 +36,13 @@ class CustomerCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    opt_in_marketing: Optional[bool] = None
+    notes: Optional[str] = None
+
+
 def serialize_customer(customer: Customer) -> dict:
     return {
         "id": customer.id,
@@ -326,3 +333,34 @@ def customer_retention(
         ),
         "customers": retention_rows[:limit],
     }
+
+
+@router.patch("/{customer_id}")
+def update_customer(
+    customer_id: int,
+    payload: CustomerUpdate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found.")
+
+    updates = (
+        payload.model_dump(exclude_unset=True)
+        if hasattr(payload, "model_dump")
+        else payload.dict(exclude_unset=True)
+    )
+
+    if "name" in updates:
+        customer.name = updates["name"].strip() if updates["name"] else None
+    if "email" in updates:
+        customer.email = updates["email"].strip() if updates["email"] else None
+    if "opt_in_marketing" in updates:
+        customer.opt_in_marketing = bool(updates["opt_in_marketing"])
+    if "notes" in updates:
+        customer.notes = updates["notes"].strip() if updates["notes"] else None
+
+    db.commit()
+    db.refresh(customer)
+    return serialize_customer(customer)
