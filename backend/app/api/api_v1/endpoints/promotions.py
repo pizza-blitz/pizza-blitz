@@ -43,7 +43,8 @@ VALID_AUDIENCES = {
     "high_spenders",
     *RETENTION_AUDIENCES,
 }
-VALID_CHANNELS = {"whatsapp", "sms", "email"}
+CHANNEL_ORDER = ["whatsapp", "sms", "email"]
+VALID_CHANNELS = set(CHANNEL_ORDER)
 VALID_STATUSES = {"draft", "scheduled", "active", "paused", "completed"}
 VALID_SOCIAL_PLATFORMS = {"facebook", "instagram"}
 VALID_SOCIAL_POST_STATUSES = {"draft", "scheduled", "ready"}
@@ -511,6 +512,78 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
     }
 
 
+def _readiness_percent(ready_count: int, total_count: int) -> float:
+    if not total_count:
+        return 0
+    return round((ready_count / total_count) * 100, 2)
+
+
+def _channel_readiness(customers: list[Customer], channel: str) -> dict:
+    total_count = len(customers)
+    ready_count = sum(
+        1
+        for customer in customers
+        if normalize_campaign_destination(channel, _message_destination(customer, channel))
+    )
+    return {
+        "ready_count": ready_count,
+        "missing_count": max(total_count - ready_count, 0),
+        "ready_percent": _readiness_percent(ready_count, total_count),
+    }
+
+
+def _audience_hygiene(customers: list[Customer]) -> dict:
+    total_count = len(customers)
+    channel_readiness = {
+        channel: _channel_readiness(customers, channel)
+        for channel in CHANNEL_ORDER
+    }
+    recommended_channel = None
+    if total_count:
+        recommended_channel = max(
+            CHANNEL_ORDER,
+            key=lambda channel: (
+                channel_readiness[channel]["ready_count"],
+                channel_readiness[channel]["ready_percent"],
+                -CHANNEL_ORDER.index(channel),
+            ),
+        )
+        if channel_readiness[recommended_channel]["ready_count"] == 0:
+            recommended_channel = None
+
+    opted_in_count = sum(1 for customer in customers if customer.opt_in_marketing)
+    opted_out_count = max(total_count - opted_in_count, 0)
+    phone_ready_count = sum(
+        1
+        for customer in customers
+        if normalize_campaign_destination("sms", _message_destination(customer, "sms"))
+        or normalize_campaign_destination("whatsapp", _message_destination(customer, "whatsapp"))
+    )
+    notes = []
+    if opted_out_count:
+        notes.append(f"{opted_out_count} contacts are opted out and should not receive marketing sends.")
+    if channel_readiness["email"]["missing_count"]:
+        notes.append(f"Capture email for {channel_readiness['email']['missing_count']} contacts before email campaigns.")
+    if total_count - phone_ready_count:
+        notes.append(f"Capture phone for {total_count - phone_ready_count} contacts before SMS or WhatsApp campaigns.")
+    if not notes and total_count:
+        notes.append("Audience hygiene is ready for the selected channel mix.")
+    if not total_count:
+        notes.append("No matching contacts are available for this audience yet.")
+
+    return {
+        "opted_in_count": opted_in_count,
+        "opted_out_count": opted_out_count,
+        "email_ready_count": channel_readiness["email"]["ready_count"],
+        "missing_email_count": channel_readiness["email"]["missing_count"],
+        "phone_ready_count": phone_ready_count,
+        "missing_phone_count": max(total_count - phone_ready_count, 0),
+        "channels": channel_readiness,
+        "recommended_channel": recommended_channel,
+        "readiness_notes": notes,
+    }
+
+
 def _retention_playbook_entry(db: Session, audience: str) -> dict:
     if audience not in RETENTION_PLAYBOOK:
         raise HTTPException(status_code=422, detail="Unsupported retention playbook audience.")
@@ -833,16 +906,16 @@ def audience_summary(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     query = _audience_query(db, audience)
-    total = query.count()
     customers = (
         query.order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
-        .limit(limit)
         .all()
     )
+    sample_customers = customers[:limit]
     return {
         "audience": audience,
-        "total_contacts": total,
-        "customers": [_customer_dict(customer) for customer in customers],
+        "total_contacts": len(customers),
+        **_audience_hygiene(customers),
+        "customers": [_customer_dict(customer) for customer in sample_customers],
     }
 
 

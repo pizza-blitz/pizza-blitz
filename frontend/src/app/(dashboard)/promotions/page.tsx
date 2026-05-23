@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Calendar,
@@ -53,6 +53,7 @@ type Contact = {
   action_url?: string | null;
   send_ready?: boolean;
   missing_reason?: string | null;
+  opt_in_marketing?: boolean;
 };
 
 type Outreach = {
@@ -96,6 +97,27 @@ type ProviderReadiness = {
   send_enabled: boolean;
   configured_count: number;
   channels: ProviderStatus[];
+};
+
+type AudienceChannelReadiness = {
+  ready_count: number;
+  missing_count: number;
+  ready_percent: number;
+};
+
+type AudienceHygiene = {
+  audience: AudienceKey;
+  total_contacts: number;
+  opted_in_count: number;
+  opted_out_count: number;
+  email_ready_count: number;
+  missing_email_count: number;
+  phone_ready_count: number;
+  missing_phone_count: number;
+  channels: Record<ChannelKey, AudienceChannelReadiness>;
+  recommended_channel?: ChannelKey | null;
+  readiness_notes: string[];
+  customers: Contact[];
 };
 
 type RetentionPlaybookCampaign = {
@@ -321,11 +343,14 @@ export default function PromotionsPage() {
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryStatusFilter>("all");
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
+  const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
+  const [hygieneAudience, setHygieneAudience] = useState<AudienceKey>("marketing_opt_in");
   const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const audienceRequestRef = useRef(0);
   const [sending, setSending] = useState<"dry_run" | "send" | "force_dry_run" | "force_send" | null>(null);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
@@ -336,6 +361,7 @@ export default function PromotionsPage() {
     fetchProviderReadiness();
     fetchPlaybook();
     fetchPerformanceRollup();
+    fetchAudienceHygiene();
   }, []);
 
   const selectedPromotion = useMemo(
@@ -347,6 +373,7 @@ export default function PromotionsPage() {
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
   const bestCampaign = performanceRollup?.best_campaign || null;
   const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
+  const hygieneChannels = channelOptions.map((option) => option.value);
 
   const fetchProviderReadiness = async () => {
     const response = await fetch(`${PROMOTIONS_API}/providers/status`, {
@@ -380,6 +407,23 @@ export default function PromotionsPage() {
       return;
     }
     setPerformanceRollup(await response.json());
+  };
+
+  const fetchAudienceHygiene = async (audience: AudienceKey = hygieneAudience) => {
+    const requestId = audienceRequestRef.current + 1;
+    audienceRequestRef.current = requestId;
+    const response = await fetch(`${PROMOTIONS_API}/audience?audience=${audience}&limit=8`, {
+      credentials: "include",
+    });
+    if (requestId !== audienceRequestRef.current) return;
+    if (!response.ok) {
+      setAudienceHygiene(null);
+      return;
+    }
+    const data = await response.json();
+    if (requestId !== audienceRequestRef.current) return;
+    setAudienceHygiene(data);
+    setHygieneAudience(audience);
   };
 
   const fetchPromotions = async () => {
@@ -457,6 +501,15 @@ export default function PromotionsPage() {
   const selectPromotion = (promotionId: number) => {
     setSelectedId(promotionId);
     fetchCampaignDetails(promotionId);
+    const promotion = promotions.find((item) => item.id === promotionId);
+    if (promotion) {
+      fetchAudienceHygiene(promotion.audience);
+    }
+  };
+
+  const changeHygieneAudience = (audience: AudienceKey) => {
+    setHygieneAudience(audience);
+    fetchAudienceHygiene(audience);
   };
 
   const changeDeliveryFilter = (filter: DeliveryStatusFilter) => {
@@ -489,6 +542,7 @@ export default function PromotionsPage() {
     setFormData(emptyForm);
     await fetchPromotions();
     await fetchPerformanceRollup();
+    await fetchAudienceHygiene(data.promotion.audience);
     selectPromotion(data.promotion.id);
   };
 
@@ -510,6 +564,7 @@ export default function PromotionsPage() {
     await fetchPromotions();
     await fetchPlaybook();
     await fetchPerformanceRollup();
+    await fetchAudienceHygiene(data.promotion.audience);
     setSelectedId(data.promotion.id);
     await fetchCampaignDetails(data.promotion.id);
     setCreatingPlaybookAudience(null);
@@ -665,6 +720,7 @@ export default function PromotionsPage() {
               fetchProviderReadiness();
               fetchPlaybook();
               fetchPerformanceRollup();
+              fetchAudienceHygiene();
             }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
@@ -808,6 +864,121 @@ export default function PromotionsPage() {
               )}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              Audience Hygiene
+            </p>
+            <h2 className="mt-1 text-xl font-black">Contact readiness before campaign sends</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Check consent, email gaps, phone coverage, and the best-ready channel before launching a promotion.
+            </p>
+          </div>
+          <div className="flex min-w-[16rem] flex-wrap items-end gap-3">
+            <div className="w-64">
+              <Select
+                label="Audience Hygiene Segment"
+                value={hygieneAudience}
+                options={audienceOptions}
+                onChange={(value) => changeHygieneAudience(value as AudienceKey)}
+              />
+            </div>
+            <button
+              onClick={() => fetchAudienceHygiene()}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-4 font-bold text-white hover:bg-white/10"
+            >
+              <RefreshCw className="h-4 w-4" /> Refresh Hygiene
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <MiniSignal
+            icon={Users}
+            label="Contacts"
+            value={`${audienceHygiene?.total_contacts || 0}`}
+          />
+          <MiniSignal
+            icon={CheckCircle2}
+            label="Opted In"
+            value={`${audienceHygiene?.opted_in_count || 0}`}
+          />
+          <MiniSignal
+            icon={AlertTriangle}
+            label="Opted Out"
+            value={`${audienceHygiene?.opted_out_count || 0}`}
+          />
+          <MiniSignal
+            icon={Mail}
+            label="Email Gaps"
+            value={`${audienceHygiene?.missing_email_count || 0}`}
+          />
+          <MiniSignal
+            icon={Phone}
+            label="Phone Gaps"
+            value={`${audienceHygiene?.missing_phone_count || 0}`}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:col-span-7">
+            {hygieneChannels.map((channel) => (
+              <ChannelReadinessCard
+                key={channel}
+                channel={channel}
+                readiness={audienceHygiene?.channels[channel]}
+                recommended={audienceHygiene?.recommended_channel === channel}
+              />
+            ))}
+          </div>
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                  Recommended Channel
+                </p>
+                <h3 className="mt-1 text-lg font-black">
+                  {audienceHygiene?.recommended_channel
+                    ? channelLabel(audienceHygiene.recommended_channel)
+                    : "No ready channel yet"}
+                </h3>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+                {audienceLabel(audienceHygiene?.audience || hygieneAudience)}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {(audienceHygiene?.readiness_notes || ["Audience hygiene is loading."]).map((note) => (
+                <div
+                  key={note}
+                  className="rounded-lg border border-white/5 bg-white/[0.03] p-3 text-sm font-semibold leading-6 text-gray-400"
+                >
+                  {note}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-hidden rounded-xl border border-white/5 bg-black/25">
+          <div className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600">
+            <span className="col-span-4">Sample Contact</span>
+            <span className="col-span-3">Phone</span>
+            <span className="col-span-3">Email</span>
+            <span className="col-span-2 text-right">Consent</span>
+          </div>
+          {(audienceHygiene?.customers || []).map((contact) => (
+            <HygieneContactRow key={contact.id} contact={contact} />
+          ))}
+          {audienceHygiene && !audienceHygiene.customers.length ? (
+            <div className="p-8 text-center text-sm font-semibold text-gray-500">
+              No matching contacts yet.
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -1517,6 +1688,88 @@ function MiniSignal({
       <div className="min-w-0">
         <p className="text-xs font-black uppercase tracking-widest text-gray-600">{label}</p>
         <p className="text-sm font-black leading-5 text-gray-200">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function ChannelReadinessCard({
+  channel,
+  readiness,
+  recommended,
+}: {
+  channel: ChannelKey;
+  readiness?: AudienceChannelReadiness;
+  recommended: boolean;
+}) {
+  const iconMap = {
+    whatsapp: MessageCircle,
+    sms: Phone,
+    email: Mail,
+  };
+  const Icon = iconMap[channel];
+  const percent = readiness?.ready_percent || 0;
+  const ready = readiness?.ready_count || 0;
+  const missing = readiness?.missing_count || 0;
+
+  return (
+    <div
+      className={`rounded-xl border p-5 ${
+        recommended
+          ? "border-green-500/40 bg-green-500/10"
+          : "border-white/5 bg-black/25"
+      }`}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-black">{channelLabel(channel)}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              {ready} ready | {missing} missing
+            </p>
+          </div>
+        </div>
+        {recommended ? (
+          <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-black uppercase text-green-300">
+            Best
+          </span>
+        ) : null}
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div
+          className={`h-full rounded-full ${percent >= 80 ? "bg-green-400" : percent >= 40 ? "bg-yellow-400" : "bg-red-400"}`}
+          style={{ width: `${Math.min(percent, 100)}%` }}
+        />
+      </div>
+      <p className="mt-3 text-sm font-black text-gray-200">{percent}% ready</p>
+    </div>
+  );
+}
+
+function HygieneContactRow({ contact }: { contact: Contact }) {
+  return (
+    <div className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-sm">
+      <div className="col-span-4 min-w-0">
+        <p className="break-words font-black text-white">{contact.name || "Walk-in Customer"}</p>
+        <p className="mt-1 text-xs font-semibold text-gray-600">
+          Rs {Math.round(contact.total_spend || 0).toLocaleString()} spend
+        </p>
+      </div>
+      <div className="col-span-3 min-w-0 break-all text-gray-400">{contact.phone || "No phone"}</div>
+      <div className="col-span-3 min-w-0 break-all text-gray-400">{contact.email || "No email"}</div>
+      <div className="col-span-2 text-right">
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+            contact.opt_in_marketing === false
+              ? "bg-yellow-500/15 text-yellow-300"
+              : "bg-green-500/15 text-green-300"
+          }`}
+        >
+          {contact.opt_in_marketing === false ? "Opted out" : "Opted in"}
+        </span>
       </div>
     </div>
   );
