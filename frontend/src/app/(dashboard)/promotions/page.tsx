@@ -65,7 +65,17 @@ type Dispatch = Outreach & {
   provider_status?: ProviderStatus;
 };
 
-type AudienceKey = "all_customers" | "marketing_opt_in" | "repeat_customers" | "high_spenders";
+type AudienceKey =
+  | "all_customers"
+  | "marketing_opt_in"
+  | "repeat_customers"
+  | "high_spenders"
+  | "new_guests"
+  | "regular_guests"
+  | "vip_guests"
+  | "active_customers"
+  | "comeback_customers"
+  | "win_back_customers";
 type ChannelKey = "whatsapp" | "sms" | "email";
 type StatusKey = "draft" | "scheduled" | "active" | "paused" | "completed";
 
@@ -183,7 +193,17 @@ const audienceOptions: { value: AudienceKey; label: string }[] = [
   { value: "all_customers", label: "All Customers" },
   { value: "repeat_customers", label: "Repeat Customers" },
   { value: "high_spenders", label: "High Spenders" },
+  { value: "new_guests", label: "New Guests" },
+  { value: "regular_guests", label: "Regular Guests" },
+  { value: "vip_guests", label: "VIP Guests" },
+  { value: "active_customers", label: "Active This Week" },
+  { value: "comeback_customers", label: "Comeback Due" },
+  { value: "win_back_customers", label: "Win-back Priority" },
 ];
+
+const retentionAudienceOptions = audienceOptions.filter((option) =>
+  ["new_guests", "regular_guests", "vip_guests", "active_customers", "comeback_customers", "win_back_customers"].includes(option.value)
+);
 
 const channelOptions: { value: ChannelKey; label: string }[] = [
   { value: "whatsapp", label: "WhatsApp" },
@@ -514,6 +534,42 @@ export default function PromotionsPage() {
         <Metric label="Scheduled" value={scheduledCount} icon={Calendar} />
         <Metric label="Audience" value={outreach?.audience_count || 0} icon={Users} />
       </div>
+
+      <section className="mb-8 rounded-xl border border-orange-500/10 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">Retention Audience Bridge</p>
+            <h2 className="mt-1 text-xl font-black">Target offers from customer loyalty segments</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              The promotion audience picker now uses the same retention buckets from the customer command center.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setFormData({ ...emptyForm, audience: "vip_guests", status: "active" });
+              setShowAdd(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-bold text-white hover:bg-orange-600"
+          >
+            <Target className="h-4 w-4" /> Build VIP Offer
+          </button>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {retentionAudienceOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => {
+                setFormData({ ...emptyForm, audience: option.value, status: "active" });
+                setShowAdd(true);
+              }}
+              className="rounded-lg border border-white/5 bg-black/25 p-4 text-left hover:border-orange-500/50 hover:bg-orange-500/10"
+            >
+              <p className="text-xs font-black uppercase tracking-widest text-gray-500">Audience</p>
+              <p className="mt-2 min-h-10 text-sm font-black leading-5">{option.label}</p>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">

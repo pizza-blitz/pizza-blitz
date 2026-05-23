@@ -19,13 +19,27 @@ from app.services.campaign_dispatch_service import (
 )
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
 
 router = APIRouter()
 
 VALID_DISCOUNT_TYPES = {"percentage", "fixed"}
-VALID_AUDIENCES = {"all_customers", "marketing_opt_in", "repeat_customers", "high_spenders"}
+RETENTION_AUDIENCES = {
+    "new_guests",
+    "regular_guests",
+    "vip_guests",
+    "active_customers",
+    "comeback_customers",
+    "win_back_customers",
+}
+VALID_AUDIENCES = {
+    "all_customers",
+    "marketing_opt_in",
+    "repeat_customers",
+    "high_spenders",
+    *RETENTION_AUDIENCES,
+}
 VALID_CHANNELS = {"whatsapp", "sms", "email"}
 VALID_STATUSES = {"draft", "scheduled", "active", "paused", "completed"}
 VALID_SOCIAL_PLATFORMS = {"facebook", "instagram"}
@@ -168,12 +182,34 @@ def _customer_dict(customer: Customer) -> dict:
 
 def _audience_query(db: Session, audience: str):
     query = db.query(Customer)
+    now = datetime.utcnow()
+    comeback_after = now - timedelta(days=7)
+    win_back_after = now - timedelta(days=30)
     if audience == "marketing_opt_in":
         query = query.filter(Customer.opt_in_marketing.is_(True))
     elif audience == "repeat_customers":
         query = query.filter(Customer.total_orders >= 2)
     elif audience == "high_spenders":
         query = query.filter(Customer.total_spend >= 500)
+    elif audience == "new_guests":
+        query = query.filter(Customer.total_orders < 3, Customer.total_spend < 1200)
+    elif audience == "regular_guests":
+        query = query.filter(
+            (Customer.total_orders >= 3) | (Customer.total_spend >= 1200),
+            Customer.total_orders < 10,
+            Customer.total_spend < 5000,
+        )
+    elif audience == "vip_guests":
+        query = query.filter((Customer.total_orders >= 10) | (Customer.total_spend >= 5000))
+    elif audience == "active_customers":
+        query = query.filter(Customer.last_order_at >= comeback_after)
+    elif audience == "comeback_customers":
+        query = query.filter(
+            Customer.last_order_at < comeback_after,
+            Customer.last_order_at >= win_back_after,
+        )
+    elif audience == "win_back_customers":
+        query = query.filter((Customer.last_order_at < win_back_after) | Customer.last_order_at.is_(None))
     elif audience != "all_customers":
         raise HTTPException(status_code=422, detail="Unsupported campaign audience.")
     return query
