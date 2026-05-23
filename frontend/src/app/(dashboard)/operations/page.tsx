@@ -298,6 +298,36 @@ export default function OperationsPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not update delivery.");
+
+      if (status === "delivered") {
+        if (
+          (order.payment_method || "").toLowerCase() === "prepaid" &&
+          order.payment_status !== "paid"
+        ) {
+          setMessage(`Delivery for order #${order.id} is delivered. Confirm prepaid payment before closing.`);
+          await fetchOrders({ preserveMessage: true });
+          return;
+        }
+
+        const paymentMethod = order.payment_method || "cash";
+        const closeResponse = await fetch(
+          `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
+          { method: "PATCH" }
+        );
+        const closeData = await closeResponse.json();
+        if (!closeResponse.ok) {
+          throw new Error(closeData.detail || "Could not close delivered order.");
+        }
+        const usageCount = Array.isArray(closeData.inventory_usage)
+          ? closeData.inventory_usage.length
+          : 0;
+        setMessage(
+          `Delivery for order #${order.id} delivered and order closed${usageCount ? ` with ${usageCount} ingredients updated.` : "."}`
+        );
+        await fetchOrders({ preserveMessage: true });
+        return;
+      }
+
       setMessage(`Delivery for order #${order.id} moved to ${status.replaceAll("_", " ")}.`);
       await fetchOrders({ preserveMessage: true });
     } catch (error) {
@@ -506,7 +536,7 @@ export default function OperationsPage() {
                       disabled={busyAction === `${order.id}-delivery-delivered`}
                       className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700 hover:bg-emerald-100"
                     >
-                      Delivered
+                      Delivered & Close
                     </button>
                     <button
                       onClick={() => updateDeliveryAssignment(order, "failed")}

@@ -389,6 +389,37 @@ export default function OrdersPage() {
       return;
     }
 
+    if (status === "delivered") {
+      if (
+        (order.payment_method || "").toLowerCase() === "prepaid" &&
+        order.payment_status !== "paid"
+      ) {
+        setMessage(`Delivery for order #${order.id} is delivered. Confirm prepaid payment before closing.`);
+        await fetchData();
+        return;
+      }
+
+      const paymentMethod = order.payment_method || "cash";
+      const closeResponse = await fetch(
+        `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
+        { method: "PATCH" }
+      );
+      const closeData = await closeResponse.json();
+      if (!closeResponse.ok) {
+        setMessage(closeData.detail || "Delivery delivered, but order could not be closed.");
+        await fetchData();
+        return;
+      }
+      const usageCount = Array.isArray(closeData.inventory_usage)
+        ? closeData.inventory_usage.length
+        : 0;
+      setMessage(
+        `Delivery for order #${order.id} delivered and order closed${usageCount ? ` with ${usageCount} ingredients updated.` : "."}`
+      );
+      await fetchData();
+      return;
+    }
+
     setMessage(`Delivery for order #${order.id} moved to ${status.replaceAll("_", " ")}.`);
     await fetchData();
   };
@@ -558,7 +589,7 @@ export default function OrdersPage() {
                         disabled={busyDeliveryAction === `${order.id}-delivered`}
                         className="flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-50"
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Delivered
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                       </button>
                       <button
                         onClick={() => updateDeliveryAssignment(order, "failed")}
