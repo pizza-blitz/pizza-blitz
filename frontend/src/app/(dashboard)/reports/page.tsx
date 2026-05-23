@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Megaphone, Tag, Target } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Megaphone, ShoppingBag, Tag, Target } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const Award = ({className}: {className?: string}) => (
@@ -33,13 +33,14 @@ export default function Reports() {
         }
         return payload;
       };
-      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes] = await Promise.all([
+      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes, orderChannelRes] = await Promise.all([
         fetchJson(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`),
         fetchJson('/api/v1/restaurant/sales/'),
         fetchJson('/api/v1/restaurant/stats/insights/monthly-forecast'),
         fetchJson('/api/v1/restaurant/stats/insights/profit-trend?months=12'),
         fetchJson(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
-        fetchJson('/api/v1/restaurant/promotions/performance?limit=25')
+        fetchJson('/api/v1/restaurant/promotions/performance?limit=25'),
+        fetchJson(`/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`)
       ]);
 
       setData({
@@ -48,7 +49,8 @@ export default function Reports() {
         forecast: forecastRes,
         trends: trendRes.trend || [],
         comparison: comparisonRes,
-        marketing: marketingRes
+        marketing: marketingRes,
+        orderChannels: orderChannelRes
       });
     } catch (err) { 
       console.error(err);
@@ -82,6 +84,11 @@ export default function Reports() {
 
   const comparison = data?.comparison;
   const marketing = data?.marketing;
+  const orderChannels = data?.orderChannels;
+  const orderChannelRows = orderChannels?.channel_mix || [];
+  const paymentRows = orderChannels?.payment_mix || [];
+  const paymentStatusRows = orderChannels?.payment_status_mix || [];
+  const fulfillmentStatusRows = orderChannels?.fulfillment_status_mix || [];
   const marketingRows = marketing?.campaigns ? marketing.campaigns.slice(0, 6) : [];
   const weekdayRows = comparison?.weekday_breakdown
     ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
@@ -250,6 +257,145 @@ export default function Reports() {
             </div>
           )}
 
+          {orderChannels && (
+            <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Order Channel Comparison</p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">Counter, Website, Pickup, and Delivery Performance</h2>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-500">
+                  {orderChannels.period.current_start} to {orderChannels.period.current_end}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MarketingMetric
+                  icon={ShoppingBag}
+                  label="Current Orders"
+                  value={`${orderChannels.current.orders || 0}`}
+                />
+                <MarketingMetric
+                  icon={IndianRupee}
+                  label="Order Revenue"
+                  value={formatMoney(orderChannels.current.revenue)}
+                />
+                <MarketingMetric
+                  icon={CreditCard}
+                  label="Average Order"
+                  value={formatMoney(orderChannels.current.average_order_value)}
+                />
+                <MarketingMetric
+                  icon={AlertTriangle}
+                  label="Unsettled Orders"
+                  value={`${orderChannels.summary.unsettled_orders || 0}`}
+                />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Channel Revenue Mix</p>
+                      <p className="mt-1 text-sm font-bold text-gray-500">Revenue share with previous-period and YoY movement.</p>
+                    </div>
+                    <BarChart3 className="h-5 w-5 text-orange-600" />
+                  </div>
+                  <div className="space-y-3">
+                    {orderChannelRows.length ? (
+                      orderChannelRows.map((row: any) => {
+                        const positive = Number(row.yoy_change_percent || 0) >= 0;
+                        return (
+                          <div key={`channel-${row.key}`} className="rounded-lg border border-gray-200 bg-white p-4">
+                            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-black text-gray-950">{row.label}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                                  {row.current.orders || 0} orders | {formatMoney(row.current.average_order_value)} avg
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-black text-gray-950">{formatMoney(row.current.revenue)}</p>
+                                <p className={`text-[10px] font-black ${positive ? "text-green-700" : "text-red-700"}`}>
+                                  {formatPercent(Number(row.yoy_change_percent || 0))} YoY
+                                </p>
+                              </div>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-100">
+                              <div className="h-2 rounded-full bg-orange-600" style={{ width: `${Math.min(100, Math.max(0, Number(row.current_share_percent || 0)))}%` }} />
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
+                              <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-600">Share {Number(row.current_share_percent || 0).toFixed(1)}%</span>
+                              <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700">Prev {formatPercent(Number(row.previous_change_percent || 0))}</span>
+                              <span className={positive ? "rounded-md bg-green-50 px-2 py-1 text-green-700" : "rounded-md bg-red-50 px-2 py-1 text-red-700"}>
+                                YoY {formatPercent(Number(row.yoy_change_percent || 0))}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm font-bold text-gray-400">
+                        Channel comparison will populate after orders are captured.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Payment Method Mix</p>
+                        <h3 className="mt-1 text-lg font-black text-gray-950">Tender Performance</h3>
+                      </div>
+                      <CreditCard className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div className="space-y-3">
+                      {paymentRows.length ? (
+                        paymentRows.map((row: any) => (
+                          <div key={`payment-${row.key}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 p-3">
+                            <div>
+                              <p className="text-sm font-black text-gray-950">{row.label}</p>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                                {row.current.orders || 0} orders | Share {Number(row.current_share_percent || 0).toFixed(1)}%
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-black text-gray-950">{formatMoney(row.current.revenue)}</p>
+                              <p className="text-[10px] font-black text-gray-500">{formatPercent(Number(row.previous_change_percent || 0))} prev</p>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm font-bold text-gray-400">No payment method split yet.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                    <StatusMix title="Payment Status" rows={paymentStatusRows} formatMoney={formatMoney} />
+                    <StatusMix title="Fulfillment Status" rows={fulfillmentStatusRows} formatMoney={formatMoney} />
+                  </div>
+
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-700" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-900">Operating Insights</p>
+                    </div>
+                    <div className="space-y-2">
+                      {(orderChannels.insights || []).map((insight: string) => (
+                        <p key={insight} className="rounded-md bg-white px-3 py-2 text-sm font-bold text-amber-900">
+                          {insight}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
           {marketing && (
             <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -314,7 +460,7 @@ export default function Reports() {
                           <td className="px-4 py-3">
                             <p className="text-sm font-black text-gray-950">{row.promotion_detail.name}</p>
                             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                              {row.promotion_detail.code || "No code"} · {row.campaign_window.phase}
+                              {row.promotion_detail.code || "No code"} | {row.campaign_window.phase}
                             </p>
                           </td>
                           <td className="px-4 py-3 text-right text-sm font-black text-green-700">
@@ -593,6 +739,40 @@ function MarketingMetric({
       </div>
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-black text-gray-950">{value}</p>
+    </div>
+  );
+}
+
+function StatusMix({
+  title,
+  rows,
+  formatMoney,
+}: {
+  title: string;
+  rows: any[];
+  formatMoney: (value: number) => string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">{title}</p>
+      <div className="space-y-2">
+        {rows.length ? (
+          rows.map((row: any) => (
+            <div key={`${title}-${row.key}`} className="rounded-md bg-white px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-black text-gray-950">{row.label}</p>
+                <p className="text-xs font-black text-gray-700">{row.current.orders || 0}</p>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                <span>{formatMoney(row.current.revenue)}</span>
+                <span>{Number(row.current_share_percent || 0).toFixed(1)}%</span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-md border border-dashed border-gray-300 bg-white px-3 py-4 text-center text-sm font-bold text-gray-400">No split yet.</p>
+        )}
+      </div>
     </div>
   );
 }

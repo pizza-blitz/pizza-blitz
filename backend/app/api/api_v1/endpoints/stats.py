@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, text
-from app.api.deps import get_db
-from app.models.domain import DailySales, FixedCost
+from app.api.deps import get_db, require_roles
+from app.models.domain import DailySales, FixedCost, RestaurantOrder
 from datetime import datetime, timedelta
 
 router = APIRouter()
@@ -23,6 +23,10 @@ def _percent_change(current: float, baseline: float) -> float:
 
 def _direction(change_percent: float) -> str:
     return "up" if change_percent >= 0 else "down"
+
+def _bucket_label(value: str | None, fallback: str = "unknown") -> str:
+    normalized = (value or fallback).strip().lower() or fallback
+    return normalized.replace("_", " ").replace("-", " ").title()
 
 def _aggregate_range(db: Session, start_date, end_date):
     row = db.query(
@@ -71,6 +75,89 @@ def _metric_card(key: str, label: str, value_key: str, current: dict, previous: 
         "yoy_change_percent": yoy_change,
         "yoy_direction": _direction(yoy_change),
     }
+
+def _order_query(db: Session, start_date, end_date):
+    return db.query(RestaurantOrder).filter(
+        RestaurantOrder.date >= start_date,
+        RestaurantOrder.date <= end_date,
+    )
+
+def _order_aggregate_range(db: Session, start_date, end_date) -> dict:
+    row = _order_query(db, start_date, end_date).with_entities(
+        func.count(RestaurantOrder.id).label("orders"),
+        func.sum(RestaurantOrder.subtotal).label("subtotal"),
+        func.sum(RestaurantOrder.discount_amount).label("discount"),
+        func.sum(RestaurantOrder.tax_amount).label("tax"),
+        func.sum(RestaurantOrder.total_amount).label("revenue"),
+    ).first()
+
+    order_count = int(row.orders or 0)
+    revenue = float(row.revenue or 0)
+    subtotal = float(row.subtotal or 0)
+    discount = float(row.discount or 0)
+    tax = float(row.tax or 0)
+    return {
+        "orders": order_count,
+        "subtotal": round(subtotal, 2),
+        "discount": round(discount, 2),
+        "tax": round(tax, 2),
+        "revenue": round(revenue, 2),
+        "average_order_value": round(revenue / order_count, 2) if order_count else 0,
+        "discount_rate_percent": round((discount / subtotal) * 100, 2) if subtotal else 0,
+    }
+
+def _order_dimension_map(db: Session, start_date, end_date, column) -> dict:
+    rows = (
+        _order_query(db, start_date, end_date)
+        .with_entities(
+            column.label("bucket"),
+            func.count(RestaurantOrder.id).label("orders"),
+            func.sum(RestaurantOrder.total_amount).label("revenue"),
+            func.sum(RestaurantOrder.discount_amount).label("discount"),
+        )
+        .group_by(column)
+        .all()
+    )
+    data = {}
+    for row in rows:
+        key = (row.bucket or "unknown").strip().lower() or "unknown"
+        orders = int(row.orders or 0)
+        revenue = float(row.revenue or 0)
+        data[key] = {
+            "key": key,
+            "label": _bucket_label(key),
+            "orders": orders,
+            "revenue": round(revenue, 2),
+            "discount": round(float(row.discount or 0), 2),
+            "average_order_value": round(revenue / orders, 2) if orders else 0,
+        }
+    return data
+
+def _dimension_comparison_rows(current: dict, previous: dict, last_year: dict, total_revenue: float) -> list[dict]:
+    keys = sorted(
+        set(current.keys()) | set(previous.keys()) | set(last_year.keys()),
+        key=lambda key: current.get(key, {}).get("revenue", 0),
+        reverse=True,
+    )
+    rows = []
+    for key in keys:
+        current_row = current.get(key) or {"key": key, "label": _bucket_label(key), "orders": 0, "revenue": 0, "discount": 0, "average_order_value": 0}
+        previous_row = previous.get(key) or {"orders": 0, "revenue": 0, "discount": 0, "average_order_value": 0}
+        last_year_row = last_year.get(key) or {"orders": 0, "revenue": 0, "discount": 0, "average_order_value": 0}
+        current_revenue = float(current_row["revenue"] or 0)
+        previous_revenue = float(previous_row["revenue"] or 0)
+        last_year_revenue = float(last_year_row["revenue"] or 0)
+        rows.append({
+            "key": key,
+            "label": current_row["label"],
+            "current": current_row,
+            "previous": previous_row,
+            "last_year": last_year_row,
+            "current_share_percent": round((current_revenue / total_revenue) * 100, 2) if total_revenue else 0,
+            "previous_change_percent": _percent_change(current_revenue, previous_revenue),
+            "yoy_change_percent": _percent_change(current_revenue, last_year_revenue),
+        })
+    return rows
 
 @router.get("/dashboard-stats")
 def get_dashboard_stats(period: str = "30days", db: Session = Depends(get_db)):
@@ -374,6 +461,110 @@ def performance_comparison_dashboard(period: str = "30days", db: Session = Depen
         "best_day": best_day,
         "slowest_day": slowest_day,
         "risk_flags": risk_flags,
+    }
+
+@router.get("/compare/order-channel-dashboard")
+def order_channel_comparison_dashboard(
+    period: str = Query("30days"),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    days = _period_days(period)
+    today = datetime.utcnow().date()
+    current_start = today - timedelta(days=days - 1)
+    current_end = today
+    previous_start = current_start - timedelta(days=days)
+    previous_end = current_start - timedelta(days=1)
+    last_year_start = current_start - timedelta(days=365)
+    last_year_end = current_end - timedelta(days=365)
+
+    current = _order_aggregate_range(db, current_start, current_end)
+    previous = _order_aggregate_range(db, previous_start, previous_end)
+    last_year = _order_aggregate_range(db, last_year_start, last_year_end)
+    current_revenue = float(current["revenue"] or 0)
+
+    channel_mix = _dimension_comparison_rows(
+        _order_dimension_map(db, current_start, current_end, RestaurantOrder.order_type),
+        _order_dimension_map(db, previous_start, previous_end, RestaurantOrder.order_type),
+        _order_dimension_map(db, last_year_start, last_year_end, RestaurantOrder.order_type),
+        current_revenue,
+    )
+    payment_mix = _dimension_comparison_rows(
+        _order_dimension_map(db, current_start, current_end, RestaurantOrder.payment_method),
+        _order_dimension_map(db, previous_start, previous_end, RestaurantOrder.payment_method),
+        _order_dimension_map(db, last_year_start, last_year_end, RestaurantOrder.payment_method),
+        current_revenue,
+    )
+    payment_status_mix = _dimension_comparison_rows(
+        _order_dimension_map(db, current_start, current_end, RestaurantOrder.payment_status),
+        _order_dimension_map(db, previous_start, previous_end, RestaurantOrder.payment_status),
+        _order_dimension_map(db, last_year_start, last_year_end, RestaurantOrder.payment_status),
+        current_revenue,
+    )
+    fulfillment_status_mix = _dimension_comparison_rows(
+        _order_dimension_map(db, current_start, current_end, RestaurantOrder.status),
+        _order_dimension_map(db, previous_start, previous_end, RestaurantOrder.status),
+        _order_dimension_map(db, last_year_start, last_year_end, RestaurantOrder.status),
+        current_revenue,
+    )
+
+    strongest_channel = channel_mix[0] if channel_mix else None
+    paid_row = next((row for row in payment_status_mix if row["key"] == "paid"), None)
+    awaiting_row = next((row for row in payment_status_mix if row["key"] == "awaiting_payment"), None)
+    pending_row = next((row for row in payment_status_mix if row["key"] == "pending"), None)
+    paid_orders = int(paid_row["current"]["orders"]) if paid_row else 0
+    unsettled_orders = sum(
+        int(row["current"]["orders"] or 0)
+        for row in [awaiting_row, pending_row]
+        if row
+    )
+    order_change_percent = _percent_change(current["orders"], previous["orders"])
+    revenue_change_percent = _percent_change(current["revenue"], previous["revenue"])
+    yoy_revenue_change_percent = _percent_change(current["revenue"], last_year["revenue"])
+
+    insights = []
+    if strongest_channel:
+        insights.append(
+            f"{strongest_channel['label']} leads this period with "
+            f"{strongest_channel['current_share_percent']}% of order revenue."
+        )
+    if unsettled_orders:
+        insights.append(f"{unsettled_orders} orders still need payment settlement review.")
+    if revenue_change_percent < 0:
+        insights.append(f"Order revenue is {abs(revenue_change_percent)}% below the previous period.")
+    elif current["orders"]:
+        insights.append(f"Order revenue is {revenue_change_percent}% above the previous period.")
+    if yoy_revenue_change_percent < 0:
+        insights.append(f"Order revenue is {abs(yoy_revenue_change_percent)}% behind last year.")
+    if not insights:
+        insights.append("Order channels are ready for deeper comparison once more orders are captured.")
+
+    return {
+        "period": {
+            "label": period,
+            "days": days,
+            "current_start": current_start.isoformat(),
+            "current_end": current_end.isoformat(),
+            "previous_start": previous_start.isoformat(),
+            "previous_end": previous_end.isoformat(),
+            "last_year_start": last_year_start.isoformat(),
+            "last_year_end": last_year_end.isoformat(),
+        },
+        "current": current,
+        "previous": previous,
+        "last_year": last_year,
+        "summary": {
+            "order_change_percent": order_change_percent,
+            "revenue_change_percent": revenue_change_percent,
+            "yoy_revenue_change_percent": yoy_revenue_change_percent,
+            "paid_orders": paid_orders,
+            "unsettled_orders": unsettled_orders,
+        },
+        "channel_mix": channel_mix,
+        "payment_mix": payment_mix,
+        "payment_status_mix": payment_status_mix,
+        "fulfillment_status_mix": fulfillment_status_mix,
+        "insights": insights[:5],
     }
 
 @router.get("/insights/day-of-week")
