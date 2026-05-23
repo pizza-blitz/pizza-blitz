@@ -213,6 +213,32 @@ type CampaignPerformance = {
   };
 };
 
+type CampaignPerformanceRow = CampaignPerformance & {
+  promotion: string;
+  promotion_detail: Promotion;
+  avg_daily_sale_during: number;
+  total_revenue_during: number;
+  redemption_count: number;
+  redemption_revenue: number;
+  redemption_discount: number;
+};
+
+type MarketingPerformanceRollup = {
+  summary: {
+    campaign_count: number;
+    redemption_orders: number;
+    redemption_revenue: number;
+    redemption_discount: number;
+    average_order_value: number;
+    unique_customers: number;
+    social_post_count: number;
+    ad_campaign_count: number;
+    planned_ad_budget: number;
+  };
+  best_campaign?: CampaignPerformanceRow | null;
+  campaigns: CampaignPerformanceRow[];
+};
+
 type CampaignForm = {
   name: string;
   code: string;
@@ -294,6 +320,7 @@ export default function PromotionsPage() {
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryStatusFilter>("all");
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
+  const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
   const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
@@ -308,6 +335,7 @@ export default function PromotionsPage() {
     fetchPromotions();
     fetchProviderReadiness();
     fetchPlaybook();
+    fetchPerformanceRollup();
   }, []);
 
   const selectedPromotion = useMemo(
@@ -317,6 +345,8 @@ export default function PromotionsPage() {
 
   const activeCount = promotions.filter((promotion) => promotion.status === "active").length;
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
+  const bestCampaign = performanceRollup?.best_campaign || null;
+  const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
 
   const fetchProviderReadiness = async () => {
     const response = await fetch(`${PROMOTIONS_API}/providers/status`, {
@@ -339,6 +369,17 @@ export default function PromotionsPage() {
     }
     const data = await response.json();
     setPlaybook(data.playbook || []);
+  };
+
+  const fetchPerformanceRollup = async () => {
+    const response = await fetch(`${PROMOTIONS_API}/performance?limit=12`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      setPerformanceRollup(null);
+      return;
+    }
+    setPerformanceRollup(await response.json());
   };
 
   const fetchPromotions = async () => {
@@ -447,6 +488,7 @@ export default function PromotionsPage() {
     setShowAdd(false);
     setFormData(emptyForm);
     await fetchPromotions();
+    await fetchPerformanceRollup();
     selectPromotion(data.promotion.id);
   };
 
@@ -467,6 +509,7 @@ export default function PromotionsPage() {
     setMessage(`Created playbook campaign ${data.promotion.name}.`);
     await fetchPromotions();
     await fetchPlaybook();
+    await fetchPerformanceRollup();
     setSelectedId(data.promotion.id);
     await fetchCampaignDetails(data.promotion.id);
     setCreatingPlaybookAudience(null);
@@ -538,6 +581,7 @@ export default function PromotionsPage() {
         : `${forced ? "Force resend" : "Send"} finished: ${data.sent_count} sent, ${data.skipped_count} skipped, ${data.failed_count} failed.`
     );
     await fetchCampaignDetails(selectedPromotion.id);
+    await fetchPerformanceRollup();
     setSending(null);
   };
 
@@ -563,6 +607,7 @@ export default function PromotionsPage() {
       }
       setMessage(`Created social post #${data.post.id} from ${selectedPromotion.name}.`);
       await fetchPerformance(selectedPromotion.id);
+      await fetchPerformanceRollup();
     } catch {
       setMessage("Social post could not be created.");
     } finally {
@@ -594,6 +639,7 @@ export default function PromotionsPage() {
       }
       setMessage(`Created ad campaign #${data.campaign.id} from ${selectedPromotion.name}.`);
       await fetchPerformance(selectedPromotion.id);
+      await fetchPerformanceRollup();
     } catch {
       setMessage("Ad campaign could not be created.");
     } finally {
@@ -618,6 +664,7 @@ export default function PromotionsPage() {
               fetchPromotions();
               fetchProviderReadiness();
               fetchPlaybook();
+              fetchPerformanceRollup();
             }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
@@ -644,6 +691,125 @@ export default function PromotionsPage() {
         <Metric label="Scheduled" value={scheduledCount} icon={Calendar} />
         <Metric label="Audience" value={outreach?.audience_count || 0} icon={Users} />
       </div>
+
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              Marketing Performance Board
+            </p>
+            <h2 className="mt-1 text-xl font-black">Campaign comparison and coupon ROI</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Compare coupon revenue, discount cost, outreach conversion, social drafts, and ad handoff in one view.
+            </p>
+          </div>
+          <button
+            onClick={fetchPerformanceRollup}
+            className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh Board
+          </button>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <MiniSignal
+            icon={ShoppingBag}
+            label="Coupon Revenue"
+            value={formatRupees(performanceRollup?.summary.redemption_revenue || 0)}
+          />
+          <MiniSignal
+            icon={Tag}
+            label="Coupon Orders"
+            value={`${performanceRollup?.summary.redemption_orders || 0}`}
+          />
+          <MiniSignal
+            icon={Users}
+            label="Unique Buyers"
+            value={`${performanceRollup?.summary.unique_customers || 0}`}
+          />
+          <MiniSignal
+            icon={Share2}
+            label="Social Posts"
+            value={`${performanceRollup?.summary.social_post_count || 0}`}
+          />
+          <MiniSignal
+            icon={Target}
+            label="Ad Budget"
+            value={formatRupees(performanceRollup?.summary.planned_ad_budget || 0)}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="rounded-xl border border-orange-500/10 bg-black/25 p-5 xl:col-span-4">
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              Best Campaign
+            </p>
+            <h3 className="mt-2 break-words text-lg font-black">
+              {bestCampaign?.promotion || "No campaign revenue yet"}
+            </h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-gray-500">
+              {bestCampaign
+                ? `${bestCampaign.redemptions.count} coupon orders, ${formatRupees(
+                    bestCampaign.redemptions.revenue
+                  )} revenue, ${bestCampaign.outreach.conversion_rate_percent}% outreach conversion.`
+                : "Revenue appears here after a coupon order is attributed to a campaign."}
+            </p>
+            {bestCampaign ? (
+              <button
+                type="button"
+                onClick={() => selectPromotion(bestCampaign.promotion_detail.id)}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-black text-white hover:bg-orange-600"
+              >
+                Open Campaign <ExternalLink className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+
+          <div className="xl:col-span-8">
+            <div className="overflow-hidden rounded-xl border border-white/5 bg-black/25">
+              <div className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600">
+                <span className="col-span-4">Campaign Comparison</span>
+                <span className="col-span-2 text-right">Revenue</span>
+                <span className="col-span-2 text-right">Orders</span>
+                <span className="col-span-2 text-right">Outreach</span>
+                <span className="col-span-2 text-right">Handoffs</span>
+              </div>
+              {comparisonRows.map((row) => (
+                <button
+                  key={row.promotion_detail.id}
+                  type="button"
+                  onClick={() => selectPromotion(row.promotion_detail.id)}
+                  className="grid w-full grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-left text-sm hover:bg-white/[0.03]"
+                >
+                  <span className="col-span-4 min-w-0">
+                    <span className="block break-words font-black text-white">{row.promotion}</span>
+                    <span className="mt-1 block text-xs font-semibold uppercase text-gray-600">
+                      {row.campaign_window.phase} | {row.promotion_detail.code || "No code"}
+                    </span>
+                  </span>
+                  <span className="col-span-2 text-right font-black text-gray-200">
+                    {formatRupees(row.redemptions.revenue)}
+                  </span>
+                  <span className="col-span-2 text-right text-gray-400">
+                    {row.redemptions.count}
+                  </span>
+                  <span className="col-span-2 text-right text-gray-400">
+                    {row.outreach.conversion_rate_percent}%
+                  </span>
+                  <span className="col-span-2 text-right text-gray-400">
+                    {row.social.post_count + row.ads.campaign_count}
+                  </span>
+                </button>
+              ))}
+              {!comparisonRows.length && (
+                <div className="p-8 text-center text-sm font-semibold text-gray-500">
+                  No campaign performance rows yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border border-orange-500/10 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
