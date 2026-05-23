@@ -560,10 +560,12 @@ def _unique_retention_code(db: Session, prefix: str) -> str:
 
 
 def _delivery_dict(delivery: CampaignDelivery) -> dict:
+    customer = delivery.customer
     return {
         "id": delivery.id,
         "promotion_id": delivery.promotion_id,
         "customer_id": delivery.customer_id,
+        "customer": _customer_dict(customer) if customer else None,
         "channel": delivery.channel,
         "destination": delivery.destination,
         "provider": delivery.provider,
@@ -571,6 +573,8 @@ def _delivery_dict(delivery: CampaignDelivery) -> dict:
         "external_id": delivery.external_id,
         "error": delivery.error,
         "dry_run": delivery.dry_run,
+        "retryable": delivery.status in {"failed", "skipped"},
+        "recovery_action": _delivery_recovery_action(delivery),
         "attempted_at": delivery.attempted_at.isoformat() if delivery.attempted_at else None,
     }
 
@@ -581,7 +585,30 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
         "dry_run_count": sum(1 for delivery in deliveries if delivery.status == "dry_run"),
         "failed_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
         "skipped_count": sum(1 for delivery in deliveries if delivery.status == "skipped"),
+        "needs_attention_count": sum(
+            1 for delivery in deliveries if delivery.status in {"failed", "skipped"}
+        ),
+        "retryable_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
     }
+
+
+def _delivery_recovery_action(delivery: CampaignDelivery) -> str:
+    if delivery.status == "sent":
+        return "Delivered by provider."
+    if delivery.status == "dry_run":
+        return "Dry run passed; send live when provider setup is ready."
+    if delivery.status == "failed":
+        return "Retry after checking provider credentials or destination format."
+    if delivery.status != "skipped":
+        return "Monitor this pending delivery."
+    error = (delivery.error or "").lower()
+    if "already sent" in error:
+        return "Already sent; use Force Resend only for deliberate repeats."
+    if delivery.channel == "email" or "email" in error:
+        return "Add or correct the customer's email address."
+    if delivery.channel in {"sms", "whatsapp"} or "phone" in error:
+        return "Add or correct the customer's phone number."
+    return "Review the skipped delivery before retrying."
 
 
 def _coupon_orders_query(db: Session, promo: Promotion):
@@ -1203,6 +1230,7 @@ def send_promotion_campaign(
 def promotion_deliveries(
     promo_id: int,
     limit: int = Query(50, ge=1, le=500),
+    status: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
@@ -1210,15 +1238,26 @@ def promotion_deliveries(
     if not promo:
         raise HTTPException(status_code=404, detail="Promotion not found")
 
+    query = db.query(CampaignDelivery).filter(CampaignDelivery.promotion_id == promo.id)
+    if status:
+        normalized_status = status.strip().lower()
+        if normalized_status == "needs_attention":
+            query = query.filter(CampaignDelivery.status.in_(["failed", "skipped"]))
+        elif normalized_status in {"sent", "dry_run", "failed", "skipped", "pending"}:
+            query = query.filter(CampaignDelivery.status == normalized_status)
+        else:
+            raise HTTPException(status_code=422, detail="Unsupported delivery status filter.")
+
     deliveries = (
-        db.query(CampaignDelivery)
-        .filter(CampaignDelivery.promotion_id == promo.id)
-        .order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        query.order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
         .limit(limit)
         .all()
     )
+    latest_attempted_at = deliveries[0].attempted_at if deliveries else None
     return {
         "promotion": _promotion_dict(promo),
+        "status_filter": status or "all",
+        "latest_attempted_at": latest_attempted_at.isoformat() if latest_attempted_at else None,
         **_delivery_counts(deliveries),
         "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
     }

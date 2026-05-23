@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Calendar,
   CheckCircle2,
+  Clock,
   Copy,
   ExternalLink,
   Mail,
@@ -122,21 +123,34 @@ type RetentionPlaybookEntry = {
 type CampaignDelivery = {
   id: number;
   channel: ChannelKey;
+  customer?: {
+    name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
   destination?: string | null;
   provider?: string | null;
   status: "sent" | "dry_run" | "failed" | "skipped" | "pending";
   external_id?: string | null;
   error?: string | null;
   dry_run: boolean;
+  retryable?: boolean;
+  recovery_action?: string;
   attempted_at?: string | null;
 };
 
+type DeliveryStatusFilter = "all" | "needs_attention" | CampaignDelivery["status"];
+
 type DeliveryHistory = {
+  status_filter?: DeliveryStatusFilter;
+  latest_attempted_at?: string | null;
   attempted_count: number;
   sent_count: number;
   dry_run_count: number;
   failed_count: number;
   skipped_count: number;
+  needs_attention_count: number;
+  retryable_count: number;
   deliveries: CampaignDelivery[];
 };
 
@@ -244,6 +258,15 @@ const statusOptions: { value: StatusKey; label: string }[] = [
   { value: "completed", label: "Completed" },
 ];
 
+const deliveryStatusFilters: { value: DeliveryStatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "needs_attention", label: "Needs Attention" },
+  { value: "dry_run", label: "Dry Run" },
+  { value: "sent", label: "Sent" },
+  { value: "failed", label: "Failed" },
+  { value: "skipped", label: "Skipped" },
+];
+
 const defaultSocialImage =
   "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80";
 
@@ -269,13 +292,14 @@ export default function PromotionsPage() {
   const [outreach, setOutreach] = useState<Outreach | null>(null);
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
+  const [deliveryFilter, setDeliveryFilter] = useState<DeliveryStatusFilter>("all");
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
   const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sending, setSending] = useState<"dry_run" | "send" | null>(null);
+  const [sending, setSending] = useState<"dry_run" | "send" | "force_dry_run" | "force_send" | null>(null);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
@@ -366,8 +390,9 @@ export default function PromotionsPage() {
     setDispatch(await response.json());
   };
 
-  const fetchDeliveries = async (promotionId: number) => {
-    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/deliveries`, {
+  const fetchDeliveries = async (promotionId: number, filter = deliveryFilter) => {
+    const query = filter === "all" ? "" : `?status=${filter}`;
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/deliveries${query}`, {
       credentials: "include",
     });
     if (!response.ok) {
@@ -391,6 +416,13 @@ export default function PromotionsPage() {
   const selectPromotion = (promotionId: number) => {
     setSelectedId(promotionId);
     fetchCampaignDetails(promotionId);
+  };
+
+  const changeDeliveryFilter = (filter: DeliveryStatusFilter) => {
+    setDeliveryFilter(filter);
+    if (selectedId) {
+      fetchDeliveries(selectedId, filter);
+    }
   };
 
   const savePromotion = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -467,18 +499,32 @@ export default function PromotionsPage() {
     setMessage(`Copied ${dispatch.contacts.length} send-prep rows.`);
   };
 
-  const sendCampaign = async (dryRun: boolean) => {
+  const sendCampaign = async (
+    dryRun: boolean,
+    options: { forceResend?: boolean; markCompleted?: boolean } = {}
+  ) => {
     if (!selectedPromotion) return;
-    if (!dryRun) {
-      const confirmed = window.confirm(`Send ${selectedPromotion.name} to ready ${channelLabel(selectedPromotion.channel)} contacts?`);
+    const forced = Boolean(options.forceResend);
+    if (!dryRun || forced) {
+      const action = dryRun
+        ? `rerun the dry-run check for ${selectedPromotion.name}`
+        : forced
+        ? `force resend ${selectedPromotion.name} to ready contacts`
+        : `send ${selectedPromotion.name} to ready ${channelLabel(selectedPromotion.channel)} contacts`;
+      const confirmed = window.confirm(`Confirm you want to ${action}?`);
       if (!confirmed) return;
     }
-    setSending(dryRun ? "dry_run" : "send");
+    setSending(forced ? (dryRun ? "force_dry_run" : "force_send") : dryRun ? "dry_run" : "send");
     const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/send`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dry_run: dryRun, limit: 50 }),
+      body: JSON.stringify({
+        dry_run: dryRun,
+        limit: 50,
+        force_resend: forced,
+        mark_completed: Boolean(options.markCompleted),
+      }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -488,8 +534,8 @@ export default function PromotionsPage() {
     }
     setMessage(
       dryRun
-        ? `Dry run checked ${data.attempted_count} contacts.`
-        : `Send finished: ${data.sent_count} sent, ${data.skipped_count} skipped, ${data.failed_count} failed.`
+        ? `${forced ? "Forced dry run" : "Dry run"} checked ${data.attempted_count} contacts.`
+        : `${forced ? "Force resend" : "Send"} finished: ${data.sent_count} sent, ${data.skipped_count} skipped, ${data.failed_count} failed.`
     );
     await fetchCampaignDetails(selectedPromotion.id);
     setSending(null);
@@ -1019,37 +1065,111 @@ export default function PromotionsPage() {
                   )}
                 </div>
 
-                {deliveryHistory?.deliveries.length ? (
+                {deliveryHistory ? (
                   <div className="mt-6 rounded-xl border border-white/5 bg-black/25 p-5">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <h3 className="font-black">Recent Delivery Attempts</h3>
-                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
-                        {deliveryHistory.sent_count} sent / {deliveryHistory.failed_count} failed
-                      </span>
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                          Delivery Recovery
+                        </p>
+                        <h3 className="mt-1 font-black">Recent Delivery Attempts</h3>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => sendCampaign(true, { forceResend: true })}
+                          disabled={sending !== null}
+                          className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15 disabled:cursor-wait disabled:opacity-50"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" /> Recheck Audience
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendCampaign(false, { forceResend: true })}
+                          disabled={sending !== null || !dispatch?.provider_status?.configured}
+                          title={
+                            dispatch?.provider_status?.configured
+                              ? "Force resend campaign"
+                              : `Missing: ${dispatch?.provider_status?.missing_settings.join(", ") || "provider setup"}`
+                          }
+                          className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-xs font-black text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Send className="h-3.5 w-3.5" /> Force Resend
+                        </button>
+                      </div>
                     </div>
+
+                    <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+                      <MiniSignal icon={Send} label="Attempts" value={`${deliveryHistory.attempted_count}`} />
+                      <MiniSignal icon={CheckCircle2} label="Dry Runs" value={`${deliveryHistory.dry_run_count}`} />
+                      <MiniSignal icon={AlertTriangle} label="Needs Attention" value={`${deliveryHistory.needs_attention_count}`} />
+                      <MiniSignal icon={RefreshCw} label="Retryable" value={`${deliveryHistory.retryable_count}`} />
+                      <MiniSignal
+                        icon={Clock}
+                        label="Latest"
+                        value={
+                          deliveryHistory.latest_attempted_at
+                            ? new Date(deliveryHistory.latest_attempted_at).toLocaleDateString()
+                            : "No attempts"
+                        }
+                      />
+                    </div>
+
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {deliveryStatusFilters.map((filter) => (
+                        <button
+                          key={filter.value}
+                          type="button"
+                          onClick={() => changeDeliveryFilter(filter.value)}
+                          className={`rounded-lg border px-3 py-2 text-xs font-black uppercase ${
+                            deliveryFilter === filter.value
+                              ? "border-orange-500 bg-orange-500 text-white"
+                              : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white"
+                          }`}
+                        >
+                          {filter.label}
+                        </button>
+                      ))}
+                    </div>
+
                     <div className="space-y-2">
-                      {deliveryHistory.deliveries.slice(0, 6).map((delivery) => (
+                      {deliveryHistory.deliveries.slice(0, 8).map((delivery) => (
                         <div
                           key={delivery.id}
                           className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-sm md:grid-cols-12"
                         >
-                          <div className="md:col-span-3">
-                            <p className="font-bold text-white">{delivery.destination || "No destination"}</p>
-                            <p className="text-xs text-gray-500">{delivery.provider || "No provider"}</p>
+                          <div className="min-w-0 md:col-span-3">
+                            <p className="break-words font-bold text-white">
+                              {delivery.customer?.name || "Walk-in Customer"}
+                            </p>
+                            <p className="break-all text-xs text-gray-500">
+                              {delivery.destination || delivery.customer?.email || delivery.customer?.phone || "No destination"}
+                            </p>
                           </div>
                           <div className="md:col-span-2">
                             <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(delivery.status)}`}>
-                              {delivery.status}
+                              {delivery.status.replace("_", " ")}
                             </span>
                           </div>
-                          <div className="text-gray-500 md:col-span-3">
-                            {delivery.attempted_at ? new Date(delivery.attempted_at).toLocaleString() : "Not attempted"}
+                          <div className="text-gray-500 md:col-span-2">
+                            {delivery.provider || "No provider"}
+                            <p className="mt-1 text-xs">
+                              {delivery.attempted_at ? new Date(delivery.attempted_at).toLocaleString() : "Not attempted"}
+                            </p>
                           </div>
-                          <div className="text-gray-400 md:col-span-4">
+                          <div className="min-w-0 break-words text-gray-400 md:col-span-3">
                             {delivery.external_id || delivery.error || "Ready"}
+                          </div>
+                          <div className="min-w-0 break-words text-xs font-semibold leading-5 text-gray-500 md:col-span-2">
+                            {delivery.recovery_action || "Review delivery."}
                           </div>
                         </div>
                       ))}
+                      {!deliveryHistory.deliveries.length && (
+                        <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
+                          No delivery attempts match {deliveryFilterLabel(deliveryFilter)}.
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -1303,6 +1423,10 @@ function handoffStatusClass(status: string) {
     return "bg-red-500/15 text-red-300";
   }
   return "bg-blue-500/15 text-blue-300";
+}
+
+function deliveryFilterLabel(filter: DeliveryStatusFilter) {
+  return deliveryStatusFilters.find((option) => option.value === filter)?.label || filter;
 }
 
 function ProviderCard({
