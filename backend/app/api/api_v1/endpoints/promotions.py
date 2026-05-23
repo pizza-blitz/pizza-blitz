@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -50,7 +52,7 @@ VALID_AD_PLATFORMS = {"facebook", "instagram"}
 VALID_AD_CAMPAIGN_STATUSES = {"draft", "planned", "ready"}
 DEFAULT_MESSAGE_TEMPLATE = (
     "Hi {name}, Pizza Blitz has {offer} for you. Use code {code} before {end_date}. "
-    "Reply or visit us to order."
+    "Order here: {order_link}"
 )
 DEFAULT_SOCIAL_MESSAGE_TEMPLATE = (
     "{promo_name} at Pizza Blitz: {offer}. Use code {code} before {end_date}. "
@@ -70,7 +72,7 @@ RETENTION_PLAYBOOK = {
         "discount_value": 10,
         "channel": "whatsapp",
         "code_prefix": "NEW",
-        "message_template": "Hi {name}, welcome back to Pizza Blitz. Your next-slice offer is {offer}. Use {code} before {end_date}.",
+        "message_template": "Hi {name}, welcome back to Pizza Blitz. Your next-slice offer is {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
     "regular_guests": {
         "label": "Regular Guests",
@@ -81,7 +83,7 @@ RETENTION_PLAYBOOK = {
         "discount_value": 12,
         "channel": "email",
         "code_prefix": "REG",
-        "message_template": "Hi {name}, your Pizza Blitz regular guest reward is {offer}. Use {code} before {end_date}.",
+        "message_template": "Hi {name}, your Pizza Blitz regular guest reward is {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
     "vip_guests": {
         "label": "VIP Guests",
@@ -92,7 +94,7 @@ RETENTION_PLAYBOOK = {
         "discount_value": 18,
         "channel": "email",
         "code_prefix": "VIP",
-        "message_template": "Hi {name}, your VIP Pizza Blitz party-pack offer is {offer}. Use {code} before {end_date}.",
+        "message_template": "Hi {name}, your VIP Pizza Blitz party-pack offer is {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
     "active_customers": {
         "label": "Active This Week",
@@ -103,7 +105,7 @@ RETENTION_PLAYBOOK = {
         "discount_value": 8,
         "channel": "whatsapp",
         "code_prefix": "ADD",
-        "message_template": "Hi {name}, complete this week's Pizza Blitz craving with {offer}. Use {code} before {end_date}.",
+        "message_template": "Hi {name}, complete this week's Pizza Blitz craving with {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
     "comeback_customers": {
         "label": "Comeback Due",
@@ -114,7 +116,7 @@ RETENTION_PLAYBOOK = {
         "discount_value": 15,
         "channel": "sms",
         "code_prefix": "BACK",
-        "message_template": "Hi {name}, Pizza Blitz misses you. Come back with {offer}. Use {code} before {end_date}.",
+        "message_template": "Hi {name}, Pizza Blitz misses you. Come back with {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
     "win_back_customers": {
         "label": "Win-back Priority",
@@ -125,7 +127,7 @@ RETENTION_PLAYBOOK = {
         "discount_value": 20,
         "channel": "whatsapp",
         "code_prefix": "WIN",
-        "message_template": "Hi {name}, here is a Pizza Blitz win-back treat: {offer}. Use {code} before {end_date}.",
+        "message_template": "Hi {name}, here is a Pizza Blitz win-back treat: {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
 }
 
@@ -244,6 +246,22 @@ def _offer_label(promo: Promotion) -> str:
         return f"{value}% off"
     return f"Rs {value} off"
 
+
+def _public_site_url() -> str:
+    return (
+        os.getenv("PIZZA_BLITZ_PUBLIC_BASE_URL")
+        or os.getenv("PUBLIC_SITE_URL")
+        or "http://127.0.0.1:3011"
+    ).strip().rstrip("/")
+
+
+def _order_offer_link(promo: Promotion) -> str:
+    order_url = f"{_public_site_url()}/order"
+    if promo.code:
+        return f"{order_url}?coupon={quote(promo.code, safe='')}"
+    return order_url
+
+
 def _customer_dict(customer: Customer) -> dict:
     return {
         "id": customer.id,
@@ -292,15 +310,20 @@ def _audience_query(db: Session, audience: str):
 
 def _render_message(promo: Promotion, customer: Optional[Customer] = None) -> str:
     template = promo.message_template or DEFAULT_MESSAGE_TEMPLATE
+    order_link = _order_offer_link(promo)
     values = {
         "name": customer.name if customer and customer.name else "Pizza Lover",
         "offer": _offer_label(promo),
         "code": promo.code or "PIZZABLITZ",
         "end_date": promo.end_date.isoformat(),
         "promo_name": promo.name,
+        "order_link": order_link,
     }
     try:
-        return template.format(**values)
+        message = template.format(**values).strip()
+        if promo.code and order_link not in message:
+            message = f"{message} Order here: {order_link}"
+        return message
     except KeyError as exc:
         raise HTTPException(
             status_code=422,
@@ -315,6 +338,7 @@ def _render_social_message(promo: Promotion, template: Optional[str] = None) -> 
         "end_date": promo.end_date.isoformat(),
         "promo_name": promo.name,
         "description": promo.description or "",
+        "order_link": _order_offer_link(promo),
     }
     try:
         return (template or DEFAULT_SOCIAL_MESSAGE_TEMPLATE).format(**values)
@@ -332,6 +356,7 @@ def _render_ad_message(promo: Promotion, template: Optional[str] = None) -> str:
         "end_date": promo.end_date.isoformat(),
         "promo_name": promo.name,
         "description": promo.description or "",
+        "order_link": _order_offer_link(promo),
     }
     try:
         return (template or DEFAULT_AD_MESSAGE_TEMPLATE).format(**values)
@@ -464,6 +489,7 @@ def _action_url(channel: str, destination: str, message: str, promo: Promotion) 
 
 def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
     message = _render_message(promo, customer)
+    order_link = _order_offer_link(promo)
     raw_destination = _message_destination(customer, promo.channel)
     destination = normalize_campaign_destination(promo.channel, raw_destination)
     send_ready = bool(destination)
@@ -477,6 +503,7 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
     return {
         **_customer_dict(customer),
         "message": message,
+        "order_link": order_link,
         "destination": destination,
         "action_url": action_url,
         "send_ready": send_ready,
@@ -943,11 +970,13 @@ def promotion_outreach(
         "audience": promo.audience,
         "audience_count": total,
         "channel": promo.channel,
+        "order_link": _order_offer_link(promo),
         "message_preview": _render_message(promo, contacts[0] if contacts else None),
         "contacts": [
             {
                 **_customer_dict(customer),
                 "message": _render_message(promo, customer),
+                "order_link": _order_offer_link(promo),
             }
             for customer in contacts
         ],
@@ -980,6 +1009,7 @@ def promotion_dispatch(
         "audience": promo.audience,
         "audience_count": total,
         "channel": promo.channel,
+        "order_link": _order_offer_link(promo),
         "provider_status": campaign_provider_status(promo.channel),
         "message_preview": _render_message(promo, customers[0] if customers else None),
         "send_ready_count": send_ready_count,

@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Send,
   Share2,
+  ShoppingBag,
   Tag,
   Target,
   Users,
@@ -46,6 +47,7 @@ type Contact = {
   total_orders: number;
   total_spend: number;
   message: string;
+  order_link?: string | null;
   destination?: string | null;
   action_url?: string | null;
   send_ready?: boolean;
@@ -55,6 +57,7 @@ type Contact = {
 type Outreach = {
   audience_count: number;
   channel: ChannelKey;
+  order_link?: string | null;
   message_preview: string;
   contacts: Contact[];
 };
@@ -450,13 +453,14 @@ export default function PromotionsPage() {
         contact.email || "",
         contact.name || "",
         contact.message,
+        contact.order_link || dispatch.order_link || "",
         contact.action_url || "",
         contact.missing_reason || "",
       ].join("\t")
     );
     await navigator.clipboard.writeText(
       [
-        "channel\tdestination\tphone\temail\tname\tmessage\taction_url\tmissing_reason",
+        "channel\tdestination\tphone\temail\tname\tmessage\torder_link\taction_url\tmissing_reason",
         ...rows,
       ].join("\n")
     );
@@ -947,7 +951,9 @@ export default function PromotionsPage() {
                 </div>
 
                 <div className="space-y-3">
-                  {(dispatch?.contacts || outreach?.contacts || []).map((contact) => (
+                  {(dispatch?.contacts || outreach?.contacts || []).map((contact) => {
+                    const orderLink = contact.order_link || dispatch?.order_link || outreach?.order_link;
+                    return (
                     <div
                       key={contact.id}
                       className="grid grid-cols-1 items-center gap-4 rounded-xl border border-white/5 bg-black/25 p-4 lg:grid-cols-12"
@@ -970,7 +976,19 @@ export default function PromotionsPage() {
                       <div className="min-w-0 break-words text-sm leading-6 text-gray-400 lg:col-span-3">
                         {contact.message}
                       </div>
-                      <div className="flex lg:col-span-1 lg:justify-end">
+                      <div className="flex gap-2 lg:col-span-1 lg:justify-end">
+                        {orderLink && (
+                          <a
+                            href={orderLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Open customer order link"
+                            aria-label="Open customer order link"
+                            className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-500 text-white hover:bg-orange-600"
+                          >
+                            <ShoppingBag className="h-4 w-4" />
+                          </a>
+                        )}
                         {contact.action_url ? (
                           <a
                             href={contact.action_url}
@@ -992,7 +1010,8 @@ export default function PromotionsPage() {
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   {outreach && !outreach.contacts.length && (
                     <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-gray-500">
                       No matching contacts yet.
