@@ -50,6 +50,29 @@ type PromotionSchedule = {
   can_send_now: boolean;
 };
 
+type ScheduledCampaignQueueRow = {
+  promotion: Promotion;
+  phase: "due_today" | "upcoming" | "overdue";
+  audience_count: number;
+  ready_count: number;
+  missing_count: number;
+  can_activate: boolean;
+  recommended_action: string;
+};
+
+type ScheduledCampaignQueue = {
+  generated_at: string;
+  summary: {
+    scheduled_count: number;
+    due_today_count: number;
+    upcoming_count: number;
+    overdue_count: number;
+    ready_count: number;
+    missing_count: number;
+  };
+  campaigns: ScheduledCampaignQueueRow[];
+};
+
 type Contact = {
   id: number;
   name?: string | null;
@@ -430,6 +453,7 @@ export default function PromotionsPage() {
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
   const [activityTimeline, setActivityTimeline] = useState<CampaignActivityTimeline | null>(null);
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
+  const [scheduleQueue, setScheduleQueue] = useState<ScheduledCampaignQueue | null>(null);
   const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
   const [hygieneAudience, setHygieneAudience] = useState<AudienceKey>("marketing_opt_in");
   const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
@@ -442,6 +466,7 @@ export default function PromotionsPage() {
   const [scheduleDate, setScheduleDate] = useState(dateInputValue(1));
   const [scheduleDuration, setScheduleDuration] = useState("7");
   const [scheduling, setScheduling] = useState(false);
+  const [activatingDueSchedules, setActivatingDueSchedules] = useState(false);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
@@ -460,6 +485,7 @@ export default function PromotionsPage() {
     fetchProviderReadiness();
     fetchPlaybook();
     fetchPerformanceRollup();
+    fetchScheduleQueue();
     fetchAudienceHygiene();
   }, []);
 
@@ -481,6 +507,7 @@ export default function PromotionsPage() {
 
   const activeCount = promotions.filter((promotion) => promotion.status === "active").length;
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
+  const scheduleQueueRows = scheduleQueue?.campaigns || [];
   const selectedSchedule = selectedPromotion?.schedule;
   const selectedScheduledFuture =
     selectedPromotion?.status === "scheduled" && selectedSchedule?.phase === "upcoming";
@@ -527,6 +554,17 @@ export default function PromotionsPage() {
       return;
     }
     setPerformanceRollup(await response.json());
+  };
+
+  const fetchScheduleQueue = async () => {
+    const response = await fetch(`${PROMOTIONS_API}/schedule/queue?limit=20`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      setScheduleQueue(null);
+      return;
+    }
+    setScheduleQueue(await response.json());
   };
 
   const fetchAudienceHygiene = async (audience: AudienceKey = hygieneAudience) => {
@@ -760,8 +798,29 @@ export default function PromotionsPage() {
 
     setMessage(`Scheduled ${data.promotion.name} for ${data.promotion.start_date}.`);
     await fetchPromotions(data.promotion.id);
+    await fetchScheduleQueue();
     await fetchPerformanceRollup();
     setScheduling(false);
+  };
+
+  const activateDueSchedules = async () => {
+    setActivatingDueSchedules(true);
+    const response = await fetch(`${PROMOTIONS_API}/schedule/activate-due`, {
+      method: "POST",
+      credentials: "include",
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Due campaigns could not be activated.");
+      setActivatingDueSchedules(false);
+      return;
+    }
+
+    setMessage(`Activated ${data.activated_count} due scheduled campaigns.`);
+    await fetchPromotions(data.campaigns?.[0]?.id || selectedId);
+    await fetchScheduleQueue();
+    await fetchPerformanceRollup();
+    setActivatingDueSchedules(false);
   };
 
   const copyOutreach = async () => {
@@ -941,6 +1000,7 @@ export default function PromotionsPage() {
               fetchProviderReadiness();
               fetchPlaybook();
               fetchPerformanceRollup();
+              fetchScheduleQueue();
               fetchAudienceHygiene();
             }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
@@ -968,6 +1028,99 @@ export default function PromotionsPage() {
         <Metric label="Scheduled" value={scheduledCount} icon={Calendar} />
         <Metric label="Audience" value={outreach?.audience_count || 0} icon={Users} />
       </div>
+
+      <section data-testid="scheduled-campaign-queue" className="mb-8 rounded-xl border border-orange-500/10 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              Scheduled Campaign Queue
+            </p>
+            <h2 className="mt-1 text-xl font-black">Due campaigns and upcoming send windows</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Activate due campaigns into the live window, then run the normal provider send checklist.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={fetchScheduleQueue}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
+            >
+              <RefreshCw className="h-4 w-4" /> Refresh Queue
+            </button>
+            <button
+              data-testid="activate-due-campaigns"
+              type="button"
+              onClick={activateDueSchedules}
+              disabled={activatingDueSchedules || !(scheduleQueue?.summary.due_today_count || 0)}
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-black text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {activatingDueSchedules ? "Activating" : "Activate Due"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <MiniSignal icon={Calendar} label="Scheduled" value={`${scheduleQueue?.summary.scheduled_count || 0}`} />
+          <MiniSignal icon={CheckCircle2} label="Due Today" value={`${scheduleQueue?.summary.due_today_count || 0}`} />
+          <MiniSignal icon={Clock} label="Upcoming" value={`${scheduleQueue?.summary.upcoming_count || 0}`} />
+          <MiniSignal icon={AlertTriangle} label="Overdue" value={`${scheduleQueue?.summary.overdue_count || 0}`} />
+          <MiniSignal icon={Send} label="Ready Contacts" value={`${scheduleQueue?.summary.ready_count || 0}`} />
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-white/5 bg-black/25">
+          <div className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600">
+            <span className="col-span-4">Campaign</span>
+            <span className="col-span-2 text-right">Window</span>
+            <span className="col-span-2 text-right">Ready</span>
+            <span className="col-span-2 text-right">State</span>
+            <span className="col-span-2 text-right">Action</span>
+          </div>
+          {scheduleQueueRows.map((row) => (
+            <div
+              data-testid={`scheduled-queue-row-${row.promotion.id}`}
+              key={`scheduled-${row.promotion.id}`}
+              className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-sm"
+            >
+              <div className="col-span-4 min-w-0">
+                <p className="break-words font-black text-white">{row.promotion.name}</p>
+                <p className="mt-1 text-xs font-semibold uppercase text-gray-600">
+                  {row.promotion.code || "No code"} | {audienceLabel(row.promotion.audience)}
+                </p>
+              </div>
+              <div className="col-span-2 text-right text-gray-400">
+                <p>{row.promotion.start_date}</p>
+                <p className="mt-1 text-xs text-gray-600">to {row.promotion.end_date}</p>
+              </div>
+              <div className="col-span-2 text-right">
+                <p className="font-black text-gray-200">{row.ready_count}</p>
+                <p className="mt-1 text-xs text-gray-600">{row.missing_count} gaps</p>
+              </div>
+              <div className="col-span-2 text-right">
+                <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${scheduleQueuePhaseClass(row.phase)}`}>
+                  {scheduleQueuePhaseLabel(row.phase)}
+                </span>
+                <p className="mt-2 text-xs font-semibold leading-5 text-gray-600">{row.recommended_action}</p>
+              </div>
+              <div className="col-span-2 text-right">
+                <button
+                  type="button"
+                  onClick={() => selectPromotion(row.promotion.id)}
+                  className="rounded-lg bg-white/10 px-3 py-2 text-xs font-black uppercase text-white hover:bg-orange-500"
+                >
+                  Open
+                </button>
+              </div>
+            </div>
+          ))}
+          {!scheduleQueueRows.length && (
+            <div className="p-8 text-center text-sm font-semibold text-gray-500">
+              No scheduled campaigns are waiting in the queue.
+            </div>
+          )}
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -2391,6 +2544,18 @@ function timelineStatusClass(status: string) {
     return "bg-yellow-500/15 text-yellow-300";
   }
   return "bg-white/10 text-gray-300";
+}
+
+function scheduleQueuePhaseLabel(phase: ScheduledCampaignQueueRow["phase"]) {
+  if (phase === "due_today") return "Due Today";
+  if (phase === "overdue") return "Overdue";
+  return "Upcoming";
+}
+
+function scheduleQueuePhaseClass(phase: ScheduledCampaignQueueRow["phase"]) {
+  if (phase === "due_today") return "bg-green-500/15 text-green-300";
+  if (phase === "overdue") return "bg-yellow-500/15 text-yellow-300";
+  return "bg-blue-500/15 text-blue-300";
 }
 
 function ProviderCard({

@@ -22,6 +22,7 @@ from app.services.campaign_dispatch_service import (
     normalize_campaign_destination,
     send_campaign_message,
 )
+from app.services.campaign_schedule_service import activate_due_scheduled_campaigns
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date, datetime, timedelta
@@ -603,6 +604,38 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
         "send_ready": send_ready,
         "missing_reason": missing_reason,
         "suppressed": bool(_customer_marketing_block_reason(customer)),
+    }
+
+
+def _scheduled_campaign_phase(promo: Promotion) -> str:
+    today = date.today()
+    if promo.end_date < today:
+        return "overdue"
+    if promo.start_date <= today <= promo.end_date:
+        return "due_today"
+    return "upcoming"
+
+
+def _scheduled_campaign_queue_row(db: Session, promo: Promotion) -> dict:
+    customers = _audience_query(db, promo.audience or "marketing_opt_in").all()
+    contacts = [_dispatch_contact(customer, promo) for customer in customers]
+    ready_count = sum(1 for contact in contacts if contact["send_ready"])
+    phase = _scheduled_campaign_phase(promo)
+    if phase == "due_today":
+        action = "Activate due campaign and run the send checklist."
+    elif phase == "overdue":
+        action = "Review expired schedule before sending."
+    else:
+        action = f"Wait until {promo.start_date.isoformat()} or reschedule."
+
+    return {
+        "promotion": _promotion_dict(promo),
+        "phase": phase,
+        "audience_count": len(customers),
+        "ready_count": ready_count,
+        "missing_count": max(len(customers) - ready_count, 0),
+        "can_activate": phase == "due_today",
+        "recommended_action": action,
     }
 
 
@@ -1217,6 +1250,54 @@ def active_promotions(db: Session = Depends(get_db)):
         .all()
     )
     return [_promotion_dict(promo) for promo in promotions]
+
+
+@router.get("/schedule/queue")
+def scheduled_campaign_queue(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    scheduled_promotions = (
+        db.query(Promotion)
+        .filter(Promotion.status == "scheduled")
+        .order_by(Promotion.start_date.asc(), Promotion.id.asc())
+        .all()
+    )
+    rows = [_scheduled_campaign_queue_row(db, promo) for promo in scheduled_promotions]
+    phase_priority = {"due_today": 0, "overdue": 1, "upcoming": 2}
+    rows.sort(
+        key=lambda row: (
+            phase_priority.get(row["phase"], 9),
+            row["promotion"]["start_date"],
+            row["promotion"]["id"],
+        )
+    )
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "scheduled_count": len(rows),
+            "due_today_count": sum(1 for row in rows if row["phase"] == "due_today"),
+            "upcoming_count": sum(1 for row in rows if row["phase"] == "upcoming"),
+            "overdue_count": sum(1 for row in rows if row["phase"] == "overdue"),
+            "ready_count": sum(row["ready_count"] for row in rows),
+            "missing_count": sum(row["missing_count"] for row in rows),
+        },
+        "campaigns": rows[:limit],
+    }
+
+
+@router.post("/schedule/activate-due")
+def activate_due_campaigns(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    promotions = activate_due_scheduled_campaigns(db)
+    return {
+        "status": "due campaigns activated",
+        "activated_count": len(promotions),
+        "campaigns": [_promotion_dict(promo) for promo in promotions],
+    }
 
 
 @router.post("/{promo_id}/schedule")

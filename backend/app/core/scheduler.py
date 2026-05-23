@@ -21,6 +21,24 @@ def social_publish_job():
         logger.exception("Social auto-publish job failed")
 
 
+def campaign_schedule_job():
+    from app.db.session import SessionLocal
+    from app.services.campaign_schedule_service import activate_due_scheduled_campaigns
+
+    session = SessionLocal()
+    try:
+        promotions = activate_due_scheduled_campaigns(session)
+        if promotions:
+            logger.info(
+                "Activated due scheduled campaigns: %s",
+                [promotion.id for promotion in promotions],
+            )
+    except Exception:
+        logger.exception("Scheduled campaign activation job failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -28,6 +46,13 @@ scheduler.add_job(
     "interval",
     minutes=5,
     id="social_auto_publish",
+    replace_existing=True,
+)
+scheduler.add_job(
+    campaign_schedule_job,
+    "interval",
+    minutes=10,
+    id="campaign_schedule_activation",
     replace_existing=True,
 )
 
