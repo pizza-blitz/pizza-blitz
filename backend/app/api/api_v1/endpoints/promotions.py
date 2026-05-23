@@ -1175,6 +1175,19 @@ def promotion_dispatch(
     contacts = [_dispatch_contact(customer, promo) for customer in customers]
     send_ready_count = sum(1 for contact in contacts if contact["send_ready"])
     missing_destination_count = len(contacts) - send_ready_count
+    cleanup_issue_customer_ids = {
+        delivery.customer_id
+        for delivery in db.query(CampaignDelivery)
+        .filter(CampaignDelivery.promotion_id == promo.id)
+        .filter(CampaignDelivery.customer_id.isnot(None))
+        .all()
+        if _delivery_issue_reason(delivery) in {"consent", "missing_destination"}
+    }
+    cleanup_recovered_ready_count = sum(
+        1
+        for contact in contacts
+        if contact["id"] in cleanup_issue_customer_ids and contact["send_ready"]
+    )
 
     return {
         "promotion": _promotion_dict(promo),
@@ -1186,6 +1199,7 @@ def promotion_dispatch(
         "message_preview": _render_message(promo, customers[0] if customers else None),
         "send_ready_count": send_ready_count,
         "missing_destination_count": missing_destination_count,
+        "cleanup_recovered_ready_count": cleanup_recovered_ready_count,
         "contacts": contacts,
     }
 

@@ -137,6 +137,7 @@ export default function CustomersPage() {
   const [customerDrafts, setCustomerDrafts] = useState<Record<number, CustomerDraft>>({});
   const [savingCustomerId, setSavingCustomerId] = useState<number | null>(null);
   const [fromCampaignCleanup, setFromCampaignCleanup] = useState(false);
+  const [cleanupReturnHref, setCleanupReturnHref] = useState("/promotions");
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -144,6 +145,7 @@ export default function CustomersPage() {
     setSearch(initial.query);
     setSegment(initial.segment);
     setFromCampaignCleanup(initial.fromCleanup);
+    setCleanupReturnHref(campaignReturnHref(initial.campaignId));
     if (initial.fromCleanup) {
       setMessage(`Opened ${segmentLabel(initial.segment)} cleanup queue from campaign audit.`);
     }
@@ -292,7 +294,7 @@ export default function CustomersPage() {
         <div className="flex flex-wrap gap-3">
           {fromCampaignCleanup && (
             <Link
-              href="/promotions"
+              href={cleanupReturnHref}
               className="bg-orange-500 text-white px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-600"
             >
               <Send className="w-4 h-4" /> Return To Campaigns
@@ -731,18 +733,25 @@ function segmentLabel(value: SegmentKey) {
   return segmentOptions.find((option) => option.value === value)?.label || value;
 }
 
-function readInitialCustomerFilters(): { query: string; segment: SegmentKey; fromCleanup: boolean } {
+function readInitialCustomerFilters(): { query: string; segment: SegmentKey; fromCleanup: boolean; campaignId: number | null } {
   if (typeof window === "undefined") {
-    return { query: "", segment: "all", fromCleanup: false };
+    return { query: "", segment: "all", fromCleanup: false, campaignId: null };
   }
 
   const params = new URLSearchParams(window.location.search);
   const segmentParam = params.get("segment") as SegmentKey | null;
   const segment = segmentParam && validCustomerSegments.has(segmentParam) ? segmentParam : "all";
+  const campaignId = Number(params.get("campaign"));
 
   return {
     query: params.get("q") || "",
     segment,
     fromCleanup: params.get("source") === "campaign_cleanup",
+    campaignId: Number.isFinite(campaignId) && campaignId > 0 ? campaignId : null,
   };
+}
+
+function campaignReturnHref(campaignId: number | null) {
+  if (!campaignId) return "/promotions";
+  return `/promotions?campaign=${campaignId}&source=campaign_cleanup_return`;
 }

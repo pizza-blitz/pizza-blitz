@@ -69,6 +69,7 @@ type Outreach = {
 type Dispatch = Outreach & {
   send_ready_count: number;
   missing_destination_count: number;
+  cleanup_recovered_ready_count?: number;
   provider_status?: ProviderStatus;
 };
 
@@ -301,6 +302,11 @@ type CampaignForm = {
   message_template: string;
 };
 
+type CampaignReturnState = {
+  fromCleanup: boolean;
+  campaignId: number | null;
+};
+
 const audienceOptions: { value: AudienceKey; label: string }[] = [
   { value: "marketing_opt_in", label: "Marketing Opt-in" },
   { value: "all_customers", label: "All Customers" },
@@ -391,9 +397,18 @@ export default function PromotionsPage() {
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
+  const [cleanupReturn, setCleanupReturn] = useState<CampaignReturnState>({
+    fromCleanup: false,
+    campaignId: null,
+  });
 
   useEffect(() => {
-    fetchPromotions();
+    const initialReturn = readInitialCampaignReturn();
+    setCleanupReturn(initialReturn);
+    if (initialReturn.fromCleanup) {
+      setMessage("Returned from customer cleanup. Re-check readiness before sending newly ready contacts.");
+    }
+    fetchPromotions(initialReturn.campaignId);
     fetchProviderReadiness();
     fetchPlaybook();
     fetchPerformanceRollup();
@@ -404,6 +419,10 @@ export default function PromotionsPage() {
     () => promotions.find((promotion) => promotion.id === selectedId) || null,
     [promotions, selectedId]
   );
+  const showCleanupReturnPanel =
+    cleanupReturn.fromCleanup &&
+    Boolean(selectedPromotion) &&
+    (!cleanupReturn.campaignId || cleanupReturn.campaignId === selectedPromotion?.id);
 
   const activeCount = promotions.filter((promotion) => promotion.status === "active").length;
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
@@ -469,15 +488,29 @@ export default function PromotionsPage() {
     setHygieneAudience(audience);
   };
 
-  const fetchPromotions = async () => {
+  const fetchPromotions = async (preferredSelectedId: number | null = null) => {
     setLoading(true);
     const response = await fetch(`${PROMOTIONS_API}/`, { credentials: "include" });
     const data: Promotion[] = await response.json();
     setPromotions(data);
-    const nextSelectedId = selectedId || data[0]?.id || null;
+    const preferredExists = preferredSelectedId
+      ? data.some((promotion) => promotion.id === preferredSelectedId)
+      : false;
+    const currentExists = selectedId
+      ? data.some((promotion) => promotion.id === selectedId)
+      : false;
+    const nextSelectedId = preferredExists
+      ? preferredSelectedId
+      : currentExists
+      ? selectedId
+      : data[0]?.id || null;
     setSelectedId(nextSelectedId);
     if (nextSelectedId) {
       await fetchCampaignDetails(nextSelectedId);
+      const promotion = data.find((item) => item.id === nextSelectedId);
+      if (promotion) {
+        await fetchAudienceHygiene(promotion.audience);
+      }
     } else {
       setOutreach(null);
       setDispatch(null);
@@ -550,6 +583,13 @@ export default function PromotionsPage() {
 
   const selectPromotion = (promotionId: number) => {
     setSelectedId(promotionId);
+    setCleanupReturn({ fromCleanup: false, campaignId: promotionId });
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      params.set("campaign", String(promotionId));
+      params.delete("source");
+      window.history.replaceState(null, "", `?${params.toString()}`);
+    }
     fetchCampaignDetails(promotionId);
     const promotion = promotions.find((item) => item.id === promotionId);
     if (promotion) {
@@ -1295,6 +1335,10 @@ export default function PromotionsPage() {
                   <Detail label="Offer" value={offerLabel(selectedPromotion)} />
                   <Detail label="Ready" value={`${dispatch?.send_ready_count || 0} contacts`} />
                   <Detail
+                    label="Recovered"
+                    value={`${dispatch?.cleanup_recovered_ready_count || 0} ready`}
+                  />
+                  <Detail
                     label="Missing"
                     value={`${dispatch?.missing_destination_count || 0} contacts`}
                   />
@@ -1303,6 +1347,51 @@ export default function PromotionsPage() {
                     value={providerLabel(dispatch?.provider_status)}
                   />
                 </div>
+
+                {showCleanupReturnPanel && (
+                  <section
+                    data-testid="cleanup-return-panel"
+                    className="mb-6 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-5"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-emerald-300">
+                          Cleanup Return
+                        </p>
+                        <h3 className="mt-1 text-lg font-black text-white">
+                          Re-check newly ready contacts
+                        </h3>
+                        <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-emerald-100/80">
+                          {dispatch?.cleanup_recovered_ready_count || 0} contacts from this campaign's consent or email cleanup are now send-ready.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          data-testid="cleanup-recheck-ready"
+                          type="button"
+                          onClick={() => sendCampaign(true)}
+                          disabled={sending !== null}
+                          className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-3 text-sm font-black text-black hover:bg-orange-500 hover:text-white disabled:cursor-wait disabled:opacity-50"
+                        >
+                          <RefreshCw className="h-4 w-4" /> Re-check Readiness
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendCampaign(false)}
+                          disabled={sending !== null || !dispatch?.provider_status?.configured}
+                          title={
+                            dispatch?.provider_status?.configured
+                              ? "Send to ready contacts that have not already been sent"
+                              : `Missing: ${dispatch?.provider_status?.missing_settings.join(", ") || "provider setup"}`
+                          }
+                          className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-3 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Send className="h-4 w-4" /> Send Newly Ready
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                )}
 
                 <section className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1577,13 +1666,13 @@ export default function PromotionsPage() {
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Link
-                          href="/customers?segment=opted_out&source=campaign_cleanup"
+                          href={cleanupQueueHref("opted_out", selectedPromotion.id)}
                           className="inline-flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs font-black uppercase text-amber-100 hover:bg-amber-500/20"
                         >
                           <Users className="h-4 w-4" /> Open Consent Queue
                         </Link>
                         <Link
-                          href="/customers?segment=missing_email&source=campaign_cleanup"
+                          href={cleanupQueueHref("missing_email", selectedPromotion.id)}
                           className="inline-flex items-center gap-2 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 py-2 text-xs font-black uppercase text-sky-100 hover:bg-sky-500/20"
                         >
                           <Mail className="h-4 w-4" /> Open Email Cleanup
@@ -2013,6 +2102,28 @@ function deliveryFilterLabel(filter: DeliveryStatusFilter) {
 
 function deliveryReasonFilterLabel(filter: DeliveryReasonFilter) {
   return deliveryReasonFilters.find((option) => option.value === filter)?.label || filter;
+}
+
+function readInitialCampaignReturn(): CampaignReturnState {
+  if (typeof window === "undefined") {
+    return { fromCleanup: false, campaignId: null };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const campaignId = Number(params.get("campaign"));
+  return {
+    fromCleanup: params.get("source") === "campaign_cleanup_return",
+    campaignId: Number.isFinite(campaignId) && campaignId > 0 ? campaignId : null,
+  };
+}
+
+function cleanupQueueHref(segment: "opted_out" | "missing_email", promotionId: number) {
+  const params = new URLSearchParams({
+    segment,
+    source: "campaign_cleanup",
+    campaign: String(promotionId),
+  });
+  return `/customers?${params.toString()}`;
 }
 
 function ProviderCard({
