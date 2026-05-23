@@ -72,6 +72,19 @@ type DeliveryQuote = {
   zone?: DeliveryZone | null;
   delivery_fee: number;
   eta_window?: string | null;
+  address_validation?: {
+    quality: string;
+    score: number;
+    matched_keyword?: string | null;
+    warnings: string[];
+    requires_review: boolean;
+  };
+  charge_breakdown?: {
+    subtotal: number;
+    minimum_order_amount: number;
+    delivery_fee: number;
+    total_with_delivery: number;
+  };
 };
 
 type PaymentProviderStatus = {
@@ -1031,6 +1044,44 @@ export default function Settings() {
               {deliveryQuote.is_deliverable
                 ? `${deliveryQuote.zone?.name || "Delivery"} is available: Rs ${deliveryQuote.delivery_fee}, ETA ${deliveryQuote.eta_window}.`
                 : deliveryQuote.reason || "This address is not deliverable."}
+            </div>
+          )}
+
+          {deliveryQuote?.address_validation && (
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-md border border-gray-100 bg-gray-50 p-3">
+                <p className="text-xs font-black uppercase text-gray-500">Address Score</p>
+                <p className="mt-1 text-xl font-black text-gray-900">
+                  {deliveryQuote.address_validation.score}/100
+                </p>
+                <p className="text-xs font-semibold capitalize text-gray-500">
+                  {deliveryQuote.address_validation.quality}
+                </p>
+              </div>
+              <div className="rounded-md border border-gray-100 bg-gray-50 p-3">
+                <p className="text-xs font-black uppercase text-gray-500">Matched Keyword</p>
+                <p className="mt-1 text-sm font-black text-gray-900">
+                  {deliveryQuote.address_validation.matched_keyword || "Manual zone"}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  {deliveryQuote.address}
+                </p>
+              </div>
+              <div className="rounded-md border border-gray-100 bg-gray-50 p-3">
+                <p className="text-xs font-black uppercase text-gray-500">Total With Delivery</p>
+                <p className="mt-1 text-xl font-black text-gray-900">
+                  Rs {Math.round(deliveryQuote.charge_breakdown?.total_with_delivery || 0)}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Min Rs {Math.round(deliveryQuote.charge_breakdown?.minimum_order_amount || 0)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {!!deliveryQuote?.address_validation?.warnings?.length && (
+            <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+              {deliveryQuote.address_validation.warnings.join(" ")}
             </div>
           )}
         </div>

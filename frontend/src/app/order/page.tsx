@@ -106,6 +106,19 @@ type DeliveryQuote = {
   zone?: DeliveryZone | null;
   delivery_fee: number;
   eta_window?: string | null;
+  address_validation?: {
+    quality: string;
+    score: number;
+    matched_keyword?: string | null;
+    warnings: string[];
+    requires_review: boolean;
+  };
+  charge_breakdown?: {
+    subtotal: number;
+    minimum_order_amount: number;
+    delivery_fee: number;
+    total_with_delivery: number;
+  };
 };
 
 type PendingPayment = {
@@ -1417,6 +1430,33 @@ export default function PublicOrderPage() {
                       ? `Delivery ${deliveryQuote.zone?.name || ""}: Rs ${deliveryFee}, ETA ${eta}`
                       : deliveryQuote?.reason || "Delivery fee appears after address and zone."}
                   </div>
+                  {deliveryQuote?.address_validation && (
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                        <p className="font-black uppercase text-slate-400">Score</p>
+                        <p className="mt-1 font-black text-slate-900">
+                          {deliveryQuote.address_validation.score}/100
+                        </p>
+                      </div>
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                        <p className="font-black uppercase text-slate-400">Area</p>
+                        <p className="mt-1 truncate font-black text-slate-900">
+                          {deliveryQuote.address_validation.matched_keyword || "Selected"}
+                        </p>
+                      </div>
+                      <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                        <p className="font-black uppercase text-slate-400">With Fee</p>
+                        <p className="mt-1 font-black text-slate-900">
+                          Rs {Math.round(deliveryQuote.charge_breakdown?.total_with_delivery || total)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {!!deliveryQuote?.address_validation?.warnings?.length && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                      {deliveryQuote.address_validation.warnings.join(" ")}
+                    </div>
+                  )}
                 </>
               )}
               <div className="grid grid-cols-2 gap-2">

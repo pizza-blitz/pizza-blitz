@@ -45,6 +45,16 @@ def ensure_delivery_zones(db: Session) -> None:
 
 
 def serialize_delivery_assignment(assignment: DeliveryAssignment) -> dict:
+    next_action = "Assign a delivery partner."
+    if assignment.status == "assigned":
+        next_action = "Dispatch the order when the rider leaves."
+    elif assignment.status == "out_for_delivery":
+        next_action = "Mark delivered after customer handoff."
+    elif assignment.status == "delivered":
+        next_action = "Close the order after payment is settled."
+    elif assignment.status == "failed":
+        next_action = "Review the failure note and contact the customer."
+
     return {
         "id": assignment.id,
         "order_id": assignment.order_id,
@@ -61,7 +71,20 @@ def serialize_delivery_assignment(assignment: DeliveryAssignment) -> dict:
         ),
         "delivered_at": assignment.delivered_at.isoformat() if assignment.delivered_at else None,
         "updated_at": assignment.updated_at.isoformat() if assignment.updated_at else None,
+        "next_action": next_action,
     }
+
+
+def note_value(notes: Optional[str], label: str) -> Optional[str]:
+    if not notes:
+        return None
+    prefix = f"{label}:"
+    for part in notes.split("|"):
+        text = part.strip()
+        if text.lower().startswith(prefix.lower()):
+            value = text[len(prefix):].strip()
+            return value or None
+    return None
 
 
 @router.get("/zones")
@@ -166,6 +189,10 @@ def delivery_queue(
                 "total_amount": order.total_amount,
                 "payment_status": order.payment_status,
                 "order_status": order.status,
+                "delivery_address": note_value(order.notes, "Address"),
+                "delivery_zone": note_value(order.notes, "Delivery Zone"),
+                "delivery_fee": note_value(order.notes, "Delivery Fee"),
+                "eta_window": note_value(order.notes, "ETA"),
                 "notes": order.notes,
                 "assignment": (
                     serialize_delivery_assignment(order.delivery_assignment)
@@ -199,14 +226,27 @@ def update_delivery_assignment(
             status_code=422,
             detail=f"Status must be one of: {', '.join(sorted(allowed_statuses))}.",
         )
+    assigned_to = payload.assigned_to.strip() if payload.assigned_to else None
+    existing_assignee = order.delivery_assignment.assigned_to if order.delivery_assignment else None
+    if status in {"assigned", "out_for_delivery", "delivered"} and not (assigned_to or existing_assignee):
+        raise HTTPException(status_code=422, detail="Delivery partner is required for this status.")
+    if status == "failed" and not (payload.notes or "").strip():
+        raise HTTPException(status_code=422, detail="Failure reason is required.")
 
     assignment = order.delivery_assignment
     if assignment is None:
         assignment = DeliveryAssignment(order_id=order.id)
         db.add(assignment)
 
+    if assignment.zone_id is None:
+        zone_name = note_value(order.notes, "Delivery Zone")
+        if zone_name:
+            zone = db.query(DeliveryZone).filter(DeliveryZone.name == zone_name).first()
+            if zone:
+                assignment.zone_id = zone.id
+
     if payload.assigned_to is not None:
-        assignment.assigned_to = payload.assigned_to.strip() or None
+        assignment.assigned_to = assigned_to
     assignment.status = status
     if payload.notes is not None:
         assignment.notes = payload.notes.strip() or None

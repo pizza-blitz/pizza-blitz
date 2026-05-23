@@ -18,7 +18,7 @@ from app.models.domain import (
     Recipe,
     RestaurantOrder,
 )
-from app.services.delivery_service import delivery_quote
+from app.services.delivery_service import delivery_quote, serialize_delivery_zone
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -228,6 +228,8 @@ def serialize_delivery_assignment(assignment: Optional[DeliveryAssignment]) -> O
     if assignment is None:
         return None
     return {
+        "zone_id": assignment.zone_id,
+        "zone": serialize_delivery_zone(assignment.zone) if assignment.zone else None,
         "assigned_to": assignment.assigned_to,
         "status": assignment.status,
         "notes": assignment.notes,
@@ -511,6 +513,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     taxable_subtotal = max(subtotal - discount, 0)
     tax = round(taxable_subtotal * 0.05, 2)
     delivery_fee = 0.0
+    delivery_zone_id = None
     delivery_zone_name = None
     delivery_eta = None
     delivery_address = order.delivery_address or note_value(order.notes, "Address")
@@ -527,6 +530,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         if not quote["is_deliverable"]:
             raise HTTPException(status_code=409, detail=quote["reason"])
         delivery_fee = float(quote["delivery_fee"] or 0)
+        delivery_zone_id = quote["zone"]["id"] if quote.get("zone") else None
         delivery_zone_name = quote["zone"]["name"] if quote.get("zone") else None
         delivery_eta = quote.get("eta_window")
         delivery_address = quote["address"]
@@ -564,6 +568,15 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     )
     db.add(row)
     db.flush()
+    if (order.order_type or "").lower() == "delivery":
+        db.add(
+            DeliveryAssignment(
+                order_id=row.id,
+                zone_id=delivery_zone_id,
+                status="unassigned",
+                notes="Awaiting rider assignment.",
+            )
+        )
     upsert_customer_from_order(
         db,
         row,

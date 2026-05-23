@@ -58,6 +58,19 @@ type DeliveryQuote = {
   zone?: DeliveryZone | null;
   delivery_fee: number;
   eta_window?: string | null;
+  address_validation?: {
+    quality: string;
+    score: number;
+    matched_keyword?: string | null;
+    warnings: string[];
+    requires_review: boolean;
+  };
+  charge_breakdown?: {
+    subtotal: number;
+    minimum_order_amount: number;
+    delivery_fee: number;
+    total_with_delivery: number;
+  };
 };
 
 type Order = {
@@ -800,6 +813,33 @@ export default function OrdersPage() {
                     ? `Delivery fee Rs ${Math.round(deliveryFee).toLocaleString()}, ETA ${deliveryQuote.eta_window}.`
                     : deliveryQuote?.reason || "Enter address and choose zone to calculate delivery."}
                 </div>
+                {deliveryQuote?.address_validation && (
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <p className="font-black uppercase text-gray-500">Score</p>
+                      <p className="mt-1 font-black text-white">
+                        {deliveryQuote.address_validation.score}/100
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <p className="font-black uppercase text-gray-500">Match</p>
+                      <p className="mt-1 font-black text-white">
+                        {deliveryQuote.address_validation.matched_keyword || "Manual zone"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                      <p className="font-black uppercase text-gray-500">Total</p>
+                      <p className="mt-1 font-black text-white">
+                        Rs {Math.round(deliveryQuote.charge_breakdown?.total_with_delivery || total).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {!!deliveryQuote?.address_validation?.warnings?.length && (
+                  <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100">
+                    {deliveryQuote.address_validation.warnings.join(" ")}
+                  </div>
+                )}
               </div>
             )}
 

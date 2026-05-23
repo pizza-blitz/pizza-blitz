@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -65,6 +66,69 @@ def validate_delivery_address(address: Optional[str]) -> str:
     return normalized
 
 
+def _address_tokens(address: str) -> set[str]:
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", address.lower())
+        if token
+    }
+
+
+def matched_delivery_keyword(zone: Optional[DeliveryZone], address: Optional[str]) -> Optional[str]:
+    if zone is None:
+        return None
+    normalized_address = (address or "").lower()
+    for keyword in zone.keywords or []:
+        normalized_keyword = str(keyword).strip().lower()
+        if normalized_keyword and normalized_keyword in normalized_address:
+            return normalized_keyword
+    return None
+
+
+def delivery_address_validation(
+    address: str,
+    zone: Optional[DeliveryZone],
+    *,
+    zone_id: Optional[int] = None,
+) -> dict:
+    tokens = _address_tokens(address)
+    warnings: list[str] = []
+    score = 100
+
+    has_number_or_unit = any(token.isdigit() for token in tokens) or bool(
+        tokens & {"house", "flat", "floor", "tower", "shop", "gate", "block"}
+    )
+    has_route_hint = bool(
+        tokens & {"road", "street", "market", "park", "station", "college", "bypass", "center", "centre"}
+    )
+    matched_keyword = matched_delivery_keyword(zone, address)
+
+    if not has_number_or_unit:
+        warnings.append("Add a house, flat, shop, gate, or building number before dispatch.")
+        score -= 25
+    if not has_route_hint and not matched_keyword:
+        warnings.append("Add a recognizable area, road, market, or landmark.")
+        score -= 25
+    if zone and not matched_keyword and not zone_id:
+        warnings.append("No zone keyword matched; the system selected the lowest-fee active zone.")
+        score -= 15
+
+    if score >= 80:
+        quality = "good"
+    elif score >= 55:
+        quality = "review"
+    else:
+        quality = "weak"
+
+    return {
+        "quality": quality,
+        "score": max(score, 0),
+        "matched_keyword": matched_keyword,
+        "warnings": warnings,
+        "requires_review": quality != "good",
+    }
+
+
 def match_delivery_zone(
     db: Session,
     address: Optional[str],
@@ -96,14 +160,30 @@ def delivery_quote(
 ) -> dict:
     normalized_address = validate_delivery_address(address)
     zone = match_delivery_zone(db, normalized_address, zone_id)
+    validation = delivery_address_validation(
+        normalized_address,
+        zone,
+        zone_id=zone_id,
+    )
     if zone is None:
         return {
             "is_deliverable": False,
-            "reason": "No active delivery zone is configured.",
+            "reason": (
+                "Selected delivery zone is inactive or does not exist."
+                if zone_id
+                else "No active delivery zone is configured."
+            ),
             "address": normalized_address,
             "zone": None,
             "delivery_fee": 0,
             "eta_window": None,
+            "address_validation": validation,
+            "charge_breakdown": {
+                "subtotal": round(float(subtotal or 0), 2),
+                "minimum_order_amount": 0,
+                "delivery_fee": 0,
+                "total_with_delivery": round(float(subtotal or 0), 2),
+            },
         }
 
     minimum = float(zone.minimum_order_amount or 0)
@@ -115,6 +195,13 @@ def delivery_quote(
             "zone": serialize_delivery_zone(zone),
             "delivery_fee": round(float(zone.delivery_fee or 0), 2),
             "eta_window": eta_window(zone),
+            "address_validation": validation,
+            "charge_breakdown": {
+                "subtotal": round(float(subtotal or 0), 2),
+                "minimum_order_amount": round(minimum, 2),
+                "delivery_fee": round(float(zone.delivery_fee or 0), 2),
+                "total_with_delivery": round(float(subtotal or 0) + float(zone.delivery_fee or 0), 2),
+            },
         }
 
     return {
@@ -124,4 +211,11 @@ def delivery_quote(
         "zone": serialize_delivery_zone(zone),
         "delivery_fee": round(float(zone.delivery_fee or 0), 2),
         "eta_window": eta_window(zone),
+        "address_validation": validation,
+        "charge_breakdown": {
+            "subtotal": round(float(subtotal or 0), 2),
+            "minimum_order_amount": round(minimum, 2),
+            "delivery_fee": round(float(zone.delivery_fee or 0), 2),
+            "total_with_delivery": round(float(subtotal or 0) + float(zone.delivery_fee or 0), 2),
+        },
     }
