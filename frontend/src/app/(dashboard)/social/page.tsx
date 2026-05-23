@@ -124,10 +124,16 @@ export default function SocialPublishingPage() {
   );
 
   useEffect(() => {
-    fetchSocial();
+    const postParam = new URLSearchParams(window.location.search).get("post");
+    const requestedPostId = postParam ? Number(postParam) : null;
+    fetchSocial(
+      typeof requestedPostId === "number" && Number.isFinite(requestedPostId)
+        ? requestedPostId
+        : null
+    );
   }, []);
 
-  const fetchSocial = async () => {
+  const fetchSocial = async (preferredPostId?: number | null) => {
     setLoading(true);
     const [statusResponse, postsResponse, autoResponse] = await Promise.all([
       fetch(`${SOCIAL_API}/provider-status`),
@@ -143,7 +149,16 @@ export default function SocialPublishingPage() {
     if (postsResponse.ok) {
       const data: SocialPost[] = await postsResponse.json();
       setPosts(data);
-      const nextSelectedId = selectedId || data[0]?.id || null;
+      const preferredExists = preferredPostId
+        ? data.some((post) => post.id === preferredPostId)
+        : false;
+      const currentExists = selectedId ? data.some((post) => post.id === selectedId) : false;
+      let nextSelectedId: number | null = data[0]?.id || null;
+      if (preferredExists && preferredPostId) {
+        nextSelectedId = preferredPostId;
+      } else if (currentExists && selectedId) {
+        nextSelectedId = selectedId;
+      }
       setSelectedId(nextSelectedId);
       if (nextSelectedId) {
         await fetchDeliveries(nextSelectedId);
@@ -192,6 +207,7 @@ export default function SocialPublishingPage() {
 
   const selectPost = (postId: number) => {
     setSelectedId(postId);
+    setSelectedPostParam(postId);
     fetchDeliveries(postId);
   };
 
@@ -267,7 +283,7 @@ export default function SocialPublishingPage() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchSocial}
+            onClick={() => fetchSocial()}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -431,6 +447,7 @@ export default function SocialPublishingPage() {
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                      Post #{selectedPost.id} |{" "}
                       {selectedPost.platforms.map((platform) => platformLabels[platform]).join(" + ")}
                     </p>
                     <h2 className="mt-2 text-2xl font-black">{selectedPost.title}</h2>
@@ -613,6 +630,12 @@ export default function SocialPublishingPage() {
 function providerLabel(status?: ProviderStatus) {
   if (!status) return "Checking";
   return status.configured ? "Ready" : "Setup needed";
+}
+
+function setSelectedPostParam(postId: number) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("post", String(postId));
+  window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
 }
 
 function SocialProviderCard({

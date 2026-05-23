@@ -716,7 +716,11 @@ export default function PromotionsPage() {
                             )} | Post #${performance.social.latest_post.id}`
                           : "Create a social post from this campaign."
                       }
-                      href="/social"
+                      href={
+                        performance?.social.latest_post_id
+                          ? `/social?post=${performance.social.latest_post_id}`
+                          : "/social"
+                      }
                       action="Open Social Publishing"
                     />
                     <HandoffCard
@@ -734,7 +738,11 @@ export default function PromotionsPage() {
                             )} budget`
                           : "Create an ad campaign from this promotion."
                       }
-                      href="/ads"
+                      href={
+                        performance?.ads.latest_campaign_id
+                          ? `/ads?campaign=${performance.ads.latest_campaign_id}`
+                          : "/ads"
+                      }
                       action="Open Ad Campaigns"
                     />
                   </div>

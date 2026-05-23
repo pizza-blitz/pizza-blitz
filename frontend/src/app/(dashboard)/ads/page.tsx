@@ -183,7 +183,13 @@ export default function AdsManagerPage() {
   );
 
   useEffect(() => {
-    fetchAds();
+    const campaignParam = new URLSearchParams(window.location.search).get("campaign");
+    const requestedCampaignId = campaignParam ? Number(campaignParam) : null;
+    fetchAds(
+      typeof requestedCampaignId === "number" && Number.isFinite(requestedCampaignId)
+        ? requestedCampaignId
+        : null
+    );
   }, []);
 
   useEffect(() => {
@@ -197,7 +203,7 @@ export default function AdsManagerPage() {
     });
   }, [selectedCampaign]);
 
-  const fetchAds = async () => {
+  const fetchAds = async (preferredCampaignId?: number | null) => {
     setLoading(true);
     const [statusResponse, summaryResponse, campaignsResponse, readinessResponse] = await Promise.all([
       fetch(`${ADS_API}/provider-status`),
@@ -211,7 +217,18 @@ export default function AdsManagerPage() {
     if (campaignsResponse.ok) {
       const data: AdCampaign[] = await campaignsResponse.json();
       setCampaigns(data);
-      const nextSelectedId = selectedId || data[0]?.id || null;
+      const preferredExists = preferredCampaignId
+        ? data.some((campaign) => campaign.id === preferredCampaignId)
+        : false;
+      const currentExists = selectedId
+        ? data.some((campaign) => campaign.id === selectedId)
+        : false;
+      let nextSelectedId: number | null = data[0]?.id || null;
+      if (preferredExists && preferredCampaignId) {
+        nextSelectedId = preferredCampaignId;
+      } else if (currentExists && selectedId) {
+        nextSelectedId = selectedId;
+      }
       setSelectedId(nextSelectedId);
       if (nextSelectedId) {
         await fetchLaunches(nextSelectedId);
@@ -233,6 +250,7 @@ export default function AdsManagerPage() {
 
   const selectCampaign = (campaignId: number) => {
     setSelectedId(campaignId);
+    setSelectedCampaignParam(campaignId);
     fetchLaunches(campaignId);
   };
 
@@ -328,7 +346,7 @@ export default function AdsManagerPage() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchAds}
+            onClick={() => fetchAds()}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
@@ -493,7 +511,7 @@ export default function AdsManagerPage() {
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-black uppercase tracking-widest text-orange-400">
-                      {objectiveLabel(selectedCampaign.objective)}
+                      Campaign #{selectedCampaign.id} | {objectiveLabel(selectedCampaign.objective)}
                     </p>
                     <h2 className="mt-2 text-2xl font-black">{selectedCampaign.name}</h2>
                     <p className="mt-3 text-sm leading-6 text-gray-300">{selectedCampaign.creative_message}</p>
@@ -684,6 +702,12 @@ export default function AdsManagerPage() {
 
 function objectiveLabel(value: ObjectiveKey) {
   return objectiveOptions.find((option) => option.value === value)?.label || value;
+}
+
+function setSelectedCampaignParam(campaignId: number) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("campaign", String(campaignId));
+  window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
 }
 
 function statusClass(status: CampaignStatus) {
