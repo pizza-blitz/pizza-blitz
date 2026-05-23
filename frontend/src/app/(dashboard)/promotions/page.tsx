@@ -94,6 +94,28 @@ type ProviderReadiness = {
   channels: ProviderStatus[];
 };
 
+type RetentionPlaybookCampaign = {
+  name: string;
+  description: string;
+  discount_type: "percentage" | "fixed";
+  discount_value: number;
+  audience: AudienceKey;
+  channel: ChannelKey;
+  status: StatusKey;
+  duration_days: number;
+  message_template: string;
+};
+
+type RetentionPlaybookEntry = {
+  audience: AudienceKey;
+  label: string;
+  intent: string;
+  audience_count: number;
+  send_ready_count: number;
+  missing_destination_count: number;
+  recommended_campaign: RetentionPlaybookCampaign;
+};
+
 type CampaignDelivery = {
   id: number;
   channel: ChannelKey;
@@ -245,17 +267,20 @@ export default function PromotionsPage() {
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
+  const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<"dry_run" | "send" | null>(null);
+  const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
 
   useEffect(() => {
     fetchPromotions();
     fetchProviderReadiness();
+    fetchPlaybook();
   }, []);
 
   const selectedPromotion = useMemo(
@@ -275,6 +300,18 @@ export default function PromotionsPage() {
       return;
     }
     setProviderReadiness(await response.json());
+  };
+
+  const fetchPlaybook = async () => {
+    const response = await fetch(`${PROMOTIONS_API}/retention-playbook`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      setPlaybook([]);
+      return;
+    }
+    const data = await response.json();
+    setPlaybook(data.playbook || []);
   };
 
   const fetchPromotions = async () => {
@@ -376,6 +413,28 @@ export default function PromotionsPage() {
     setFormData(emptyForm);
     await fetchPromotions();
     selectPromotion(data.promotion.id);
+  };
+
+  const createPlaybookCampaign = async (audience: AudienceKey) => {
+    setCreatingPlaybookAudience(audience);
+    const response = await fetch(`${PROMOTIONS_API}/retention-playbook/${audience}/campaign`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "active", duration_days: 7 }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Playbook campaign could not be created.");
+      setCreatingPlaybookAudience(null);
+      return;
+    }
+    setMessage(`Created playbook campaign ${data.promotion.name}.`);
+    await fetchPromotions();
+    await fetchPlaybook();
+    setSelectedId(data.promotion.id);
+    await fetchCampaignDetails(data.promotion.id);
+    setCreatingPlaybookAudience(null);
   };
 
   const copyOutreach = async () => {
@@ -508,6 +567,7 @@ export default function PromotionsPage() {
             onClick={() => {
               fetchPromotions();
               fetchProviderReadiness();
+              fetchPlaybook();
             }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
@@ -568,6 +628,60 @@ export default function PromotionsPage() {
               <p className="mt-2 min-h-10 text-sm font-black leading-5">{option.label}</p>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">Retention Campaign Playbook</p>
+            <h2 className="mt-1 text-xl font-black">Recommended offers by customer segment</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Create a ready campaign from the current audience counts, channel readiness, and loyalty intent.
+            </p>
+          </div>
+          <button
+            onClick={fetchPlaybook}
+            className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh Playbook
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {playbook.map((entry) => (
+            <article key={entry.audience} className="rounded-xl border border-white/5 bg-black/25 p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-gray-500">{entry.label}</p>
+                  <h3 className="mt-2 text-lg font-black">{entry.recommended_campaign.name}</h3>
+                </div>
+                <span className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-black uppercase text-orange-200">
+                  {offerFromCampaign(entry.recommended_campaign)}
+                </span>
+              </div>
+              <p className="min-h-12 text-sm font-semibold leading-6 text-gray-500">{entry.intent}</p>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <MiniSignal icon={Users} label="Audience" value={`${entry.audience_count}`} />
+                <MiniSignal icon={Send} label="Ready" value={`${entry.send_ready_count}`} />
+                <MiniSignal icon={Mail} label="Channel" value={channelLabel(entry.recommended_campaign.channel)} />
+              </div>
+              <button
+                onClick={() => createPlaybookCampaign(entry.audience)}
+                aria-label={`Create ${entry.label} playbook campaign`}
+                disabled={creatingPlaybookAudience === entry.audience}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 font-black text-white hover:bg-orange-600 disabled:cursor-wait disabled:bg-orange-500/50"
+              >
+                <Target className="h-4 w-4" />
+                {creatingPlaybookAudience === entry.audience ? "Creating" : "Create Campaign"}
+              </button>
+            </article>
+          ))}
+          {!playbook.length && (
+            <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-gray-500 lg:col-span-3">
+              Playbook recommendations are loading.
+            </div>
+          )}
         </div>
       </section>
 
@@ -838,22 +952,22 @@ export default function PromotionsPage() {
                       key={contact.id}
                       className="grid grid-cols-1 items-center gap-4 rounded-xl border border-white/5 bg-black/25 p-4 lg:grid-cols-12"
                     >
-                      <div className="lg:col-span-3">
-                        <p className="font-black">{contact.name || "Walk-in Customer"}</p>
-                        <p className="text-xs text-gray-500">{contact.phone}</p>
+                      <div className="min-w-0 lg:col-span-3">
+                        <p className="break-words font-black">{contact.name || "Walk-in Customer"}</p>
+                        <p className="break-words text-xs text-gray-500">{contact.phone}</p>
                       </div>
-                      <div className="text-sm text-gray-400 lg:col-span-2">
+                      <div className="min-w-0 text-sm text-gray-400 lg:col-span-2">
                         Rs {Math.round(contact.total_spend || 0).toLocaleString()} spend
                       </div>
-                      <div className="text-sm text-gray-400 lg:col-span-3">
+                      <div className="min-w-0 text-sm text-gray-400 lg:col-span-3">
                         <p className="text-xs font-black uppercase tracking-widest text-gray-600">
                           Destination
                         </p>
-                        <p className={contact.send_ready === false ? "text-red-300" : "text-gray-300"}>
+                        <p className={`break-all ${contact.send_ready === false ? "text-red-300" : "text-gray-300"}`}>
                           {contact.destination || contact.missing_reason || "Not prepared"}
                         </p>
                       </div>
-                      <div className="text-sm text-gray-400 lg:col-span-3">
+                      <div className="min-w-0 break-words text-sm leading-6 text-gray-400 lg:col-span-3">
                         {contact.message}
                       </div>
                       <div className="flex lg:col-span-1 lg:justify-end">
@@ -1049,6 +1163,11 @@ export default function PromotionsPage() {
 function offerLabel(promotion: Promotion) {
   const value = Number(promotion.discount_value || 0).toLocaleString();
   return promotion.discount_type === "percentage" ? `${value}% off` : `Rs ${value} off`;
+}
+
+function offerFromCampaign(campaign: RetentionPlaybookCampaign) {
+  const value = Number(campaign.discount_value || 0).toLocaleString();
+  return campaign.discount_type === "percentage" ? `${value}% off` : `Rs ${value} off`;
 }
 
 function audienceLabel(value: AudienceKey) {

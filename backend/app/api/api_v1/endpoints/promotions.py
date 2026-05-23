@@ -25,14 +25,15 @@ from urllib.parse import quote
 router = APIRouter()
 
 VALID_DISCOUNT_TYPES = {"percentage", "fixed"}
-RETENTION_AUDIENCES = {
+RETENTION_AUDIENCE_ORDER = [
     "new_guests",
     "regular_guests",
     "vip_guests",
     "active_customers",
     "comeback_customers",
     "win_back_customers",
-}
+]
+RETENTION_AUDIENCES = set(RETENTION_AUDIENCE_ORDER)
 VALID_AUDIENCES = {
     "all_customers",
     "marketing_opt_in",
@@ -59,6 +60,74 @@ DEFAULT_AD_MESSAGE_TEMPLATE = (
     "{promo_name} at Pizza Blitz: {offer}. Use code {code} before {end_date}. "
     "Order online now."
 )
+RETENTION_PLAYBOOK = {
+    "new_guests": {
+        "label": "New Guests",
+        "intent": "Move first-time buyers toward a second and third order.",
+        "name": "Second Slice Nudge",
+        "description": "A light welcome-back coupon for customers still forming a habit.",
+        "discount_type": "percentage",
+        "discount_value": 10,
+        "channel": "whatsapp",
+        "code_prefix": "NEW",
+        "message_template": "Hi {name}, welcome back to Pizza Blitz. Your next-slice offer is {offer}. Use {code} before {end_date}.",
+    },
+    "regular_guests": {
+        "label": "Regular Guests",
+        "intent": "Reward repeat buyers and push bundle behavior.",
+        "name": "Regular Guest Bundle",
+        "description": "A loyalty bundle offer for repeat customers.",
+        "discount_type": "percentage",
+        "discount_value": 12,
+        "channel": "email",
+        "code_prefix": "REG",
+        "message_template": "Hi {name}, your Pizza Blitz regular guest reward is {offer}. Use {code} before {end_date}.",
+    },
+    "vip_guests": {
+        "label": "VIP Guests",
+        "intent": "Invite the highest-value customers into premium party packs.",
+        "name": "VIP Party Pack Invite",
+        "description": "A premium offer for top spenders and frequent guests.",
+        "discount_type": "percentage",
+        "discount_value": 18,
+        "channel": "email",
+        "code_prefix": "VIP",
+        "message_template": "Hi {name}, your VIP Pizza Blitz party-pack offer is {offer}. Use {code} before {end_date}.",
+    },
+    "active_customers": {
+        "label": "Active This Week",
+        "intent": "Use fresh purchase intent to add sides, drinks, or dessert.",
+        "name": "This Week Add-on Boost",
+        "description": "A timely add-on offer for customers who ordered recently.",
+        "discount_type": "percentage",
+        "discount_value": 8,
+        "channel": "whatsapp",
+        "code_prefix": "ADD",
+        "message_template": "Hi {name}, complete this week's Pizza Blitz craving with {offer}. Use {code} before {end_date}.",
+    },
+    "comeback_customers": {
+        "label": "Comeback Due",
+        "intent": "Bring customers back before they become cold leads.",
+        "name": "Comeback Craving Reminder",
+        "description": "A stronger reminder for customers who have not ordered recently.",
+        "discount_type": "percentage",
+        "discount_value": 15,
+        "channel": "sms",
+        "code_prefix": "BACK",
+        "message_template": "Hi {name}, Pizza Blitz misses you. Come back with {offer}. Use {code} before {end_date}.",
+    },
+    "win_back_customers": {
+        "label": "Win-back Priority",
+        "intent": "Recover cold customers with the strongest controlled offer.",
+        "name": "Win-back Big Slice",
+        "description": "A high-priority recovery offer for customers at risk of churn.",
+        "discount_type": "percentage",
+        "discount_value": 20,
+        "channel": "whatsapp",
+        "code_prefix": "WIN",
+        "message_template": "Hi {name}, here is a Pizza Blitz win-back treat: {offer}. Use {code} before {end_date}.",
+    },
+}
 
 class PromotionCreate(BaseModel):
     name: str = Field(..., min_length=1)
@@ -82,6 +151,13 @@ class CampaignSendRequest(BaseModel):
     dry_run: bool = False
     force_resend: bool = False
     mark_completed: bool = False
+
+
+class RetentionCampaignCreate(BaseModel):
+    status: str = "active"
+    duration_days: int = Field(7, ge=1, le=60)
+    name: Optional[str] = None
+    code: Optional[str] = None
 
 
 class PromotionSocialPostCreate(BaseModel):
@@ -407,6 +483,55 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
         "missing_reason": missing_reason,
     }
 
+
+def _retention_playbook_entry(db: Session, audience: str) -> dict:
+    if audience not in RETENTION_PLAYBOOK:
+        raise HTTPException(status_code=422, detail="Unsupported retention playbook audience.")
+
+    template = RETENTION_PLAYBOOK[audience]
+    query = _audience_query(db, audience)
+    customers = query.order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc()).all()
+    sample_customers = customers[:5]
+    channel = template["channel"]
+    send_ready_count = sum(
+        1
+        for customer in customers
+        if normalize_campaign_destination(channel, _message_destination(customer, channel))
+    )
+    audience_count = len(customers)
+    return {
+        "audience": audience,
+        "label": template["label"],
+        "intent": template["intent"],
+        "audience_count": audience_count,
+        "send_ready_count": send_ready_count,
+        "missing_destination_count": max(audience_count - send_ready_count, 0),
+        "recommended_campaign": {
+            "name": template["name"],
+            "description": template["description"],
+            "discount_type": template["discount_type"],
+            "discount_value": template["discount_value"],
+            "audience": audience,
+            "channel": channel,
+            "status": "active",
+            "duration_days": 7,
+            "message_template": template["message_template"],
+        },
+        "sample_customers": [_customer_dict(customer) for customer in sample_customers],
+    }
+
+
+def _unique_retention_code(db: Session, prefix: str) -> str:
+    clean_prefix = "".join(character for character in prefix.upper() if character.isalnum())[:6] or "PB"
+    suffix = datetime.utcnow().strftime("%H%M%S")
+    code = f"{clean_prefix}{suffix}"
+    counter = 1
+    while db.query(Promotion).filter(Promotion.code == code).first():
+        code = f"{clean_prefix}{suffix}{counter}"
+        counter += 1
+    return code
+
+
 def _delivery_dict(delivery: CampaignDelivery) -> dict:
     return {
         "id": delivery.id,
@@ -664,6 +789,62 @@ def audience_summary(
         "audience": audience,
         "total_contacts": total,
         "customers": [_customer_dict(customer) for customer in customers],
+    }
+
+
+@router.get("/retention-playbook")
+def retention_campaign_playbook(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "playbook": [
+            _retention_playbook_entry(db, audience)
+            for audience in RETENTION_AUDIENCE_ORDER
+        ],
+    }
+
+
+@router.post("/retention-playbook/{audience}/campaign")
+def create_retention_playbook_campaign(
+    audience: str,
+    payload: RetentionCampaignCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    if payload.status not in VALID_STATUSES:
+        raise HTTPException(status_code=422, detail="Unsupported campaign status.")
+    if audience not in RETENTION_PLAYBOOK:
+        raise HTTPException(status_code=422, detail="Unsupported retention playbook audience.")
+
+    template = RETENTION_PLAYBOOK[audience]
+    start_date = date.today()
+    end_date = start_date + timedelta(days=payload.duration_days - 1)
+    code = _normalize_code(payload.code) or _unique_retention_code(db, template["code_prefix"])
+    if db.query(Promotion).filter(Promotion.code == code).first():
+        raise HTTPException(status_code=409, detail="Promotion code already exists.")
+
+    promo = Promotion(
+        name=(payload.name or template["name"]).strip(),
+        code=code,
+        start_date=start_date,
+        end_date=end_date,
+        description=template["description"],
+        discount_type=template["discount_type"],
+        discount_value=template["discount_value"],
+        audience=audience,
+        channel=template["channel"],
+        status=payload.status,
+        message_template=template["message_template"],
+    )
+    db.add(promo)
+    db.commit()
+    db.refresh(promo)
+    return {
+        "status": "retention campaign created",
+        "playbook": _retention_playbook_entry(db, audience),
+        "promotion": _promotion_dict(promo),
     }
 
 
