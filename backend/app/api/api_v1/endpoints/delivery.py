@@ -203,7 +203,8 @@ def update_delivery_assignment(
     if payload.assigned_to is not None:
         assignment.assigned_to = payload.assigned_to.strip() or None
     assignment.status = status
-    assignment.notes = payload.notes
+    if payload.notes is not None:
+        assignment.notes = payload.notes.strip() or None
     now = datetime.utcnow()
     if status == "assigned" and assignment.assigned_at is None:
         assignment.assigned_at = now

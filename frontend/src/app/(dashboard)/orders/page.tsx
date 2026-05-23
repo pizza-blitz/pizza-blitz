@@ -116,6 +116,7 @@ export default function OrdersPage() {
   const [saving, setSaving] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
+  const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
 
   const selectedItems = useMemo(
@@ -351,14 +352,22 @@ export default function OrdersPage() {
 
   const updateDeliveryAssignment = async (
     order: Order,
-    status: "assigned" | "out_for_delivery" | "delivered"
+    status: "assigned" | "out_for_delivery" | "delivered" | "failed"
   ) => {
     const assignedTo =
       assignmentDrafts[order.id] ??
       order.delivery_assignment?.assigned_to ??
       "";
-    if (!assignedTo.trim()) {
+    const assignmentNote =
+      assignmentNoteDrafts[order.id] ??
+      order.delivery_assignment?.notes ??
+      "";
+    if (["assigned", "out_for_delivery", "delivered"].includes(status) && !assignedTo.trim()) {
       setMessage(`Add a delivery partner for order #${order.id}.`);
+      return;
+    }
+    if (status === "failed" && !assignmentNote.trim()) {
+      setMessage(`Add a failure reason for order #${order.id}.`);
       return;
     }
 
@@ -369,6 +378,7 @@ export default function OrdersPage() {
       body: JSON.stringify({
         assigned_to: assignedTo,
         status,
+        notes: assignmentNote,
       }),
     });
     const data = await response.json();
@@ -499,6 +509,11 @@ export default function OrdersPage() {
                         {deliveryStatus}
                       </span>
                     </div>
+                    {assignment?.notes && (
+                      <p className="mt-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-semibold text-gray-400">
+                        {assignment.notes}
+                      </p>
+                    )}
                     <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
                       <input
                         value={assignmentDrafts[order.id] ?? assignment?.assigned_to ?? ""}
@@ -519,7 +534,18 @@ export default function OrdersPage() {
                         Assign
                       </button>
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    <input
+                      value={assignmentNoteDrafts[order.id] ?? assignment?.notes ?? ""}
+                      onChange={(event) =>
+                        setAssignmentNoteDrafts((current) => ({
+                          ...current,
+                          [order.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Delivery note / failure reason"
+                      className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold outline-none focus:border-orange-500"
+                    />
+                    <div className="mt-2 grid grid-cols-3 gap-2">
                       <button
                         onClick={() => updateDeliveryAssignment(order, "out_for_delivery")}
                         disabled={busyDeliveryAction === `${order.id}-out_for_delivery`}
@@ -533,6 +559,13 @@ export default function OrdersPage() {
                         className="flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-50"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" /> Delivered
+                      </button>
+                      <button
+                        onClick={() => updateDeliveryAssignment(order, "failed")}
+                        disabled={busyDeliveryAction === `${order.id}-failed`}
+                        className="flex items-center justify-center gap-2 rounded-lg bg-red-500/15 py-2 text-xs font-bold text-red-300 hover:bg-red-500/25 disabled:opacity-50"
+                      >
+                        <X className="h-3.5 w-3.5" /> Failed
                       </button>
                     </div>
                   </div>

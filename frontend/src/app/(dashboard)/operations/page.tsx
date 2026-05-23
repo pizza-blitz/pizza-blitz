@@ -126,6 +126,7 @@ export default function OperationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
+  const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
 
   const activeOrders = orders.filter((order) => order.status !== "closed");
   const paymentDueOrders = activeOrders.filter(
@@ -271,8 +272,16 @@ export default function OperationsPage() {
       assignmentDrafts[order.id] ??
       order.delivery_assignment?.assigned_to ??
       "";
-    if (status === "assigned" && !assignedTo.trim()) {
+    const assignmentNote =
+      assignmentNoteDrafts[order.id] ??
+      order.delivery_assignment?.notes ??
+      "";
+    if (["assigned", "out_for_delivery", "delivered"].includes(status) && !assignedTo.trim()) {
       setMessage(`Add a delivery partner for order #${order.id}.`);
+      return;
+    }
+    if (status === "failed" && !assignmentNote.trim()) {
+      setMessage(`Add a failure reason for order #${order.id}.`);
       return;
     }
 
@@ -284,6 +293,7 @@ export default function OperationsPage() {
         body: JSON.stringify({
           assigned_to: assignedTo,
           status,
+          notes: assignmentNote,
         }),
       });
       const data = await response.json();
@@ -392,13 +402,14 @@ export default function OperationsPage() {
             Show Delivery Queue
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {[
             ["Open Deliveries", deliveryStats.total, "text-gray-950"],
             ["Unassigned", deliveryStats.unassigned, "text-red-700"],
             ["Assigned", deliveryStats.assigned, "text-sky-700"],
             ["Out", deliveryStats.out, "text-orange-700"],
             ["Delivered", deliveryStats.delivered, "text-emerald-700"],
+            ["Failed", deliveryStats.failed, "text-rose-700"],
           ].map(([label, value, tone]) => (
             <div
               key={label}
@@ -451,7 +462,7 @@ export default function OperationsPage() {
                       {assignment?.status?.replaceAll("_", " ") || "unassigned"}
                     </span>
                   </div>
-                  <div className="mt-4 grid gap-2 md:grid-cols-[1fr_auto_auto_auto]">
+                  <div className="mt-4 grid gap-2 md:grid-cols-2">
                     <input
                       value={assignmentDrafts[order.id] ?? assignment?.assigned_to ?? ""}
                       onChange={(event) =>
@@ -463,6 +474,19 @@ export default function OperationsPage() {
                       placeholder="Delivery partner"
                       className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-red-600"
                     />
+                    <input
+                      value={assignmentNoteDrafts[order.id] ?? assignment?.notes ?? ""}
+                      onChange={(event) =>
+                        setAssignmentNoteDrafts((current) => ({
+                          ...current,
+                          [order.id]: event.target.value,
+                        }))
+                      }
+                      placeholder="Handoff note or failure reason"
+                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-red-600"
+                    />
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <button
                       onClick={() => updateDeliveryAssignment(order, "assigned")}
                       disabled={busyAction === `${order.id}-delivery-assigned`}
@@ -483,6 +507,13 @@ export default function OperationsPage() {
                       className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700 hover:bg-emerald-100"
                     >
                       Delivered
+                    </button>
+                    <button
+                      onClick={() => updateDeliveryAssignment(order, "failed")}
+                      disabled={busyAction === `${order.id}-delivery-failed`}
+                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-black text-rose-700 hover:bg-rose-100"
+                    >
+                      Failed
                     </button>
                   </div>
                 </article>
