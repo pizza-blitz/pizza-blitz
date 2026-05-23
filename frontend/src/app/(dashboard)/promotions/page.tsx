@@ -81,6 +81,9 @@ type CampaignSendQueueRow = {
   provider_status: ProviderStatus;
   can_dry_run: boolean;
   can_send: boolean;
+  queue_status: CampaignSendQueueView | "scheduled_wait";
+  queue_label: string;
+  live_send_blockers: string[];
   latest_attempted_at?: string | null;
   recommended_action: string;
   attempted_count: number;
@@ -92,13 +95,26 @@ type CampaignSendQueueRow = {
   retryable_count: number;
 };
 
+type CampaignSendQueueView =
+  | "all"
+  | "needs_dry_run"
+  | "provider_blocked"
+  | "ready_to_send"
+  | "audience_blocked"
+  | "dry_run_done";
+
 type CampaignSendQueue = {
   generated_at: string;
   summary: {
+    view: CampaignSendQueueView;
     campaign_count: number;
+    filtered_count: number;
     ready_campaign_count: number;
     dry_run_needed_count: number;
     provider_blocked_count: number;
+    live_ready_count: number;
+    audience_blocked_count: number;
+    dry_run_done_count: number;
     send_ready_contacts: number;
     missing_contacts: number;
   };
@@ -442,6 +458,15 @@ const deliveryReasonFilters: { value: DeliveryReasonFilter; label: string }[] = 
   { value: "needs_review", label: "Needs Review" },
 ];
 
+const sendQueueViews: { value: CampaignSendQueueView; label: string; countKey: keyof CampaignSendQueue["summary"] }[] = [
+  { value: "all", label: "All", countKey: "campaign_count" },
+  { value: "needs_dry_run", label: "Needs Dry Run", countKey: "dry_run_needed_count" },
+  { value: "provider_blocked", label: "Provider Blocked", countKey: "provider_blocked_count" },
+  { value: "ready_to_send", label: "Ready To Send", countKey: "live_ready_count" },
+  { value: "audience_blocked", label: "Audience Blocked", countKey: "audience_blocked_count" },
+  { value: "dry_run_done", label: "Already Sent", countKey: "dry_run_done_count" },
+];
+
 const defaultSocialImage =
   "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80";
 
@@ -487,6 +512,7 @@ export default function PromotionsPage() {
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
   const [scheduleQueue, setScheduleQueue] = useState<ScheduledCampaignQueue | null>(null);
   const [sendQueue, setSendQueue] = useState<CampaignSendQueue | null>(null);
+  const [sendQueueView, setSendQueueView] = useState<CampaignSendQueueView>("all");
   const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
   const [hygieneAudience, setHygieneAudience] = useState<AudienceKey>("marketing_opt_in");
   const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
@@ -501,6 +527,7 @@ export default function PromotionsPage() {
   const [scheduling, setScheduling] = useState(false);
   const [activatingDueSchedules, setActivatingDueSchedules] = useState(false);
   const [queueDryRunningId, setQueueDryRunningId] = useState<number | null>(null);
+  const [queueLiveSendingId, setQueueLiveSendingId] = useState<number | null>(null);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
@@ -603,8 +630,9 @@ export default function PromotionsPage() {
     setScheduleQueue(await response.json());
   };
 
-  const fetchSendQueue = async () => {
-    const response = await fetch(`${PROMOTIONS_API}/send/queue?limit=20`, {
+  const fetchSendQueue = async (view: CampaignSendQueueView = sendQueueView) => {
+    const params = new URLSearchParams({ limit: "20", view });
+    const response = await fetch(`${PROMOTIONS_API}/send/queue?${params.toString()}`, {
       credentials: "include",
     });
     if (!response.ok) {
@@ -758,6 +786,11 @@ export default function PromotionsPage() {
     fetchAudienceHygiene(audience);
   };
 
+  const changeSendQueueView = (view: CampaignSendQueueView) => {
+    setSendQueueView(view);
+    fetchSendQueue(view);
+  };
+
   const changeDeliveryFilter = (filter: DeliveryStatusFilter) => {
     setDeliveryFilter(filter);
     if (selectedId) {
@@ -895,6 +928,39 @@ export default function PromotionsPage() {
     await fetchCampaignDetails(promotionId);
     await fetchPerformanceRollup();
     setQueueDryRunningId(null);
+  };
+
+  const runQueueLiveSend = async (row: CampaignSendQueueRow) => {
+    const blockers = row.live_send_blockers.length ? row.live_send_blockers.join(", ") : "provider setup";
+    if (!row.can_send) {
+      setMessage(`${row.promotion.name} cannot send live yet: ${blockers}.`);
+      return;
+    }
+    const confirmed = window.confirm(`Confirm live send for ${row.promotion.name} to ${row.ready_count} ready contacts?`);
+    if (!confirmed) return;
+
+    setQueueLiveSendingId(row.promotion.id);
+    const response = await fetch(`${PROMOTIONS_API}/${row.promotion.id}/send`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: false, limit: 50 }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Queue live send failed.");
+      setQueueLiveSendingId(null);
+      return;
+    }
+
+    setMessage(
+      `Queue live send finished for ${data.promotion.name}: ${data.sent_count} sent, ${data.skipped_count} skipped, ${data.failed_count} failed.`
+    );
+    await fetchPromotions(row.promotion.id);
+    await fetchSendQueue();
+    await fetchCampaignDetails(row.promotion.id);
+    await fetchPerformanceRollup();
+    setQueueLiveSendingId(null);
   };
 
   const copyOutreach = async () => {
@@ -1226,6 +1292,25 @@ export default function PromotionsPage() {
           <MiniSignal icon={Send} label="Ready Contacts" value={`${sendQueue?.summary.send_ready_contacts || 0}`} />
         </div>
 
+        <div data-testid="send-queue-filters" className="mb-5 flex flex-wrap gap-2">
+          {sendQueueViews.map((view) => (
+            <button
+              data-testid={`send-queue-filter-${view.value}`}
+              key={view.value}
+              type="button"
+              onClick={() => changeSendQueueView(view.value)}
+              className={`rounded-lg border px-3 py-2 text-xs font-black uppercase ${
+                sendQueueView === view.value
+                  ? "border-orange-500 bg-orange-500 text-white"
+                  : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white"
+              }`}
+            >
+              {view.label}
+              <span className="ml-2 text-white/70">{sendQueue?.summary[view.countKey] || 0}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="overflow-hidden rounded-xl border border-white/5 bg-black/25">
           <div className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600">
             <span className="col-span-3">Campaign</span>
@@ -1256,12 +1341,11 @@ export default function PromotionsPage() {
               </div>
               <div className="col-span-2 text-right">
                 <span
-                  className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
-                    row.provider_status.configured ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"
-                  }`}
+                  className={`rounded-full px-3 py-1 text-xs font-black uppercase ${sendQueueStatusClass(row.queue_status)}`}
                 >
-                  {row.provider_status.configured ? "Ready" : "Setup"}
+                  {row.queue_label}
                 </span>
+                <p className="mt-2 text-xs font-black uppercase text-gray-500">{row.provider_status.provider}</p>
                 <p className="mt-2 text-xs font-semibold leading-5 text-gray-600">{row.recommended_action}</p>
               </div>
               <div className="col-span-3 flex flex-wrap justify-end gap-2">
@@ -1281,12 +1365,32 @@ export default function PromotionsPage() {
                 >
                   {queueDryRunningId === row.promotion.id ? "Checking" : "Dry Run"}
                 </button>
+                <button
+                  data-testid={`send-queue-live-send-${row.promotion.id}`}
+                  type="button"
+                  onClick={() => runQueueLiveSend(row)}
+                  disabled={queueLiveSendingId !== null || !row.can_send}
+                  title={
+                    row.can_send
+                      ? "Send live campaign"
+                      : row.live_send_blockers.length
+                      ? `Blocked: ${row.live_send_blockers.join(", ")}`
+                      : "Live send blocked"
+                  }
+                  className={`rounded-lg px-3 py-2 text-xs font-black uppercase disabled:cursor-not-allowed ${
+                    row.can_send
+                      ? "bg-emerald-400 text-black hover:bg-emerald-300"
+                      : "bg-white/10 text-gray-500"
+                  }`}
+                >
+                  {queueLiveSendingId === row.promotion.id ? "Sending" : "Send Live"}
+                </button>
               </div>
             </div>
           ))}
           {!sendQueueRows.length && (
             <div className="p-8 text-center text-sm font-semibold text-gray-500">
-              No active campaigns are waiting for send readiness.
+              No active campaigns match {sendQueueViews.find((view) => view.value === sendQueueView)?.label || "this view"}.
             </div>
           )}
         </div>
@@ -2726,6 +2830,15 @@ function scheduleQueuePhaseClass(phase: ScheduledCampaignQueueRow["phase"]) {
   if (phase === "due_today") return "bg-green-500/15 text-green-300";
   if (phase === "overdue") return "bg-yellow-500/15 text-yellow-300";
   return "bg-blue-500/15 text-blue-300";
+}
+
+function sendQueueStatusClass(status: CampaignSendQueueRow["queue_status"]) {
+  if (status === "ready_to_send") return "bg-green-500/15 text-green-300";
+  if (status === "needs_dry_run") return "bg-orange-500/15 text-orange-300";
+  if (status === "provider_blocked") return "bg-yellow-500/15 text-yellow-300";
+  if (status === "audience_blocked") return "bg-red-500/15 text-red-300";
+  if (status === "dry_run_done") return "bg-blue-500/15 text-blue-300";
+  return "bg-white/10 text-gray-300";
 }
 
 function ProviderCard({

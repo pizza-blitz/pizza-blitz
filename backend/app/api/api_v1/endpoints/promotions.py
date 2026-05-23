@@ -658,7 +658,33 @@ def _campaign_send_queue_row(db: Session, promo: Promotion) -> dict:
     schedule = _promotion_schedule_state(promo)
     latest_delivery = deliveries[0] if deliveries else None
     can_dry_run = ready_count > 0 and schedule["can_send_now"]
-    can_send = can_dry_run and provider_status["configured"]
+    has_dry_run = counts["dry_run_count"] > 0
+    already_sent = counts["sent_count"] > 0
+    can_send = can_dry_run and provider_status["configured"] and has_dry_run and not already_sent
+    if not schedule["can_send_now"]:
+        queue_status = "scheduled_wait"
+        queue_label = "Wait"
+        live_send_blockers = [f"Send window opens {schedule['send_ready_on']}"]
+    elif ready_count == 0:
+        queue_status = "audience_blocked"
+        queue_label = "Clean Audience"
+        live_send_blockers = ["No send-ready contacts"]
+    elif not provider_status["configured"]:
+        queue_status = "provider_blocked"
+        queue_label = "Provider Setup"
+        live_send_blockers = provider_status["missing_settings"] or ["Unsupported provider"]
+    elif not has_dry_run and not already_sent:
+        queue_status = "needs_dry_run"
+        queue_label = "Needs Dry Run"
+        live_send_blockers = ["Dry run not recorded"]
+    elif not already_sent:
+        queue_status = "ready_to_send"
+        queue_label = "Ready To Send"
+        live_send_blockers = []
+    else:
+        queue_status = "dry_run_done"
+        queue_label = "Already Sent"
+        live_send_blockers = ["Campaign already has sent deliveries"]
 
     if not schedule["can_send_now"]:
         action = f"Wait until {schedule['send_ready_on']}."
@@ -679,6 +705,9 @@ def _campaign_send_queue_row(db: Session, promo: Promotion) -> dict:
         "provider_status": provider_status,
         "can_dry_run": can_dry_run,
         "can_send": can_send,
+        "queue_status": queue_status,
+        "queue_label": queue_label,
+        "live_send_blockers": live_send_blockers,
         "latest_attempted_at": latest_delivery.attempted_at.isoformat() if latest_delivery and latest_delivery.attempted_at else None,
         "recommended_action": action,
         **counts,
@@ -1336,9 +1365,22 @@ def scheduled_campaign_queue(
 @router.get("/send/queue")
 def campaign_send_queue(
     limit: int = Query(20, ge=1, le=100),
+    view: str = Query("all"),
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
+    normalized_view = view.strip().lower()
+    allowed_views = {
+        "all",
+        "needs_dry_run",
+        "provider_blocked",
+        "ready_to_send",
+        "audience_blocked",
+        "dry_run_done",
+    }
+    if normalized_view not in allowed_views:
+        raise HTTPException(status_code=422, detail="Unsupported send queue view.")
+
     today = date.today()
     promotions = (
         db.query(Promotion)
@@ -1357,22 +1399,31 @@ def campaign_send_queue(
             row["promotion"]["id"],
         )
     )
-    visible_rows = rows[:limit]
+    filtered_rows = (
+        rows
+        if normalized_view == "all"
+        else [row for row in rows if row["queue_status"] == normalized_view]
+    )
     return {
         "generated_at": datetime.utcnow().isoformat(),
         "summary": {
+            "view": normalized_view,
             "campaign_count": len(rows),
+            "filtered_count": len(filtered_rows),
             "ready_campaign_count": sum(1 for row in rows if row["ready_count"] > 0),
             "dry_run_needed_count": sum(
-                1 for row in rows if row["can_dry_run"] and row["dry_run_count"] == 0
+                1 for row in rows if row["queue_status"] == "needs_dry_run"
             ),
             "provider_blocked_count": sum(
-                1 for row in rows if row["ready_count"] > 0 and not row["provider_status"]["configured"]
+                1 for row in rows if row["queue_status"] == "provider_blocked"
             ),
+            "live_ready_count": sum(1 for row in rows if row["queue_status"] == "ready_to_send"),
+            "audience_blocked_count": sum(1 for row in rows if row["queue_status"] == "audience_blocked"),
+            "dry_run_done_count": sum(1 for row in rows if row["queue_status"] == "dry_run_done"),
             "send_ready_contacts": sum(row["ready_count"] for row in rows),
             "missing_contacts": sum(row["missing_count"] for row in rows),
         },
-        "campaigns": visible_rows,
+        "campaigns": filtered_rows[:limit],
     }
 
 

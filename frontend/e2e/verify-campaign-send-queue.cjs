@@ -136,7 +136,21 @@ async function assertSendQueueEndpoint(cookie, campaign) {
   assert(row, "Active campaign was missing from send queue.");
   assert(row.ready_count >= 1, `Send queue did not find ready contacts, got ${row.ready_count}.`);
   assert(row.can_dry_run === true, "Send queue did not mark the campaign dry-run ready.");
+  assert(row.queue_status === "provider_blocked", `Send queue gave wrong status: ${row.queue_status}.`);
+  assert(row.can_send === false, "Provider-blocked campaign should not be live-send enabled.");
+  assert(row.live_send_blockers.length >= 1, "Provider-blocked campaign should explain live-send blockers.");
   assert(queue.data.summary.send_ready_contacts >= row.ready_count, "Send queue summary did not count ready contacts.");
+
+  const providerBlocked = await adminJson("/api/v1/restaurant/promotions/send/queue?limit=50&view=provider_blocked", cookie);
+  assert(providerBlocked.response.ok, `Provider-blocked send queue failed: ${JSON.stringify(providerBlocked.data)}`);
+  assert(providerBlocked.data.summary.view === "provider_blocked", "Provider-blocked queue did not echo the selected view.");
+  assert(
+    providerBlocked.data.campaigns.some((item) => item.promotion.id === campaign.id),
+    "Active campaign was missing from provider-blocked queue view."
+  );
+
+  const invalid = await adminJson("/api/v1/restaurant/promotions/send/queue?view=unknown", cookie);
+  assert(invalid.response.status === 422, `Invalid send queue view should be rejected, got ${invalid.response.status}.`);
 }
 
 function createBrowserWatch(page) {
@@ -186,6 +200,20 @@ async function proveSendQueueInBrowser(campaign) {
     await queuePanel.getByText("Campaign Send Queue", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByTestId(`send-queue-row-${campaign.id}`).waitFor({ timeout: 15000 });
     await queuePanel.getByText(campaign.name, { exact: true }).waitFor({ timeout: 15000 });
+
+    await Promise.all([
+      page.waitForResponse(
+        (apiResponse) =>
+          apiResponse.url().includes("/promotions/send/queue") &&
+          apiResponse.url().includes("view=provider_blocked") &&
+          apiResponse.ok(),
+        { timeout: 15000 }
+      ),
+      page.getByTestId("send-queue-filter-provider_blocked").click(),
+    ]);
+    await page.getByTestId(`send-queue-row-${campaign.id}`).waitFor({ timeout: 15000 });
+    const liveSendButton = page.getByTestId(`send-queue-live-send-${campaign.id}`);
+    assert(await liveSendButton.isDisabled(), "Provider-blocked campaign should render disabled live-send action.");
 
     const dryRunResponse = page.waitForResponse(
       (apiResponse) =>
@@ -244,6 +272,12 @@ async function assertDryRunRecorded(cookie, campaign) {
   const queue = await adminJson("/api/v1/restaurant/promotions/send/queue?limit=50", cookie);
   const row = queue.data.campaigns.find((item) => item.promotion.id === campaign.id);
   assert(row?.dry_run_count >= 1, "Send queue did not refresh dry-run count after row action.");
+
+  const providerBlocked = await adminJson("/api/v1/restaurant/promotions/send/queue?limit=50&view=provider_blocked", cookie);
+  assert(
+    providerBlocked.data.campaigns.some((item) => item.promotion.id === campaign.id && item.queue_status === "provider_blocked"),
+    "Dry-run campaign should remain provider-blocked until provider settings are configured."
+  );
 }
 
 async function main() {
