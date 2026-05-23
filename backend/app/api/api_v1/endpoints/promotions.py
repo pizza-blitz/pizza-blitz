@@ -445,6 +445,8 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
         .filter(AdCampaign.name.like(f"%{promo.name}%"))
         .all()
     )
+    latest_social_post = max(social_posts, key=lambda post: post.id or 0, default=None)
+    latest_ad_campaign = max(ad_campaigns, key=lambda campaign: campaign.id or 0, default=None)
     ad_campaign_ids = [campaign.id for campaign in ad_campaigns]
     ad_launches = []
     if ad_campaign_ids:
@@ -515,6 +517,7 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
             "ready_count": sum(1 for post in social_posts if post.status == "ready"),
             "scheduled_count": sum(1 for post in social_posts if post.status == "scheduled"),
             "latest_post_id": max([post.id for post in social_posts], default=None),
+            "latest_post": _social_post_dict(latest_social_post) if latest_social_post else None,
         },
         "ads": {
             "campaign_count": len(ad_campaigns),
@@ -524,6 +527,7 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
             "roas": round(ad_revenue / ad_spend, 2) if ad_spend else 0,
             "launch_count": len(ad_launches),
             "latest_campaign_id": max(ad_campaign_ids, default=None),
+            "latest_campaign": _ad_campaign_dict(latest_ad_campaign) if latest_ad_campaign else None,
         },
     }
 

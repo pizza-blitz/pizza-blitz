@@ -81,7 +81,13 @@ class PromotionPerformanceReportingTest(unittest.TestCase):
                 self.assertEqual(payload["redemptions"]["unique_customers"], 1)
                 self.assertEqual(payload["redemptions"]["average_order_value"], 342.68)
                 self.assertEqual(payload["social"]["post_count"], 1)
+                self.assertEqual(payload["social"]["latest_post_id"], post_id)
+                self.assertEqual(payload["social"]["latest_post"]["id"], post_id)
+                self.assertEqual(payload["social"]["latest_post"]["status"], "ready")
                 self.assertEqual(payload["ads"]["campaign_count"], 1)
+                self.assertEqual(payload["ads"]["latest_campaign_id"], campaign_id)
+                self.assertEqual(payload["ads"]["latest_campaign"]["id"], campaign_id)
+                self.assertEqual(payload["ads"]["latest_campaign"]["status"], "ready")
                 self.assertEqual(payload["ads"]["planned_budget"], 600)
                 self.assertEqual(payload["campaign_window"]["phase"], "live")
 
@@ -97,7 +103,9 @@ class PromotionPerformanceReportingTest(unittest.TestCase):
                 self.assertEqual(campaign_row["redemptions"]["count"], 1)
                 self.assertEqual(campaign_row["redemptions"]["revenue"], 342.68)
                 self.assertEqual(campaign_row["social"]["post_count"], 1)
+                self.assertEqual(campaign_row["social"]["latest_post"]["id"], post_id)
                 self.assertEqual(campaign_row["ads"]["planned_budget"], 600)
+                self.assertEqual(campaign_row["ads"]["latest_campaign"]["id"], campaign_id)
                 self.assertGreaterEqual(rollup_payload["summary"]["redemption_revenue"], 342.68)
                 self.assertEqual(
                     rollup_payload["best_campaign"]["promotion_detail"]["id"],

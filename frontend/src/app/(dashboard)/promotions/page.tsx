@@ -105,6 +105,24 @@ type DeliveryHistory = {
   deliveries: CampaignDelivery[];
 };
 
+type SocialDraftSummary = {
+  id: number;
+  title: string;
+  status: string;
+  platforms: string[];
+  scheduled_at?: string | null;
+};
+
+type AdCampaignSummary = {
+  id: number;
+  name: string;
+  objective: string;
+  platforms: string[];
+  status: string;
+  daily_budget: number;
+  lifetime_budget: number;
+};
+
 type CampaignPerformance = {
   campaign_window: {
     total_days: number;
@@ -132,6 +150,7 @@ type CampaignPerformance = {
     ready_count: number;
     scheduled_count: number;
     latest_post_id?: number | null;
+    latest_post?: SocialDraftSummary | null;
   };
   ads: {
     campaign_count: number;
@@ -141,6 +160,7 @@ type CampaignPerformance = {
     roas: number;
     launch_count: number;
     latest_campaign_id?: number | null;
+    latest_campaign?: AdCampaignSummary | null;
   };
 };
 
@@ -683,6 +703,41 @@ export default function PromotionsPage() {
                       value={formatRupees(performance?.ads.planned_budget || 0)}
                     />
                   </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <HandoffCard
+                      icon={Share2}
+                      label="Social Handoff"
+                      title={performance?.social.latest_post?.title || "No social draft created"}
+                      status={performance?.social.latest_post?.status || "pending"}
+                      detail={
+                        performance?.social.latest_post
+                          ? `${formatPlatforms(
+                              performance.social.latest_post.platforms
+                            )} | Post #${performance.social.latest_post.id}`
+                          : "Create a social post from this campaign."
+                      }
+                      href="/social"
+                      action="Open Social Publishing"
+                    />
+                    <HandoffCard
+                      icon={Target}
+                      label="Ad Handoff"
+                      title={performance?.ads.latest_campaign?.name || "No ad campaign created"}
+                      status={performance?.ads.latest_campaign?.status || "pending"}
+                      detail={
+                        performance?.ads.latest_campaign
+                          ? `${formatPlatforms(
+                              performance.ads.latest_campaign.platforms
+                            )} | ${formatRupees(
+                              performance.ads.latest_campaign.daily_budget ||
+                                performance.ads.latest_campaign.lifetime_budget
+                            )} budget`
+                          : "Create an ad campaign from this promotion."
+                      }
+                      href="/ads"
+                      action="Open Ad Campaigns"
+                    />
+                  </div>
                   {performance && performance.redemptions.count === 0 ? (
                     <div className="mt-4 rounded-lg border border-dashed border-white/10 bg-black/20 p-4 text-sm font-semibold text-gray-500">
                       No coupon orders are attributed to this campaign yet.
@@ -955,6 +1010,75 @@ function MiniSignal({
       </div>
     </div>
   );
+}
+
+function HandoffCard({
+  icon: Icon,
+  label,
+  title,
+  status,
+  detail,
+  href,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  title: string;
+  status: string;
+  detail: string;
+  href: string;
+  action: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-white/[0.03] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-300">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-widest text-gray-600">{label}</p>
+            <p className="mt-1 break-words text-sm font-black leading-5 text-gray-100">{title}</p>
+          </div>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-black uppercase ${handoffStatusClass(
+            status
+          )}`}
+        >
+          {status.replace("_", " ")}
+        </span>
+      </div>
+      <p className="mt-3 break-words text-xs font-semibold leading-5 text-gray-500">{detail}</p>
+      <a
+        href={href}
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15"
+      >
+        {action} <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
+}
+
+function formatPlatforms(platforms?: string[]) {
+  if (!platforms || platforms.length === 0) return "No platform";
+  return platforms
+    .map((platform) => platform.replace("_", " "))
+    .map((platform) => platform.charAt(0).toUpperCase() + platform.slice(1))
+    .join(", ");
+}
+
+function handoffStatusClass(status: string) {
+  if (status === "ready" || status === "scheduled" || status === "active") {
+    return "bg-green-500/15 text-green-300";
+  }
+  if (status === "pending" || status === "draft") {
+    return "bg-white/10 text-gray-300";
+  }
+  if (status === "failed" || status === "rejected") {
+    return "bg-red-500/15 text-red-300";
+  }
+  return "bg-blue-500/15 text-blue-300";
 }
 
 function ProviderCard({
