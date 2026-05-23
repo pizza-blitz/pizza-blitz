@@ -42,6 +42,24 @@ type Table = {
   current_order_id?: number | null;
 };
 
+type DeliveryZone = {
+  id: number;
+  name: string;
+  delivery_fee: number;
+  minimum_order_amount: number;
+  eta_window: string;
+  is_active: boolean;
+};
+
+type DeliveryQuote = {
+  is_deliverable: boolean;
+  reason?: string | null;
+  address: string;
+  zone?: DeliveryZone | null;
+  delivery_fee: number;
+  eta_window?: string | null;
+};
+
 type Order = {
   id: number;
   order_type: string;
@@ -79,18 +97,24 @@ const emptyCustomer = {
   customer_phone: "",
   payment_method: "cash",
   discount_amount: 0,
+  delivery_address: "",
   notes: "",
 };
 
 export default function OrdersPage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [selectedDeliveryZoneId, setSelectedDeliveryZoneId] = useState<number | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [orderMode, setOrderMode] = useState<"takeaway" | "delivery">("takeaway");
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [formData, setFormData] = useState(emptyCustomer);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
 
@@ -105,7 +129,12 @@ export default function OrdersPage() {
   const discount = Math.max(Number(formData.discount_amount || 0), 0);
   const taxableSubtotal = Math.max(subtotal - discount, 0);
   const tax = taxableSubtotal * 0.05;
-  const total = taxableSubtotal + tax;
+  const isDeliveryOrder = !selectedTable && orderMode === "delivery";
+  const deliveryFee =
+    isDeliveryOrder && deliveryQuote?.is_deliverable
+      ? Number(deliveryQuote.delivery_fee || 0)
+      : 0;
+  const total = taxableSubtotal + tax + deliveryFee;
   const openOrders = orders.filter((order) => order.status !== "closed");
   const deliveryOrders = openOrders.filter(
     (order) => (order.fulfillment_type || order.order_type) === "delivery"
@@ -122,10 +151,11 @@ export default function OrdersPage() {
   }, []);
 
   const fetchData = async () => {
-    const [tablesRes, menuRes, todayRes] = await Promise.all([
+    const [tablesRes, menuRes, todayRes, zonesRes] = await Promise.all([
       fetch(`${ORDERS_API}/tables`),
       fetch(MENU_API),
       fetch(`${ORDERS_API}/today`),
+      fetch(`${DELIVERY_API}/zones`),
     ]);
 
     setTables(await tablesRes.json());
@@ -137,19 +167,27 @@ export default function OrdersPage() {
     );
     const today = await todayRes.json();
     setOrders(today.orders || []);
+    const zones = await zonesRes.json();
+    const activeZones = Array.isArray(zones)
+      ? zones.filter((zone: DeliveryZone) => zone.is_active)
+      : [];
+    setDeliveryZones(activeZones);
+    setSelectedDeliveryZoneId((current) => current || activeZones[0]?.id || null);
   };
 
   const resetOrderForm = () => {
     setFormData(emptyCustomer);
+    setDeliveryQuote(null);
     setMenuItems((current) => current.map((item) => ({ ...item, quantity: 0 })));
   };
 
-  const openOrderModal = (table?: Table) => {
+  const openOrderModal = (table?: Table, mode: "takeaway" | "delivery" = "takeaway") => {
     if (table?.status === "occupied") {
       setMessage(`Table ${table.table_number} already has order #${table.current_order_id}. Close it before starting another.`);
       return;
     }
     setSelectedTable(table?.table_number || null);
+    setOrderMode(table ? "takeaway" : mode);
     resetOrderForm();
     setShowOrderModal(true);
     setMessage("");
@@ -163,24 +201,100 @@ export default function OrdersPage() {
     );
   };
 
+  useEffect(() => {
+    if (!isDeliveryOrder) {
+      setDeliveryQuote(null);
+      return;
+    }
+
+    const address = formData.delivery_address.trim();
+    if (!address || !selectedDeliveryZoneId) {
+      setDeliveryQuote(null);
+      return;
+    }
+
+    const quoteTimer = window.setTimeout(async () => {
+      setIsQuotingDelivery(true);
+      try {
+        const response = await fetch(`${DELIVERY_API}/quote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address,
+            subtotal,
+            zone_id: selectedDeliveryZoneId,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          setDeliveryQuote({
+            is_deliverable: false,
+            reason: data.detail || "Address could not be validated.",
+            address,
+            delivery_fee: 0,
+          });
+          return;
+        }
+        setDeliveryQuote(data);
+      } catch {
+        setDeliveryQuote({
+          is_deliverable: false,
+          reason: "Delivery quote API is not available right now.",
+          address,
+          delivery_fee: 0,
+        });
+      } finally {
+        setIsQuotingDelivery(false);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(quoteTimer);
+  }, [formData.delivery_address, isDeliveryOrder, selectedDeliveryZoneId, subtotal]);
+
   const createOrder = async () => {
     if (!selectedItems.length) {
       setMessage("Add at least one item before sending the order.");
       return;
     }
+    if (isDeliveryOrder && !formData.delivery_address.trim()) {
+      setMessage("Add the delivery address before sending the order.");
+      return;
+    }
+    if (isDeliveryOrder && !selectedDeliveryZoneId) {
+      setMessage("Choose a delivery zone before sending the order.");
+      return;
+    }
+    if (isDeliveryOrder && isQuotingDelivery) {
+      setMessage("Delivery quote is still being checked.");
+      return;
+    }
+    if (isDeliveryOrder && (!deliveryQuote || !deliveryQuote.is_deliverable)) {
+      setMessage(deliveryQuote?.reason || "Confirm a deliverable address before sending the order.");
+      return;
+    }
 
     setSaving(true);
+    const orderType = selectedTable ? "dine-in" : orderMode;
+    const notes = [
+      formData.notes || "",
+      isDeliveryOrder ? "Counter delivery order" : "",
+      isDeliveryOrder ? "Fulfillment: delivery" : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
     const response = await fetch(`${ORDERS_API}/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        order_type: selectedTable ? "dine-in" : "takeaway",
+        order_type: orderType,
         table_number: selectedTable,
         customer_name: formData.customer_name || null,
         customer_phone: formData.customer_phone || null,
         payment_method: formData.payment_method,
         discount_amount: discount,
-        notes: formData.notes || null,
+        delivery_address: isDeliveryOrder ? formData.delivery_address : null,
+        delivery_zone_id: isDeliveryOrder ? selectedDeliveryZoneId : null,
+        notes: notes || null,
         items: selectedItems.map((item) => ({
           name: item.name,
           quantity: Number(item.quantity || 0),
@@ -196,7 +310,11 @@ export default function OrdersPage() {
       return;
     }
 
-    setMessage(`Order #${data.order_id} sent to kitchen.`);
+    setMessage(
+      isDeliveryOrder
+        ? `Delivery order #${data.order_id} sent to kitchen with ${data.delivery_zone || "delivery"} fee.`
+        : `Order #${data.order_id} sent to kitchen.`
+    );
     setShowOrderModal(false);
     await fetchData();
   };
@@ -288,6 +406,12 @@ export default function OrdersPage() {
             className="bg-white text-black px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-500 hover:text-white transition-all shadow-lg active:scale-95"
           >
             <Plus className="w-5 h-5" /> Takeaway
+          </button>
+          <button
+            onClick={() => openOrderModal(undefined, "delivery")}
+            className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-600 transition-all shadow-lg active:scale-95"
+          >
+            <Truck className="w-5 h-5" /> Delivery
           </button>
         </div>
       </div>
@@ -517,7 +641,7 @@ export default function OrdersPage() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold flex items-center gap-2 text-orange-400">
                 <ShoppingBag className="w-6 h-6" />
-                {selectedTable ? `Table ${selectedTable}` : "Takeaway"} Order
+                {selectedTable ? `Table ${selectedTable}` : isDeliveryOrder ? "Delivery" : "Takeaway"} Order
               </h2>
               <button onClick={() => setShowOrderModal(false)} className="p-2 hover:bg-white/5 rounded-xl">
                 <X />
@@ -559,6 +683,59 @@ export default function OrdersPage() {
               />
             </div>
 
+            {isDeliveryOrder && (
+              <div className="mb-5 rounded-xl border border-orange-500/20 bg-orange-500/10 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-black text-orange-200">
+                    <Truck className="h-4 w-4" />
+                    Delivery Details
+                  </div>
+                  <span className="text-xs font-bold text-orange-200/80">
+                    {isQuotingDelivery
+                      ? "Checking"
+                      : deliveryQuote?.is_deliverable
+                      ? `${deliveryQuote.zone?.name || "Delivery"} | ${deliveryQuote.eta_window}`
+                      : "Quote pending"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_220px]">
+                  <input
+                    type="text"
+                    placeholder="House/building and area"
+                    value={formData.delivery_address}
+                    onChange={(e) =>
+                      setFormData({ ...formData, delivery_address: e.target.value })
+                    }
+                    className="bg-black/30 border border-white/10 p-3 rounded-xl outline-none focus:border-orange-500"
+                  />
+                  <select
+                    value={selectedDeliveryZoneId || ""}
+                    onChange={(e) => setSelectedDeliveryZoneId(Number(e.target.value) || null)}
+                    className="bg-black/30 border border-white/10 p-3 rounded-xl outline-none focus:border-orange-500"
+                  >
+                    {deliveryZones.map((zone) => (
+                      <option key={zone.id} value={zone.id}>
+                        {zone.name} | Rs {zone.delivery_fee} | {zone.eta_window}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div
+                  className={`mt-3 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    deliveryQuote?.is_deliverable
+                      ? "border-green-500/20 bg-green-500/10 text-green-200"
+                      : "border-white/10 bg-black/20 text-gray-400"
+                  }`}
+                >
+                  {isQuotingDelivery
+                    ? "Checking delivery charge and ETA..."
+                    : deliveryQuote?.is_deliverable
+                    ? `Delivery fee Rs ${Math.round(deliveryFee).toLocaleString()}, ETA ${deliveryQuote.eta_window}.`
+                    : deliveryQuote?.reason || "Enter address and choose zone to calculate delivery."}
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto space-y-3 pr-2">
               {menuItems.map((item) => (
                 <div key={item.id} className="flex justify-between items-center bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all">
@@ -583,6 +760,12 @@ export default function OrdersPage() {
               <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>Rs {Math.round(subtotal).toLocaleString()}</span></div>
               <div className="flex justify-between text-gray-400"><span>Discount</span><span>Rs {Math.round(discount).toLocaleString()}</span></div>
               <div className="flex justify-between text-gray-400"><span>GST 5%</span><span>Rs {Math.round(tax).toLocaleString()}</span></div>
+              {isDeliveryOrder && (
+                <div className="flex justify-between text-orange-200">
+                  <span>Delivery Fee</span>
+                  <span>Rs {Math.round(deliveryFee).toLocaleString()}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xl font-black text-white pt-2 border-t border-white/10">
                 <span>Total</span><span>Rs {Math.round(total).toLocaleString()}</span>
               </div>
@@ -594,7 +777,7 @@ export default function OrdersPage() {
               className="mt-5 w-full bg-orange-500 p-4 rounded-xl font-bold text-lg hover:bg-orange-600 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
             >
               <Printer className="w-5 h-5" />
-              {saving ? "Sending..." : "Send to Kitchen"}
+              {saving ? "Sending..." : isDeliveryOrder ? "Send Delivery to Kitchen" : "Send to Kitchen"}
             </button>
           </div>
         </div>
