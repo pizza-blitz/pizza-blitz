@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date, datetime
 from typing import List, Optional
 
@@ -275,6 +276,110 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
         }
     )
     return payload
+
+
+def customer_history_insights(orders: list[RestaurantOrder], customer: Optional[Customer]) -> dict:
+    total_orders = int(customer.total_orders or 0) if customer else len(orders)
+    total_spend = (
+        float(customer.total_spend or 0)
+        if customer
+        else sum(float(order.total_amount or 0) for order in orders)
+    )
+    order_count = max(total_orders, len(orders))
+    average_order_value = round(total_spend / order_count, 2) if order_count else 0
+    total_discount = round(sum(float(order.discount_amount or 0) for order in orders), 2)
+
+    item_quantities: Counter[str] = Counter()
+    item_spend: Counter[str] = Counter()
+    latest_item_detail: dict[str, dict] = {}
+    for order in orders:
+        for item in order.items or []:
+            name = str(item.get("name") or "Item").strip() or "Item"
+            quantity = int(item.get("quantity") or 0)
+            price = float(item.get("price") or 0)
+            item_quantities[name] += quantity
+            item_spend[name] += price * quantity
+            latest_item_detail.setdefault(name, item)
+
+    favorite_items = [
+        {
+            "name": name,
+            "quantity": quantity,
+            "spend": round(float(item_spend[name] or 0), 2),
+        }
+        for name, quantity in item_quantities.most_common(5)
+    ]
+
+    latest_order = orders[0] if orders else None
+    latest_order_at = (
+        latest_order.created_at
+        if latest_order and latest_order.created_at
+        else datetime.combine(latest_order.date, datetime.min.time())
+        if latest_order and latest_order.date
+        else None
+    )
+    days_since_last_order = (
+        max((datetime.utcnow() - latest_order_at).days, 0)
+        if latest_order_at
+        else None
+    )
+
+    if total_orders >= 10 or total_spend >= 5000:
+        tier = "VIP Slice Club"
+        next_tier = "Top tier"
+        tier_current = min(total_orders, 10)
+        tier_target = 10
+    elif total_orders >= 3 or total_spend >= 1200:
+        tier = "Regular Guest"
+        next_tier = "VIP Slice Club"
+        tier_current = min(total_orders, 10)
+        tier_target = 10
+    else:
+        tier = "New Guest"
+        next_tier = "Regular Guest"
+        tier_current = min(total_orders, 3)
+        tier_target = 3
+
+    if days_since_last_order is None:
+        cadence = "First order pending"
+    elif days_since_last_order <= 7:
+        cadence = "Active this week"
+    elif days_since_last_order <= 30:
+        cadence = "Ready for a comeback offer"
+    else:
+        cadence = "Win-back recommended"
+
+    recommended_source = latest_order.items if latest_order and latest_order.items else []
+    if favorite_items:
+        recommended_source = [
+            latest_item_detail[item["name"]]
+            for item in favorite_items[:3]
+            if item["name"] in latest_item_detail
+        ] or recommended_source
+
+    recommended_reorder = [
+        {
+            "name": item.get("name"),
+            "quantity": int(item.get("quantity") or 1),
+            "price": round(float(item.get("price") or 0), 2),
+            "selected_options": item.get("selected_options") or [],
+        }
+        for item in recommended_source[:4]
+        if item.get("name")
+    ]
+
+    return {
+        "tier": tier,
+        "next_tier": next_tier,
+        "tier_progress_percent": round((tier_current / tier_target) * 100) if tier_target else 100,
+        "orders_to_next_tier": max(tier_target - total_orders, 0),
+        "average_order_value": average_order_value,
+        "total_discount": total_discount,
+        "days_since_last_order": days_since_last_order,
+        "cadence": cadence,
+        "favorite_items": favorite_items,
+        "recommended_reorder": recommended_reorder,
+    }
 
 
 def order_next_action(order: RestaurantOrder) -> str:
@@ -1022,6 +1127,7 @@ def customer_order_history(phone: str, db: Session = Depends(get_db)):
             ),
             "last_order_at": customer.last_order_at.isoformat() if customer and customer.last_order_at else None,
         },
+        "loyalty_summary": customer_history_insights(orders, customer),
         "orders": [serialize_order(order) for order in orders],
     }
 

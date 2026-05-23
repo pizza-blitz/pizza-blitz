@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
+  Award,
   Clock,
   History,
   Mail,
@@ -12,6 +13,8 @@ import {
   ReceiptText,
   Search,
   ShoppingBag,
+  Star,
+  TrendingUp,
   User,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
@@ -40,6 +43,25 @@ type Order = {
   created_at?: string | null;
 };
 
+type ReorderItem = {
+  name?: string | null;
+  quantity?: number;
+  selected_options?: { option_name: string; price_delta: number }[];
+};
+
+type LoyaltySummary = {
+  tier: string;
+  next_tier: string;
+  tier_progress_percent: number;
+  orders_to_next_tier: number;
+  average_order_value: number;
+  total_discount: number;
+  days_since_last_order?: number | null;
+  cadence: string;
+  favorite_items: { name: string; quantity: number; spend: number }[];
+  recommended_reorder: ReorderItem[];
+};
+
 type CustomerHistory = {
   customer: {
     name?: string | null;
@@ -50,6 +72,7 @@ type CustomerHistory = {
     total_spend: number;
     last_order_at?: string | null;
   };
+  loyalty_summary?: LoyaltySummary;
   orders: Order[];
 };
 
@@ -108,7 +131,7 @@ export default function CustomerAccountPage() {
     lookupOrdersByPhone(phone);
   };
 
-  const reorder = (order: Order) => {
+  const saveReorderDraft = (items: ReorderItem[], sourceOrderId?: number) => {
     if (!history) return;
     window.localStorage.setItem(
       REORDER_STORAGE_KEY,
@@ -119,15 +142,24 @@ export default function CustomerAccountPage() {
           email: history.customer.email || "",
           opt_in_marketing: history.customer.opt_in_marketing ?? true,
         },
-        items: order.items.map((item) => ({
+        items: items.map((item) => ({
           name: item.name,
-          quantity: item.quantity,
+          quantity: item.quantity || 1,
           selected_options: item.selected_options || [],
         })),
-        source_order_id: order.id,
+        source_order_id: sourceOrderId,
       })
     );
     router.push("/order");
+  };
+
+  const reorder = (order: Order) => {
+    saveReorderDraft(order.items, order.id);
+  };
+
+  const reorderRecommended = () => {
+    if (!history?.loyalty_summary?.recommended_reorder?.length) return;
+    saveReorderDraft(history.loyalty_summary.recommended_reorder);
   };
 
   return (
@@ -219,6 +251,109 @@ export default function CustomerAccountPage() {
                 value={`Rs ${Math.round(history.customer.total_spend || 0).toLocaleString()}`}
               />
             </div>
+
+            {history.loyalty_summary && (
+              <section className="mb-6 rounded-lg border border-red-100 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-red-700">Loyalty Snapshot</p>
+                    <h2 className="mt-1 text-2xl font-black">{history.loyalty_summary.tier}</h2>
+                    <p className="mt-2 text-sm font-semibold text-slate-600">{history.loyalty_summary.cadence}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={reorderRecommended}
+                    disabled={!history.loyalty_summary.recommended_reorder.length}
+                    className="inline-flex items-center gap-2 rounded-md bg-slate-950 px-4 py-3 text-sm font-black text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    <ShoppingBag className="h-4 w-4" /> Recommended Reorder
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                  <div className="rounded-lg bg-slate-50 p-4 lg:col-span-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Award className="h-5 w-5 text-red-700" />
+                      <p className="font-black">Tier Progress</p>
+                    </div>
+                    <div className="h-3 rounded-full bg-white">
+                      <div
+                        className="h-3 rounded-full bg-red-700"
+                        style={{ width: `${Math.min(100, Math.max(0, history.loyalty_summary.tier_progress_percent || 0))}%` }}
+                      />
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-slate-600">
+                      {history.loyalty_summary.orders_to_next_tier
+                        ? `${history.loyalty_summary.orders_to_next_tier} orders to ${history.loyalty_summary.next_tier}`
+                        : history.loyalty_summary.next_tier}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-8">
+                    <MiniMetric
+                      icon={TrendingUp}
+                      label="Average Order"
+                      value={`Rs ${Math.round(history.loyalty_summary.average_order_value || 0).toLocaleString()}`}
+                    />
+                    <MiniMetric
+                      icon={ReceiptText}
+                      label="Savings"
+                      value={`Rs ${Math.round(history.loyalty_summary.total_discount || 0).toLocaleString()}`}
+                    />
+                    <MiniMetric
+                      icon={Clock}
+                      label="Last Order"
+                      value={
+                        history.loyalty_summary.days_since_last_order === null || history.loyalty_summary.days_since_last_order === undefined
+                          ? "No orders"
+                          : `${history.loyalty_summary.days_since_last_order} days`
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border border-slate-100 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Star className="h-4 w-4 text-red-700" />
+                      <h3 className="font-black">Favorite Items</h3>
+                    </div>
+                    <div className="space-y-2">
+                      {history.loyalty_summary.favorite_items.length ? (
+                        history.loyalty_summary.favorite_items.map((item) => (
+                          <div key={item.name} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
+                            <span className="font-bold">{item.name}</span>
+                            <span className="text-slate-500">{item.quantity} ordered</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-500">Favorites appear after more orders.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-100 p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <ShoppingBag className="h-4 w-4 text-red-700" />
+                      <h3 className="font-black">Recommended Basket</h3>
+                    </div>
+                    <div className="space-y-2">
+                      {history.loyalty_summary.recommended_reorder.length ? (
+                        history.loyalty_summary.recommended_reorder.map((item, index) => (
+                          <div key={`${item.name}-${index}`} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
+                            <span className="font-bold">{item.quantity || 1} x {item.name}</span>
+                            <span className="text-slate-500">Ready</span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-500">Recommended basket appears after the first order.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             <div className="mb-6 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
               Offers and updates: {history.customer.opt_in_marketing ? "Enabled" : "Disabled"}
             </div>
@@ -230,7 +365,7 @@ export default function CustomerAccountPage() {
                     <div>
                       <p className="text-sm font-bold text-red-700">Order #{order.id}</p>
                       <h3 className="mt-1 text-xl font-black">
-                        {order.order_type} · Rs {Number(order.total_amount || 0).toLocaleString()}
+                        {order.order_type} | Rs {Number(order.total_amount || 0).toLocaleString()}
                       </h3>
                       <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
                         <Clock className="h-4 w-4" />
@@ -301,6 +436,24 @@ function Metric({
       <Icon className="mb-3 h-5 w-5 text-red-700" />
       <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
       <p className="mt-2 break-words text-xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function MiniMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-4">
+      <Icon className="mb-3 h-5 w-5 text-red-700" />
+      <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
+      <p className="mt-2 text-lg font-black">{value}</p>
     </div>
   );
 }
