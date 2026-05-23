@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  Award,
   CheckCircle2,
+  Clock3,
   Copy,
   Filter,
   Mail,
@@ -13,6 +15,8 @@ import {
   RefreshCw,
   Search,
   Send,
+  ShieldCheck,
+  Target,
   TrendingUp,
   Users,
   XCircle,
@@ -20,6 +24,15 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const CUSTOMERS_API = getApiUrl("/api/v1/restaurant/customers");
+
+type RetentionCounts = {
+  new_guests: number;
+  regular_guests: number;
+  vip_guests: number;
+  active_customers: number;
+  comeback_customers: number;
+  win_back_customers: number;
+};
 
 type Customer = {
   id: number;
@@ -32,6 +45,19 @@ type Customer = {
   last_order_at?: string | null;
 };
 
+type RetentionCustomer = Customer & {
+  tier: string;
+  next_tier: string;
+  tier_progress_percent: number;
+  orders_to_next_tier: number;
+  average_order_value: number;
+  days_since_last_order?: number | null;
+  cadence: string;
+  retention_segment: string;
+  recommended_action: string;
+  priority_score: number;
+};
+
 type Summary = {
   total_customers: number;
   opted_in_customers: number;
@@ -41,6 +67,15 @@ type Summary = {
   email_ready_customers: number;
   missing_email_customers: number;
   recorded_spend: number;
+  retention_segments?: RetentionCounts;
+};
+
+type Retention = {
+  generated_at: string;
+  counts: RetentionCounts;
+  campaign_ready_count: number;
+  average_order_value: number;
+  customers: RetentionCustomer[];
 };
 
 type SegmentKey =
@@ -50,7 +85,13 @@ type SegmentKey =
   | "repeat_customers"
   | "high_spenders"
   | "with_email"
-  | "missing_email";
+  | "missing_email"
+  | "new_guests"
+  | "regular_guests"
+  | "vip_guests"
+  | "active_customers"
+  | "comeback_customers"
+  | "win_back_customers";
 
 const segmentOptions: { value: SegmentKey; label: string }[] = [
   { value: "all", label: "All Contacts" },
@@ -60,6 +101,12 @@ const segmentOptions: { value: SegmentKey; label: string }[] = [
   { value: "high_spenders", label: "High Spenders" },
   { value: "with_email", label: "Email Ready" },
   { value: "missing_email", label: "Missing Email" },
+  { value: "new_guests", label: "New Guests" },
+  { value: "regular_guests", label: "Regular Guests" },
+  { value: "vip_guests", label: "VIP Guests" },
+  { value: "active_customers", label: "Active This Week" },
+  { value: "comeback_customers", label: "Comeback Due" },
+  { value: "win_back_customers", label: "Win-back Priority" },
 ];
 
 const emptyForm = {
@@ -73,6 +120,7 @@ const emptyForm = {
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [retention, setRetention] = useState<Retention | null>(null);
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegmentKey>("all");
   const [showAdd, setShowAdd] = useState(false);
@@ -88,12 +136,14 @@ export default function CustomersPage() {
     if (query.trim()) params.set("q", query.trim());
     if (selectedSegment !== "all") params.set("segment", selectedSegment);
     const queryString = params.toString() ? `?${params.toString()}` : "";
-    const [customersRes, summaryRes] = await Promise.all([
+    const [customersRes, summaryRes, retentionRes] = await Promise.all([
       fetch(`${CUSTOMERS_API}/${queryString}`, { credentials: "include" }),
       fetch(`${CUSTOMERS_API}/summary`, { credentials: "include" }),
+      fetch(`${CUSTOMERS_API}/retention`, { credentials: "include" }),
     ]);
     setCustomers(await customersRes.json());
     setSummary(await summaryRes.json());
+    setRetention(await retentionRes.json());
   };
 
   const selectSegment = (value: SegmentKey) => {
@@ -240,6 +290,96 @@ export default function CustomersPage() {
           />
         </div>
       </section>
+
+      {retention && (
+        <section className="mb-8">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-orange-400">Retention Command Center</p>
+              <h2 className="mt-1 text-2xl font-black">Customer loyalty and win-back queue</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => selectSegment("win_back_customers")}
+                className="rounded-md border border-red-400/30 bg-red-500/10 px-3 py-2 text-sm font-black text-red-200 hover:bg-red-500/20"
+              >
+                Win-back
+              </button>
+              <button
+                onClick={() => selectSegment("comeback_customers")}
+                className="rounded-md border border-orange-400/30 bg-orange-500/10 px-3 py-2 text-sm font-black text-orange-100 hover:bg-orange-500/20"
+              >
+                Comeback
+              </button>
+              <button
+                onClick={() => selectSegment("vip_guests")}
+                className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm font-black text-emerald-100 hover:bg-emerald-500/20"
+              >
+                VIP
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+            <RetentionStat icon={Users} label="New Guests" value={retention.counts.new_guests} tone="orange" />
+            <RetentionStat icon={ShieldCheck} label="Regular" value={retention.counts.regular_guests} tone="blue" />
+            <RetentionStat icon={Award} label="VIP" value={retention.counts.vip_guests} tone="green" />
+            <RetentionStat icon={Clock3} label="Active" value={retention.counts.active_customers} tone="violet" />
+            <RetentionStat icon={Target} label="Comeback" value={retention.counts.comeback_customers} tone="orange" />
+            <RetentionStat icon={MessageCircle} label="Win-back" value={retention.counts.win_back_customers} tone="red" />
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-white/5 bg-[#1a1a1c]">
+            <div className="grid grid-cols-1 gap-3 border-b border-white/5 px-5 py-4 text-xs font-black uppercase tracking-widest text-gray-500 lg:grid-cols-12">
+              <span className="lg:col-span-3">Customer</span>
+              <span className="lg:col-span-2">Tier</span>
+              <span className="lg:col-span-2">Cadence</span>
+              <span className="lg:col-span-2">AOV</span>
+              <span className="lg:col-span-3">Next Action</span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {retention.customers.slice(0, 8).map((customer) => (
+                <div key={customer.id} className="grid grid-cols-1 gap-3 px-5 py-4 text-sm lg:grid-cols-12 lg:items-center">
+                  <div className="lg:col-span-3">
+                    <p className="font-black">{customer.name || "Walk-in Customer"}</p>
+                    <p className="mt-1 text-xs font-semibold text-gray-500">{customer.phone}</p>
+                  </div>
+                  <div className="lg:col-span-2">
+                    <span className="inline-flex rounded-md bg-white/5 px-2 py-1 text-xs font-black text-orange-100">
+                      {customer.tier}
+                    </span>
+                    <div className="mt-2 h-2 rounded-full bg-black/40">
+                      <div
+                        className="h-2 rounded-full bg-orange-500"
+                        style={{ width: `${Math.min(100, Math.max(0, customer.tier_progress_percent || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="lg:col-span-2">
+                    <p className="font-bold">{customer.cadence}</p>
+                    <p className="text-xs text-gray-500">
+                      {customer.days_since_last_order === null || customer.days_since_last_order === undefined
+                        ? "No order age"
+                        : `${customer.days_since_last_order} days ago`}
+                    </p>
+                  </div>
+                  <div className="lg:col-span-2">
+                    <p className="font-black">Rs {Math.round(customer.average_order_value || 0).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500">{customer.total_orders || 0} orders</p>
+                  </div>
+                  <div className="lg:col-span-3">
+                    <p className="font-semibold text-gray-200">{customer.recommended_action}</p>
+                    <p className="mt-1 text-xs text-gray-500">Priority {customer.priority_score}/100</p>
+                  </div>
+                </div>
+              ))}
+              {!retention.customers.length && (
+                <div className="p-8 text-center text-gray-500">No retention records yet.</div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="bg-[#1a1a1c] border border-white/5 rounded-xl p-6">
         <div className="grid grid-cols-1 gap-3 mb-6 xl:grid-cols-12">
@@ -388,6 +528,36 @@ function Metric({ label, value }: { label: string; value: string | number }) {
     <div className="bg-[#1a1a1c] border border-white/5 rounded-xl p-5">
       <p className="text-xs text-gray-500 font-black uppercase tracking-widest">{label}</p>
       <p className="text-2xl font-black mt-2">{value}</p>
+    </div>
+  );
+}
+
+function RetentionStat({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  tone: "orange" | "blue" | "green" | "violet" | "red";
+}) {
+  const toneClass = {
+    orange: "bg-orange-500/10 text-orange-300",
+    blue: "bg-blue-500/10 text-blue-300",
+    green: "bg-green-500/10 text-green-300",
+    violet: "bg-violet-500/10 text-violet-300",
+    red: "bg-red-500/10 text-red-300",
+  }[tone];
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-4">
+      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-md ${toneClass}`}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 text-2xl font-black">{value}</p>
     </div>
   );
 }
