@@ -73,6 +73,38 @@ type ScheduledCampaignQueue = {
   campaigns: ScheduledCampaignQueueRow[];
 };
 
+type CampaignSendQueueRow = {
+  promotion: Promotion;
+  audience_count: number;
+  ready_count: number;
+  missing_count: number;
+  provider_status: ProviderStatus;
+  can_dry_run: boolean;
+  can_send: boolean;
+  latest_attempted_at?: string | null;
+  recommended_action: string;
+  attempted_count: number;
+  sent_count: number;
+  dry_run_count: number;
+  failed_count: number;
+  skipped_count: number;
+  needs_attention_count: number;
+  retryable_count: number;
+};
+
+type CampaignSendQueue = {
+  generated_at: string;
+  summary: {
+    campaign_count: number;
+    ready_campaign_count: number;
+    dry_run_needed_count: number;
+    provider_blocked_count: number;
+    send_ready_contacts: number;
+    missing_contacts: number;
+  };
+  campaigns: CampaignSendQueueRow[];
+};
+
 type Contact = {
   id: number;
   name?: string | null;
@@ -454,6 +486,7 @@ export default function PromotionsPage() {
   const [activityTimeline, setActivityTimeline] = useState<CampaignActivityTimeline | null>(null);
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
   const [scheduleQueue, setScheduleQueue] = useState<ScheduledCampaignQueue | null>(null);
+  const [sendQueue, setSendQueue] = useState<CampaignSendQueue | null>(null);
   const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
   const [hygieneAudience, setHygieneAudience] = useState<AudienceKey>("marketing_opt_in");
   const [playbook, setPlaybook] = useState<RetentionPlaybookEntry[]>([]);
@@ -467,6 +500,7 @@ export default function PromotionsPage() {
   const [scheduleDuration, setScheduleDuration] = useState("7");
   const [scheduling, setScheduling] = useState(false);
   const [activatingDueSchedules, setActivatingDueSchedules] = useState(false);
+  const [queueDryRunningId, setQueueDryRunningId] = useState<number | null>(null);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
@@ -486,6 +520,7 @@ export default function PromotionsPage() {
     fetchPlaybook();
     fetchPerformanceRollup();
     fetchScheduleQueue();
+    fetchSendQueue();
     fetchAudienceHygiene();
   }, []);
 
@@ -508,6 +543,7 @@ export default function PromotionsPage() {
   const activeCount = promotions.filter((promotion) => promotion.status === "active").length;
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
   const scheduleQueueRows = scheduleQueue?.campaigns || [];
+  const sendQueueRows = sendQueue?.campaigns || [];
   const selectedSchedule = selectedPromotion?.schedule;
   const selectedScheduledFuture =
     selectedPromotion?.status === "scheduled" && selectedSchedule?.phase === "upcoming";
@@ -565,6 +601,17 @@ export default function PromotionsPage() {
       return;
     }
     setScheduleQueue(await response.json());
+  };
+
+  const fetchSendQueue = async () => {
+    const response = await fetch(`${PROMOTIONS_API}/send/queue?limit=20`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      setSendQueue(null);
+      return;
+    }
+    setSendQueue(await response.json());
   };
 
   const fetchAudienceHygiene = async (audience: AudienceKey = hygieneAudience) => {
@@ -748,6 +795,7 @@ export default function PromotionsPage() {
     setFormData(emptyForm);
     await fetchPromotions();
     await fetchPerformanceRollup();
+    await fetchSendQueue();
     await fetchAudienceHygiene(data.promotion.audience);
     selectPromotion(data.promotion.id);
   };
@@ -770,6 +818,7 @@ export default function PromotionsPage() {
     await fetchPromotions();
     await fetchPlaybook();
     await fetchPerformanceRollup();
+    await fetchSendQueue();
     await fetchAudienceHygiene(data.promotion.audience);
     setSelectedId(data.promotion.id);
     await fetchCampaignDetails(data.promotion.id);
@@ -799,6 +848,7 @@ export default function PromotionsPage() {
     setMessage(`Scheduled ${data.promotion.name} for ${data.promotion.start_date}.`);
     await fetchPromotions(data.promotion.id);
     await fetchScheduleQueue();
+    await fetchSendQueue();
     await fetchPerformanceRollup();
     setScheduling(false);
   };
@@ -819,8 +869,32 @@ export default function PromotionsPage() {
     setMessage(`Activated ${data.activated_count} due scheduled campaigns.`);
     await fetchPromotions(data.campaigns?.[0]?.id || selectedId);
     await fetchScheduleQueue();
+    await fetchSendQueue();
     await fetchPerformanceRollup();
     setActivatingDueSchedules(false);
+  };
+
+  const runQueueDryRun = async (promotionId: number) => {
+    setQueueDryRunningId(promotionId);
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/send`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: true, limit: 50 }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Queue dry run failed.");
+      setQueueDryRunningId(null);
+      return;
+    }
+
+    setMessage(`Queue dry run checked ${data.attempted_count} contacts for ${data.promotion.name}.`);
+    await fetchPromotions(promotionId);
+    await fetchSendQueue();
+    await fetchCampaignDetails(promotionId);
+    await fetchPerformanceRollup();
+    setQueueDryRunningId(null);
   };
 
   const copyOutreach = async () => {
@@ -915,6 +989,7 @@ export default function PromotionsPage() {
     );
     await fetchCampaignDetails(selectedPromotion.id);
     await fetchPerformanceRollup();
+    await fetchSendQueue();
     setSending(null);
   };
 
@@ -1001,6 +1076,7 @@ export default function PromotionsPage() {
               fetchPlaybook();
               fetchPerformanceRollup();
               fetchScheduleQueue();
+              fetchSendQueue();
               fetchAudienceHygiene();
             }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
@@ -1117,6 +1193,100 @@ export default function PromotionsPage() {
           {!scheduleQueueRows.length && (
             <div className="p-8 text-center text-sm font-semibold text-gray-500">
               No scheduled campaigns are waiting in the queue.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section data-testid="campaign-send-queue" className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              Campaign Send Queue
+            </p>
+            <h2 className="mt-1 text-xl font-black">Dry-run and provider readiness</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Check active campaigns before live sending. Provider-blocked rows can still run a dry-run.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchSendQueue}
+            className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh Send Queue
+          </button>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <MiniSignal icon={Megaphone} label="Live Campaigns" value={`${sendQueue?.summary.campaign_count || 0}`} />
+          <MiniSignal icon={CheckCircle2} label="Ready Campaigns" value={`${sendQueue?.summary.ready_campaign_count || 0}`} />
+          <MiniSignal icon={Clock} label="Need Dry Run" value={`${sendQueue?.summary.dry_run_needed_count || 0}`} />
+          <MiniSignal icon={AlertTriangle} label="Provider Blocked" value={`${sendQueue?.summary.provider_blocked_count || 0}`} />
+          <MiniSignal icon={Send} label="Ready Contacts" value={`${sendQueue?.summary.send_ready_contacts || 0}`} />
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-white/5 bg-black/25">
+          <div className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-600">
+            <span className="col-span-3">Campaign</span>
+            <span className="col-span-2 text-right">Audience</span>
+            <span className="col-span-2 text-right">Dry Runs</span>
+            <span className="col-span-2 text-right">Provider</span>
+            <span className="col-span-3 text-right">Action</span>
+          </div>
+          {sendQueueRows.map((row) => (
+            <div
+              data-testid={`send-queue-row-${row.promotion.id}`}
+              key={`send-queue-${row.promotion.id}`}
+              className="grid grid-cols-12 gap-3 border-b border-white/5 px-4 py-3 text-sm"
+            >
+              <div className="col-span-3 min-w-0">
+                <p className="break-words font-black text-white">{row.promotion.name}</p>
+                <p className="mt-1 text-xs font-semibold uppercase text-gray-600">
+                  {row.promotion.code || "No code"} | {channelLabel(row.promotion.channel)}
+                </p>
+              </div>
+              <div className="col-span-2 text-right">
+                <p className="font-black text-gray-200">{row.ready_count} ready</p>
+                <p className="mt-1 text-xs text-gray-600">{row.missing_count} gaps</p>
+              </div>
+              <div className="col-span-2 text-right">
+                <p className="font-black text-gray-200">{row.dry_run_count}</p>
+                <p className="mt-1 text-xs text-gray-600">{row.attempted_count} attempts</p>
+              </div>
+              <div className="col-span-2 text-right">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+                    row.provider_status.configured ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"
+                  }`}
+                >
+                  {row.provider_status.configured ? "Ready" : "Setup"}
+                </span>
+                <p className="mt-2 text-xs font-semibold leading-5 text-gray-600">{row.recommended_action}</p>
+              </div>
+              <div className="col-span-3 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectPromotion(row.promotion.id)}
+                  className="rounded-lg bg-white/10 px-3 py-2 text-xs font-black uppercase text-white hover:bg-white/15"
+                >
+                  Open
+                </button>
+                <button
+                  data-testid={`send-queue-dry-run-${row.promotion.id}`}
+                  type="button"
+                  onClick={() => runQueueDryRun(row.promotion.id)}
+                  disabled={queueDryRunningId !== null || !row.can_dry_run}
+                  className="rounded-lg bg-orange-500 px-3 py-2 text-xs font-black uppercase text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {queueDryRunningId === row.promotion.id ? "Checking" : "Dry Run"}
+                </button>
+              </div>
+            </div>
+          ))}
+          {!sendQueueRows.length && (
+            <div className="p-8 text-center text-sm font-semibold text-gray-500">
+              No active campaigns are waiting for send readiness.
             </div>
           )}
         </div>

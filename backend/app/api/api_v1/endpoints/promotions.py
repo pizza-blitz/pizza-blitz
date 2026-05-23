@@ -639,6 +639,52 @@ def _scheduled_campaign_queue_row(db: Session, promo: Promotion) -> dict:
     }
 
 
+def _campaign_send_queue_row(db: Session, promo: Promotion) -> dict:
+    customers = (
+        _audience_query(db, promo.audience or "marketing_opt_in")
+        .order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
+        .all()
+    )
+    contacts = [_dispatch_contact(customer, promo) for customer in customers]
+    ready_count = sum(1 for contact in contacts if contact["send_ready"])
+    deliveries = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.promotion_id == promo.id)
+        .order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        .all()
+    )
+    counts = _delivery_counts(deliveries)
+    provider_status = campaign_provider_status(promo.channel)
+    schedule = _promotion_schedule_state(promo)
+    latest_delivery = deliveries[0] if deliveries else None
+    can_dry_run = ready_count > 0 and schedule["can_send_now"]
+    can_send = can_dry_run and provider_status["configured"]
+
+    if not schedule["can_send_now"]:
+        action = f"Wait until {schedule['send_ready_on']}."
+    elif ready_count == 0:
+        action = "Clean audience contact data before sending."
+    elif not provider_status["configured"]:
+        action = f"Run dry run; configure {provider_status['provider']} before live send."
+    elif counts["dry_run_count"] == 0 and counts["sent_count"] == 0:
+        action = "Run a dry run before live send."
+    else:
+        action = "Ready for live send checklist."
+
+    return {
+        "promotion": _promotion_dict(promo),
+        "audience_count": len(customers),
+        "ready_count": ready_count,
+        "missing_count": max(len(customers) - ready_count, 0),
+        "provider_status": provider_status,
+        "can_dry_run": can_dry_run,
+        "can_send": can_send,
+        "latest_attempted_at": latest_delivery.attempted_at.isoformat() if latest_delivery and latest_delivery.attempted_at else None,
+        "recommended_action": action,
+        **counts,
+    }
+
+
 def _readiness_percent(ready_count: int, total_count: int) -> float:
     if not total_count:
         return 0
@@ -1284,6 +1330,49 @@ def scheduled_campaign_queue(
             "missing_count": sum(row["missing_count"] for row in rows),
         },
         "campaigns": rows[:limit],
+    }
+
+
+@router.get("/send/queue")
+def campaign_send_queue(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    today = date.today()
+    promotions = (
+        db.query(Promotion)
+        .filter(Promotion.status.in_(["active", "scheduled"]))
+        .filter(Promotion.start_date <= today)
+        .filter(Promotion.end_date >= today)
+        .order_by(Promotion.start_date.asc(), Promotion.id.asc())
+        .all()
+    )
+    rows = [_campaign_send_queue_row(db, promo) for promo in promotions]
+    rows.sort(
+        key=lambda row: (
+            0 if row["can_dry_run"] and row["dry_run_count"] == 0 else 1,
+            0 if row["can_send"] else 1,
+            -row["ready_count"],
+            row["promotion"]["id"],
+        )
+    )
+    visible_rows = rows[:limit]
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "campaign_count": len(rows),
+            "ready_campaign_count": sum(1 for row in rows if row["ready_count"] > 0),
+            "dry_run_needed_count": sum(
+                1 for row in rows if row["can_dry_run"] and row["dry_run_count"] == 0
+            ),
+            "provider_blocked_count": sum(
+                1 for row in rows if row["ready_count"] > 0 and not row["provider_status"]["configured"]
+            ),
+            "send_ready_contacts": sum(row["ready_count"] for row in rows),
+            "missing_contacts": sum(row["missing_count"] for row in rows),
+        },
+        "campaigns": visible_rows,
     }
 
 
