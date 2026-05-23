@@ -479,6 +479,11 @@ def _message_destination(customer: Customer, channel: str) -> Optional[str]:
 def _whatsapp_phone(value: str) -> str:
     return "".join(character for character in value if character.isdigit())
 
+def _customer_marketing_block_reason(customer: Customer) -> Optional[str]:
+    if customer.opt_in_marketing:
+        return None
+    return "Marketing consent not granted"
+
 def _action_url(channel: str, destination: str, message: str, promo: Promotion) -> str:
     encoded_message = quote(message, safe="")
     if channel == "whatsapp":
@@ -491,15 +496,18 @@ def _action_url(channel: str, destination: str, message: str, promo: Promotion) 
 def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
     message = _render_message(promo, customer)
     order_link = _order_offer_link(promo)
-    raw_destination = _message_destination(customer, promo.channel)
-    destination = normalize_campaign_destination(promo.channel, raw_destination)
-    send_ready = bool(destination)
-    missing_reason = None
+    missing_reason = _customer_marketing_block_reason(customer)
+    destination = None
+    send_ready = False
     action_url = None
-    if send_ready:
-        action_url = _action_url(promo.channel, destination, message, promo)
-    else:
-        missing_reason = "Missing email address" if promo.channel == "email" else "Missing phone number"
+    if not missing_reason:
+        raw_destination = _message_destination(customer, promo.channel)
+        destination = normalize_campaign_destination(promo.channel, raw_destination)
+        send_ready = bool(destination)
+        if send_ready:
+            action_url = _action_url(promo.channel, destination, message, promo)
+        else:
+            missing_reason = "Missing email address" if promo.channel == "email" else "Missing phone number"
 
     return {
         **_customer_dict(customer),
@@ -509,6 +517,7 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
         "action_url": action_url,
         "send_ready": send_ready,
         "missing_reason": missing_reason,
+        "suppressed": bool(_customer_marketing_block_reason(customer)),
     }
 
 
@@ -520,14 +529,24 @@ def _readiness_percent(ready_count: int, total_count: int) -> float:
 
 def _channel_readiness(customers: list[Customer], channel: str) -> dict:
     total_count = len(customers)
+    suppressed_count = sum(1 for customer in customers if _customer_marketing_block_reason(customer))
     ready_count = sum(
         1
         for customer in customers
-        if normalize_campaign_destination(channel, _message_destination(customer, channel))
+        if not _customer_marketing_block_reason(customer)
+        and normalize_campaign_destination(channel, _message_destination(customer, channel))
+    )
+    destination_missing_count = sum(
+        1
+        for customer in customers
+        if not _customer_marketing_block_reason(customer)
+        and not normalize_campaign_destination(channel, _message_destination(customer, channel))
     )
     return {
         "ready_count": ready_count,
         "missing_count": max(total_count - ready_count, 0),
+        "destination_missing_count": destination_missing_count,
+        "suppressed_count": suppressed_count,
         "ready_percent": _readiness_percent(ready_count, total_count),
     }
 
@@ -556,8 +575,11 @@ def _audience_hygiene(customers: list[Customer]) -> dict:
     phone_ready_count = sum(
         1
         for customer in customers
-        if normalize_campaign_destination("sms", _message_destination(customer, "sms"))
-        or normalize_campaign_destination("whatsapp", _message_destination(customer, "whatsapp"))
+        if not _customer_marketing_block_reason(customer)
+        and (
+            normalize_campaign_destination("sms", _message_destination(customer, "sms"))
+            or normalize_campaign_destination("whatsapp", _message_destination(customer, "whatsapp"))
+        )
     )
     notes = []
     if opted_out_count:
@@ -596,7 +618,8 @@ def _retention_playbook_entry(db: Session, audience: str) -> dict:
     send_ready_count = sum(
         1
         for customer in customers
-        if normalize_campaign_destination(channel, _message_destination(customer, channel))
+        if not _customer_marketing_block_reason(customer)
+        and normalize_campaign_destination(channel, _message_destination(customer, channel))
     )
     audience_count = len(customers)
     return {
@@ -675,6 +698,8 @@ def _delivery_recovery_action(delivery: CampaignDelivery) -> str:
     if delivery.status != "skipped":
         return "Monitor this pending delivery."
     error = (delivery.error or "").lower()
+    if "consent" in error:
+        return "Ask the customer to opt in before sending promotional messages."
     if "already sent" in error:
         return "Already sent; use Force Resend only for deliberate repeats."
     if delivery.channel == "email" or "email" in error:
@@ -857,7 +882,7 @@ def list_promotions(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
-    promotions = db.query(Promotion).order_by(Promotion.start_date.desc()).all()
+    promotions = db.query(Promotion).order_by(Promotion.start_date.desc(), Promotion.id.desc()).all()
     return [_promotion_dict(promo) for promo in promotions]
 
 @router.get("/active")

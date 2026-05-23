@@ -54,6 +54,7 @@ type Contact = {
   send_ready?: boolean;
   missing_reason?: string | null;
   opt_in_marketing?: boolean;
+  suppressed?: boolean;
 };
 
 type Outreach = {
@@ -102,6 +103,8 @@ type ProviderReadiness = {
 type AudienceChannelReadiness = {
   ready_count: number;
   missing_count: number;
+  destination_missing_count?: number;
+  suppressed_count?: number;
   ready_percent: number;
 };
 
@@ -1710,7 +1713,8 @@ function ChannelReadinessCard({
   const Icon = iconMap[channel];
   const percent = readiness?.ready_percent || 0;
   const ready = readiness?.ready_count || 0;
-  const missing = readiness?.missing_count || 0;
+  const missing = readiness?.destination_missing_count ?? readiness?.missing_count ?? 0;
+  const suppressed = readiness?.suppressed_count || 0;
 
   return (
     <div
@@ -1728,7 +1732,7 @@ function ChannelReadinessCard({
           <div>
             <p className="font-black">{channelLabel(channel)}</p>
             <p className="mt-1 text-xs font-semibold text-gray-500">
-              {ready} ready | {missing} missing
+              {ready} ready | {missing} gaps | {suppressed} blocked
             </p>
           </div>
         </div>
