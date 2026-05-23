@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import AdCampaign, AdCampaignLaunch
 from app.services.ad_campaign_service import ad_provider_status, launch_meta_campaign
 
@@ -159,12 +159,17 @@ def _campaign_launch_blockers(campaign: AdCampaign, provider_status: dict) -> li
 
 
 @router.get("/provider-status")
-def ads_provider_status():
+def ads_provider_status(
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     return ad_provider_status()
 
 
 @router.get("/summary")
-def ads_summary(db: Session = Depends(get_db)):
+def ads_summary(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     total_campaigns = db.query(AdCampaign).count()
     active_campaigns = (
         db.query(AdCampaign)
@@ -201,6 +206,7 @@ def ads_summary(db: Session = Depends(get_db)):
 def ads_launch_readiness(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     provider_status = ad_provider_status()
     campaigns = (
@@ -245,7 +251,11 @@ def ads_launch_readiness(
 
 
 @router.post("/campaigns")
-def create_ad_campaign(payload: AdCampaignCreate, db: Session = Depends(get_db)):
+def create_ad_campaign(
+    payload: AdCampaignCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
     start_date = _parse_optional_date(payload.start_date)
     end_date = _parse_optional_date(payload.end_date)
     if start_date and end_date and end_date < start_date:
@@ -276,6 +286,7 @@ def create_ad_campaign(payload: AdCampaignCreate, db: Session = Depends(get_db))
 def list_ad_campaigns(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     campaigns = (
         db.query(AdCampaign)
@@ -291,6 +302,7 @@ def update_ad_campaign_metrics(
     campaign_id: int,
     payload: AdMetricsUpdate,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     campaign = db.get(AdCampaign, campaign_id)
     if not campaign:
@@ -311,6 +323,7 @@ def ad_campaign_launches(
     campaign_id: int,
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     campaign = db.get(AdCampaign, campaign_id)
     if not campaign:
@@ -334,6 +347,7 @@ def launch_ad_campaign(
     campaign_id: int,
     payload: AdLaunchRequest,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     campaign = db.get(AdCampaign, campaign_id)
     if not campaign:
@@ -342,6 +356,12 @@ def launch_ad_campaign(
         raise HTTPException(status_code=409, detail="Campaign is already marked as launched.")
 
     provider_status = ad_provider_status()
+    blockers = _campaign_launch_blockers(campaign, provider_status)
+    if blockers and not payload.dry_run:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Campaign is not launch-ready: {', '.join(blockers)}",
+        )
     launch_kwargs = {
         "campaign_id": campaign.id,
         "attempted_at": datetime.utcnow(),
@@ -349,13 +369,14 @@ def launch_ad_campaign(
     if payload.dry_run:
         launch = AdCampaignLaunch(
             **launch_kwargs,
-            provider="dry_run",
+            provider=provider_status["provider"],
             status="dry_run",
             dry_run=True,
             response_payload={
                 "provider_status": provider_status,
                 "launch_mode": "paused_campaign",
                 "objective": campaign.objective,
+                "blockers": blockers,
             },
         )
     else:

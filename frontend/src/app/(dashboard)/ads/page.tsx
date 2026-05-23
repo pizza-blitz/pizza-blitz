@@ -14,6 +14,7 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const ADS_API = getApiUrl("/api/v1/restaurant/ads");
+const fetchWithAuth = (url: string, init?: RequestInit) => fetch(url, { ...init, credentials: "include" });
 
 type ObjectiveKey = "awareness" | "traffic" | "engagement" | "leads" | "sales";
 type PlatformKey = "facebook" | "instagram";
@@ -206,10 +207,10 @@ export default function AdsManagerPage() {
   const fetchAds = async (preferredCampaignId?: number | null) => {
     setLoading(true);
     const [statusResponse, summaryResponse, campaignsResponse, readinessResponse] = await Promise.all([
-      fetch(`${ADS_API}/provider-status`),
-      fetch(`${ADS_API}/summary`),
-      fetch(`${ADS_API}/campaigns`),
-      fetch(`${ADS_API}/launch-readiness`),
+      fetchWithAuth(`${ADS_API}/provider-status`),
+      fetchWithAuth(`${ADS_API}/summary`),
+      fetchWithAuth(`${ADS_API}/campaigns`),
+      fetchWithAuth(`${ADS_API}/launch-readiness`),
     ]);
     if (statusResponse.ok) setProviderStatus(await statusResponse.json());
     if (summaryResponse.ok) setSummary(await summaryResponse.json());
@@ -240,7 +241,7 @@ export default function AdsManagerPage() {
   };
 
   const fetchLaunches = async (campaignId: number) => {
-    const response = await fetch(`${ADS_API}/campaigns/${campaignId}/launches`);
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${campaignId}/launches`);
     if (!response.ok) {
       setHistory(null);
       return;
@@ -263,7 +264,7 @@ export default function AdsManagerPage() {
 
   const saveCampaign = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const response = await fetch(`${ADS_API}/campaigns`, {
+    const response = await fetchWithAuth(`${ADS_API}/campaigns`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -290,7 +291,7 @@ export default function AdsManagerPage() {
 
   const saveMetrics = async () => {
     if (!selectedCampaign) return;
-    const response = await fetch(`${ADS_API}/campaigns/${selectedCampaign.id}/metrics`, {
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${selectedCampaign.id}/metrics`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(metricsForm),
@@ -312,7 +313,7 @@ export default function AdsManagerPage() {
       if (!confirmed) return;
     }
     setLaunching(dryRun ? "dry_run" : "launch");
-    const response = await fetch(`${ADS_API}/campaigns/${selectedCampaign.id}/launch`, {
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${selectedCampaign.id}/launch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dry_run: dryRun }),
