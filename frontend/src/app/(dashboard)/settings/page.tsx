@@ -23,6 +23,8 @@ import { getApiUrl } from '@/lib/api';
 
 const DELIVERY_ZONES_API = getApiUrl('/api/v1/restaurant/delivery/zones');
 const DELIVERY_QUOTE_API = getApiUrl('/api/v1/restaurant/delivery/quote');
+const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
+const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
 
 type RoleAccess = {
   role: string;
@@ -72,9 +74,59 @@ type DeliveryQuote = {
   eta_window?: string | null;
 };
 
+type PaymentProviderStatus = {
+  provider: string;
+  currency: string;
+  environment: string;
+  return_url?: string | null;
+  checkout_configured: boolean;
+  webhook_configured: boolean;
+  missing_checkout_settings: string[];
+  missing_webhook_settings: string[];
+  session_endpoint: string;
+  webhook_endpoint: string;
+  mode: string;
+};
+
+type PaymentWebhookContract = {
+  provider: string;
+  endpoint: string;
+  signature: string;
+  required_fields: string[];
+  paid_statuses: string[];
+  notes: string;
+};
+
+type PaymentReadiness = {
+  payment: PaymentProviderStatus;
+  payment_providers?: PaymentProviderStatus[];
+  payment_webhook_contracts?: PaymentWebhookContract[];
+  readiness_score?: number;
+  overall?: string;
+};
+
+type PaymentWebhookResult = {
+  status: string;
+  event: string;
+  order?: {
+    id: number;
+    payment_status: string;
+    payment_provider?: string | null;
+    payment_reference?: string | null;
+    total_amount?: number;
+  };
+};
+
 export default function Settings() {
   const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
   const [isSecurityLoading, setIsSecurityLoading] = useState(true);
+  const [paymentReadiness, setPaymentReadiness] = useState<PaymentReadiness | null>(null);
+  const [isPaymentLoading, setIsPaymentLoading] = useState(true);
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const [webhookOrderId, setWebhookOrderId] = useState("");
+  const [webhookReference, setWebhookReference] = useState("");
+  const [webhookResult, setWebhookResult] = useState<PaymentWebhookResult | null>(null);
+  const [isSendingWebhook, setIsSendingWebhook] = useState(false);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
   const [deliveryDrafts, setDeliveryDrafts] = useState<Record<number, DeliveryZone>>({});
   const [isDeliveryLoading, setIsDeliveryLoading] = useState(true);
@@ -102,6 +154,23 @@ export default function Settings() {
   // Missing State for Admin Credentials
   const [adminId, setAdminId] = useState("admin");
   const [adminPassword, setAdminPassword] = useState("");
+
+  const loadPaymentReadiness = async () => {
+    setIsPaymentLoading(true);
+    try {
+      const response = await fetch(PAYMENT_READINESS_API, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Payment readiness API failed.");
+      }
+      const data: PaymentReadiness = await response.json();
+      setPaymentReadiness(data);
+    } catch {
+      setPaymentReadiness(null);
+      setPaymentMessage("Payment readiness API is not available right now.");
+    } finally {
+      setIsPaymentLoading(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -149,6 +218,25 @@ export default function Settings() {
         }
       });
 
+    fetch(PAYMENT_READINESS_API, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data: PaymentReadiness) => {
+        if (isMounted) {
+          setPaymentReadiness(data);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setPaymentReadiness(null);
+          setPaymentMessage("Payment readiness API is not available right now.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsPaymentLoading(false);
+        }
+      });
+
     return () => {
       isMounted = false;
     };
@@ -161,6 +249,13 @@ export default function Settings() {
   const widestDeliveryEta = activeDeliveryZones.length
     ? Math.max(...activeDeliveryZones.map((zone) => Number(zone.eta_max_minutes || 0)))
     : 0;
+  const paymentProviders = paymentReadiness?.payment_providers?.length
+    ? paymentReadiness.payment_providers
+    : paymentReadiness?.payment
+      ? [paymentReadiness.payment]
+      : [];
+  const activePaymentProvider = paymentReadiness?.payment || paymentProviders[0];
+  const webhookContracts = paymentReadiness?.payment_webhook_contracts || [];
 
   const updateDeliveryDraft = (zoneId: number, updates: Partial<DeliveryZone>) => {
     setDeliveryDrafts((current) => ({
@@ -242,6 +337,48 @@ export default function Settings() {
       setDeliveryMessage("Delivery quote API is not available right now.");
     } finally {
       setIsQuotingDelivery(false);
+    }
+  };
+
+  const sendManualPaymentWebhook = async () => {
+    const orderId = Number(webhookOrderId);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      setPaymentMessage("Enter a valid prepaid order ID before sending the webhook.");
+      return;
+    }
+
+    setIsSendingWebhook(true);
+    setWebhookResult(null);
+    setPaymentMessage("");
+    try {
+      const response = await fetch(MANUAL_PAYMENT_WEBHOOK_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "manual.payment.updated",
+          status: "paid",
+          order_id: orderId,
+          payment_reference:
+            webhookReference.trim() || `MANUAL-ADMIN-${Date.now()}`,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setPaymentMessage(data.detail || "Manual payment webhook failed.");
+        return;
+      }
+      setWebhookResult(data);
+      setPaymentMessage(
+        data.status === "processed"
+          ? `Order #${data.order?.id || orderId} marked paid through manual webhook.`
+          : data.status === "already_paid"
+            ? `Order #${data.order?.id || orderId} was already paid.`
+            : `Webhook received with status: ${data.status}.`
+      );
+    } catch {
+      setPaymentMessage("Manual payment webhook API is not available right now.");
+    } finally {
+      setIsSendingWebhook(false);
     }
   };
 
@@ -426,6 +563,216 @@ export default function Settings() {
         ) : (
           <div className="mt-5 rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
             Security overview is unavailable. Check the Next.js API route logs.
+          </div>
+        )}
+      </div>
+
+      {/* Payment Gateway */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-start">
+            <div className="p-2 bg-emerald-100 rounded-lg mr-3">
+              <CircleDollarSign className="w-5 h-5 text-emerald-700" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Payment Gateway Readiness</h3>
+              <p className="text-sm text-gray-500">
+                Track checkout credentials, webhook verification, and test a controlled manual paid event.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={loadPaymentReadiness}
+            disabled={isPaymentLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-emerald-200 hover:bg-emerald-50 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${isPaymentLoading ? "animate-spin" : ""}`} />
+            Refresh Payments
+          </button>
+        </div>
+
+        {paymentMessage && (
+          <div className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            {paymentMessage}
+          </div>
+        )}
+
+        {isPaymentLoading ? (
+          <div className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm font-semibold text-gray-500">
+            Loading payment readiness...
+          </div>
+        ) : activePaymentProvider ? (
+          <div className="mt-5 space-y-5">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Active Provider</p>
+                <p className="mt-2 text-xl font-black capitalize text-gray-900">
+                  {activePaymentProvider.provider}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  {activePaymentProvider.environment}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Currency</p>
+                <p className="mt-2 text-xl font-black text-gray-900">
+                  {activePaymentProvider.currency}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  Checkout mode: {activePaymentProvider.mode}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Checkout</p>
+                <span
+                  className={`mt-2 inline-flex rounded-md px-2.5 py-1 text-xs font-black ${
+                    activePaymentProvider.checkout_configured
+                      ? "bg-green-100 text-green-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {activePaymentProvider.checkout_configured ? "Configured" : "Needs settings"}
+                </span>
+              </div>
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Webhook</p>
+                <span
+                  className={`mt-2 inline-flex rounded-md px-2.5 py-1 text-xs font-black ${
+                    activePaymentProvider.webhook_configured
+                      ? "bg-green-100 text-green-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {activePaymentProvider.webhook_configured ? "Configured" : "Needs secret"}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {paymentProviders.map((provider) => {
+                const missingSettings = Array.from(
+                  new Set([
+                    ...provider.missing_checkout_settings,
+                    ...provider.missing_webhook_settings,
+                  ])
+                );
+                return (
+                  <div key={provider.provider} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-black capitalize text-gray-900">{provider.provider}</p>
+                        <p className="text-xs font-semibold text-gray-500">{provider.environment}</p>
+                      </div>
+                      <span
+                        className={`rounded-md px-2 py-1 text-xs font-black ${
+                          provider.checkout_configured && provider.webhook_configured
+                            ? "bg-green-100 text-green-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {provider.checkout_configured && provider.webhook_configured ? "Ready" : "Setup"}
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-2 text-xs font-semibold text-gray-600">
+                      <p className="break-all">
+                        Session: <span className="font-mono text-gray-800">{provider.session_endpoint}</span>
+                      </p>
+                      <p className="break-all">
+                        Webhook: <span className="font-mono text-gray-800">{provider.webhook_endpoint}</span>
+                      </p>
+                    </div>
+                    {missingSettings.length ? (
+                      <div className="mt-3 rounded-md border border-amber-100 bg-white p-3">
+                        <p className="text-xs font-black uppercase text-amber-700">Missing</p>
+                        <p className="mt-1 break-words text-xs font-semibold text-gray-700">
+                          {missingSettings.join(", ")}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-xs font-black text-green-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Required settings present
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="rounded-lg border border-gray-100 bg-white p-4">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-emerald-700" />
+                  <div>
+                    <p className="font-black text-gray-900">Webhook Contracts</p>
+                    <p className="text-sm text-gray-500">
+                      Signature and matching rules used by each provider endpoint.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {webhookContracts.map((contract) => (
+                    <div key={contract.provider} className="rounded-md border border-gray-100 bg-gray-50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-black capitalize text-gray-900">{contract.provider}</p>
+                        <span className="rounded bg-white px-2 py-1 font-mono text-xs font-bold text-gray-600">
+                          {contract.endpoint}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-gray-700">{contract.signature}</p>
+                      <p className="mt-1 text-xs text-gray-500">{contract.notes}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                <div className="flex items-center gap-2">
+                  <CircleDollarSign className="h-5 w-5 text-emerald-700" />
+                  <div>
+                    <p className="font-black text-gray-900">Manual Paid Webhook Tester</p>
+                    <p className="text-sm text-gray-500">
+                      Use this for a prepaid test order before live gateway credentials are active.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3">
+                  <input
+                    value={webhookOrderId}
+                    onChange={(event) => setWebhookOrderId(event.target.value)}
+                    className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-emerald-500"
+                    placeholder="Prepaid order ID"
+                  />
+                  <input
+                    value={webhookReference}
+                    onChange={(event) => setWebhookReference(event.target.value)}
+                    className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-emerald-500"
+                    placeholder="Payment reference"
+                  />
+                  <button
+                    onClick={sendManualPaymentWebhook}
+                    disabled={isSendingWebhook}
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:bg-gray-300"
+                  >
+                    <CircleDollarSign className="h-4 w-4" />
+                    {isSendingWebhook ? "Sending" : "Send Manual Paid Webhook"}
+                  </button>
+                </div>
+
+                {webhookResult?.order && (
+                  <div className="mt-4 rounded-md border border-green-100 bg-green-50 px-4 py-3 text-sm font-semibold text-green-800">
+                    Order #{webhookResult.order.id} is {webhookResult.order.payment_status}
+                    {webhookResult.order.payment_reference
+                      ? ` with reference ${webhookResult.order.payment_reference}.`
+                      : "."}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-lg border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            Payment readiness is unavailable. Check the backend operations API.
           </div>
         )}
       </div>

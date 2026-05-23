@@ -23,6 +23,8 @@ DEFAULT_SECRET_VALUES = {
     "pizza-blitz-local-secret",
 }
 
+PAYMENT_PROVIDER_ORDER = ("manual", "cashfree", "razorpay")
+
 
 def database_backend() -> str:
     try:
@@ -50,6 +52,7 @@ def sqlite_database_path() -> Optional[Path]:
 def readiness_report(db: Session) -> dict:
     environment = settings.ENVIRONMENT.lower()
     payment_status = payment_provider_status()
+    payment_providers = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
     backup_freshness = _backup_freshness(db)
     checks = [
         _database_check(db),
@@ -93,6 +96,8 @@ def readiness_report(db: Session) -> dict:
         "backup_dir": str(_backup_dir().resolve()),
         "backup_retention_days": settings.BACKUP_RETENTION_DAYS,
         "payment": payment_status,
+        "payment_providers": payment_providers,
+        "payment_webhook_contracts": _payment_webhook_contracts(),
         "backup_freshness": backup_freshness,
         "readiness_score": _readiness_score(go_live_items),
         "launch_blockers": launch_blockers,
@@ -103,6 +108,35 @@ def readiness_report(db: Session) -> dict:
         "warning_checks": warnings,
         "checks": checks,
     }
+
+
+def _payment_webhook_contracts() -> list[dict]:
+    return [
+        {
+            "provider": "manual",
+            "endpoint": "/api/v1/restaurant/orders/payments/webhook/manual",
+            "signature": "No signature required. Use only for local/admin-controlled payment confirmation.",
+            "required_fields": ["order_id", "status"],
+            "paid_statuses": ["paid", "success", "successful", "captured"],
+            "notes": "Matches a restaurant order by order_id and stores payment_reference as the manual payment reference.",
+        },
+        {
+            "provider": "cashfree",
+            "endpoint": "/api/v1/restaurant/orders/payments/webhook/cashfree",
+            "signature": "x-webhook-signature and x-webhook-timestamp. HMAC SHA256 base64 over timestamp plus raw JSON body.",
+            "required_fields": ["data.order.order_id or data.payment.order_id", "data.payment.payment_status"],
+            "paid_statuses": ["paid", "success", "successful", "captured"],
+            "notes": "Matches by order note/tag, provider order id, or embedded Pizza Blitz order id.",
+        },
+        {
+            "provider": "razorpay",
+            "endpoint": "/api/v1/restaurant/orders/payments/webhook/razorpay",
+            "signature": "x-razorpay-signature. HMAC SHA256 hex over the raw JSON body.",
+            "required_fields": ["payload.payment.entity.order_id", "payload.payment.entity.status"],
+            "paid_statuses": ["paid", "success", "successful", "captured"],
+            "notes": "Matches by notes.restaurant_order_id, notes.order_id, or provider order id.",
+        },
+    ]
 
 
 def list_backups(db: Session, limit: int = 20) -> list[dict]:
