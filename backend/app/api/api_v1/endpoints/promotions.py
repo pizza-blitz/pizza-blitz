@@ -212,6 +212,11 @@ class CampaignSendRequest(BaseModel):
     mark_completed: bool = False
 
 
+class PromotionScheduleRequest(BaseModel):
+    start_date: str
+    duration_days: int = Field(7, ge=1, le=60)
+
+
 class RetentionCampaignCreate(BaseModel):
     status: str = "active"
     duration_days: int = Field(7, ge=1, le=60)
@@ -273,6 +278,25 @@ def _validate_promotion_payload(promo: PromotionCreate) -> tuple[date, date]:
         raise HTTPException(status_code=422, detail="Unsupported campaign status.")
     return start_date, end_date
 
+
+def _promotion_schedule_state(promo: Promotion) -> dict:
+    today = date.today()
+    if today < promo.start_date:
+        phase = "upcoming"
+    elif today > promo.end_date:
+        phase = "ended"
+    else:
+        phase = "live"
+
+    return {
+        "phase": phase,
+        "days_until_start": max((promo.start_date - today).days, 0),
+        "days_remaining": max((promo.end_date - today).days + 1, 0),
+        "send_ready_on": promo.start_date.isoformat(),
+        "can_send_now": promo.status in {"active", "scheduled"} and promo.start_date <= today <= promo.end_date,
+    }
+
+
 def _promotion_dict(promo: Promotion) -> dict:
     return {
         "id": promo.id,
@@ -288,6 +312,7 @@ def _promotion_dict(promo: Promotion) -> dict:
         "status": promo.status,
         "message_template": promo.message_template,
         "created_at": promo.created_at.isoformat() if promo.created_at else None,
+        "schedule": _promotion_schedule_state(promo),
     }
 
 def _calculate_discount(promo: Promotion, subtotal: float) -> float:
@@ -1193,6 +1218,34 @@ def active_promotions(db: Session = Depends(get_db)):
     )
     return [_promotion_dict(promo) for promo in promotions]
 
+
+@router.post("/{promo_id}/schedule")
+def schedule_promotion_campaign(
+    promo_id: int,
+    payload: PromotionScheduleRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+
+    start_date = _parse_date(payload.start_date)
+    if start_date < date.today():
+        raise HTTPException(status_code=422, detail="Scheduled date cannot be in the past.")
+
+    promo.start_date = start_date
+    promo.end_date = start_date + timedelta(days=payload.duration_days - 1)
+    promo.status = "scheduled"
+    db.commit()
+    db.refresh(promo)
+    return {
+        "status": "promotion scheduled",
+        "promotion": _promotion_dict(promo),
+        "schedule": _promotion_schedule_state(promo),
+    }
+
+
 @router.post("/validate-code")
 def validate_coupon(payload: CouponValidationRequest, db: Session = Depends(get_db)):
     code = _normalize_code(payload.code)
@@ -1614,6 +1667,16 @@ def send_promotion_campaign(
         raise HTTPException(
             status_code=409,
             detail="Only active or scheduled campaigns can be sent.",
+        )
+    if (
+        promo.status == "scheduled"
+        and promo.start_date > date.today()
+        and not payload.dry_run
+        and not payload.force_resend
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Scheduled campaign is not due until {promo.start_date.isoformat()}.",
         )
 
     customers = (

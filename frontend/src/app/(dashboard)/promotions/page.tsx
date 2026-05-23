@@ -39,6 +39,15 @@ type Promotion = {
   channel: ChannelKey;
   status: StatusKey;
   message_template?: string | null;
+  schedule?: PromotionSchedule;
+};
+
+type PromotionSchedule = {
+  phase: "upcoming" | "live" | "ended";
+  days_until_start: number;
+  days_remaining: number;
+  send_ready_on: string;
+  can_send_now: boolean;
 };
 
 type Contact = {
@@ -381,6 +390,19 @@ const deliveryReasonFilters: { value: DeliveryReasonFilter; label: string }[] = 
 const defaultSocialImage =
   "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80";
 
+function dateInputValue(offsetDays = 0) {
+  const nextDate = new Date();
+  nextDate.setDate(nextDate.getDate() + offsetDays);
+  return nextDate.toISOString().slice(0, 10);
+}
+
+function campaignDurationDays(promotion: Promotion) {
+  const start = new Date(`${promotion.start_date}T00:00:00`);
+  const end = new Date(`${promotion.end_date}T00:00:00`);
+  const duration = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  return Number.isFinite(duration) ? Math.max(duration, 1) : 7;
+}
+
 const emptyForm: CampaignForm = {
   name: "",
   code: "",
@@ -417,6 +439,9 @@ export default function PromotionsPage() {
   const [loading, setLoading] = useState(false);
   const audienceRequestRef = useRef(0);
   const [sending, setSending] = useState<"dry_run" | "send" | "force_dry_run" | "force_send" | null>(null);
+  const [scheduleDate, setScheduleDate] = useState(dateInputValue(1));
+  const [scheduleDuration, setScheduleDuration] = useState("7");
+  const [scheduling, setScheduling] = useState(false);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
@@ -447,8 +472,18 @@ export default function PromotionsPage() {
     Boolean(selectedPromotion) &&
     (!cleanupReturn.campaignId || cleanupReturn.campaignId === selectedPromotion?.id);
 
+  useEffect(() => {
+    if (!selectedPromotion) return;
+    const today = dateInputValue();
+    setScheduleDate(selectedPromotion.start_date >= today ? selectedPromotion.start_date : dateInputValue(1));
+    setScheduleDuration(String(campaignDurationDays(selectedPromotion)));
+  }, [selectedPromotion?.id]);
+
   const activeCount = promotions.filter((promotion) => promotion.status === "active").length;
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
+  const selectedSchedule = selectedPromotion?.schedule;
+  const selectedScheduledFuture =
+    selectedPromotion?.status === "scheduled" && selectedSchedule?.phase === "upcoming";
   const bestCampaign = performanceRollup?.best_campaign || null;
   const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
   const hygieneChannels = channelOptions.map((option) => option.value);
@@ -701,6 +736,32 @@ export default function PromotionsPage() {
     setSelectedId(data.promotion.id);
     await fetchCampaignDetails(data.promotion.id);
     setCreatingPlaybookAudience(null);
+  };
+
+  const scheduleCampaign = async () => {
+    if (!selectedPromotion) return;
+    const durationDays = Math.max(1, Number(scheduleDuration) || 7);
+    setScheduling(true);
+    const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/schedule`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        start_date: scheduleDate,
+        duration_days: durationDays,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Campaign could not be scheduled.");
+      setScheduling(false);
+      return;
+    }
+
+    setMessage(`Scheduled ${data.promotion.name} for ${data.promotion.start_date}.`);
+    await fetchPromotions(data.promotion.id);
+    await fetchPerformanceRollup();
+    setScheduling(false);
   };
 
   const copyOutreach = async () => {
@@ -1355,9 +1416,11 @@ export default function PromotionsPage() {
                   </button>
                   <button
                     onClick={() => sendCampaign(false)}
-                    disabled={sending !== null || !dispatch?.provider_status?.configured}
+                    disabled={sending !== null || selectedScheduledFuture || !dispatch?.provider_status?.configured}
                     title={
-                      dispatch?.provider_status?.configured
+                      selectedScheduledFuture
+                        ? `Scheduled for ${selectedPromotion.start_date}`
+                        : dispatch?.provider_status?.configured
                         ? "Send campaign"
                         : `Missing: ${dispatch?.provider_status?.missing_settings.join(", ") || "provider setup"}`
                     }
@@ -1385,6 +1448,68 @@ export default function PromotionsPage() {
                     value={providerLabel(dispatch?.provider_status)}
                   />
                 </div>
+
+                <section
+                  data-testid="campaign-schedule-panel"
+                  className="mb-6 rounded-xl border border-orange-500/10 bg-black/25 p-5"
+                >
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                        Campaign Schedule
+                      </p>
+                      <h3 className="mt-1 text-lg font-black">
+                        {selectedSchedule?.phase === "upcoming"
+                          ? `Queued for ${selectedPromotion.start_date}`
+                          : selectedSchedule?.phase === "live"
+                          ? "Live in the current offer window"
+                          : "Schedule the next send window"}
+                      </h3>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-gray-500">
+                        Future scheduled campaigns stay available for dry runs, but live sending is held until the start date.
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${timelineStatusClass(selectedSchedule?.phase || "scheduled")}`}>
+                      {selectedSchedule?.phase || "checking"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-5">
+                    <Input
+                      label="Start Date"
+                      type="date"
+                      value={scheduleDate}
+                      onChange={setScheduleDate}
+                    />
+                    <Input
+                      label="Duration Days"
+                      type="number"
+                      value={scheduleDuration}
+                      onChange={setScheduleDuration}
+                    />
+                    <Detail
+                      label="Ready On"
+                      value={selectedSchedule?.send_ready_on || selectedPromotion.start_date}
+                    />
+                    <Detail
+                      label="Until"
+                      value={selectedPromotion.end_date}
+                    />
+                    <Detail
+                      label="Send Guard"
+                      value={selectedSchedule?.can_send_now ? "Live send allowed" : "Live send held"}
+                    />
+                  </div>
+                  <button
+                    data-testid="schedule-campaign-button"
+                    type="button"
+                    onClick={scheduleCampaign}
+                    disabled={scheduling || scheduleDate < dateInputValue()}
+                    className="mt-4 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-black text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    title={scheduleDate < dateInputValue() ? "Choose today or a future date" : "Schedule campaign"}
+                  >
+                    <Calendar className="h-4 w-4" /> {scheduling ? "Scheduling" : "Schedule Campaign"}
+                  </button>
+                </section>
 
                 <section className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
                   <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
