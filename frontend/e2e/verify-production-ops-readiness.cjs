@@ -125,8 +125,11 @@ async function screenshotProductionOps() {
 
     const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByText("Launch Control Matrix", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Product Catalog", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Finance Reporting", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Production Go-Live Checklist", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByText("Environment Inventory", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Environment Inventory" }).waitFor({ timeout: 15000 });
     await page.getByText("Portal session secret", { exact: false }).first().waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /Create Backup/i }).click();
     await page
@@ -158,6 +161,16 @@ async function main() {
   assert(readiness.response.ok, `Admin ops readiness failed: ${JSON.stringify(readiness.data)}`);
   assert(Array.isArray(readiness.data.environment_manifest), "Readiness did not include environment manifest.");
   assert(readiness.data.environment_summary?.required_total >= 1, "Readiness did not include required environment summary.");
+  assert(Array.isArray(readiness.data.module_readiness), "Readiness did not include module readiness.");
+  assert(readiness.data.launch_summary?.modules_total >= 7, "Launch summary did not include the module total.");
+  assert(
+    readiness.data.module_readiness.some((module) => module.key === "product_catalog"),
+    "Module readiness did not include product catalog."
+  );
+  assert(
+    readiness.data.module_readiness.some((module) => module.key === "finance_reporting"),
+    "Module readiness did not include finance reporting."
+  );
   assert(
     readiness.data.checks.some((check) => check.key === "staff_password"),
     "Readiness did not include the staff password check."

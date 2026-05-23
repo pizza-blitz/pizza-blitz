@@ -9,7 +9,9 @@ import {
   HardDrive,
   KeyRound,
   Link as LinkIcon,
+  ListChecks,
   RefreshCw,
+  Rocket,
   ShieldCheck,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
@@ -39,6 +41,31 @@ type GoLiveSection = {
   title: string;
   description: string;
   items: GoLiveItem[];
+};
+
+type ModuleMetric = {
+  label: string;
+  value: string;
+};
+
+type LaunchModule = {
+  key: string;
+  title: string;
+  status: CheckStatus;
+  score: number;
+  route: string;
+  detail: string;
+  metrics: ModuleMetric[];
+  next_actions: string[];
+};
+
+type LaunchSummary = {
+  modules_total: number;
+  modules_ready: number;
+  modules_attention: number;
+  modules_blocked: number;
+  implementation_score: number;
+  next_actions: string[];
 };
 
 type EnvironmentVariable = {
@@ -80,6 +107,8 @@ type Readiness = {
   launch_blockers: GoLiveItem[];
   setup_actions: GoLiveItem[];
   go_live_sections: GoLiveSection[];
+  launch_summary?: LaunchSummary;
+  module_readiness?: LaunchModule[];
   overall: "ready" | "attention" | "blocked";
   failed_checks: number;
   warning_checks: number;
@@ -226,6 +255,50 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {readiness?.module_readiness?.length ? (
+        <section className="mb-8 rounded-xl border border-white/5 bg-[#111113] p-6">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-400">Launch Control Matrix</p>
+              <h2 className="mt-2 text-2xl font-black">Module Maturity Across the Restaurant Portal</h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+                One owner-facing view of what is built, what has real data, and which operational setup actions remain.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <SummaryPill label="Score" value={`${readiness.launch_summary?.implementation_score || 0}%`} />
+              <SummaryPill label="Ready" value={`${readiness.launch_summary?.modules_ready || 0}`} />
+              <SummaryPill label="Attention" value={`${readiness.launch_summary?.modules_attention || 0}`} />
+            </div>
+          </div>
+
+          <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-4">
+            {readiness.module_readiness.map((module) => (
+              <LaunchModuleCard key={module.key} module={module} />
+            ))}
+          </div>
+
+          <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-orange-300" />
+              <h3 className="font-black text-orange-100">Next Launch Actions</h3>
+            </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {(readiness.launch_summary?.next_actions || []).map((action) => (
+                <p key={action} className="rounded-lg bg-black/25 px-3 py-2 text-sm font-bold text-orange-50">
+                  {action}
+                </p>
+              ))}
+              {!readiness.launch_summary?.next_actions?.length && (
+                <p className="rounded-lg bg-black/25 px-3 py-2 text-sm font-bold text-orange-50">
+                  Keep running weekly proof checks and backup reviews.
+                </p>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {readiness && (
         <section className="mb-8 space-y-5">
@@ -500,6 +573,59 @@ export default function ProductionOpsPage() {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-24 rounded-xl border border-white/5 bg-black/25 px-4 py-3">
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function LaunchModuleCard({ module }: { module: LaunchModule }) {
+  return (
+    <div className="flex min-h-[280px] flex-col rounded-xl border border-white/5 bg-black/25 p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
+          <Rocket className="h-5 w-5" />
+        </div>
+        <StatusBadge status={module.status} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-lg font-black text-white">{module.title}</p>
+        <p className="mt-2 text-sm leading-6 text-gray-500">{module.detail}</p>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-white/5 bg-[#111113] p-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Score</p>
+          <p className="mt-1 text-xl font-black text-orange-300">{module.score}%</p>
+        </div>
+        <div className="rounded-lg border border-white/5 bg-[#111113] p-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Route</p>
+          <p className="mt-1 truncate text-sm font-black text-gray-200">{module.route}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-2">
+        {module.metrics.slice(0, 3).map((metric) => (
+          <div key={`${module.key}-${metric.label}`} className="flex items-center justify-between gap-3 rounded-lg bg-white/5 px-3 py-2">
+            <span className="text-xs font-bold text-gray-400">{metric.label}</span>
+            <span className="text-xs font-black text-white">{metric.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-auto pt-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Next</p>
+        <p className="mt-2 text-sm font-bold leading-6 text-gray-300">
+          {module.next_actions[0] || "Continue regular proof checks."}
+        </p>
       </div>
     </div>
   );

@@ -4,12 +4,28 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.domain import BackupRun
+from app.models.domain import (
+    AdCampaign,
+    AdCampaignLaunch,
+    BackupRun,
+    CampaignDelivery,
+    Customer,
+    DailySales,
+    DeliveryAssignment,
+    DeliveryZone,
+    MenuCustomizationGroup,
+    MenuCustomizationOption,
+    MenuItem,
+    Promotion,
+    RestaurantOrder,
+    SocialPost,
+    SocialPostDelivery,
+)
 from app.services.ad_campaign_service import ad_provider_status
 from app.services.campaign_dispatch_service import campaign_provider_status
 from app.services.payment_gateway import payment_provider_status
@@ -324,6 +340,13 @@ def readiness_report(db: Session) -> dict:
         for section in go_live_sections
         for item in section["items"]
     ]
+    module_readiness = _launch_module_readiness(
+        db,
+        checks=checks,
+        payment_status=payment_status,
+        backup_freshness=backup_freshness,
+        go_live_items=go_live_items,
+    )
     launch_blockers = [item for item in go_live_items if item["status"] == "fail"]
     setup_actions = [
         item
@@ -354,10 +377,286 @@ def readiness_report(db: Session) -> dict:
         "launch_blockers": launch_blockers,
         "setup_actions": setup_actions,
         "go_live_sections": go_live_sections,
+        "launch_summary": _launch_summary(module_readiness),
+        "module_readiness": module_readiness,
         "overall": overall,
         "failed_checks": failed,
         "warning_checks": warnings,
         "checks": checks,
+    }
+
+
+def _count(db: Session, model, *criteria) -> int:
+    query = db.query(func.count(model.id))
+    if criteria:
+        query = query.filter(*criteria)
+    return int(query.scalar() or 0)
+
+
+def _weighted_score(items: list[dict]) -> int:
+    if not items:
+        return 0
+    weights = {"pass": 1.0, "warn": 0.5, "fail": 0.0}
+    return round(sum(weights.get(item["status"], 0) for item in items) / len(items) * 100)
+
+
+def _module_status(score: int) -> str:
+    if score >= 85:
+        return "pass"
+    if score >= 45:
+        return "warn"
+    return "fail"
+
+
+def _module(
+    *,
+    key: str,
+    title: str,
+    score: int,
+    route: str,
+    detail: str,
+    metrics: list[dict],
+    next_actions: list[str],
+) -> dict:
+    return {
+        "key": key,
+        "title": title,
+        "status": _module_status(score),
+        "score": score,
+        "route": route,
+        "detail": detail,
+        "metrics": metrics,
+        "next_actions": next_actions[:3],
+    }
+
+
+def _launch_module_readiness(
+    db: Session,
+    *,
+    checks: list[dict],
+    payment_status: dict,
+    backup_freshness: dict,
+    go_live_items: list[dict],
+) -> list[dict]:
+    check_by_key = {check["key"]: check for check in checks}
+    campaign_statuses = [campaign_provider_status(channel) for channel in ["whatsapp", "sms", "email"]]
+    social_statuses = [social_provider_status(platform) for platform in ["facebook", "instagram"]]
+    ads_status = ad_provider_status()
+
+    active_menu = _count(db, MenuItem, MenuItem.is_available.is_(True))
+    customization_groups = _count(db, MenuCustomizationGroup, MenuCustomizationGroup.is_active.is_(True))
+    customization_options = _count(db, MenuCustomizationOption, MenuCustomizationOption.is_active.is_(True))
+    order_count = _count(db, RestaurantOrder)
+    open_orders = _count(db, RestaurantOrder, RestaurantOrder.status != "closed")
+    paid_orders = _count(db, RestaurantOrder, RestaurantOrder.payment_status == "paid")
+    active_zones = _count(db, DeliveryZone, DeliveryZone.is_active.is_(True))
+    delivery_assignments = _count(db, DeliveryAssignment)
+    customers = _count(db, Customer)
+    opted_in_customers = _count(db, Customer, Customer.opt_in_marketing.is_(True))
+    promotions = _count(db, Promotion)
+    campaign_deliveries = _count(db, CampaignDelivery)
+    social_posts = _count(db, SocialPost)
+    social_deliveries = _count(db, SocialPostDelivery)
+    ad_campaigns = _count(db, AdCampaign)
+    ad_launches = _count(db, AdCampaignLaunch)
+    daily_sales = _count(db, DailySales)
+    successful_backups = _count(db, BackupRun, BackupRun.status == "success")
+
+    security_score = _weighted_score([
+        check_by_key["admin_password"],
+        check_by_key["staff_password"],
+        check_by_key["auth_secret"],
+        check_by_key["portal_session_secret"],
+        check_by_key["cors_origins"],
+    ])
+    catalog_score = (
+        (40 if active_menu else 0)
+        + (30 if customization_groups else 0)
+        + (30 if customization_options else 0)
+    )
+    ordering_score = (
+        (35 if active_menu else 0)
+        + (35 if order_count else 0)
+        + (15 if payment_status.get("provider") else 0)
+        + (15 if paid_orders else 8)
+    )
+    delivery_score = (
+        (70 if active_zones else 0)
+        + (20 if delivery_assignments else 10)
+        + 10
+    )
+    marketing_score = (
+        (35 if customers else 0)
+        + (25 if opted_in_customers else 0)
+        + (20 if promotions else 0)
+        + (20 if campaign_deliveries else 10)
+    )
+    growth_score = (
+        (25 if any(status["configured"] for status in campaign_statuses) else 10)
+        + (20 if campaign_deliveries else 5)
+        + (20 if social_posts or social_deliveries else 5)
+        + (20 if ad_campaigns or ad_launches else 5)
+        + (15 if ads_status["configured"] or any(status["configured"] for status in social_statuses) else 5)
+    )
+    finance_score = (
+        (30 if daily_sales else 10)
+        + (25 if order_count else 0)
+        + (25 if backup_freshness["status"] == "pass" else 10)
+        + 20
+    )
+    production_score = round(
+        (_readiness_score(go_live_items) * 0.75)
+        + (25 if successful_backups else 10)
+    )
+
+    return [
+        _module(
+            key="security_foundation",
+            title="Security Foundation",
+            score=security_score,
+            route="/settings",
+            detail="Admin/staff roles, portal sessions, backend role gates, and CORS are tracked together.",
+            metrics=[
+                {"label": "Checks", "value": f"{sum(1 for check in checks if check['status'] == 'pass')}/{len(checks)} pass"},
+                {"label": "Role gates", "value": "enabled"},
+            ],
+            next_actions=[
+                "Set production admin/staff credentials and unique session secrets.",
+                "Keep BACKEND_CORS_ORIGINS pinned to deployed frontend domains.",
+            ],
+        ),
+        _module(
+            key="product_catalog",
+            title="Product Catalog",
+            score=catalog_score,
+            route="/menu",
+            detail="Menu items, sizes, toppings, add-ons, and customization pricing are available for ordering.",
+            metrics=[
+                {"label": "Active products", "value": str(active_menu)},
+                {"label": "Customization groups", "value": str(customization_groups)},
+                {"label": "Options", "value": str(customization_options)},
+            ],
+            next_actions=[
+                "Review product names, photos, and live pricing before launch.",
+                "Add combos or offer bundles for higher average order value.",
+            ],
+        ),
+        _module(
+            key="ordering_flow",
+            title="Ordering Flow",
+            score=ordering_score,
+            route="/orders",
+            detail="Counter POS, website checkout, order status, receipts, and payment state are connected.",
+            metrics=[
+                {"label": "Orders", "value": str(order_count)},
+                {"label": "Open orders", "value": str(open_orders)},
+                {"label": "Paid orders", "value": str(paid_orders)},
+            ],
+            next_actions=[
+                "Run one complete pickup and delivery order before launch.",
+                "Connect the real payment provider when credentials are ready.",
+            ],
+        ),
+        _module(
+            key="delivery_operations",
+            title="Delivery Operations",
+            score=delivery_score,
+            route="/operations",
+            detail="Delivery zones, charges, ETA windows, address validation, and assignment records are tracked.",
+            metrics=[
+                {"label": "Active zones", "value": str(active_zones)},
+                {"label": "Assignments", "value": str(delivery_assignments)},
+            ],
+            next_actions=[
+                "Confirm live delivery areas and minimum order rules.",
+                "Assign test delivery orders to staff and close the handoff loop.",
+            ],
+        ),
+        _module(
+            key="marketing_crm",
+            title="Marketing CRM",
+            score=marketing_score,
+            route="/customers",
+            detail="Customer capture, marketing opt-in, promotions, and campaign delivery history are connected.",
+            metrics=[
+                {"label": "Customers", "value": str(customers)},
+                {"label": "Opted in", "value": str(opted_in_customers)},
+                {"label": "Promotions", "value": str(promotions)},
+            ],
+            next_actions=[
+                "Import or capture real customer consent before sending campaigns.",
+                "Create one launch offer and send a dry-run campaign proof.",
+            ],
+        ),
+        _module(
+            key="growth_publishing",
+            title="Growth Publishing",
+            score=growth_score,
+            route="/promotions",
+            detail="Campaign sending, social auto-posting, and ad campaign launch controls are represented.",
+            metrics=[
+                {"label": "Campaign sends", "value": str(campaign_deliveries)},
+                {"label": "Social posts", "value": str(social_posts)},
+                {"label": "Ad campaigns", "value": str(ad_campaigns)},
+            ],
+            next_actions=[
+                "Add real WhatsApp/SMS/email provider credentials.",
+                "Add Facebook, Instagram, and Meta Ads credentials when business accounts are ready.",
+            ],
+        ),
+        _module(
+            key="finance_reporting",
+            title="Finance Reporting",
+            score=finance_score,
+            route="/reports",
+            detail="Sales logs, order-channel comparisons, marketing attribution, and backup freshness are visible.",
+            metrics=[
+                {"label": "Sales days", "value": str(daily_sales)},
+                {"label": "Order records", "value": str(order_count)},
+                {"label": "Backups", "value": str(successful_backups)},
+            ],
+            next_actions=[
+                "Close several real POS orders so daily sales dashboards fill with live figures.",
+                "Review weekly, monthly, and year-over-year comparison cards after data import.",
+            ],
+        ),
+        _module(
+            key="production_operations",
+            title="Production Operations",
+            score=production_score,
+            route="/ops",
+            detail="Environment inventory, backup history, payment contracts, and deployment blockers are centralized.",
+            metrics=[
+                {"label": "Go-live score", "value": f"{_readiness_score(go_live_items)}%"},
+                {"label": "Backup status", "value": backup_freshness["status"]},
+            ],
+            next_actions=[
+                "Move from local SQLite to managed production database.",
+                "Schedule backups and store deployment secrets outside the repository.",
+            ],
+        ),
+    ]
+
+
+def _launch_summary(modules: list[dict]) -> dict:
+    total = len(modules)
+    ready = sum(1 for module in modules if module["status"] == "pass")
+    attention = sum(1 for module in modules if module["status"] == "warn")
+    blocked = sum(1 for module in modules if module["status"] == "fail")
+    score = round(sum(module["score"] for module in modules) / total) if total else 0
+    next_actions = [
+        action
+        for module in modules
+        if module["status"] != "pass"
+        for action in module["next_actions"]
+    ]
+    return {
+        "modules_total": total,
+        "modules_ready": ready,
+        "modules_attention": attention,
+        "modules_blocked": blocked,
+        "implementation_score": score,
+        "next_actions": next_actions[:6],
     }
 
 
