@@ -75,6 +75,7 @@ const filters = [
   { id: "open", label: "New" },
   { id: "preparing", label: "Preparing" },
   { id: "ready", label: "Ready" },
+  { id: "delivery", label: "Delivery" },
   { id: "payment_due", label: "Payment Due" },
   { id: "closed", label: "Closed" },
 ];
@@ -150,24 +151,44 @@ export default function OperationsPage() {
     return { ready, preparing, fresh, activeValue, unassignedDelivery };
   }, [activeOrders, deliveryOrders]);
 
+  const deliveryStats = useMemo(() => {
+    const statusCounts = deliveryOrders.reduce(
+      (counts, order) => {
+        const status = order.delivery_assignment?.status || "unassigned";
+        if (status === "assigned") counts.assigned += 1;
+        else if (status === "out_for_delivery") counts.out += 1;
+        else if (status === "delivered") counts.delivered += 1;
+        else if (status === "failed") counts.failed += 1;
+        else counts.unassigned += 1;
+        return counts;
+      },
+      { unassigned: 0, assigned: 0, out: 0, delivered: 0, failed: 0 }
+    );
+    return {
+      total: deliveryOrders.length,
+      ...statusCounts,
+    };
+  }, [deliveryOrders]);
+
   const visibleOrders = useMemo(() => {
     if (filter === "active") return activeOrders;
+    if (filter === "delivery") return deliveryOrders;
     if (filter === "payment_due") return paymentDueOrders;
     return orders.filter((order) => order.status === filter);
-  }, [activeOrders, filter, orders, paymentDueOrders]);
+  }, [activeOrders, deliveryOrders, filter, orders, paymentDueOrders]);
 
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (options?: { preserveMessage?: boolean }) => {
     setIsLoading(true);
     try {
       const response = await fetch(`${ORDERS_API}/today`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
       setOrders(data.orders || []);
-      setMessage("");
+      if (!options?.preserveMessage) setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load orders.");
     } finally {
@@ -186,7 +207,7 @@ export default function OperationsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not move order.");
       setMessage(`Order #${order.id} moved to ${status}.`);
-      await fetchOrders();
+      await fetchOrders({ preserveMessage: true });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not move order.");
     } finally {
@@ -234,7 +255,7 @@ export default function OperationsPage() {
       setMessage(
         `Order #${order.id} closed${usageCount ? ` and ${usageCount} ingredients updated.` : "."}`
       );
-      await fetchOrders();
+      await fetchOrders({ preserveMessage: true });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not close order.");
     } finally {
@@ -268,7 +289,7 @@ export default function OperationsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not update delivery.");
       setMessage(`Delivery for order #${order.id} moved to ${status.replaceAll("_", " ")}.`);
-      await fetchOrders();
+      await fetchOrders({ preserveMessage: true });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not update delivery.");
     } finally {
@@ -286,7 +307,7 @@ export default function OperationsPage() {
           </p>
         </div>
         <button
-          onClick={fetchOrders}
+          onClick={() => fetchOrders()}
           disabled={isLoading}
           className="flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
         >
@@ -318,7 +339,7 @@ export default function OperationsPage() {
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Delivery</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Unassigned</p>
           <div className="mt-2 flex items-end justify-between">
             <span className="text-2xl font-black text-gray-950">{stats.unassignedDelivery}</span>
             <Truck className="h-5 w-5 text-red-600" />
@@ -354,6 +375,48 @@ export default function OperationsPage() {
           {message}
         </div>
       )}
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-gray-950">Delivery Dispatch Board</h2>
+            <p className="text-sm text-gray-500">
+              Rider assignment health for active delivery orders.
+            </p>
+          </div>
+          <button
+            onClick={() => setFilter("delivery")}
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-black text-red-700 hover:bg-red-100"
+          >
+            <Truck className="h-4 w-4" />
+            Show Delivery Queue
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          {[
+            ["Open Deliveries", deliveryStats.total, "text-gray-950"],
+            ["Unassigned", deliveryStats.unassigned, "text-red-700"],
+            ["Assigned", deliveryStats.assigned, "text-sky-700"],
+            ["Out", deliveryStats.out, "text-orange-700"],
+            ["Delivered", deliveryStats.delivered, "text-emerald-700"],
+          ].map(([label, value, tone]) => (
+            <div
+              key={label}
+              className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+            >
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+                {label}
+              </p>
+              <p className={`mt-2 text-2xl font-black ${tone}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+        {!deliveryOrders.length && (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-5 text-sm font-semibold text-gray-500">
+            No active delivery orders. New website or counter delivery orders will appear here for assignment.
+          </div>
+        )}
+      </section>
 
       {deliveryOrders.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
