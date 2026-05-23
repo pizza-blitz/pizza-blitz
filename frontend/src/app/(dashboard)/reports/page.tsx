@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Megaphone, ShoppingBag, Tag, Target } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Mail, Megaphone, MessageCircle, Phone, ShoppingBag, Tag, Target, Users } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const Award = ({className}: {className?: string}) => (
@@ -34,14 +34,15 @@ export default function Reports() {
         }
         return payload;
       };
-      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes, orderChannelRes] = await Promise.all([
+      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes, orderChannelRes, customerSegmentRes] = await Promise.all([
         fetchJson(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`),
         fetchJson('/api/v1/restaurant/sales/'),
         fetchJson('/api/v1/restaurant/stats/insights/monthly-forecast'),
         fetchJson('/api/v1/restaurant/stats/insights/profit-trend?months=12'),
         fetchJson(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
         fetchJson('/api/v1/restaurant/promotions/performance?limit=25'),
-        fetchJson(`/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`)
+        fetchJson(`/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`),
+        fetchJson('/api/v1/restaurant/customers/segments/report')
       ]);
 
       setData({
@@ -51,7 +52,8 @@ export default function Reports() {
         trends: trendRes.trend || [],
         comparison: comparisonRes,
         marketing: marketingRes,
-        orderChannels: orderChannelRes
+        orderChannels: orderChannelRes,
+        customerSegments: customerSegmentRes
       });
     } catch (err) { 
       console.error(err);
@@ -74,6 +76,13 @@ export default function Reports() {
 
   const formatMoney = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
 
+  const segmentChannelLabel = (value: string) => {
+    if (value === "whatsapp") return "WhatsApp";
+    if (value === "email") return "Email";
+    if (value === "sms") return "SMS";
+    return "Cleanup";
+  };
+
   const percentChange = (current: number, baseline: number) => {
     const currentValue = Number(current || 0);
     const baselineValue = Number(baseline || 0);
@@ -86,6 +95,7 @@ export default function Reports() {
   const comparison = data?.comparison;
   const marketing = data?.marketing;
   const orderChannels = data?.orderChannels;
+  const customerSegments = data?.customerSegments;
   const orderChannelRows = orderChannels?.channel_mix || [];
   const paymentRows = orderChannels?.payment_mix || [];
   const paymentStatusRows = orderChannels?.payment_status_mix || [];
@@ -145,6 +155,10 @@ export default function Reports() {
         0
       )
     : 0;
+  const customerSegmentRows = customerSegments?.segments ? customerSegments.segments.slice(0, 6) : [];
+  const segmentLeader = customerSegments?.top_segment || customerSegmentRows[0] || null;
+  const valueLeader = customerSegments?.strongest_value_segment || segmentLeader;
+  const cleanupLeader = customerSegments?.largest_cleanup_segment || segmentLeader;
   const weekdayRows = comparison?.weekday_breakdown
     ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
     : [];
@@ -445,6 +459,159 @@ export default function Reports() {
                         </p>
                       ))}
                     </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {customerSegments && (
+            <section data-testid="customer-segment-intelligence" className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Customer Segment Intelligence</p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">Who to target next</h2>
+                </div>
+                <a
+                  href="/customers"
+                  className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-600 hover:bg-orange-50 hover:text-orange-700"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Open Customers
+                </a>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <MarketingMetric
+                  icon={Users}
+                  label="Customers"
+                  value={`${customerSegments.summary.total_customers || 0}`}
+                />
+                <MarketingMetric
+                  icon={MessageCircle}
+                  label="Reachable"
+                  value={`${customerSegments.summary.reachable_customers || 0}`}
+                />
+                <MarketingMetric
+                  icon={TrendingUp}
+                  label="Recorded Spend"
+                  value={formatMoney(customerSegments.summary.total_spend)}
+                />
+                <MarketingMetric
+                  icon={Mail}
+                  label="Email Gaps"
+                  value={`${customerSegments.summary.email_gap_customers || 0}`}
+                />
+                <MarketingMetric
+                  icon={Phone}
+                  label="Phone Gaps"
+                  value={`${customerSegments.summary.phone_gap_customers || 0}`}
+                />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[0.86fr_1.14fr]">
+                <div className="rounded-lg border border-green-200 bg-green-50 p-5">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-green-700">Best Next Segment</p>
+                      <h3 className="mt-1 text-xl font-black text-gray-950">{segmentLeader?.label || "No segment yet"}</h3>
+                    </div>
+                    <Target className="h-6 w-6 text-green-700" />
+                  </div>
+                  {segmentLeader ? (
+                    <>
+                      <p className="text-sm font-bold leading-6 text-green-900">{segmentLeader.intent}</p>
+                      <div className="mt-4 grid grid-cols-1 gap-3 2xl:grid-cols-2">
+                        <MarketingCommandMetric label="Spend" value={formatMoney(segmentLeader.total_spend)} />
+                        <MarketingCommandMetric label="Readiness" value={`${Number(segmentLeader.readiness_percent || 0).toFixed(1)}%`} />
+                        <MarketingCommandMetric label="Reachable" value={`${segmentLeader.reachable_count || 0}`} />
+                        <MarketingCommandMetric label="Channel" value={segmentChannelLabel(segmentLeader.recommended_channel)} />
+                      </div>
+                      <div className="mt-4 rounded-lg bg-white p-4">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Recommended Action</p>
+                        <p className="mt-1 text-sm font-black leading-6 text-gray-950">{segmentLeader.recommended_action}</p>
+                      </div>
+                      <a
+                        href={segmentLeader.customer_list_url}
+                        className="mt-4 inline-flex items-center rounded-md bg-gray-950 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
+                      >
+                        <Users className="mr-2 h-4 w-4" />
+                        Open Segment Queue
+                      </a>
+                    </>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-green-200 bg-white p-5 text-sm font-bold text-green-900">
+                      Customer segment reporting will appear after customers are captured.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-5">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-500">Segment Ranking</p>
+                      <h3 className="mt-1 text-xl font-black text-gray-950">Value, reach, and cleanup priority</h3>
+                    </div>
+                    <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-600">
+                      {customerSegments.summary.readiness_percent.toFixed(1)}% ready
+                    </span>
+                  </div>
+
+                  <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <SegmentFocusCard
+                      title="Value Leader"
+                      label={valueLeader?.label || "No segment"}
+                      value={valueLeader ? formatMoney(valueLeader.total_spend) : "Rs 0"}
+                      detail={valueLeader ? `${valueLeader.revenue_share_percent.toFixed(1)}% of recorded spend` : "Awaiting customer spend"}
+                    />
+                    <SegmentFocusCard
+                      title="Cleanup Leader"
+                      label={cleanupLeader?.label || "No segment"}
+                      value={cleanupLeader ? `${Number(cleanupLeader.email_gap_count || 0) + Number(cleanupLeader.phone_gap_count || 0)} gaps` : "0 gaps"}
+                      detail={cleanupLeader ? cleanupLeader.recommended_action : "No cleanup action yet"}
+                    />
+                  </div>
+
+                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                    <table className="w-full min-w-[760px] text-left">
+                      <thead className="bg-gray-950 text-white">
+                        <tr>
+                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Segment</th>
+                          <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Spend</th>
+                          <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Reach</th>
+                          <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Ready</th>
+                          <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Channel</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {customerSegmentRows.length ? (
+                          customerSegmentRows.map((row: any) => (
+                            <tr key={`segment-${row.segment}`} className="hover:bg-orange-50/50">
+                              <td className="px-4 py-3">
+                                <p className="text-sm font-black text-gray-950">{row.label}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                                  {row.customer_count} customers | {row.order_count} orders
+                                </p>
+                              </td>
+                              <td className="px-4 py-3 text-right text-sm font-black text-green-700">{formatMoney(row.total_spend)}</td>
+                              <td className="px-4 py-3 text-right text-sm font-black text-gray-950">{row.reachable_count}</td>
+                              <td className="px-4 py-3 text-right">
+                                <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-black text-gray-700">
+                                  {Number(row.readiness_percent || 0).toFixed(1)}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-gray-600">{row.recommended_channel}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-10 text-center text-sm font-bold text-gray-400">
+                              Customer segment intelligence will populate after orders create customers.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -990,6 +1157,31 @@ function MarketingCommandMetric({ label, value }: { label: string; value: string
     <div className="rounded-lg border border-gray-200 bg-white p-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 break-words text-lg font-black text-gray-950">{value}</p>
+    </div>
+  );
+}
+
+function SegmentFocusCard({
+  title,
+  label,
+  value,
+  detail,
+}: {
+  title: string;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{title}</p>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-black text-gray-950">{label}</p>
+          <p className="mt-1 text-xs font-bold leading-5 text-gray-500">{detail}</p>
+        </div>
+        <p className="text-lg font-black text-gray-950">{value}</p>
+      </div>
     </div>
   );
 }

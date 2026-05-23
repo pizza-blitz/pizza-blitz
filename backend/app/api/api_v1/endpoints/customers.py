@@ -27,6 +27,19 @@ VALID_CUSTOMER_SEGMENTS = {
     "win_back_customers",
 }
 
+CUSTOMER_SEGMENT_REPORTS = [
+    ("vip_guests", "VIP Guests", "Protect high-value loyalty and premium bundles."),
+    ("regular_guests", "Regular Guests", "Move frequent buyers toward VIP behavior."),
+    ("new_guests", "New Guests", "Nudge second and third orders before habits fade."),
+    ("active_customers", "Active This Week", "Upsell recent buyers while intent is warm."),
+    ("comeback_customers", "Comeback Due", "Bring recent lapsing customers back with a light offer."),
+    ("win_back_customers", "Win-back Priority", "Recover quiet customers with a stronger reason to return."),
+    ("repeat_customers", "Repeat Customers", "Reward customers who have already shown a habit."),
+    ("high_spenders", "High Spenders", "Convert larger-ticket guests into repeat premium buyers."),
+    ("marketing_opt_in", "Marketing Opt-in", "Reach consented contacts across campaign channels."),
+    ("missing_email", "Missing Email", "Clean contact data before richer offer campaigns."),
+]
+
 
 class CustomerCreate(BaseModel):
     name: Optional[str] = None
@@ -144,6 +157,99 @@ def serialize_customer_retention(customer: Customer) -> dict:
         "recommended_action": customer_recommended_action(customer, tier, cadence),
         "priority_score": min(priority_score, 100),
     }
+
+
+def customer_has_email(customer: Customer) -> bool:
+    return bool((customer.email or "").strip())
+
+
+def customer_has_phone(customer: Customer) -> bool:
+    return bool((customer.phone or "").strip())
+
+
+def customer_segment_action(segment: str, row: dict) -> str:
+    if row["reachable_count"] == 0:
+        return "Clean consent and contact details before launching."
+    if segment == "vip_guests":
+        return "Send a VIP bundle or early-access offer."
+    if segment == "regular_guests":
+        return "Send a loyalty bundle to push VIP progress."
+    if segment == "new_guests":
+        return "Send a second-order nudge."
+    if segment == "active_customers":
+        return "Upsell add-ons while the order memory is fresh."
+    if segment == "comeback_customers":
+        return "Send a comeback reminder with a modest coupon."
+    if segment == "win_back_customers":
+        return "Send a win-back coupon with a stronger hook."
+    if segment == "missing_email":
+        return "Capture email before email-led campaigns."
+    if segment == "high_spenders":
+        return "Offer a premium party pack or combo."
+    return "Use this segment for the next targeted campaign."
+
+
+def customer_segment_report_row(
+    segment: str,
+    label: str,
+    intent: str,
+    customers: list[Customer],
+    total_spend_all: float,
+) -> dict:
+    customer_count = len(customers)
+    order_count = sum(int(customer.total_orders or 0) for customer in customers)
+    total_spend = round(sum(float(customer.total_spend or 0) for customer in customers), 2)
+    opted_in_count = sum(1 for customer in customers if customer.opt_in_marketing)
+    email_ready_count = sum(1 for customer in customers if customer.opt_in_marketing and customer_has_email(customer))
+    phone_ready_count = sum(1 for customer in customers if customer.opt_in_marketing and customer_has_phone(customer))
+    reachable_count = sum(
+        1
+        for customer in customers
+        if customer.opt_in_marketing and (customer_has_phone(customer) or customer_has_email(customer))
+    )
+    email_gap_count = max(customer_count - email_ready_count, 0)
+    phone_gap_count = max(customer_count - phone_ready_count, 0)
+    average_order_value = round(total_spend / order_count, 2) if order_count else 0
+    average_customer_value = round(total_spend / customer_count, 2) if customer_count else 0
+    readiness_percent = round((reachable_count / customer_count) * 100, 2) if customer_count else 0
+    revenue_share_percent = round((total_spend / total_spend_all) * 100, 2) if total_spend_all else 0
+    if reachable_count == 0:
+        recommended_channel = "cleanup"
+    elif phone_ready_count >= email_ready_count:
+        recommended_channel = "whatsapp"
+    else:
+        recommended_channel = "email"
+    opportunity_score = round(
+        (average_customer_value * 0.25)
+        + (reachable_count * 12)
+        + (order_count * 4)
+        + (readiness_percent * 1.5)
+        + (15 if segment in {"comeback_customers", "win_back_customers", "vip_guests"} else 0),
+        2,
+    )
+    row = {
+        "segment": segment,
+        "label": label,
+        "intent": intent,
+        "customer_count": customer_count,
+        "order_count": order_count,
+        "total_spend": total_spend,
+        "average_order_value": average_order_value,
+        "average_customer_value": average_customer_value,
+        "opted_in_count": opted_in_count,
+        "reachable_count": reachable_count,
+        "email_ready_count": email_ready_count,
+        "phone_ready_count": phone_ready_count,
+        "email_gap_count": email_gap_count,
+        "phone_gap_count": phone_gap_count,
+        "readiness_percent": readiness_percent,
+        "revenue_share_percent": revenue_share_percent,
+        "recommended_channel": recommended_channel,
+        "opportunity_score": opportunity_score,
+        "customer_list_url": f"/customers?segment={segment}",
+    }
+    row["recommended_action"] = customer_segment_action(segment, row)
+    return row
 
 
 def retention_counts(customers: list[Customer]) -> dict:
@@ -291,6 +397,55 @@ def customer_summary(
         "missing_email_customers": max(total_customers - with_email, 0),
         "recorded_spend": float(total_spend or 0),
         "retention_segments": retention_counts(customers),
+    }
+
+
+@router.get("/segments/report")
+def customer_segment_report(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    all_customers = db.query(Customer).all()
+    total_spend_all = round(sum(float(customer.total_spend or 0) for customer in all_customers), 2)
+    total_customers = len(all_customers)
+    total_reachable = sum(
+        1
+        for customer in all_customers
+        if customer.opt_in_marketing and (customer_has_phone(customer) or customer_has_email(customer))
+    )
+    total_email_ready = sum(1 for customer in all_customers if customer.opt_in_marketing and customer_has_email(customer))
+    total_phone_ready = sum(1 for customer in all_customers if customer.opt_in_marketing and customer_has_phone(customer))
+    rows = []
+    for segment, label, intent in CUSTOMER_SEGMENT_REPORTS:
+        customers = apply_customer_segment(db.query(Customer), segment).all()
+        rows.append(customer_segment_report_row(segment, label, intent, customers, total_spend_all))
+    rows.sort(
+        key=lambda row: (
+            row["opportunity_score"],
+            row["total_spend"],
+            row["customer_count"],
+        ),
+        reverse=True,
+    )
+    strongest_value = max(rows, key=lambda row: row["total_spend"], default=None)
+    largest_gap = max(rows, key=lambda row: row["email_gap_count"] + row["phone_gap_count"], default=None)
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "segment_count": len(rows),
+            "total_customers": total_customers,
+            "total_spend": total_spend_all,
+            "reachable_customers": total_reachable,
+            "readiness_percent": round((total_reachable / total_customers) * 100, 2) if total_customers else 0,
+            "email_ready_customers": total_email_ready,
+            "phone_ready_customers": total_phone_ready,
+            "email_gap_customers": max(total_customers - total_email_ready, 0),
+            "phone_gap_customers": max(total_customers - total_phone_ready, 0),
+        },
+        "top_segment": rows[0] if rows else None,
+        "strongest_value_segment": strongest_value,
+        "largest_cleanup_segment": largest_gap,
+        "segments": rows,
     }
 
 
