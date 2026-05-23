@@ -19,6 +19,10 @@ from app.models.domain import (
     RestaurantOrder,
 )
 from app.services.delivery_service import delivery_quote, serialize_delivery_zone
+from app.services.menu_customization_service import (
+    calculate_customized_item_price,
+    find_menu_item_for_order,
+)
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -45,6 +49,7 @@ ORDER_USAGE_NOTE_PREFIX = "Auto usage from order"
 
 
 class OrderItem(BaseModel):
+    menu_item_id: Optional[int] = None
     name: str
     quantity: int
     price: float
@@ -471,6 +476,57 @@ def upsert_customer_from_order(
     customer.last_order_at = datetime.utcnow()
 
 
+def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dict]:
+    normalized_items = []
+    for item in order_items:
+        quantity = int(item.quantity or 0)
+        if quantity <= 0:
+            continue
+
+        menu_item = find_menu_item_for_order(
+            db,
+            item_name=item.name,
+            menu_item_id=item.menu_item_id,
+        )
+        if menu_item:
+            priced_item = calculate_customized_item_price(
+                db,
+                menu_item,
+                item.selected_options or [],
+            )
+            normalized_items.append(
+                {
+                    "menu_item_id": menu_item.id,
+                    "name": menu_item.name,
+                    "quantity": quantity,
+                    "price": priced_item["unit_price"],
+                    "base_price": priced_item["base_price"],
+                    "customization_total": priced_item["customization_total"],
+                    "selected_options": priced_item["selected_options"],
+                }
+            )
+            continue
+
+        if item.selected_options:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{item.name} is not in the active menu, so customizations cannot be priced.",
+            )
+
+        fallback_price = round(float(item.price or 0), 2)
+        normalized_items.append(
+            {
+                "name": item.name,
+                "quantity": quantity,
+                "price": fallback_price,
+                "base_price": round(float(item.base_price or fallback_price), 2),
+                "customization_total": round(float(item.customization_total or 0), 2),
+                "selected_options": [],
+            }
+        )
+    return normalized_items
+
+
 @router.get("/tables")
 def get_tables(
     db: Session = Depends(get_db),
@@ -483,7 +539,7 @@ def get_tables(
 
 @router.post("/")
 def create_order(order: OrderCreate, db: Session = Depends(get_db)):
-    valid_items = [item for item in order.items if item.quantity > 0]
+    valid_items = normalize_order_items(db, order.items)
     if not valid_items:
         raise HTTPException(status_code=422, detail="Order must include at least one item.")
 
@@ -499,7 +555,10 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         if table.status == "occupied" and table.current_order_id:
             raise HTTPException(status_code=409, detail="Table already has an open order.")
 
-    subtotal = round(sum(item.price * item.quantity for item in valid_items), 2)
+    subtotal = round(
+        sum(float(item["price"] or 0) * int(item["quantity"] or 0) for item in valid_items),
+        2,
+    )
     coupon_discount, applied_promo = apply_coupon_to_subtotal(
         db,
         order.coupon_code,
@@ -535,7 +594,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
         delivery_eta = quote.get("eta_window")
         delivery_address = quote["address"]
     total = round(taxable_subtotal + tax + delivery_fee, 2)
-    items = [item.model_dump() for item in valid_items]
+    items = valid_items
     payment_method = (order.payment_method or "cash").lower()
     payment_status = "awaiting_payment" if payment_method == "prepaid" else "pending"
 

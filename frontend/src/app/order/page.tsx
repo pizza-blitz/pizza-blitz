@@ -747,6 +747,7 @@ export default function PublicOrderPage() {
           .filter(Boolean)
           .join(" | "),
         items: cart.map((item) => ({
+          menu_item_id: item.id,
           name: item.name,
           quantity: item.quantity,
           price: item.selling_price,

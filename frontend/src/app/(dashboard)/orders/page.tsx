@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -22,8 +22,32 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
-const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
+const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
 const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
+
+type CustomizationOption = {
+  id: number;
+  name: string;
+  price_delta: number;
+  is_default: boolean;
+};
+
+type CustomizationGroup = {
+  id: number;
+  name: string;
+  selection_type: "single" | "multiple";
+  min_select: number;
+  max_select: number;
+  options: CustomizationOption[];
+};
+
+type SelectedOption = {
+  group_id: number;
+  group_name: string;
+  option_id: number;
+  option_name: string;
+  price_delta: number;
+};
 
 type MenuItem = {
   id: number;
@@ -31,7 +55,16 @@ type MenuItem = {
   category: string;
   selling_price: number;
   is_available: boolean;
+  customization_groups?: CustomizationGroup[];
+  customization_draft?: Record<number, number[]>;
   quantity?: number;
+};
+
+type SelectedMenuItem = MenuItem & {
+  unit_price: number;
+  base_price: number;
+  customization_total: number;
+  selected_options: SelectedOption[];
 };
 
 type Table = {
@@ -132,12 +165,71 @@ export default function OrdersPage() {
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
 
-  const selectedItems = useMemo(
-    () => menuItems.filter((item) => Number(item.quantity || 0) > 0),
-    [menuItems]
-  );
+  const defaultDraftForItem = (item: MenuItem) => {
+    const draft: Record<number, number[]> = {};
+    (item.customization_groups || []).forEach((group) => {
+      if (group.selection_type === "single") {
+        const defaultOption = group.options.find((option) => option.is_default) || group.options[0];
+        draft[group.id] = defaultOption ? [defaultOption.id] : [];
+      } else {
+        draft[group.id] = group.options
+          .filter((option) => option.is_default)
+          .slice(0, group.max_select || group.options.length)
+          .map((option) => option.id);
+      }
+    });
+    return draft;
+  };
+
+  const draftForItem = (item: MenuItem) => item.customization_draft || defaultDraftForItem(item);
+
+  const selectedOptionsForItem = (item: MenuItem, draft = draftForItem(item)) => {
+    const selected: SelectedOption[] = [];
+    (item.customization_groups || []).forEach((group) => {
+      const selectedIds = new Set(draft[group.id] || []);
+      group.options
+        .filter((option) => selectedIds.has(option.id))
+        .forEach((option) => {
+          if (group.name === "Combo" && option.name === "No Combo") return;
+          selected.push({
+            group_id: group.id,
+            group_name: group.name,
+            option_id: option.id,
+            option_name: option.name,
+            price_delta: Number(option.price_delta || 0),
+          });
+        });
+    });
+    return selected;
+  };
+
+  const customizationTotalForItem = (item: MenuItem) =>
+    selectedOptionsForItem(item).reduce(
+      (sum, option) => sum + Number(option.price_delta || 0),
+      0
+    );
+
+  const configuredPriceForItem = (item: MenuItem) =>
+    Number(item.selling_price || 0) + customizationTotalForItem(item);
+
+  const selectedItems = menuItems
+    .filter((item) => Number(item.quantity || 0) > 0)
+    .map((item) => {
+      const selectedOptions = selectedOptionsForItem(item);
+      const customizationTotal = selectedOptions.reduce(
+        (sum, option) => sum + Number(option.price_delta || 0),
+        0
+      );
+      return {
+        ...item,
+        unit_price: Number(item.selling_price || 0) + customizationTotal,
+        base_price: Number(item.selling_price || 0),
+        customization_total: customizationTotal,
+        selected_options: selectedOptions,
+      };
+    }) as SelectedMenuItem[];
   const subtotal = selectedItems.reduce(
-    (sum, item) => sum + Number(item.selling_price || 0) * Number(item.quantity || 0),
+    (sum, item) => sum + Number(item.unit_price || 0) * Number(item.quantity || 0),
     0
   );
   const discount = Math.max(Number(formData.discount_amount || 0), 0);
@@ -177,7 +269,11 @@ export default function OrdersPage() {
     setMenuItems(
       menu
         .filter((item: MenuItem) => item.is_available)
-        .map((item: MenuItem) => ({ ...item, quantity: 0 }))
+        .map((item: MenuItem) => ({
+          ...item,
+          quantity: 0,
+          customization_draft: defaultDraftForItem(item),
+        }))
     );
     const today = await todayRes.json();
     setOrders(today.orders || []);
@@ -192,7 +288,13 @@ export default function OrdersPage() {
   const resetOrderForm = () => {
     setFormData(emptyCustomer);
     setDeliveryQuote(null);
-    setMenuItems((current) => current.map((item) => ({ ...item, quantity: 0 })));
+    setMenuItems((current) =>
+      current.map((item) => ({
+        ...item,
+        quantity: 0,
+        customization_draft: defaultDraftForItem(item),
+      }))
+    );
   };
 
   const openOrderModal = (table?: Table, mode: "takeaway" | "delivery" = "takeaway") => {
@@ -212,6 +314,40 @@ export default function OrdersPage() {
       current.map((item) =>
         item.id === id ? { ...item, quantity: Math.max(quantity, 0) } : item
       )
+    );
+  };
+
+  const updateCustomization = (
+    itemId: number,
+    group: CustomizationGroup,
+    option: CustomizationOption
+  ) => {
+    setMenuItems((current) =>
+      current.map((item) => {
+        if (item.id !== itemId) return item;
+        const currentDraft = item.customization_draft || defaultDraftForItem(item);
+        const selected = currentDraft[group.id] || [];
+        let nextSelection: number[];
+
+        if (group.selection_type === "single") {
+          nextSelection = [option.id];
+        } else if (selected.includes(option.id)) {
+          nextSelection = selected.filter((id) => id !== option.id);
+        } else if (selected.length >= group.max_select) {
+          setMessage(`Choose up to ${group.max_select} ${group.name.toLowerCase()} options.`);
+          nextSelection = selected;
+        } else {
+          nextSelection = [...selected, option.id];
+        }
+
+        return {
+          ...item,
+          customization_draft: {
+            ...currentDraft,
+            [group.id]: nextSelection,
+          },
+        };
+      })
     );
   };
 
@@ -311,9 +447,13 @@ export default function OrdersPage() {
         delivery_zone_id: isDeliveryOrder ? selectedDeliveryZoneId : null,
         notes: notes || null,
         items: selectedItems.map((item) => ({
+          menu_item_id: item.id,
           name: item.name,
           quantity: Number(item.quantity || 0),
-          price: Number(item.selling_price || 0),
+          price: Number(item.unit_price || 0),
+          base_price: Number(item.base_price || 0),
+          customization_total: Number(item.customization_total || 0),
+          selected_options: item.selected_options,
         })),
       }),
     });
@@ -844,23 +984,79 @@ export default function OrdersPage() {
             )}
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {menuItems.map((item) => (
-                <div key={item.id} className="flex justify-between items-center bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all">
-                  <div>
-                    <p className="font-bold">{item.name}</p>
-                    <p className="text-xs text-gray-500">
-                      {item.category} | Rs {Number(item.selling_price || 0).toLocaleString()}
-                    </p>
+              {menuItems.map((item) => {
+                const unitPrice = configuredPriceForItem(item);
+                const selectedOptions = selectedOptionsForItem(item);
+                return (
+                  <div key={item.id} className="bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all">
+                    <div className="flex justify-between items-start gap-4">
+                      <div>
+                        <p className="font-bold">{item.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {item.category} | Rs {Math.round(unitPrice).toLocaleString()}
+                          {unitPrice !== Number(item.selling_price || 0)
+                            ? ` (base Rs ${Number(item.selling_price || 0).toLocaleString()})`
+                            : ""}
+                        </p>
+                        {!!selectedOptions.length && (
+                          <p className="mt-1 max-w-xl text-xs font-semibold text-orange-100/80">
+                            {selectedOptions.map((option) => option.option_name).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.quantity || 0}
+                        onChange={(e) => updateQuantity(item.id, parseInt(e.target.value, 10) || 0)}
+                        className="w-20 bg-black/40 border border-white/10 p-2 rounded-xl text-center font-bold"
+                      />
+                    </div>
+
+                    {!!(item.customization_groups || []).length && (
+                      <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+                        {item.customization_groups?.map((group) => {
+                          const selectedIds = new Set((draftForItem(item)[group.id] || []));
+                          return (
+                            <div key={`${item.id}-${group.id}`}>
+                              <div className="mb-2 flex items-center justify-between gap-2">
+                                <p className="text-[11px] font-black uppercase text-gray-500">
+                                  {group.name}
+                                </p>
+                                {group.selection_type === "multiple" && (
+                                  <span className="text-[11px] font-bold text-gray-500">
+                                    max {group.max_select}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {group.options.map((option) => {
+                                  const active = selectedIds.has(option.id);
+                                  return (
+                                    <button
+                                      key={option.id}
+                                      type="button"
+                                      onClick={() => updateCustomization(item.id, group, option)}
+                                      className={`rounded-md border px-3 py-2 text-xs font-black ${
+                                        active
+                                          ? "border-orange-400 bg-orange-500 text-white"
+                                          : "border-white/10 bg-black/25 text-gray-300 hover:border-orange-400/60"
+                                      }`}
+                                    >
+                                      {option.name}
+                                      {option.price_delta > 0 ? ` +${option.price_delta}` : ""}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <input
-                    type="number"
-                    min="0"
-                    value={item.quantity || 0}
-                    onChange={(e) => updateQuantity(item.id, parseInt(e.target.value, 10) || 0)}
-                    className="w-20 bg-black/40 border border-white/10 p-2 rounded-xl text-center font-bold"
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="mt-6 rounded-xl bg-black/30 border border-white/10 p-4 space-y-2 text-sm">

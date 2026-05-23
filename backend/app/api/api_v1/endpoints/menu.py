@@ -1,13 +1,15 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import InventoryItem, MenuCustomizationGroup, MenuItem, Recipe
 from app.services.menu_customization_service import (
+    calculate_customized_item_price,
     customized_menu_payload,
+    find_menu_item_for_order,
     seed_default_customizations,
     serialize_customization_group,
 )
@@ -26,6 +28,12 @@ class MenuItemSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CustomizationPriceRequest(BaseModel):
+    menu_item_id: Optional[int] = None
+    item_name: Optional[str] = None
+    selected_options: List[dict] = Field(default_factory=list)
 
 
 @router.get("/menu", response_model=List[MenuItemSchema])
@@ -51,8 +59,27 @@ def get_menu_with_customizations(db: Session = Depends(get_db)):
     return customized_menu_payload(db)
 
 
+@router.post("/customizations/price")
+def price_menu_customization(
+    payload: CustomizationPriceRequest,
+    db: Session = Depends(get_db),
+):
+    menu_item = find_menu_item_for_order(
+        db,
+        item_name=payload.item_name or "",
+        menu_item_id=payload.menu_item_id,
+    )
+    if not menu_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+    return calculate_customized_item_price(db, menu_item, payload.selected_options)
+
+
 @router.post("/menu", response_model=MenuItemSchema)
-def update_or_create_menu(item: MenuItemSchema, db: Session = Depends(get_db)):
+def update_or_create_menu(
+    item: MenuItemSchema,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
     if item.id:
         db_item = db.query(MenuItem).filter(MenuItem.id == item.id).first()
         if not db_item:
@@ -78,7 +105,11 @@ def update_or_create_menu(item: MenuItemSchema, db: Session = Depends(get_db)):
 
 
 @router.delete("/menu/{item_id}")
-def delete_menu_item(item_id: int, db: Session = Depends(get_db)):
+def delete_menu_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
     db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")

@@ -125,6 +125,7 @@ export default function MenuManagement() {
     event.preventDefault();
     const response = await fetch(MENU_API, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(formData),
     });
@@ -140,7 +141,10 @@ export default function MenuManagement() {
 
   const deleteItem = async (item: MenuItem) => {
     if (!item.id || !window.confirm(`Delete ${item.name}?`)) return;
-    const response = await fetch(`${MENU_API}/${item.id}`, { method: "DELETE" });
+    const response = await fetch(`${MENU_API}/${item.id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
     if (!response.ok) {
       setMessage("Menu item could not be deleted.");
       return;
