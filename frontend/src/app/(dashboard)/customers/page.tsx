@@ -109,6 +109,8 @@ const segmentOptions: { value: SegmentKey; label: string }[] = [
   { value: "win_back_customers", label: "Win-back Priority" },
 ];
 
+const validCustomerSegments = new Set<SegmentKey>(segmentOptions.map((option) => option.value));
+
 const emptyForm = {
   name: "",
   phone: "",
@@ -128,7 +130,13 @@ export default function CustomersPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetchData();
+    const initial = readInitialCustomerFilters();
+    setSearch(initial.query);
+    setSegment(initial.segment);
+    if (initial.fromCleanup) {
+      setMessage(`Opened ${segmentLabel(initial.segment)} cleanup queue from campaign audit.`);
+    }
+    fetchData(initial.query, initial.segment);
   }, []);
 
   const fetchData = async (query = search, selectedSegment = segment) => {
@@ -148,6 +156,16 @@ export default function CustomersPage() {
 
   const selectSegment = (value: SegmentKey) => {
     setSegment(value);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (value === "all") {
+        params.delete("segment");
+      } else {
+        params.set("segment", value);
+      }
+      const query = params.toString();
+      window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
+    }
     fetchData(search, value);
   };
 
@@ -596,4 +614,20 @@ function ReadinessCard({
 
 function segmentLabel(value: SegmentKey) {
   return segmentOptions.find((option) => option.value === value)?.label || value;
+}
+
+function readInitialCustomerFilters(): { query: string; segment: SegmentKey; fromCleanup: boolean } {
+  if (typeof window === "undefined") {
+    return { query: "", segment: "all", fromCleanup: false };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const segmentParam = params.get("segment") as SegmentKey | null;
+  const segment = segmentParam && validCustomerSegments.has(segmentParam) ? segmentParam : "all";
+
+  return {
+    query: params.get("q") || "",
+    segment,
+    fromCleanup: params.get("source") === "campaign_cleanup",
+  };
 }
