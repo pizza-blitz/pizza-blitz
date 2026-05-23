@@ -165,9 +165,25 @@ type CampaignDelivery = {
 };
 
 type DeliveryStatusFilter = "all" | "needs_attention" | CampaignDelivery["status"];
+type DeliveryReasonFilter =
+  | "all"
+  | "consent"
+  | "missing_destination"
+  | "already_sent"
+  | "provider"
+  | "needs_review";
+
+type DeliveryAuditCounts = {
+  consent_blocked_count: number;
+  missing_destination_count: number;
+  already_sent_count: number;
+  provider_issue_count: number;
+  needs_review_count: number;
+};
 
 type DeliveryHistory = {
   status_filter?: DeliveryStatusFilter;
+  reason_filter?: DeliveryReasonFilter;
   latest_attempted_at?: string | null;
   attempted_count: number;
   sent_count: number;
@@ -176,6 +192,12 @@ type DeliveryHistory = {
   skipped_count: number;
   needs_attention_count: number;
   retryable_count: number;
+  audit_counts?: DeliveryAuditCounts;
+  consent_blocked_count?: number;
+  missing_destination_count?: number;
+  already_sent_count?: number;
+  provider_issue_count?: number;
+  needs_review_count?: number;
   deliveries: CampaignDelivery[];
 };
 
@@ -318,6 +340,15 @@ const deliveryStatusFilters: { value: DeliveryStatusFilter; label: string }[] = 
   { value: "skipped", label: "Skipped" },
 ];
 
+const deliveryReasonFilters: { value: DeliveryReasonFilter; label: string }[] = [
+  { value: "all", label: "All Reasons" },
+  { value: "consent", label: "Needs Consent" },
+  { value: "missing_destination", label: "Missing Destination" },
+  { value: "already_sent", label: "Already Sent" },
+  { value: "provider", label: "Provider Issue" },
+  { value: "needs_review", label: "Needs Review" },
+];
+
 const defaultSocialImage =
   "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80";
 
@@ -344,6 +375,7 @@ export default function PromotionsPage() {
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryStatusFilter>("all");
+  const [deliveryReasonFilter, setDeliveryReasonFilter] = useState<DeliveryReasonFilter>("all");
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
   const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
@@ -377,6 +409,13 @@ export default function PromotionsPage() {
   const bestCampaign = performanceRollup?.best_campaign || null;
   const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
   const hygieneChannels = channelOptions.map((option) => option.value);
+  const deliveryAuditCounts = deliveryHistory?.audit_counts || {
+    consent_blocked_count: deliveryHistory?.consent_blocked_count || 0,
+    missing_destination_count: deliveryHistory?.missing_destination_count || 0,
+    already_sent_count: deliveryHistory?.already_sent_count || 0,
+    provider_issue_count: deliveryHistory?.provider_issue_count || 0,
+    needs_review_count: deliveryHistory?.needs_review_count || 0,
+  };
 
   const fetchProviderReadiness = async () => {
     const response = await fetch(`${PROMOTIONS_API}/providers/status`, {
@@ -478,8 +517,15 @@ export default function PromotionsPage() {
     setDispatch(await response.json());
   };
 
-  const fetchDeliveries = async (promotionId: number, filter = deliveryFilter) => {
-    const query = filter === "all" ? "" : `?status=${filter}`;
+  const fetchDeliveries = async (
+    promotionId: number,
+    filter = deliveryFilter,
+    reasonFilter = deliveryReasonFilter
+  ) => {
+    const params = new URLSearchParams();
+    if (filter !== "all") params.set("status", filter);
+    if (reasonFilter !== "all") params.set("reason", reasonFilter);
+    const query = params.toString() ? `?${params.toString()}` : "";
     const response = await fetch(`${PROMOTIONS_API}/${promotionId}/deliveries${query}`, {
       credentials: "include",
     });
@@ -518,7 +564,14 @@ export default function PromotionsPage() {
   const changeDeliveryFilter = (filter: DeliveryStatusFilter) => {
     setDeliveryFilter(filter);
     if (selectedId) {
-      fetchDeliveries(selectedId, filter);
+      fetchDeliveries(selectedId, filter, deliveryReasonFilter);
+    }
+  };
+
+  const changeDeliveryReasonFilter = (filter: DeliveryReasonFilter) => {
+    setDeliveryReasonFilter(filter);
+    if (selectedId) {
+      fetchDeliveries(selectedId, deliveryFilter, filter);
     }
   };
 
@@ -1439,6 +1492,65 @@ export default function PromotionsPage() {
                       </div>
                     </div>
 
+                    <div className="mb-4 rounded-xl border border-white/5 bg-white/[0.03] p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                            Suppression Audit
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-gray-500">
+                            Filter skipped or failed sends by the exact action needed.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                          {deliveryReasonFilterLabel(deliveryReasonFilter)}
+                        </span>
+                      </div>
+                      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
+                        <MiniSignal
+                          icon={AlertTriangle}
+                          label="Needs Consent"
+                          value={`${deliveryAuditCounts.consent_blocked_count}`}
+                        />
+                        <MiniSignal
+                          icon={Mail}
+                          label="Missing Dest."
+                          value={`${deliveryAuditCounts.missing_destination_count}`}
+                        />
+                        <MiniSignal
+                          icon={Copy}
+                          label="Already Sent"
+                          value={`${deliveryAuditCounts.already_sent_count}`}
+                        />
+                        <MiniSignal
+                          icon={Send}
+                          label="Provider"
+                          value={`${deliveryAuditCounts.provider_issue_count}`}
+                        />
+                        <MiniSignal
+                          icon={Clock}
+                          label="Review"
+                          value={`${deliveryAuditCounts.needs_review_count}`}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {deliveryReasonFilters.map((filter) => (
+                          <button
+                            key={filter.value}
+                            type="button"
+                            onClick={() => changeDeliveryReasonFilter(filter.value)}
+                            className={`rounded-lg border px-3 py-2 text-xs font-black uppercase ${
+                              deliveryReasonFilter === filter.value
+                                ? "border-sky-400 bg-sky-500/20 text-sky-100"
+                                : "border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white"
+                            }`}
+                          >
+                            {filter.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
                       <MiniSignal icon={Send} label="Attempts" value={`${deliveryHistory.attempted_count}`} />
                       <MiniSignal icon={CheckCircle2} label="Dry Runs" value={`${deliveryHistory.dry_run_count}`} />
@@ -1507,7 +1619,7 @@ export default function PromotionsPage() {
                       ))}
                       {!deliveryHistory.deliveries.length && (
                         <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
-                          No delivery attempts match {deliveryFilterLabel(deliveryFilter)}.
+                          No delivery attempts match {deliveryFilterLabel(deliveryFilter)} and {deliveryReasonFilterLabel(deliveryReasonFilter)}.
                         </div>
                       )}
                     </div>
@@ -1850,6 +1962,10 @@ function handoffStatusClass(status: string) {
 
 function deliveryFilterLabel(filter: DeliveryStatusFilter) {
   return deliveryStatusFilters.find((option) => option.value === filter)?.label || filter;
+}
+
+function deliveryReasonFilterLabel(filter: DeliveryReasonFilter) {
+  return deliveryReasonFilters.find((option) => option.value === filter)?.label || filter;
 }
 
 function ProviderCard({

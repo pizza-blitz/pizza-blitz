@@ -51,6 +51,13 @@ VALID_SOCIAL_POST_STATUSES = {"draft", "scheduled", "ready"}
 VALID_AD_OBJECTIVES = {"awareness", "traffic", "engagement", "leads", "sales"}
 VALID_AD_PLATFORMS = {"facebook", "instagram"}
 VALID_AD_CAMPAIGN_STATUSES = {"draft", "planned", "ready"}
+VALID_DELIVERY_REASON_FILTERS = {
+    "consent",
+    "missing_destination",
+    "already_sent",
+    "provider",
+    "needs_review",
+}
 DEFAULT_MESSAGE_TEMPLATE = (
     "Hi {name}, Pizza Blitz has {offer} for you. Use code {code} before {end_date}. "
     "Order here: {order_link}"
@@ -685,6 +692,46 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
             1 for delivery in deliveries if delivery.status in {"failed", "skipped"}
         ),
         "retryable_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
+    }
+
+
+def _delivery_issue_reason(delivery: CampaignDelivery) -> str:
+    error = (delivery.error or "").lower()
+    if "consent" in error:
+        return "consent"
+    if "already sent" in error:
+        return "already_sent"
+    if (
+        "missing email" in error
+        or "missing phone" in error
+        or "missing destination" in error
+        or "destination" in error
+    ):
+        return "missing_destination"
+    if delivery.status == "failed" or "provider" in error or "configured" in error:
+        return "provider"
+    if delivery.status in {"skipped", "pending"}:
+        return "needs_review"
+    return "none"
+
+
+def _delivery_audit_counts(deliveries: list[CampaignDelivery]) -> dict:
+    return {
+        "consent_blocked_count": sum(
+            1 for delivery in deliveries if _delivery_issue_reason(delivery) == "consent"
+        ),
+        "missing_destination_count": sum(
+            1 for delivery in deliveries if _delivery_issue_reason(delivery) == "missing_destination"
+        ),
+        "already_sent_count": sum(
+            1 for delivery in deliveries if _delivery_issue_reason(delivery) == "already_sent"
+        ),
+        "provider_issue_count": sum(
+            1 for delivery in deliveries if _delivery_issue_reason(delivery) == "provider"
+        ),
+        "needs_review_count": sum(
+            1 for delivery in deliveries if _delivery_issue_reason(delivery) == "needs_review"
+        ),
     }
 
 
@@ -1329,6 +1376,7 @@ def promotion_deliveries(
     promo_id: int,
     limit: int = Query(50, ge=1, le=500),
     status: Optional[str] = Query(None),
+    reason: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
@@ -1336,7 +1384,9 @@ def promotion_deliveries(
     if not promo:
         raise HTTPException(status_code=404, detail="Promotion not found")
 
-    query = db.query(CampaignDelivery).filter(CampaignDelivery.promotion_id == promo.id)
+    base_query = db.query(CampaignDelivery).filter(CampaignDelivery.promotion_id == promo.id)
+    all_deliveries = base_query.all()
+    query = base_query
     if status:
         normalized_status = status.strip().lower()
         if normalized_status == "needs_attention":
@@ -1346,16 +1396,27 @@ def promotion_deliveries(
         else:
             raise HTTPException(status_code=422, detail="Unsupported delivery status filter.")
 
-    deliveries = (
-        query.order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
-        .limit(limit)
-        .all()
-    )
+    normalized_reason = reason.strip().lower() if reason else None
+    if normalized_reason and normalized_reason not in VALID_DELIVERY_REASON_FILTERS:
+        raise HTTPException(status_code=422, detail="Unsupported delivery reason filter.")
+
+    deliveries = query.order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc()).all()
+    if normalized_reason:
+        deliveries = [
+            delivery
+            for delivery in deliveries
+            if _delivery_issue_reason(delivery) == normalized_reason
+        ]
+    deliveries = deliveries[:limit]
     latest_attempted_at = deliveries[0].attempted_at if deliveries else None
+    audit_counts = _delivery_audit_counts(all_deliveries)
     return {
         "promotion": _promotion_dict(promo),
         "status_filter": status or "all",
+        "reason_filter": normalized_reason or "all",
         "latest_attempted_at": latest_attempted_at.isoformat() if latest_attempted_at else None,
+        "audit_counts": audit_counts,
+        **audit_counts,
         **_delivery_counts(deliveries),
         "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
     }
