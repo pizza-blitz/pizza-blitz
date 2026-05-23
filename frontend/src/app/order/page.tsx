@@ -212,12 +212,14 @@ export default function PublicOrderPage() {
   const [optInMarketing, setOptInMarketing] = useState(true);
   const [address, setAddress] = useState("");
   const [couponCode, setCouponCode] = useState("");
+  const [queuedCouponCode, setQueuedCouponCode] = useState("");
   const [coupon, setCoupon] = useState<CouponResult | null>(null);
   const [message, setMessage] = useState("");
   const [orderId, setOrderId] = useState<number | null>(null);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [isStartingGatewayPayment, setIsStartingGatewayPayment] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
@@ -443,6 +445,7 @@ export default function PublicOrderPage() {
       setCart(nextCart);
       setCoupon(null);
       setCouponCode("");
+      setQueuedCouponCode("");
       setOrderId(null);
       setPendingPayment(null);
       setMessage(
@@ -598,32 +601,52 @@ export default function PublicOrderPage() {
     );
   };
 
-  const applyCouponCode = async (code: string) => {
-    const nextCode = code.trim();
+  const applyCouponCode = async (
+    code: string,
+    options: { queueIfEmpty?: boolean; quiet?: boolean } = {}
+  ) => {
+    const nextCode = code.trim().toUpperCase();
     if (!nextCode) {
       setMessage("Enter a coupon code.");
       return;
     }
     setCouponCode(nextCode);
+    setQueuedCouponCode(nextCode);
     if (!cart.length) {
       setCoupon(null);
-      setMessage("Add items before applying a coupon.");
+      setMessage(
+        options.queueIfEmpty
+          ? `${nextCode} selected. Add any menu item and the offer will apply automatically.`
+          : "Add items before applying a coupon."
+      );
       return;
     }
-    const response = await fetch(COUPON_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: nextCode, subtotal }),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      setCoupon(null);
-      setMessage(data.detail || "Coupon could not be applied.");
-      return;
+    setIsApplyingCoupon(true);
+    try {
+      const response = await fetch(COUPON_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: nextCode, subtotal }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setCoupon(null);
+        setQueuedCouponCode("");
+        if (!options.quiet) {
+          setMessage(data.detail || "Coupon could not be applied.");
+        }
+        return;
+      }
+      const appliedCode = data.promotion.code || nextCode;
+      setCoupon(data);
+      setCouponCode(appliedCode);
+      setQueuedCouponCode(appliedCode);
+      if (!options.quiet) {
+        setMessage(`Applied ${appliedCode}.`);
+      }
+    } finally {
+      setIsApplyingCoupon(false);
     }
-    setCoupon(data);
-    setCouponCode(data.promotion.code || nextCode.toUpperCase());
-    setMessage(`Applied ${data.promotion.code || nextCode.toUpperCase()}.`);
   };
 
   const applyCoupon = async () => {
@@ -635,8 +658,18 @@ export default function PublicOrderPage() {
       setMessage("This offer is active but does not have a coupon code yet.");
       return;
     }
-    await applyCouponCode(promotion.code);
+    await applyCouponCode(promotion.code, { queueIfEmpty: true });
   };
+
+  useEffect(() => {
+    if (!queuedCouponCode || !cart.length || subtotal <= 0) return;
+    if (coupon?.promotion.code === queuedCouponCode) return;
+
+    const timer = window.setTimeout(() => {
+      void applyCouponCode(queuedCouponCode);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [cart.length, coupon?.promotion.code, queuedCouponCode, subtotal]);
 
   const placeOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -737,6 +770,7 @@ export default function PublicOrderPage() {
       setCart([]);
       setCoupon(null);
       setCouponCode("");
+      setQueuedCouponCode("");
       setPaymentReference(paymentReferenceValue);
       setPendingPayment({
         orderId,
@@ -758,6 +792,7 @@ export default function PublicOrderPage() {
       setCart([]);
       setCoupon(null);
       setCouponCode("");
+      setQueuedCouponCode("");
       setPendingPayment(null);
       setMessage(`Order #${orderId} placed. Estimated ${eta}.`);
     }
@@ -929,33 +964,45 @@ export default function PublicOrderPage() {
                 <Percent className="h-5 w-5 text-red-700" />
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {activePromotions.slice(0, 4).map((promotion) => (
-                  <button
-                    key={promotion.id}
-                    type="button"
-                    onClick={() => applyPromotion(promotion)}
-                    className={`rounded-md border p-4 text-left transition ${
-                      coupon?.promotion.code === promotion.code
-                        ? "border-red-700 bg-red-50"
-                        : "border-slate-200 bg-slate-50 hover:border-red-600 hover:bg-white"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-black text-slate-950">{promotion.name}</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-600">
-                          {promotion.description || offerLabel(promotion)}
-                        </p>
+                {activePromotions.slice(0, 4).map((promotion) => {
+                  const isApplied = coupon?.promotion.code === promotion.code;
+                  const isSelected = queuedCouponCode === promotion.code;
+                  return (
+                    <button
+                      key={promotion.id}
+                      type="button"
+                      onClick={() => applyPromotion(promotion)}
+                      className={`rounded-md border p-4 text-left transition ${
+                        isApplied || isSelected
+                          ? "border-red-700 bg-red-50"
+                          : "border-slate-200 bg-slate-50 hover:border-red-600 hover:bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-slate-950">{promotion.name}</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-600">
+                            {promotion.description || offerLabel(promotion)}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-md px-2 py-1 text-xs font-black ${
+                            isApplied || isSelected
+                              ? "bg-slate-950 text-white"
+                              : "bg-red-700 text-white"
+                          }`}
+                        >
+                          {isApplied ? "APPLIED" : isSelected ? "SELECTED" : promotion.code}
+                        </span>
                       </div>
-                      <span className="rounded-md bg-red-700 px-2 py-1 text-xs font-black text-white">
-                        {promotion.code}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-xs font-bold text-slate-500">
-                      {offerLabel(promotion)} until {promotion.end_date}
-                    </p>
-                  </button>
-                ))}
+                      <p className="mt-3 text-xs font-bold text-slate-500">
+                        {isSelected && !coupon
+                          ? "Add any item to activate this offer automatically."
+                          : `${offerLabel(promotion)} until ${promotion.end_date}`}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1205,7 +1252,11 @@ export default function PublicOrderPage() {
                 <Percent className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={couponCode}
-                  onChange={(event) => setCouponCode(event.target.value)}
+                  onChange={(event) => {
+                    setCouponCode(event.target.value);
+                    setQueuedCouponCode("");
+                    setCoupon(null);
+                  }}
                   placeholder="Coupon"
                   className="w-full rounded-md border border-slate-300 py-3 pl-10 pr-3 outline-none focus:border-red-600"
                 />
@@ -1216,6 +1267,7 @@ export default function PublicOrderPage() {
                   onClick={() => {
                     setCoupon(null);
                     setCouponCode("");
+                    setQueuedCouponCode("");
                   }}
                   className="rounded-md border border-slate-300 px-3 text-slate-700 hover:border-red-600"
                   title="Remove coupon"
@@ -1226,25 +1278,40 @@ export default function PublicOrderPage() {
                 <button
                   type="button"
                   onClick={applyCoupon}
-                  className="rounded-md bg-slate-950 px-4 font-bold text-white hover:bg-red-700"
+                  disabled={isApplyingCoupon}
+                  className="rounded-md bg-slate-950 px-4 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Apply
+                  {isApplyingCoupon ? "Applying" : "Apply"}
                 </button>
               )}
             </div>
 
+            {queuedCouponCode && !coupon && (
+              <div className="mb-5 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">
+                {queuedCouponCode} is selected. Add items or update the cart and it will apply automatically.
+              </div>
+            )}
+
             {activePromotions.length > 0 && (
               <div className="mb-5 flex flex-wrap gap-2">
-                {activePromotions.slice(0, 3).map((promotion) => (
-                  <button
-                    key={`checkout-${promotion.id}`}
-                    type="button"
-                    onClick={() => applyPromotion(promotion)}
-                    className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-xs font-black text-red-700 hover:border-red-700"
-                  >
-                    Use {promotion.code}
-                  </button>
-                ))}
+                {activePromotions.slice(0, 3).map((promotion) => {
+                  const isApplied = coupon?.promotion.code === promotion.code;
+                  const isSelected = queuedCouponCode === promotion.code;
+                  return (
+                    <button
+                      key={`checkout-${promotion.id}`}
+                      type="button"
+                      onClick={() => applyPromotion(promotion)}
+                      className={`rounded-full border px-3 py-1 text-xs font-black hover:border-red-700 ${
+                        isApplied || isSelected
+                          ? "border-red-700 bg-red-700 text-white"
+                          : "border-red-100 bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {isApplied ? "Applied" : isSelected ? "Selected" : "Use"} {promotion.code}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
