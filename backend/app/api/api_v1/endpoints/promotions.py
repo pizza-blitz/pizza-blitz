@@ -1,6 +1,9 @@
+import csv
+import io
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db, require_roles
@@ -1037,6 +1040,54 @@ def _campaign_activity_payload(db: Session, promo: Promotion, limit: int) -> dic
     }
 
 
+def _campaign_export_filename(promo: Promotion) -> str:
+    base = promo.code or promo.name or f"campaign-{promo.id}"
+    safe = "".join(character.lower() for character in base if character.isalnum() or character in {"-", "_"})
+    return f"campaign_{safe or promo.id}_performance.csv"
+
+
+def _campaign_performance_csv(payload: dict) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    promotion = payload["promotion_detail"]
+    window = payload["campaign_window"]
+    redemptions = payload["redemptions"]
+    outreach = payload["outreach"]
+    social = payload["social"]
+    ads = payload["ads"]
+    net_coupon_value = round(float(redemptions["revenue"] or 0) - float(redemptions["discount"] or 0), 2)
+    ready_reach = int(outreach["sent_count"] or 0) + int(outreach["dry_run_count"] or 0)
+
+    writer.writerow(["Section", "Metric", "Value"])
+    writer.writerow(["Campaign", "Name", promotion["name"]])
+    writer.writerow(["Campaign", "Code", promotion["code"] or ""])
+    writer.writerow(["Campaign", "Channel", promotion["channel"]])
+    writer.writerow(["Campaign", "Audience", promotion["audience"]])
+    writer.writerow(["Campaign", "Status", promotion["status"]])
+    writer.writerow(["Campaign", "Window", f"{window['start_date']} to {window['end_date']}"])
+    writer.writerow(["Campaign", "Phase", window["phase"]])
+    writer.writerow(["Coupon", "Revenue", redemptions["revenue"]])
+    writer.writerow(["Coupon", "Discount", redemptions["discount"]])
+    writer.writerow(["Coupon", "Net Value", net_coupon_value])
+    writer.writerow(["Coupon", "Orders", redemptions["count"]])
+    writer.writerow(["Coupon", "Unique Customers", redemptions["unique_customers"]])
+    writer.writerow(["Coupon", "Average Order Value", redemptions["average_order_value"]])
+    writer.writerow(["Outreach", "Ready Reach", ready_reach])
+    writer.writerow(["Outreach", "Attempted", outreach["attempted_count"]])
+    writer.writerow(["Outreach", "Sent", outreach["sent_count"]])
+    writer.writerow(["Outreach", "Dry Runs", outreach["dry_run_count"]])
+    writer.writerow(["Outreach", "Needs Attention", outreach["needs_attention_count"]])
+    writer.writerow(["Outreach", "Conversion Rate Percent", outreach["conversion_rate_percent"]])
+    writer.writerow(["Social", "Posts", social["post_count"]])
+    writer.writerow(["Social", "Ready Posts", social["ready_count"]])
+    writer.writerow(["Ads", "Campaigns", ads["campaign_count"]])
+    writer.writerow(["Ads", "Planned Budget", ads["planned_budget"]])
+    writer.writerow(["Ads", "Reported Spend", ads["spend"]])
+    writer.writerow(["Ads", "Reported Revenue", ads["reported_revenue"]])
+    writer.writerow(["Ads", "ROAS", ads["roas"]])
+    return output.getvalue()
+
+
 @router.post("/")
 def create_promotion(
     promo: PromotionCreate,
@@ -1262,6 +1313,23 @@ def promotion_performance(
     if not promo:
         raise HTTPException(status_code=404, detail="Promotion not found")
     return _promotion_performance_payload(db, promo)
+
+
+@router.get("/performance/{promo_id}/export.csv")
+def export_promotion_performance_csv(
+    promo_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    payload = _promotion_performance_payload(db, promo)
+    return StreamingResponse(
+        iter([_campaign_performance_csv(payload)]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={_campaign_export_filename(promo)}"},
+    )
 
 
 @router.get("/{promo_id}/timeline")

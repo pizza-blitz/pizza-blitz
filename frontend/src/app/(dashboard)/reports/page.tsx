@@ -12,6 +12,7 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(true);
   const [reportError, setReportError] = useState("");
   const [period, setPeriod] = useState("30days");
+  const [selectedMarketingCampaignId, setSelectedMarketingCampaignId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchReports();
@@ -131,6 +132,19 @@ export default function Reports() {
     else if (Number(row.ads?.planned_budget || 0) > 0 && netValue === 0) action = "Review ad handoff";
     return { ...row, readyReach, netValue, conversionRate, action };
   });
+  const selectedMarketingCampaign =
+    campaignRows.find((row: any) => Number(row.promotion_detail?.id) === Number(selectedMarketingCampaignId)) ||
+    marketingLeader;
+  const selectedMarketingReadyReach = selectedMarketingCampaign
+    ? Number(selectedMarketingCampaign.outreach?.sent_count || 0) + Number(selectedMarketingCampaign.outreach?.dry_run_count || 0)
+    : 0;
+  const selectedMarketingNetValue = selectedMarketingCampaign
+    ? Math.max(
+        Number(selectedMarketingCampaign.redemptions?.revenue || 0) -
+          Number(selectedMarketingCampaign.redemptions?.discount || 0),
+        0
+      )
+    : 0;
   const weekdayRows = comparison?.weekday_breakdown
     ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
     : [];
@@ -575,9 +589,13 @@ export default function Reports() {
                                 <td className="px-4 py-3 text-right text-sm font-black text-green-700">{formatMoney(row.netValue)}</td>
                                 <td className="px-4 py-3 text-right text-sm font-black text-gray-700">{row.conversionRate.toFixed(1)}%</td>
                                 <td className="px-4 py-3 text-right">
-                                  <span className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedMarketingCampaignId(row.promotion_detail.id)}
+                                    className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-700 hover:bg-orange-100 hover:text-orange-700"
+                                  >
                                     {row.action}
-                                  </span>
+                                  </button>
                                 </td>
                               </tr>
                             ))
@@ -594,6 +612,75 @@ export default function Reports() {
                   </div>
                 </div>
               </div>
+
+              {selectedMarketingCampaign && (
+                <div data-testid="campaign-drilldown-export" className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-5">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-gray-500">Campaign Drill-Down Export</p>
+                      <h3 className="mt-1 text-xl font-black text-gray-950">{selectedMarketingCampaign.promotion_detail.name}</h3>
+                      <p className="mt-1 text-sm font-bold text-gray-500">
+                        {selectedMarketingCampaign.promotion_detail.code || "No code"} | {selectedMarketingCampaign.promotion_detail.channel} | {selectedMarketingCampaign.campaign_window.phase}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={getApiUrl(`/api/v1/restaurant/promotions/performance/${selectedMarketingCampaign.promotion_detail.id}/export.csv`)}
+                        className="inline-flex items-center rounded-md bg-gray-950 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Export CSV
+                      </a>
+                      <a
+                        href={`/promotions?campaign=${selectedMarketingCampaign.promotion_detail.id}`}
+                        className="inline-flex items-center rounded-md border border-gray-200 bg-white px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-700 hover:bg-orange-50 hover:text-orange-700"
+                      >
+                        <Megaphone className="mr-2 h-4 w-4" />
+                        Open Campaign
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MarketingCommandMetric label="Net Coupon Value" value={formatMoney(selectedMarketingNetValue)} />
+                    <MarketingCommandMetric label="Revenue" value={formatMoney(selectedMarketingCampaign.redemptions.revenue)} />
+                    <MarketingCommandMetric label="Discount" value={formatMoney(selectedMarketingCampaign.redemptions.discount)} />
+                    <MarketingCommandMetric label="Orders" value={`${selectedMarketingCampaign.redemptions.count || 0}`} />
+                    <MarketingCommandMetric label="Ready Reach" value={`${selectedMarketingReadyReach}`} />
+                    <MarketingCommandMetric label="Conversion" value={`${Number(selectedMarketingCampaign.outreach.conversion_rate_percent || 0).toFixed(1)}%`} />
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <DrilldownList
+                      title="Outreach Readiness"
+                      rows={[
+                        ["Sent", selectedMarketingCampaign.outreach.sent_count],
+                        ["Dry Run Ready", selectedMarketingCampaign.outreach.dry_run_count],
+                        ["Needs Attention", selectedMarketingCampaign.outreach.needs_attention_count],
+                        ["Failed", selectedMarketingCampaign.outreach.failed_count],
+                      ]}
+                    />
+                    <DrilldownList
+                      title="Handoffs"
+                      rows={[
+                        ["Social Posts", selectedMarketingCampaign.social.post_count],
+                        ["Ready Social", selectedMarketingCampaign.social.ready_count],
+                        ["Ad Campaigns", selectedMarketingCampaign.ads.campaign_count],
+                        ["Ad Launches", selectedMarketingCampaign.ads.launch_count],
+                      ]}
+                    />
+                    <DrilldownList
+                      title="Ad Economics"
+                      rows={[
+                        ["Planned Budget", formatMoney(selectedMarketingCampaign.ads.planned_budget)],
+                        ["Reported Spend", formatMoney(selectedMarketingCampaign.ads.spend)],
+                        ["Reported Revenue", formatMoney(selectedMarketingCampaign.ads.reported_revenue)],
+                        ["ROAS", `${Number(selectedMarketingCampaign.ads.roas || 0).toFixed(2)}x`],
+                      ]}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="mt-5 overflow-x-auto rounded-lg border border-gray-200">
                 <table className="w-full min-w-[860px] text-left">
@@ -903,6 +990,28 @@ function MarketingCommandMetric({ label, value }: { label: string; value: string
     <div className="rounded-lg border border-gray-200 bg-white p-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 break-words text-lg font-black text-gray-950">{value}</p>
+    </div>
+  );
+}
+
+function DrilldownList({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<[string, string | number]>;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">{title}</p>
+      <div className="space-y-2">
+        {rows.map(([label, value]) => (
+          <div key={`${title}-${label}`} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2">
+            <span className="text-xs font-bold uppercase tracking-widest text-gray-500">{label}</span>
+            <span className="text-sm font-black text-gray-950">{value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
