@@ -213,6 +213,13 @@ class CampaignSendRequest(BaseModel):
     mark_completed: bool = False
 
 
+class CampaignDeliveryRetryRequest(BaseModel):
+    limit: int = Field(50, ge=1, le=500)
+    dry_run: bool = True
+    status: str = "needs_attention"
+    reason: str = "all"
+
+
 class PromotionScheduleRequest(BaseModel):
     start_date: str
     duration_days: int = Field(7, ge=1, le=60)
@@ -885,7 +892,7 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
         "needs_attention_count": sum(
             1 for delivery in deliveries if delivery.status in {"failed", "skipped"}
         ),
-        "retryable_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
+        "retryable_count": sum(1 for delivery in deliveries if delivery.status in {"failed", "skipped"}),
     }
 
 
@@ -948,6 +955,110 @@ def _delivery_recovery_action(delivery: CampaignDelivery) -> str:
     if delivery.channel in {"sms", "whatsapp"} or "phone" in error:
         return "Add or correct the customer's phone number."
     return "Review the skipped delivery before retrying."
+
+
+def _delivery_retry_candidates(
+    db: Session,
+    promo: Promotion,
+    *,
+    status_filter: str,
+    reason_filter: str,
+    limit: int,
+) -> list[CampaignDelivery]:
+    normalized_status = (status_filter or "needs_attention").strip().lower()
+    if normalized_status == "all":
+        query = db.query(CampaignDelivery).filter(CampaignDelivery.promotion_id == promo.id)
+    elif normalized_status == "needs_attention":
+        query = (
+            db.query(CampaignDelivery)
+            .filter(CampaignDelivery.promotion_id == promo.id)
+            .filter(CampaignDelivery.status.in_(["failed", "skipped"]))
+        )
+    elif normalized_status in {"failed", "skipped"}:
+        query = (
+            db.query(CampaignDelivery)
+            .filter(CampaignDelivery.promotion_id == promo.id)
+            .filter(CampaignDelivery.status == normalized_status)
+        )
+    else:
+        raise HTTPException(status_code=422, detail="Unsupported retry delivery status filter.")
+
+    normalized_reason = (reason_filter or "all").strip().lower()
+    if normalized_reason != "all" and normalized_reason not in VALID_DELIVERY_REASON_FILTERS:
+        raise HTTPException(status_code=422, detail="Unsupported retry delivery reason filter.")
+
+    deliveries = query.order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc()).all()
+    retryable = [delivery for delivery in deliveries if delivery.status in {"failed", "skipped"}]
+    if normalized_reason != "all":
+        retryable = [
+            delivery
+            for delivery in retryable
+            if _delivery_issue_reason(delivery) == normalized_reason
+        ]
+    return retryable[:limit]
+
+
+def _retry_delivery_for_customer(
+    promo: Promotion,
+    customer: Customer,
+    source_delivery: CampaignDelivery,
+    provider_status: dict,
+    *,
+    dry_run: bool,
+) -> CampaignDelivery:
+    contact = _dispatch_contact(customer, promo)
+    destination = normalize_campaign_destination(promo.channel, contact["destination"])
+    response_payload = {
+        "provider_status": provider_status,
+        "retry_source_delivery_id": source_delivery.id,
+        "retry_source_reason": _delivery_issue_reason(source_delivery),
+    }
+    delivery_kwargs = {
+        "promotion_id": promo.id,
+        "customer_id": customer.id,
+        "channel": promo.channel,
+        "destination": destination or contact["destination"],
+        "message": contact["message"],
+        "attempted_at": datetime.utcnow(),
+    }
+
+    if not contact["send_ready"] or not destination:
+        return CampaignDelivery(
+            **delivery_kwargs,
+            provider=provider_status["provider"],
+            status="skipped",
+            error=contact["missing_reason"] or "Missing destination",
+            dry_run=dry_run,
+            response_payload=response_payload,
+        )
+    if dry_run:
+        return CampaignDelivery(
+            **delivery_kwargs,
+            provider=provider_status["provider"],
+            status="dry_run",
+            dry_run=True,
+            response_payload=response_payload,
+        )
+
+    result = send_campaign_message(
+        channel=promo.channel,
+        destination=destination,
+        message=contact["message"],
+        subject=promo.name,
+    )
+    return CampaignDelivery(
+        **delivery_kwargs,
+        provider=result.provider,
+        status=result.status,
+        external_id=result.external_id,
+        error=result.error,
+        dry_run=False,
+        response_payload={
+            **(result.response_payload or {}),
+            "retry_source_delivery_id": source_delivery.id,
+            "retry_source_reason": _delivery_issue_reason(source_delivery),
+        },
+    )
 
 
 def _coupon_orders_query(db: Session, promo: Promotion):
@@ -1993,6 +2104,83 @@ def send_promotion_campaign(
         **_delivery_counts(deliveries),
         "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
     }
+
+
+@router.post("/{promo_id}/deliveries/retry")
+def retry_campaign_deliveries(
+    promo_id: int,
+    payload: CampaignDeliveryRetryRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    if promo.status not in {"active", "scheduled"} and not payload.dry_run:
+        raise HTTPException(
+            status_code=409,
+            detail="Only active or scheduled campaigns can be retried live.",
+        )
+    if (
+        promo.status == "scheduled"
+        and promo.start_date > date.today()
+        and not payload.dry_run
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Scheduled campaign is not due until {promo.start_date.isoformat()}.",
+        )
+
+    status_filter = (payload.status or "needs_attention").strip().lower()
+    reason_filter = (payload.reason or "all").strip().lower()
+    source_deliveries = _delivery_retry_candidates(
+        db,
+        promo,
+        status_filter=status_filter,
+        reason_filter=reason_filter,
+        limit=payload.limit,
+    )
+    provider_status = campaign_provider_status(promo.channel)
+    seen_customer_ids: set[int] = set()
+    skipped_source_count = 0
+    retry_deliveries: list[CampaignDelivery] = []
+
+    for source_delivery in source_deliveries:
+        if not source_delivery.customer_id or not source_delivery.customer:
+            skipped_source_count += 1
+            continue
+        if source_delivery.customer_id in seen_customer_ids:
+            skipped_source_count += 1
+            continue
+        seen_customer_ids.add(source_delivery.customer_id)
+        delivery = _retry_delivery_for_customer(
+            promo,
+            source_delivery.customer,
+            source_delivery,
+            provider_status,
+            dry_run=payload.dry_run,
+        )
+        db.add(delivery)
+        retry_deliveries.append(delivery)
+
+    db.commit()
+    for delivery in retry_deliveries:
+        db.refresh(delivery)
+
+    return {
+        "promotion": _promotion_dict(promo),
+        "provider_status": provider_status,
+        "channel": promo.channel,
+        "dry_run": payload.dry_run,
+        "status_filter": status_filter,
+        "reason_filter": reason_filter,
+        "source_count": len(source_deliveries),
+        "skipped_source_count": skipped_source_count,
+        "retried_customer_count": len(retry_deliveries),
+        **_delivery_counts(retry_deliveries),
+        "deliveries": [_delivery_dict(delivery) for delivery in retry_deliveries],
+    }
+
 
 @router.get("/{promo_id}/deliveries")
 def promotion_deliveries(

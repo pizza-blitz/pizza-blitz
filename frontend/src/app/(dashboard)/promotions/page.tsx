@@ -283,6 +283,26 @@ type DeliveryHistory = {
   deliveries: CampaignDelivery[];
 };
 
+type DeliveryRetryResult = {
+  promotion: Promotion;
+  provider_status: ProviderStatus;
+  channel: ChannelKey;
+  dry_run: boolean;
+  status_filter: DeliveryStatusFilter;
+  reason_filter: DeliveryReasonFilter;
+  source_count: number;
+  skipped_source_count: number;
+  retried_customer_count: number;
+  attempted_count: number;
+  sent_count: number;
+  dry_run_count: number;
+  failed_count: number;
+  skipped_count: number;
+  needs_attention_count: number;
+  retryable_count: number;
+  deliveries: CampaignDelivery[];
+};
+
 type SocialDraftSummary = {
   id: number;
   title: string;
@@ -528,6 +548,7 @@ export default function PromotionsPage() {
   const [activatingDueSchedules, setActivatingDueSchedules] = useState(false);
   const [queueDryRunningId, setQueueDryRunningId] = useState<number | null>(null);
   const [queueLiveSendingId, setQueueLiveSendingId] = useState<number | null>(null);
+  const [retryingDeliveryIssues, setRetryingDeliveryIssues] = useState(false);
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
@@ -1013,6 +1034,37 @@ export default function PromotionsPage() {
       ].join("\n")
     );
     setMessage(`Copied ${deliveryHistory.deliveries.length} cleanup rows from ${deliveryReasonFilterLabel(deliveryReasonFilter)}.`);
+  };
+
+  const retryCurrentDeliveryIssue = async () => {
+    if (!selectedPromotion || !deliveryHistory) return;
+    setRetryingDeliveryIssues(true);
+    const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/deliveries/retry`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dry_run: true,
+        limit: 50,
+        status: deliveryFilter,
+        reason: deliveryReasonFilter,
+      }),
+    });
+    const data: DeliveryRetryResult | { detail?: string } = await response.json();
+    if (!response.ok) {
+      setMessage(("detail" in data && data.detail) || "Delivery retry failed.");
+      setRetryingDeliveryIssues(false);
+      return;
+    }
+
+    const result = data as DeliveryRetryResult;
+    setMessage(
+      `Retried ${result.retried_customer_count} customers from ${deliveryReasonFilterLabel(deliveryReasonFilter)}: ${result.dry_run_count} ready, ${result.skipped_count} still blocked.`
+    );
+    await fetchCampaignDetails(selectedPromotion.id);
+    await fetchPerformanceRollup();
+    await fetchSendQueue();
+    setRetryingDeliveryIssues(false);
   };
 
   const sendCampaign = async (
@@ -2207,7 +2259,7 @@ export default function PromotionsPage() {
                 </div>
 
                 {deliveryHistory ? (
-                  <div className="mt-6 rounded-xl border border-white/5 bg-black/25 p-5">
+                  <div data-testid="delivery-recovery-panel" className="mt-6 rounded-xl border border-white/5 bg-black/25 p-5">
                     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-xs font-black uppercase tracking-widest text-orange-400">
@@ -2254,6 +2306,31 @@ export default function PromotionsPage() {
                           {deliveryReasonFilterLabel(deliveryReasonFilter)}
                         </span>
                       </div>
+                      <div
+                        data-testid="delivery-provider-gate"
+                        className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-white/5 bg-black/25 p-4"
+                      >
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-gray-600">Provider Gate</p>
+                          <p className="mt-1 text-sm font-black text-white">
+                            {providerLabel(dispatch?.provider_status)}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-gray-500">
+                            {dispatch?.provider_status?.configured
+                              ? "Live retries can be sent after a clean dry-run."
+                              : `Missing: ${dispatch?.provider_status?.missing_settings.join(", ") || "provider setup"}`}
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+                            dispatch?.provider_status?.configured
+                              ? "bg-green-500/15 text-green-300"
+                              : "bg-yellow-500/15 text-yellow-300"
+                          }`}
+                        >
+                          {dispatch?.provider_status?.configured ? "Ready" : "Setup Needed"}
+                        </span>
+                      </div>
                       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
                         <MiniSignal
                           icon={AlertTriangle}
@@ -2282,11 +2359,12 @@ export default function PromotionsPage() {
                         />
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {deliveryReasonFilters.map((filter) => (
-                          <button
-                            key={filter.value}
-                            type="button"
-                            onClick={() => changeDeliveryReasonFilter(filter.value)}
+                      {deliveryReasonFilters.map((filter) => (
+                        <button
+                          data-testid={`delivery-reason-filter-${filter.value}`}
+                          key={filter.value}
+                          type="button"
+                          onClick={() => changeDeliveryReasonFilter(filter.value)}
                             className={`rounded-lg border px-3 py-2 text-xs font-black uppercase ${
                               deliveryReasonFilter === filter.value
                                 ? "border-sky-400 bg-sky-500/20 text-sky-100"
@@ -2317,6 +2395,16 @@ export default function PromotionsPage() {
                         >
                           <Copy className="h-4 w-4" /> Copy Current Queue
                         </button>
+                        <button
+                          data-testid="retry-current-delivery-issue"
+                          type="button"
+                          onClick={retryCurrentDeliveryIssue}
+                          disabled={retryingDeliveryIssues || !deliveryHistory.retryable_count}
+                          className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-3 py-2 text-xs font-black uppercase text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${retryingDeliveryIssues ? "animate-spin" : ""}`} />
+                          {retryingDeliveryIssues ? "Retrying" : "Retry Current Issue"}
+                        </button>
                       </div>
                     </div>
 
@@ -2339,6 +2427,7 @@ export default function PromotionsPage() {
                     <div className="mb-4 flex flex-wrap gap-2">
                       {deliveryStatusFilters.map((filter) => (
                         <button
+                          data-testid={`delivery-status-filter-${filter.value}`}
                           key={filter.value}
                           type="button"
                           onClick={() => changeDeliveryFilter(filter.value)}
