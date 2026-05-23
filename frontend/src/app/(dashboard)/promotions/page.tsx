@@ -408,7 +408,7 @@ export default function PromotionsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          link_url: `${window.location.origin}/order`,
+          link_url: orderOfferLink(selectedPromotion),
           image_url: defaultSocialImage,
           platforms: ["facebook", "instagram"],
           status: "ready",
@@ -436,7 +436,7 @@ export default function PromotionsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          link_url: `${window.location.origin}/order`,
+          link_url: orderOfferLink(selectedPromotion),
           image_url: defaultSocialImage,
           platforms: ["facebook", "instagram"],
           objective: "sales",
@@ -992,6 +992,14 @@ function channelLabel(value: ChannelKey) {
 function providerLabel(status?: ProviderStatus) {
   if (!status) return "Checking";
   return status.configured ? `${status.provider} ready` : `${status.provider} setup needed`;
+}
+
+function orderOfferLink(promotion: Promotion) {
+  const orderUrl = new URL("/order", window.location.origin);
+  if (promotion.code) {
+    orderUrl.searchParams.set("coupon", promotion.code);
+  }
+  return orderUrl.toString();
 }
 
 function formatRupees(value: number) {

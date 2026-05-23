@@ -227,6 +227,14 @@ export default function PublicOrderPage() {
   const checkoutRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    const linkedCoupon = new URLSearchParams(window.location.search).get("coupon");
+    if (linkedCoupon) {
+      const normalizedCoupon = linkedCoupon.trim().toUpperCase();
+      setCouponCode(normalizedCoupon);
+      setQueuedCouponCode(normalizedCoupon);
+      setMessage(`${normalizedCoupon} selected from this offer link. Add any item and it will apply automatically.`);
+    }
+
     fetch(MENU_API)
       .then((response) => response.json())
       .then((data: MenuItem[]) => {
@@ -498,6 +506,14 @@ export default function PublicOrderPage() {
         return matchesCategory && matchesSearch;
       }),
     [menu, search, category]
+  );
+  const highlightedPromotions = useMemo(
+    () => prioritizePromotions(activePromotions, coupon?.promotion.code || queuedCouponCode, 4),
+    [activePromotions, coupon?.promotion.code, queuedCouponCode]
+  );
+  const checkoutPromotions = useMemo(
+    () => prioritizePromotions(activePromotions, coupon?.promotion.code || queuedCouponCode, 3),
+    [activePromotions, coupon?.promotion.code, queuedCouponCode]
   );
   const trackingHref =
     orderId && customerPhone.trim()
@@ -964,7 +980,7 @@ export default function PublicOrderPage() {
                 <Percent className="h-5 w-5 text-red-700" />
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {activePromotions.slice(0, 4).map((promotion) => {
+                {highlightedPromotions.map((promotion) => {
                   const isApplied = coupon?.promotion.code === promotion.code;
                   const isSelected = queuedCouponCode === promotion.code;
                   return (
@@ -1294,7 +1310,7 @@ export default function PublicOrderPage() {
 
             {activePromotions.length > 0 && (
               <div className="mb-5 flex flex-wrap gap-2">
-                {activePromotions.slice(0, 3).map((promotion) => {
+                {checkoutPromotions.map((promotion) => {
                   const isApplied = coupon?.promotion.code === promotion.code;
                   const isSelected = queuedCouponCode === promotion.code;
                   return (
@@ -1450,6 +1466,18 @@ function roundMoney(value: number) {
 function offerLabel(promotion: ActivePromotion) {
   const value = Number(promotion.discount_value || 0).toLocaleString();
   return promotion.discount_type === "percentage" ? `${value}% off` : `Rs ${value} off`;
+}
+
+function prioritizePromotions(
+  promotions: ActivePromotion[],
+  selectedCode: string,
+  limit: number
+) {
+  const selectedPromotion = promotions.find((promotion) => promotion.code === selectedCode);
+  const remainingPromotions = promotions.filter((promotion) => promotion.id !== selectedPromotion?.id);
+  return selectedPromotion
+    ? [selectedPromotion, ...remainingPromotions].slice(0, limit)
+    : remainingPromotions.slice(0, limit);
 }
 
 function InfoBadge({
