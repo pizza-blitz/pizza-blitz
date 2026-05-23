@@ -10,6 +10,7 @@ const Award = ({className}: {className?: string}) => (
 export default function Reports() {
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [reportError, setReportError] = useState("");
   const [period, setPeriod] = useState("30days");
 
   useEffect(() => {
@@ -18,27 +19,41 @@ export default function Reports() {
 
   const fetchReports = async () => {
     setIsLoading(true);
+    setReportError("");
     try {
       const comparisonPeriod = period === "lifetime" ? "1year" : period;
+      const fetchJson = async (endpoint: string) => {
+        const response = await fetch(getApiUrl(endpoint), {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.detail || `Report request failed: ${endpoint}`);
+        }
+        return payload;
+      };
       const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`)).then(r => r.json()),
-        fetch(getApiUrl('/api/v1/restaurant/sales/')).then(r => r.json()),
-        fetch(getApiUrl('/api/v1/restaurant/stats/insights/monthly-forecast')).then(r => r.json()),
-        fetch(getApiUrl('/api/v1/restaurant/stats/insights/profit-trend?months=12')).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`)).then(r => r.json()),
-        fetch(getApiUrl('/api/v1/restaurant/promotions/performance?limit=25')).then(r => r.json())
+        fetchJson(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`),
+        fetchJson('/api/v1/restaurant/sales/'),
+        fetchJson('/api/v1/restaurant/stats/insights/monthly-forecast'),
+        fetchJson('/api/v1/restaurant/stats/insights/profit-trend?months=12'),
+        fetchJson(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
+        fetchJson('/api/v1/restaurant/promotions/performance?limit=25')
       ]);
-      
+
       setData({
         summary: statsRes.metrics,
-        records: salesRes.reverse().slice(0, 10),
+        records: Array.isArray(salesRes) ? [...salesRes].reverse().slice(0, 10) : [],
         forecast: forecastRes,
-        trends: trendRes.trend,
+        trends: trendRes.trend || [],
         comparison: comparisonRes,
         marketing: marketingRes
       });
     } catch (err) { 
-      console.error(err); 
+      console.error(err);
+      setData(null);
+      setReportError(err instanceof Error ? err.message : "Reports could not be loaded.");
     } finally {
       setIsLoading(false);
     }
@@ -118,6 +133,22 @@ export default function Reports() {
         <div className="py-20 text-center flex flex-col items-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mb-4" />
           <p className="text-gray-400 font-black uppercase tracking-widest text-xs">Compiling Ledger Data...</p>
+        </div>
+      ) : reportError ? (
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-6 text-yellow-900">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            <h2 className="text-lg font-black">Reports need attention</h2>
+          </div>
+          <p className="text-sm font-semibold leading-6">
+            {reportError}
+          </p>
+          <button
+            onClick={fetchReports}
+            className="mt-5 rounded-md bg-yellow-900 px-4 py-2 text-sm font-black uppercase tracking-widest text-white"
+          >
+            Retry Reports
+          </button>
         </div>
       ) : (
         <>
