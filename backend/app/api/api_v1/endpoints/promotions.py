@@ -423,113 +423,7 @@ def _promotion_window(promo: Promotion) -> dict:
     }
 
 
-@router.post("/")
-def create_promotion(promo: PromotionCreate, db: Session = Depends(get_db)):
-    start_date, end_date = _validate_promotion_payload(promo)
-    code = _normalize_code(promo.code)
-    if code:
-        existing = db.query(Promotion).filter(Promotion.code == code).first()
-        if existing:
-            raise HTTPException(status_code=409, detail="Promotion code already exists.")
-
-    db_promo = Promotion(
-        name=promo.name.strip(),
-        code=code,
-        start_date=start_date,
-        end_date=end_date,
-        description=promo.description,
-        discount_type=promo.discount_type,
-        discount_value=promo.discount_value,
-        audience=promo.audience,
-        channel=promo.channel,
-        status=promo.status,
-        message_template=promo.message_template,
-    )
-    db.add(db_promo)
-    db.commit()
-    db.refresh(db_promo)
-    return {"status": "promotion created", "promotion": _promotion_dict(db_promo)}
-
-@router.get("/")
-def list_promotions(db: Session = Depends(get_db)):
-    promotions = db.query(Promotion).order_by(Promotion.start_date.desc()).all()
-    return [_promotion_dict(promo) for promo in promotions]
-
-@router.get("/active")
-def active_promotions(db: Session = Depends(get_db)):
-    today = date.today()
-    promotions = (
-        db.query(Promotion)
-        .filter(Promotion.start_date <= today, Promotion.end_date >= today)
-        .filter(Promotion.status.in_(["active", "scheduled"]))
-        .order_by(Promotion.end_date.asc())
-        .all()
-    )
-    return [_promotion_dict(promo) for promo in promotions]
-
-@router.post("/validate-code")
-def validate_coupon(payload: CouponValidationRequest, db: Session = Depends(get_db)):
-    code = _normalize_code(payload.code)
-    promo = db.query(Promotion).filter(Promotion.code == code).first()
-    if not promo:
-        raise HTTPException(status_code=404, detail="Coupon code not found.")
-
-    today = date.today()
-    if promo.start_date > today or promo.end_date < today:
-        raise HTTPException(status_code=409, detail="Coupon is not active today.")
-    if promo.status not in {"active", "scheduled"}:
-        raise HTTPException(status_code=409, detail="Coupon is not active.")
-
-    discount = _calculate_discount(promo, payload.subtotal)
-    taxable_subtotal = max(round(payload.subtotal - discount, 2), 0)
-    tax = round(taxable_subtotal * 0.05, 2)
-    total = round(taxable_subtotal + tax, 2)
-    return {
-        "valid": True,
-        "promotion": _promotion_dict(promo),
-        "subtotal": round(payload.subtotal, 2),
-        "discount": discount,
-        "tax": tax,
-        "total": total,
-    }
-
-@router.get("/audience")
-def audience_summary(
-    audience: str = Query("marketing_opt_in"),
-    limit: int = Query(25, ge=1, le=200),
-    db: Session = Depends(get_db),
-):
-    query = _audience_query(db, audience)
-    total = query.count()
-    customers = (
-        query.order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
-        .limit(limit)
-        .all()
-    )
-    return {
-        "audience": audience,
-        "total_contacts": total,
-        "customers": [_customer_dict(customer) for customer in customers],
-    }
-
-
-@router.get("/providers/status")
-def campaign_provider_statuses():
-    channels = ["whatsapp", "sms", "email"]
-    statuses = [campaign_provider_status(channel) for channel in channels]
-    return {
-        "send_enabled": all(status["enabled"] for status in statuses),
-        "configured_count": sum(1 for status in statuses if status["configured"]),
-        "channels": statuses,
-    }
-
-
-@router.get("/performance/{promo_id}")
-def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
-    promo = db.get(Promotion, promo_id)
-    if not promo:
-        raise HTTPException(status_code=404, detail="Promotion not found")
-
+def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
     avg_sale, total_revenue = (
         db.query(func.avg(DailySales.total_sale), func.sum(DailySales.total_sale))
         .filter(DailySales.date.between(promo.start_date, promo.end_date))
@@ -632,6 +526,162 @@ def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
             "latest_campaign_id": max(ad_campaign_ids, default=None),
         },
     }
+
+
+@router.post("/")
+def create_promotion(promo: PromotionCreate, db: Session = Depends(get_db)):
+    start_date, end_date = _validate_promotion_payload(promo)
+    code = _normalize_code(promo.code)
+    if code:
+        existing = db.query(Promotion).filter(Promotion.code == code).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Promotion code already exists.")
+
+    db_promo = Promotion(
+        name=promo.name.strip(),
+        code=code,
+        start_date=start_date,
+        end_date=end_date,
+        description=promo.description,
+        discount_type=promo.discount_type,
+        discount_value=promo.discount_value,
+        audience=promo.audience,
+        channel=promo.channel,
+        status=promo.status,
+        message_template=promo.message_template,
+    )
+    db.add(db_promo)
+    db.commit()
+    db.refresh(db_promo)
+    return {"status": "promotion created", "promotion": _promotion_dict(db_promo)}
+
+@router.get("/")
+def list_promotions(db: Session = Depends(get_db)):
+    promotions = db.query(Promotion).order_by(Promotion.start_date.desc()).all()
+    return [_promotion_dict(promo) for promo in promotions]
+
+@router.get("/active")
+def active_promotions(db: Session = Depends(get_db)):
+    today = date.today()
+    promotions = (
+        db.query(Promotion)
+        .filter(Promotion.start_date <= today, Promotion.end_date >= today)
+        .filter(Promotion.status.in_(["active", "scheduled"]))
+        .order_by(Promotion.end_date.asc())
+        .all()
+    )
+    return [_promotion_dict(promo) for promo in promotions]
+
+@router.post("/validate-code")
+def validate_coupon(payload: CouponValidationRequest, db: Session = Depends(get_db)):
+    code = _normalize_code(payload.code)
+    promo = db.query(Promotion).filter(Promotion.code == code).first()
+    if not promo:
+        raise HTTPException(status_code=404, detail="Coupon code not found.")
+
+    today = date.today()
+    if promo.start_date > today or promo.end_date < today:
+        raise HTTPException(status_code=409, detail="Coupon is not active today.")
+    if promo.status not in {"active", "scheduled"}:
+        raise HTTPException(status_code=409, detail="Coupon is not active.")
+
+    discount = _calculate_discount(promo, payload.subtotal)
+    taxable_subtotal = max(round(payload.subtotal - discount, 2), 0)
+    tax = round(taxable_subtotal * 0.05, 2)
+    total = round(taxable_subtotal + tax, 2)
+    return {
+        "valid": True,
+        "promotion": _promotion_dict(promo),
+        "subtotal": round(payload.subtotal, 2),
+        "discount": discount,
+        "tax": tax,
+        "total": total,
+    }
+
+@router.get("/audience")
+def audience_summary(
+    audience: str = Query("marketing_opt_in"),
+    limit: int = Query(25, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    query = _audience_query(db, audience)
+    total = query.count()
+    customers = (
+        query.order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "audience": audience,
+        "total_contacts": total,
+        "customers": [_customer_dict(customer) for customer in customers],
+    }
+
+
+@router.get("/providers/status")
+def campaign_provider_statuses():
+    channels = ["whatsapp", "sms", "email"]
+    statuses = [campaign_provider_status(channel) for channel in channels]
+    return {
+        "send_enabled": all(status["enabled"] for status in statuses),
+        "configured_count": sum(1 for status in statuses if status["configured"]),
+        "channels": statuses,
+    }
+
+
+@router.get("/performance")
+def promotion_performance_rollup(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    promotions = (
+        db.query(Promotion)
+        .order_by(Promotion.start_date.desc(), Promotion.id.desc())
+        .limit(limit)
+        .all()
+    )
+    rows = [_promotion_performance_payload(db, promo) for promo in promotions]
+    rows.sort(
+        key=lambda row: (
+            row["redemptions"]["revenue"],
+            row["redemptions"]["count"],
+            row["promotion_detail"]["id"],
+        ),
+        reverse=True,
+    )
+    total_revenue = round(sum(row["redemptions"]["revenue"] for row in rows), 2)
+    total_discount = round(sum(row["redemptions"]["discount"] for row in rows), 2)
+    total_orders = sum(row["redemptions"]["count"] for row in rows)
+    total_unique_customers = sum(row["redemptions"]["unique_customers"] for row in rows)
+    total_social_posts = sum(row["social"]["post_count"] for row in rows)
+    total_ad_campaigns = sum(row["ads"]["campaign_count"] for row in rows)
+    planned_ad_budget = round(sum(row["ads"]["planned_budget"] for row in rows), 2)
+
+    return {
+        "summary": {
+            "campaign_count": len(rows),
+            "redemption_orders": total_orders,
+            "redemption_revenue": total_revenue,
+            "redemption_discount": total_discount,
+            "average_order_value": round(total_revenue / total_orders, 2)
+            if total_orders
+            else 0,
+            "unique_customers": total_unique_customers,
+            "social_post_count": total_social_posts,
+            "ad_campaign_count": total_ad_campaigns,
+            "planned_ad_budget": planned_ad_budget,
+        },
+        "best_campaign": rows[0] if rows else None,
+        "campaigns": rows,
+    }
+
+
+@router.get("/performance/{promo_id}")
+def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    return _promotion_performance_payload(db, promo)
 
 @router.get("/{promo_id}/outreach")
 def promotion_outreach(

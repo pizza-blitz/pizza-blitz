@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Megaphone, Tag, Target } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const Award = ({className}: {className?: string}) => (
@@ -20,12 +20,13 @@ export default function Reports() {
     setIsLoading(true);
     try {
       const comparisonPeriod = period === "lifetime" ? "1year" : period;
-      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes] = await Promise.all([
+      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes] = await Promise.all([
         fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`)).then(r => r.json()),
         fetch(getApiUrl('/api/v1/restaurant/sales/')).then(r => r.json()),
         fetch(getApiUrl('/api/v1/restaurant/stats/insights/monthly-forecast')).then(r => r.json()),
         fetch(getApiUrl('/api/v1/restaurant/stats/insights/profit-trend?months=12')).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`)).then(r => r.json())
+        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`)).then(r => r.json()),
+        fetch(getApiUrl('/api/v1/restaurant/promotions/performance?limit=25')).then(r => r.json())
       ]);
       
       setData({
@@ -33,7 +34,8 @@ export default function Reports() {
         records: salesRes.reverse().slice(0, 10),
         forecast: forecastRes,
         trends: trendRes.trend,
-        comparison: comparisonRes
+        comparison: comparisonRes,
+        marketing: marketingRes
       });
     } catch (err) { 
       console.error(err); 
@@ -52,6 +54,8 @@ export default function Reports() {
     return `Rs ${nextValue.toLocaleString()}`;
   };
 
+  const formatMoney = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
+
   const percentChange = (current: number, baseline: number) => {
     const currentValue = Number(current || 0);
     const baselineValue = Number(baseline || 0);
@@ -62,6 +66,8 @@ export default function Reports() {
   const formatPercent = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
   const comparison = data?.comparison;
+  const marketing = data?.marketing;
+  const marketingRows = marketing?.campaigns ? marketing.campaigns.slice(0, 6) : [];
   const weekdayRows = comparison?.weekday_breakdown
     ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
     : [];
@@ -211,6 +217,106 @@ export default function Reports() {
                 </div>
               </aside>
             </div>
+          )}
+
+          {marketing && (
+            <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Marketing Attribution</p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">Campaign Revenue Scoreboard</h2>
+                </div>
+                <a
+                  href="/promotions"
+                  className="inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-600 hover:bg-orange-50 hover:text-orange-700"
+                >
+                  <Megaphone className="mr-2 h-4 w-4" />
+                  Open Promotions
+                </a>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <MarketingMetric
+                  icon={IndianRupee}
+                  label="Coupon Revenue"
+                  value={formatMoney(marketing.summary.redemption_revenue)}
+                />
+                <MarketingMetric
+                  icon={Tag}
+                  label="Coupon Orders"
+                  value={`${marketing.summary.redemption_orders || 0}`}
+                />
+                <MarketingMetric
+                  icon={TrendingDown}
+                  label="Discount Given"
+                  value={formatMoney(marketing.summary.redemption_discount)}
+                />
+                <MarketingMetric
+                  icon={Share2}
+                  label="Social Drafts"
+                  value={`${marketing.summary.social_post_count || 0}`}
+                />
+                <MarketingMetric
+                  icon={Target}
+                  label="Ad Budget"
+                  value={formatMoney(marketing.summary.planned_ad_budget)}
+                />
+              </div>
+
+              <div className="mt-5 overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full min-w-[860px] text-left">
+                  <thead className="bg-gray-950 text-white">
+                    <tr>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest">Campaign</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Revenue</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Orders</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Discount</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Avg Order</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Social</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Ad Budget</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {marketingRows.length ? (
+                      marketingRows.map((row: any) => (
+                        <tr key={row.promotion_detail.id} className="hover:bg-orange-50/50">
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-black text-gray-950">{row.promotion_detail.name}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                              {row.promotion_detail.code || "No code"} · {row.campaign_window.phase}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-black text-green-700">
+                            {formatMoney(row.redemptions.revenue)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-black text-gray-950">
+                            {row.redemptions.count}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-red-600">
+                            {formatMoney(row.redemptions.discount)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-gray-700">
+                            {formatMoney(row.redemptions.average_order_value)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-gray-700">
+                            {row.social.post_count}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-bold text-gray-700">
+                            {formatMoney(row.ads.planned_budget)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-10 text-center text-sm font-bold text-gray-400">
+                          No coupon campaign attribution is available yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
 
           {comparison && (
@@ -436,6 +542,26 @@ export default function Reports() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function MarketingMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-orange-100 text-orange-700">
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 text-xl font-black text-gray-950">{value}</p>
     </div>
   );
 }

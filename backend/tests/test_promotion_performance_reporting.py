@@ -84,6 +84,25 @@ class PromotionPerformanceReportingTest(unittest.TestCase):
                 self.assertEqual(payload["ads"]["campaign_count"], 1)
                 self.assertEqual(payload["ads"]["planned_budget"], 600)
                 self.assertEqual(payload["campaign_window"]["phase"], "live")
+
+                rollup = client.get("/api/v1/restaurant/promotions/performance?limit=50")
+                self.assertEqual(rollup.status_code, 200)
+                rollup_payload = rollup.json()
+                campaign_rows = rollup_payload["campaigns"]
+                campaign_row = next(
+                    row
+                    for row in campaign_rows
+                    if row["promotion_detail"]["id"] == promo_id
+                )
+                self.assertEqual(campaign_row["redemptions"]["count"], 1)
+                self.assertEqual(campaign_row["redemptions"]["revenue"], 342.68)
+                self.assertEqual(campaign_row["social"]["post_count"], 1)
+                self.assertEqual(campaign_row["ads"]["planned_budget"], 600)
+                self.assertGreaterEqual(rollup_payload["summary"]["redemption_revenue"], 342.68)
+                self.assertEqual(
+                    rollup_payload["best_campaign"]["promotion_detail"]["id"],
+                    promo_id,
+                )
             finally:
                 db = SessionLocal()
                 try:
