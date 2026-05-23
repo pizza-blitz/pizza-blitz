@@ -105,6 +105,45 @@ type DeliveryHistory = {
   deliveries: CampaignDelivery[];
 };
 
+type CampaignPerformance = {
+  campaign_window: {
+    total_days: number;
+    elapsed_days: number;
+    remaining_days: number;
+    phase: "upcoming" | "live" | "ended";
+  };
+  redemptions: {
+    count: number;
+    revenue: number;
+    discount: number;
+    average_order_value: number;
+    unique_customers: number;
+  };
+  outreach: {
+    attempted_count: number;
+    sent_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    conversion_rate_percent: number;
+  };
+  social: {
+    post_count: number;
+    ready_count: number;
+    scheduled_count: number;
+    latest_post_id?: number | null;
+  };
+  ads: {
+    campaign_count: number;
+    planned_budget: number;
+    spend: number;
+    reported_revenue: number;
+    roas: number;
+    launch_count: number;
+    latest_campaign_id?: number | null;
+  };
+};
+
 type CampaignForm = {
   name: string;
   code: string;
@@ -165,6 +204,7 @@ export default function PromotionsPage() {
   const [outreach, setOutreach] = useState<Outreach | null>(null);
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
+  const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [message, setMessage] = useState("");
@@ -207,12 +247,19 @@ export default function PromotionsPage() {
     } else {
       setOutreach(null);
       setDispatch(null);
+      setDeliveryHistory(null);
+      setPerformance(null);
     }
     setLoading(false);
   };
 
   const fetchCampaignDetails = async (promotionId: number) => {
-    await Promise.all([fetchOutreach(promotionId), fetchDispatch(promotionId), fetchDeliveries(promotionId)]);
+    await Promise.all([
+      fetchOutreach(promotionId),
+      fetchDispatch(promotionId),
+      fetchDeliveries(promotionId),
+      fetchPerformance(promotionId),
+    ]);
   };
 
   const fetchOutreach = async (promotionId: number) => {
@@ -240,6 +287,15 @@ export default function PromotionsPage() {
       return;
     }
     setDeliveryHistory(await response.json());
+  };
+
+  const fetchPerformance = async (promotionId: number) => {
+    const response = await fetch(`${PROMOTIONS_API}/performance/${promotionId}`);
+    if (!response.ok) {
+      setPerformance(null);
+      return;
+    }
+    setPerformance(await response.json());
   };
 
   const selectPromotion = (promotionId: number) => {
@@ -344,6 +400,7 @@ export default function PromotionsPage() {
         return;
       }
       setMessage(`Created social post #${data.post.id} from ${selectedPromotion.name}.`);
+      await fetchPerformance(selectedPromotion.id);
     } catch {
       setMessage("Social post could not be created.");
     } finally {
@@ -373,6 +430,7 @@ export default function PromotionsPage() {
         return;
       }
       setMessage(`Created ad campaign #${data.campaign.id} from ${selectedPromotion.name}.`);
+      await fetchPerformance(selectedPromotion.id);
     } catch {
       setMessage("Ad campaign could not be created.");
     } finally {
@@ -572,6 +630,65 @@ export default function PromotionsPage() {
                     value={providerLabel(dispatch?.provider_status)}
                   />
                 </div>
+
+                <section className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                        Campaign Performance
+                      </p>
+                      <h3 className="mt-1 text-lg font-black">Coupon Attribution</h3>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+                      {performance?.campaign_window.phase || "checking"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Detail
+                      label="Revenue"
+                      value={formatRupees(performance?.redemptions.revenue || 0)}
+                    />
+                    <Detail
+                      label="Coupon Orders"
+                      value={`${performance?.redemptions.count || 0}`}
+                    />
+                    <Detail
+                      label="Discount Given"
+                      value={formatRupees(performance?.redemptions.discount || 0)}
+                    />
+                    <Detail
+                      label="Avg Order"
+                      value={formatRupees(performance?.redemptions.average_order_value || 0)}
+                    />
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <MiniSignal
+                      icon={Users}
+                      label="Unique Customers"
+                      value={`${performance?.redemptions.unique_customers || 0}`}
+                    />
+                    <MiniSignal
+                      icon={Share2}
+                      label="Social Drafts"
+                      value={`${performance?.social.post_count || 0}`}
+                    />
+                    <MiniSignal
+                      icon={Target}
+                      label="Ad Drafts"
+                      value={`${performance?.ads.campaign_count || 0}`}
+                    />
+                    <MiniSignal
+                      icon={Tag}
+                      label="Ad Budget"
+                      value={formatRupees(performance?.ads.planned_budget || 0)}
+                    />
+                  </div>
+                  {performance && performance.redemptions.count === 0 ? (
+                    <div className="mt-4 rounded-lg border border-dashed border-white/10 bg-black/20 p-4 text-sm font-semibold text-gray-500">
+                      No coupon orders are attributed to this campaign yet.
+                    </div>
+                  ) : null}
+                </section>
 
                 <div className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
                   <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-500">
@@ -812,6 +929,32 @@ function channelLabel(value: ChannelKey) {
 function providerLabel(status?: ProviderStatus) {
   if (!status) return "Checking";
   return status.configured ? `${status.provider} ready` : `${status.provider} setup needed`;
+}
+
+function formatRupees(value: number) {
+  return `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
+}
+
+function MiniSignal({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-500/10 text-orange-300">
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-black uppercase tracking-widest text-gray-600">{label}</p>
+        <p className="text-sm font-black leading-5 text-gray-200">{value}</p>
+      </div>
+    </div>
+  );
 }
 
 function ProviderCard({

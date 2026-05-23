@@ -4,6 +4,7 @@ from sqlalchemy import func
 from app.api.deps import get_db
 from app.models.domain import (
     AdCampaign,
+    AdCampaignLaunch,
     CampaignDelivery,
     Customer,
     DailySales,
@@ -393,6 +394,35 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
         "skipped_count": sum(1 for delivery in deliveries if delivery.status == "skipped"),
     }
 
+
+def _coupon_orders_query(db: Session, promo: Promotion):
+    query = db.query(RestaurantOrder)
+    if not promo.code:
+        return query.filter(RestaurantOrder.id == -1)
+    return query.filter(RestaurantOrder.notes.like(f"%Coupon: {promo.code}%"))
+
+
+def _promotion_window(promo: Promotion) -> dict:
+    today = date.today()
+    total_days = max((promo.end_date - promo.start_date).days + 1, 1)
+    elapsed_days = min(max((today - promo.start_date).days + 1, 0), total_days)
+    remaining_days = max((promo.end_date - today).days, 0)
+    if today < promo.start_date:
+        phase = "upcoming"
+    elif today > promo.end_date:
+        phase = "ended"
+    else:
+        phase = "live"
+    return {
+        "start_date": promo.start_date.isoformat(),
+        "end_date": promo.end_date.isoformat(),
+        "total_days": total_days,
+        "elapsed_days": elapsed_days,
+        "remaining_days": remaining_days,
+        "phase": phase,
+    }
+
+
 @router.post("/")
 def create_promotion(promo: PromotionCreate, db: Session = Depends(get_db)):
     start_date, end_date = _validate_promotion_payload(promo)
@@ -505,27 +535,102 @@ def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
         .filter(DailySales.date.between(promo.start_date, promo.end_date))
         .one()
     )
-    coupon_orders = []
-    if promo.code:
-        coupon_orders = (
-            db.query(RestaurantOrder)
-            .filter(RestaurantOrder.notes.like(f"%Coupon: {promo.code}%"))
+    coupon_orders = _coupon_orders_query(db, promo).all()
+    delivery_rows = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.promotion_id == promo.id)
+        .all()
+    )
+    social_posts = (
+        db.query(SocialPost)
+        .filter(SocialPost.title.like(f"%{promo.name}%"))
+        .all()
+    )
+    ad_campaigns = (
+        db.query(AdCampaign)
+        .filter(AdCampaign.name.like(f"%{promo.name}%"))
+        .all()
+    )
+    ad_campaign_ids = [campaign.id for campaign in ad_campaigns]
+    ad_launches = []
+    if ad_campaign_ids:
+        ad_launches = (
+            db.query(AdCampaignLaunch)
+            .filter(AdCampaignLaunch.campaign_id.in_(ad_campaign_ids))
             .all()
         )
-    
+
+    redemption_revenue = round(sum(float(order.total_amount or 0) for order in coupon_orders), 2)
+    redemption_discount = round(sum(float(order.discount_amount or 0) for order in coupon_orders), 2)
+    redemption_subtotal = round(sum(float(order.subtotal or 0) for order in coupon_orders), 2)
+    unique_customer_phones = {
+        (order.customer_phone or "").strip()
+        for order in coupon_orders
+        if (order.customer_phone or "").strip()
+    }
+    first_redemption = min(
+        [order.created_at for order in coupon_orders if order.created_at],
+        default=None,
+    )
+    last_redemption = max(
+        [order.created_at for order in coupon_orders if order.created_at],
+        default=None,
+    )
+    delivery_counts = _delivery_counts(delivery_rows)
+    delivery_attempts = max(delivery_counts["sent_count"] + delivery_counts["dry_run_count"], 0)
+    ad_spend = round(sum(float(campaign.spend or 0) for campaign in ad_campaigns), 2)
+    ad_revenue = round(sum(float(campaign.revenue or 0) for campaign in ad_campaigns), 2)
+    planned_budget = round(
+        sum(float(campaign.daily_budget or campaign.lifetime_budget or 0) for campaign in ad_campaigns),
+        2,
+    )
+
     return {
         "promotion": promo.name,
+        "promotion_detail": _promotion_dict(promo),
+        "campaign_window": _promotion_window(promo),
         "avg_daily_sale_during": float(avg_sale or 0),
         "total_revenue_during": float(total_revenue or 0),
         "redemption_count": len(coupon_orders),
-        "redemption_revenue": round(
-            sum(float(order.total_amount or 0) for order in coupon_orders),
-            2,
-        ),
-        "redemption_discount": round(
-            sum(float(order.discount_amount or 0) for order in coupon_orders),
-            2,
-        ),
+        "redemption_revenue": redemption_revenue,
+        "redemption_discount": redemption_discount,
+        "sales": {
+            "avg_daily_sale_during": round(float(avg_sale or 0), 2),
+            "total_revenue_during": round(float(total_revenue or 0), 2),
+        },
+        "redemptions": {
+            "count": len(coupon_orders),
+            "subtotal_before_discount": redemption_subtotal,
+            "revenue": redemption_revenue,
+            "discount": redemption_discount,
+            "average_order_value": round(redemption_revenue / len(coupon_orders), 2)
+            if coupon_orders
+            else 0,
+            "unique_customers": len(unique_customer_phones),
+            "first_order_at": first_redemption.isoformat() if first_redemption else None,
+            "last_order_at": last_redemption.isoformat() if last_redemption else None,
+        },
+        "outreach": {
+            **delivery_counts,
+            "conversion_rate_percent": round((len(coupon_orders) / delivery_attempts) * 100, 2)
+            if delivery_attempts
+            else 0,
+        },
+        "social": {
+            "post_count": len(social_posts),
+            "ready_count": sum(1 for post in social_posts if post.status == "ready"),
+            "scheduled_count": sum(1 for post in social_posts if post.status == "scheduled"),
+            "latest_post_id": max([post.id for post in social_posts], default=None),
+        },
+        "ads": {
+            "campaign_count": len(ad_campaigns),
+            "planned_budget": planned_budget,
+            "spend": ad_spend,
+            "reported_revenue": ad_revenue,
+            "roas": round(ad_revenue / ad_spend, 2) if ad_spend else 0,
+            "launch_count": len(ad_launches),
+            "latest_campaign_id": max(ad_campaign_ids, default=None),
+        },
     }
 
 @router.get("/{promo_id}/outreach")
