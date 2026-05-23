@@ -247,7 +247,9 @@ export default function PromotionsPage() {
   const scheduledCount = promotions.filter((promotion) => promotion.status === "scheduled").length;
 
   const fetchProviderReadiness = async () => {
-    const response = await fetch(`${PROMOTIONS_API}/providers/status`);
+    const response = await fetch(`${PROMOTIONS_API}/providers/status`, {
+      credentials: "include",
+    });
     if (!response.ok) {
       setProviderReadiness(null);
       return;
@@ -257,7 +259,7 @@ export default function PromotionsPage() {
 
   const fetchPromotions = async () => {
     setLoading(true);
-    const response = await fetch(`${PROMOTIONS_API}/`);
+    const response = await fetch(`${PROMOTIONS_API}/`, { credentials: "include" });
     const data: Promotion[] = await response.json();
     setPromotions(data);
     const nextSelectedId = selectedId || data[0]?.id || null;
@@ -283,7 +285,9 @@ export default function PromotionsPage() {
   };
 
   const fetchOutreach = async (promotionId: number) => {
-    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/outreach`);
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/outreach`, {
+      credentials: "include",
+    });
     if (!response.ok) {
       setOutreach(null);
       return;
@@ -292,7 +296,9 @@ export default function PromotionsPage() {
   };
 
   const fetchDispatch = async (promotionId: number) => {
-    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/dispatch`);
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/dispatch`, {
+      credentials: "include",
+    });
     if (!response.ok) {
       setDispatch(null);
       return;
@@ -301,7 +307,9 @@ export default function PromotionsPage() {
   };
 
   const fetchDeliveries = async (promotionId: number) => {
-    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/deliveries`);
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/deliveries`, {
+      credentials: "include",
+    });
     if (!response.ok) {
       setDeliveryHistory(null);
       return;
@@ -310,7 +318,9 @@ export default function PromotionsPage() {
   };
 
   const fetchPerformance = async (promotionId: number) => {
-    const response = await fetch(`${PROMOTIONS_API}/performance/${promotionId}`);
+    const response = await fetch(`${PROMOTIONS_API}/performance/${promotionId}`, {
+      credentials: "include",
+    });
     if (!response.ok) {
       setPerformance(null);
       return;
@@ -327,6 +337,7 @@ export default function PromotionsPage() {
     event.preventDefault();
     const response = await fetch(`${PROMOTIONS_API}/`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...formData,
@@ -382,6 +393,7 @@ export default function PromotionsPage() {
     setSending(dryRun ? "dry_run" : "send");
     const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/send`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dry_run: dryRun, limit: 50 }),
     });
@@ -406,6 +418,7 @@ export default function PromotionsPage() {
     try {
       const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/social-post`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           link_url: orderOfferLink(selectedPromotion),
@@ -434,6 +447,7 @@ export default function PromotionsPage() {
     try {
       const response = await fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/ad-campaign`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           link_url: orderOfferLink(selectedPromotion),

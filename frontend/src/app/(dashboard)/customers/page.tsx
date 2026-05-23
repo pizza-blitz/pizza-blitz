@@ -89,8 +89,8 @@ export default function CustomersPage() {
     if (selectedSegment !== "all") params.set("segment", selectedSegment);
     const queryString = params.toString() ? `?${params.toString()}` : "";
     const [customersRes, summaryRes] = await Promise.all([
-      fetch(`${CUSTOMERS_API}/${queryString}`),
-      fetch(`${CUSTOMERS_API}/summary`),
+      fetch(`${CUSTOMERS_API}/${queryString}`, { credentials: "include" }),
+      fetch(`${CUSTOMERS_API}/summary`, { credentials: "include" }),
     ]);
     setCustomers(await customersRes.json());
     setSummary(await summaryRes.json());
@@ -131,6 +131,7 @@ export default function CustomersPage() {
     event.preventDefault();
     const response = await fetch(`${CUSTOMERS_API}/`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: formData.name || null,

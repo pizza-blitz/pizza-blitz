@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import (
     AdCampaign,
     AdCampaignLaunch,
@@ -352,7 +352,8 @@ def _action_url(channel: str, destination: str, message: str, promo: Promotion) 
 
 def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
     message = _render_message(promo, customer)
-    destination = _message_destination(customer, promo.channel)
+    raw_destination = _message_destination(customer, promo.channel)
+    destination = normalize_campaign_destination(promo.channel, raw_destination)
     send_ready = bool(destination)
     missing_reason = None
     action_url = None
@@ -533,7 +534,11 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
 
 
 @router.post("/")
-def create_promotion(promo: PromotionCreate, db: Session = Depends(get_db)):
+def create_promotion(
+    promo: PromotionCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
     start_date, end_date = _validate_promotion_payload(promo)
     code = _normalize_code(promo.code)
     if code:
@@ -560,7 +565,10 @@ def create_promotion(promo: PromotionCreate, db: Session = Depends(get_db)):
     return {"status": "promotion created", "promotion": _promotion_dict(db_promo)}
 
 @router.get("/")
-def list_promotions(db: Session = Depends(get_db)):
+def list_promotions(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     promotions = db.query(Promotion).order_by(Promotion.start_date.desc()).all()
     return [_promotion_dict(promo) for promo in promotions]
 
@@ -607,6 +615,7 @@ def audience_summary(
     audience: str = Query("marketing_opt_in"),
     limit: int = Query(25, ge=1, le=200),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     query = _audience_query(db, audience)
     total = query.count()
@@ -623,7 +632,9 @@ def audience_summary(
 
 
 @router.get("/providers/status")
-def campaign_provider_statuses():
+def campaign_provider_statuses(
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     channels = ["whatsapp", "sms", "email"]
     statuses = [campaign_provider_status(channel) for channel in channels]
     return {
@@ -637,6 +648,7 @@ def campaign_provider_statuses():
 def promotion_performance_rollup(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     promotions = (
         db.query(Promotion)
@@ -681,7 +693,11 @@ def promotion_performance_rollup(
 
 
 @router.get("/performance/{promo_id}")
-def promotion_performance(promo_id: int, db: Session = Depends(get_db)):
+def promotion_performance(
+    promo_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     promo = db.get(Promotion, promo_id)
     if not promo:
         raise HTTPException(status_code=404, detail="Promotion not found")
@@ -692,6 +708,7 @@ def promotion_outreach(
     promo_id: int,
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     promo = db.get(Promotion, promo_id)
     if not promo:
@@ -724,6 +741,7 @@ def promotion_dispatch(
     promo_id: int,
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     promo = db.get(Promotion, promo_id)
     if not promo:
@@ -758,6 +776,7 @@ def create_social_post_from_promotion(
     promo_id: int,
     payload: PromotionSocialPostCreate,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     promo = db.get(Promotion, promo_id)
     if not promo:
@@ -787,6 +806,7 @@ def create_ad_campaign_from_promotion(
     promo_id: int,
     payload: PromotionAdCampaignCreate,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     promo = db.get(Promotion, promo_id)
     if not promo:
@@ -827,6 +847,7 @@ def send_promotion_campaign(
     promo_id: int,
     payload: CampaignSendRequest,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
     promo = db.get(Promotion, promo_id)
     if not promo:
@@ -889,7 +910,7 @@ def send_promotion_campaign(
             elif payload.dry_run:
                 delivery = CampaignDelivery(
                     **delivery_kwargs,
-                    provider="dry_run",
+                    provider=provider_status["provider"],
                     status="dry_run",
                     dry_run=True,
                     response_payload={"provider_status": provider_status},
@@ -936,6 +957,7 @@ def promotion_deliveries(
     promo_id: int,
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     promo = db.get(Promotion, promo_id)
     if not promo:

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import Customer
 
 router = APIRouter()
@@ -66,6 +66,7 @@ def list_customers(
     q: Optional[str] = None,
     segment: str = Query("all"),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     if segment not in VALID_CUSTOMER_SEGMENTS:
         raise HTTPException(status_code=422, detail="Unsupported customer segment.")
@@ -88,7 +89,11 @@ def list_customers(
 
 
 @router.post("/")
-def create_or_update_customer(payload: CustomerCreate, db: Session = Depends(get_db)):
+def create_or_update_customer(
+    payload: CustomerCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     phone = payload.phone.strip()
     if not phone:
         raise HTTPException(status_code=422, detail="Phone is required.")
@@ -109,7 +114,10 @@ def create_or_update_customer(payload: CustomerCreate, db: Session = Depends(get
 
 
 @router.get("/summary")
-def customer_summary(db: Session = Depends(get_db)):
+def customer_summary(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     total_customers = db.query(func.count(Customer.id)).scalar() or 0
     opted_in = db.query(func.count(Customer.id)).filter(Customer.opt_in_marketing.is_(True)).scalar() or 0
     total_spend = db.query(func.coalesce(func.sum(Customer.total_spend), 0)).scalar() or 0
