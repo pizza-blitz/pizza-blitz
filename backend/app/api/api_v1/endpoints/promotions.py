@@ -141,6 +141,52 @@ RETENTION_PLAYBOOK = {
         "message_template": "Hi {name}, here is a Pizza Blitz win-back treat: {offer}. Use {code} before {end_date}. Order here: {order_link}",
     },
 }
+SEGMENT_CAMPAIGN_TEMPLATES = {
+    "marketing_opt_in": {
+        "label": "Marketing Opt-in",
+        "intent": "Reach consented customers with a broad offer.",
+        "name": "Opt-in Flash Slice",
+        "description": "A broad coupon for customers who have already consented to marketing.",
+        "discount_type": "percentage",
+        "discount_value": 10,
+        "channel": "whatsapp",
+        "code_prefix": "OPT",
+        "message_template": "Hi {name}, Pizza Blitz has {offer} for you. Use {code} before {end_date}. Order here: {order_link}",
+    },
+    "repeat_customers": {
+        "label": "Repeat Customers",
+        "intent": "Reward customers who already show a buying habit.",
+        "name": "Repeat Slice Reward",
+        "description": "A loyalty coupon for customers with repeat orders.",
+        "discount_type": "percentage",
+        "discount_value": 12,
+        "channel": "whatsapp",
+        "code_prefix": "REP",
+        "message_template": "Hi {name}, thanks for coming back to Pizza Blitz. Your repeat-guest offer is {offer}. Use {code} before {end_date}. Order here: {order_link}",
+    },
+    "high_spenders": {
+        "label": "High Spenders",
+        "intent": "Convert larger-ticket guests into premium repeat buyers.",
+        "name": "Premium Party Pack Push",
+        "description": "A premium bundle coupon for high-value customers.",
+        "discount_type": "percentage",
+        "discount_value": 15,
+        "channel": "whatsapp",
+        "code_prefix": "HSP",
+        "message_template": "Hi {name}, your Pizza Blitz premium offer is {offer}. Use {code} before {end_date}. Order here: {order_link}",
+    },
+    "all_customers": {
+        "label": "All Customers",
+        "intent": "Run a broad customer-wide offer.",
+        "name": "Everyone Gets a Slice",
+        "description": "A general coupon for the full customer base.",
+        "discount_type": "percentage",
+        "discount_value": 8,
+        "channel": "whatsapp",
+        "code_prefix": "ALL",
+        "message_template": "Hi {name}, Pizza Blitz has {offer} for everyone this week. Use {code} before {end_date}. Order here: {order_link}",
+    },
+}
 
 class PromotionCreate(BaseModel):
     name: str = Field(..., min_length=1)
@@ -656,6 +702,14 @@ def _retention_playbook_entry(db: Session, audience: str) -> dict:
         },
         "sample_customers": [_customer_dict(customer) for customer in sample_customers],
     }
+
+
+def _segment_campaign_template(audience: str) -> dict:
+    if audience in RETENTION_PLAYBOOK:
+        return RETENTION_PLAYBOOK[audience]
+    if audience in SEGMENT_CAMPAIGN_TEMPLATES:
+        return SEGMENT_CAMPAIGN_TEMPLATES[audience]
+    raise HTTPException(status_code=422, detail="Unsupported segment campaign audience.")
 
 
 def _unique_retention_code(db: Session, prefix: str) -> str:
@@ -1238,6 +1292,51 @@ def create_retention_playbook_campaign(
     return {
         "status": "retention campaign created",
         "playbook": _retention_playbook_entry(db, audience),
+        "promotion": _promotion_dict(promo),
+    }
+
+
+@router.post("/segment-campaign/{audience}")
+def create_segment_campaign(
+    audience: str,
+    payload: RetentionCampaignCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    if payload.status not in VALID_STATUSES:
+        raise HTTPException(status_code=422, detail="Unsupported campaign status.")
+    if audience not in VALID_AUDIENCES:
+        raise HTTPException(status_code=422, detail="Unsupported campaign audience.")
+
+    template = _segment_campaign_template(audience)
+    start_date = date.today()
+    end_date = start_date + timedelta(days=payload.duration_days - 1)
+    code = _normalize_code(payload.code) or _unique_retention_code(db, template["code_prefix"])
+    if db.query(Promotion).filter(Promotion.code == code).first():
+        raise HTTPException(status_code=409, detail="Promotion code already exists.")
+
+    audience_count = _audience_query(db, audience).count()
+    promo = Promotion(
+        name=(payload.name or template["name"]).strip(),
+        code=code,
+        start_date=start_date,
+        end_date=end_date,
+        description=template["description"],
+        discount_type=template["discount_type"],
+        discount_value=template["discount_value"],
+        audience=audience,
+        channel=template["channel"],
+        status=payload.status,
+        message_template=template["message_template"],
+    )
+    db.add(promo)
+    db.commit()
+    db.refresh(promo)
+    return {
+        "status": "segment campaign created",
+        "audience": audience,
+        "audience_count": audience_count,
+        "intent": template["intent"],
         "promotion": _promotion_dict(promo),
     }
 

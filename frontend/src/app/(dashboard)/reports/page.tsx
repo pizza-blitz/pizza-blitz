@@ -1,11 +1,24 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Mail, Megaphone, MessageCircle, Phone, ShoppingBag, Tag, Target, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Mail, Megaphone, MessageCircle, Phone, Send, ShoppingBag, Tag, Target, Users } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const Award = ({className}: {className?: string}) => (
   <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/></svg>
 );
+
+const segmentCampaignAudiences = new Set([
+  "all_customers",
+  "marketing_opt_in",
+  "repeat_customers",
+  "high_spenders",
+  "new_guests",
+  "regular_guests",
+  "vip_guests",
+  "active_customers",
+  "comeback_customers",
+  "win_back_customers",
+]);
 
 export default function Reports() {
   const [data, setData] = useState<any>(null);
@@ -13,6 +26,8 @@ export default function Reports() {
   const [reportError, setReportError] = useState("");
   const [period, setPeriod] = useState("30days");
   const [selectedMarketingCampaignId, setSelectedMarketingCampaignId] = useState<number | null>(null);
+  const [launchingSegmentCampaign, setLaunchingSegmentCampaign] = useState<string | null>(null);
+  const [segmentLaunchMessage, setSegmentLaunchMessage] = useState("");
 
   useEffect(() => {
     fetchReports();
@@ -66,6 +81,40 @@ export default function Reports() {
 
   const handleExport = () => {
     window.location.href = getApiUrl('/api/v1/restaurant/sales/export/csv');
+  };
+
+  const launchSegmentCampaign = async (row: any) => {
+    if (!row || !segmentCampaignAudiences.has(row.segment)) {
+      setSegmentLaunchMessage("This segment needs cleanup before campaign launch.");
+      return;
+    }
+
+    setLaunchingSegmentCampaign(row.segment);
+    setSegmentLaunchMessage("");
+    try {
+      const response = await fetch(getApiUrl(`/api/v1/restaurant/promotions/segment-campaign/${row.segment}`), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "active",
+          duration_days: 7,
+          name: `${row.label} Segment Push`,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || "Could not launch segment campaign.");
+      }
+
+      setSegmentLaunchMessage(`Created ${payload.promotion.name} for ${row.label}.`);
+      setSelectedMarketingCampaignId(payload.promotion.id);
+      await fetchReports();
+    } catch (err) {
+      setSegmentLaunchMessage(err instanceof Error ? err.message : "Could not launch segment campaign.");
+    } finally {
+      setLaunchingSegmentCampaign(null);
+    }
   };
 
   const formatComparisonValue = (key: string, value: number) => {
@@ -531,13 +580,31 @@ export default function Reports() {
                         <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Recommended Action</p>
                         <p className="mt-1 text-sm font-black leading-6 text-gray-950">{segmentLeader.recommended_action}</p>
                       </div>
-                      <a
-                        href={segmentLeader.customer_list_url}
-                        className="mt-4 inline-flex items-center rounded-md bg-gray-950 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
-                      >
-                        <Users className="mr-2 h-4 w-4" />
-                        Open Segment Queue
-                      </a>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <a
+                          href={segmentLeader.customer_list_url}
+                          className="inline-flex items-center rounded-md bg-gray-950 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
+                        >
+                          <Users className="mr-2 h-4 w-4" />
+                          Open Segment Queue
+                        </a>
+                        <button
+                          data-testid="launch-segment-campaign"
+                          type="button"
+                          onClick={() => launchSegmentCampaign(segmentLeader)}
+                          disabled={launchingSegmentCampaign !== null || !segmentCampaignAudiences.has(segmentLeader.segment)}
+                          className="inline-flex items-center rounded-md bg-orange-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          title={segmentCampaignAudiences.has(segmentLeader.segment) ? "Create a campaign for this segment" : "Clean this segment before launch"}
+                        >
+                          <Send className="mr-2 h-4 w-4" />
+                          {launchingSegmentCampaign === segmentLeader.segment ? "Launching..." : "Launch Segment Campaign"}
+                        </button>
+                      </div>
+                      {segmentLaunchMessage && (
+                        <p data-testid="segment-launch-message" className="mt-3 rounded-md bg-white px-3 py-2 text-sm font-bold text-gray-700">
+                          {segmentLaunchMessage}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <p className="rounded-lg border border-dashed border-green-200 bg-white p-5 text-sm font-bold text-green-900">
@@ -581,6 +648,7 @@ export default function Reports() {
                           <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Reach</th>
                           <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Ready</th>
                           <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Channel</th>
+                          <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -601,11 +669,22 @@ export default function Reports() {
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-right text-xs font-black uppercase tracking-widest text-gray-600">{row.recommended_channel}</td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  data-testid={`launch-segment-row-${row.segment}`}
+                                  type="button"
+                                  onClick={() => launchSegmentCampaign(row)}
+                                  disabled={launchingSegmentCampaign !== null || !segmentCampaignAudiences.has(row.segment)}
+                                  className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-700 hover:bg-orange-100 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  {launchingSegmentCampaign === row.segment ? "Launching" : segmentCampaignAudiences.has(row.segment) ? "Launch" : "Clean"}
+                                </button>
+                              </td>
                             </tr>
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={5} className="px-4 py-10 text-center text-sm font-bold text-gray-400">
+                            <td colSpan={6} className="px-4 py-10 text-center text-sm font-bold text-gray-400">
                               Customer segment intelligence will populate after orders create customers.
                             </td>
                           </tr>
