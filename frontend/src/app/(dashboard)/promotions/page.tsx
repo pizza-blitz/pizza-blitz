@@ -288,6 +288,28 @@ type MarketingPerformanceRollup = {
   campaigns: CampaignPerformanceRow[];
 };
 
+type CampaignActivityEvent = {
+  id: string;
+  type: "campaign" | "delivery" | "cleanup" | "redemption" | "social" | "ad";
+  title: string;
+  status: string;
+  timestamp?: string | null;
+  detail: string;
+  metric?: string | null;
+  href?: string | null;
+};
+
+type CampaignActivityTimeline = {
+  summary: {
+    event_count: number;
+    delivery_events: number;
+    cleanup_events: number;
+    redemption_events: number;
+    handoff_events: number;
+  };
+  events: CampaignActivityEvent[];
+};
+
 type CampaignForm = {
   name: string;
   code: string;
@@ -384,6 +406,7 @@ export default function PromotionsPage() {
   const [deliveryFilter, setDeliveryFilter] = useState<DeliveryStatusFilter>("all");
   const [deliveryReasonFilter, setDeliveryReasonFilter] = useState<DeliveryReasonFilter>("all");
   const [performance, setPerformance] = useState<CampaignPerformance | null>(null);
+  const [activityTimeline, setActivityTimeline] = useState<CampaignActivityTimeline | null>(null);
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
   const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
   const [hygieneAudience, setHygieneAudience] = useState<AudienceKey>("marketing_opt_in");
@@ -516,6 +539,7 @@ export default function PromotionsPage() {
       setDispatch(null);
       setDeliveryHistory(null);
       setPerformance(null);
+      setActivityTimeline(null);
     }
     setLoading(false);
   };
@@ -526,6 +550,7 @@ export default function PromotionsPage() {
       fetchDispatch(promotionId),
       fetchDeliveries(promotionId),
       fetchPerformance(promotionId),
+      fetchActivityTimeline(promotionId),
     ]);
   };
 
@@ -579,6 +604,17 @@ export default function PromotionsPage() {
       return;
     }
     setPerformance(await response.json());
+  };
+
+  const fetchActivityTimeline = async (promotionId: number) => {
+    const response = await fetch(`${PROMOTIONS_API}/${promotionId}/timeline`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      setActivityTimeline(null);
+      return;
+    }
+    setActivityTimeline(await response.json());
   };
 
   const selectPromotion = (promotionId: number) => {
@@ -784,6 +820,7 @@ export default function PromotionsPage() {
       }
       setMessage(`Created social post #${data.post.id} from ${selectedPromotion.name}.`);
       await fetchPerformance(selectedPromotion.id);
+      await fetchActivityTimeline(selectedPromotion.id);
       await fetchPerformanceRollup();
     } catch {
       setMessage("Social post could not be created.");
@@ -816,6 +853,7 @@ export default function PromotionsPage() {
       }
       setMessage(`Created ad campaign #${data.campaign.id} from ${selectedPromotion.name}.`);
       await fetchPerformance(selectedPromotion.id);
+      await fetchActivityTimeline(selectedPromotion.id);
       await fetchPerformanceRollup();
     } catch {
       setMessage("Ad campaign could not be created.");
@@ -1347,6 +1385,49 @@ export default function PromotionsPage() {
                     value={providerLabel(dispatch?.provider_status)}
                   />
                 </div>
+
+                <section className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+                        Campaign Activity Timeline
+                      </p>
+                      <h3 className="mt-1 text-lg font-black">Dry runs, cleanup, handoffs, and redemptions</h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <MiniSignal
+                        icon={Clock}
+                        label="Events"
+                        value={`${activityTimeline?.summary.event_count || 0}`}
+                      />
+                      <MiniSignal
+                        icon={AlertTriangle}
+                        label="Cleanup"
+                        value={`${activityTimeline?.summary.cleanup_events || 0}`}
+                      />
+                      <MiniSignal
+                        icon={Tag}
+                        label="Redemptions"
+                        value={`${activityTimeline?.summary.redemption_events || 0}`}
+                      />
+                    </div>
+                  </div>
+                  <div data-testid="campaign-activity-timeline" className="space-y-2">
+                    {(activityTimeline?.events || []).slice(0, 8).map((event) => (
+                      <TimelineEventRow key={event.id} event={event} />
+                    ))}
+                    {activityTimeline && !activityTimeline.events.length && (
+                      <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
+                        No activity has been recorded for this campaign yet.
+                      </div>
+                    )}
+                    {!activityTimeline && (
+                      <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
+                        Timeline is loading.
+                      </div>
+                    )}
+                  </div>
+                </section>
 
                 {showCleanupReturnPanel && (
                   <section
@@ -2124,6 +2205,67 @@ function cleanupQueueHref(segment: "opted_out" | "missing_email", promotionId: n
     campaign: String(promotionId),
   });
   return `/customers?${params.toString()}`;
+}
+
+function TimelineEventRow({ event }: { event: CampaignActivityEvent }) {
+  const Icon = timelineEventIcon(event.type);
+  return (
+    <div className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-3 text-sm md:grid-cols-12">
+      <div className="flex items-start gap-3 md:col-span-4">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${timelineEventTone(event.type)}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="break-words font-black text-white">{event.title}</p>
+          <p className="mt-1 text-xs font-semibold uppercase text-gray-600">
+            {event.timestamp ? new Date(event.timestamp).toLocaleString() : "No timestamp"}
+          </p>
+        </div>
+      </div>
+      <div className="min-w-0 break-words leading-6 text-gray-400 md:col-span-5">
+        {event.detail}
+      </div>
+      <div className="flex flex-col items-start gap-2 md:col-span-3 md:items-end">
+        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${timelineStatusClass(event.status)}`}>
+          {event.status.replace("_", " ")}
+        </span>
+        <span className="max-w-full break-words text-left text-xs font-black uppercase text-gray-500 md:text-right">
+          {event.metric || event.type}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function timelineEventIcon(type: CampaignActivityEvent["type"]) {
+  if (type === "cleanup") return AlertTriangle;
+  if (type === "redemption") return Tag;
+  if (type === "social") return Share2;
+  if (type === "ad") return Target;
+  if (type === "delivery") return Send;
+  return Megaphone;
+}
+
+function timelineEventTone(type: CampaignActivityEvent["type"]) {
+  if (type === "cleanup") return "bg-amber-500/10 text-amber-300";
+  if (type === "redemption") return "bg-green-500/10 text-green-300";
+  if (type === "social") return "bg-sky-500/10 text-sky-300";
+  if (type === "ad") return "bg-violet-500/10 text-violet-300";
+  if (type === "delivery") return "bg-orange-500/10 text-orange-300";
+  return "bg-white/10 text-gray-300";
+}
+
+function timelineStatusClass(status: string) {
+  if (["sent", "ready", "active", "completed", "closed"].includes(status)) {
+    return "bg-green-500/15 text-green-300";
+  }
+  if (["dry_run", "scheduled", "planned"].includes(status)) {
+    return "bg-blue-500/15 text-blue-300";
+  }
+  if (["failed", "skipped"].includes(status)) {
+    return "bg-yellow-500/15 text-yellow-300";
+  }
+  return "bg-white/10 text-gray-300";
 }
 
 function ProviderCard({

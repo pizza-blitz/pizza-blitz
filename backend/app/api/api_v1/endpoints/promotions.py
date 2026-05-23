@@ -255,6 +255,10 @@ def _offer_label(promo: Promotion) -> str:
     return f"Rs {value} off"
 
 
+def _audience_label(value: Optional[str]) -> str:
+    return (value or "marketing_opt_in").replace("_", " ").title()
+
+
 def _public_site_url() -> str:
     return (
         os.getenv("PIZZA_BLITZ_PUBLIC_BASE_URL")
@@ -893,6 +897,146 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
     }
 
 
+def _timeline_event(
+    *,
+    event_id: str,
+    event_type: str,
+    title: str,
+    status: str,
+    timestamp: Optional[datetime],
+    detail: str,
+    metric: Optional[str] = None,
+    href: Optional[str] = None,
+) -> dict:
+    return {
+        "id": event_id,
+        "type": event_type,
+        "title": title,
+        "status": status,
+        "timestamp": timestamp.isoformat() if timestamp else None,
+        "detail": detail,
+        "metric": metric,
+        "href": href,
+    }
+
+
+def _campaign_activity_payload(db: Session, promo: Promotion, limit: int) -> dict:
+    campaign_event = _timeline_event(
+        event_id=f"campaign-{promo.id}",
+        event_type="campaign",
+        title="Campaign created",
+        status=promo.status,
+        timestamp=promo.created_at,
+        detail=f"{_offer_label(promo)} for {_audience_label(promo.audience)} via {promo.channel}.",
+        metric=promo.code or "No code",
+    )
+    events = [campaign_event]
+
+    deliveries = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.promotion_id == promo.id)
+        .order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        .limit(80)
+        .all()
+    )
+    for delivery in deliveries:
+        customer_name = delivery.customer.name if delivery.customer and delivery.customer.name else "Walk-in Customer"
+        issue_reason = _delivery_issue_reason(delivery)
+        event_type = "cleanup" if issue_reason in {"consent", "missing_destination"} else "delivery"
+        if delivery.status == "dry_run":
+            title = "Dry run ready"
+        elif delivery.status == "sent":
+            title = "Campaign sent"
+        elif event_type == "cleanup":
+            title = "Cleanup issue found"
+        else:
+            title = f"Delivery {delivery.status}"
+        events.append(
+            _timeline_event(
+                event_id=f"delivery-{delivery.id}",
+                event_type=event_type,
+                title=title,
+                status=delivery.status,
+                timestamp=delivery.attempted_at,
+                detail=f"{customer_name}: {delivery.error or _delivery_recovery_action(delivery)}",
+                metric=delivery.destination or delivery.channel,
+            )
+        )
+
+    coupon_orders = _coupon_orders_query(db, promo).order_by(RestaurantOrder.created_at.desc()).limit(40).all()
+    for order in coupon_orders:
+        events.append(
+            _timeline_event(
+                event_id=f"coupon-{order.id}",
+                event_type="redemption",
+                title="Coupon redeemed",
+                status=order.status,
+                timestamp=order.created_at,
+                detail=f"{order.customer_name or 'Customer'} used {promo.code or 'campaign code'}.",
+                metric=f"Rs {round(float(order.total_amount or 0))}",
+                href=f"/orders?order={order.id}",
+            )
+        )
+
+    social_posts = (
+        db.query(SocialPost)
+        .filter(SocialPost.title.like(f"%{promo.name}%"))
+        .order_by(SocialPost.created_at.desc(), SocialPost.id.desc())
+        .limit(20)
+        .all()
+    )
+    for post in social_posts:
+        events.append(
+            _timeline_event(
+                event_id=f"social-{post.id}",
+                event_type="social",
+                title="Social handoff created",
+                status=post.status,
+                timestamp=post.created_at,
+                detail=f"{post.title} for {', '.join(post.platforms or []) or 'no platform'}.",
+                metric=f"Post #{post.id}",
+                href=f"/social?post={post.id}",
+            )
+        )
+
+    ad_campaigns = (
+        db.query(AdCampaign)
+        .filter(AdCampaign.name.like(f"%{promo.name}%"))
+        .order_by(AdCampaign.created_at.desc(), AdCampaign.id.desc())
+        .limit(20)
+        .all()
+    )
+    for campaign in ad_campaigns:
+        events.append(
+            _timeline_event(
+                event_id=f"ad-{campaign.id}",
+                event_type="ad",
+                title="Ad handoff created",
+                status=campaign.status,
+                timestamp=campaign.created_at,
+                detail=f"{campaign.name} planned for {', '.join(campaign.platforms or []) or 'no platform'}.",
+                metric=f"Rs {round(float(campaign.daily_budget or campaign.lifetime_budget or 0))}",
+                href=f"/ads?campaign={campaign.id}",
+            )
+        )
+
+    events.sort(key=lambda event: event["timestamp"] or "", reverse=True)
+    limited_events = events[:limit]
+    if not any(event["id"] == campaign_event["id"] for event in limited_events):
+        limited_events = [*limited_events[: max(limit - 1, 0)], campaign_event]
+    return {
+        "promotion": _promotion_dict(promo),
+        "summary": {
+            "event_count": len(events),
+            "delivery_events": sum(1 for event in events if event["type"] == "delivery"),
+            "cleanup_events": sum(1 for event in events if event["type"] == "cleanup"),
+            "redemption_events": sum(1 for event in events if event["type"] == "redemption"),
+            "handoff_events": sum(1 for event in events if event["type"] in {"social", "ad"}),
+        },
+        "events": limited_events,
+    }
+
+
 @router.post("/")
 def create_promotion(
     promo: PromotionCreate,
@@ -1118,6 +1262,20 @@ def promotion_performance(
     if not promo:
         raise HTTPException(status_code=404, detail="Promotion not found")
     return _promotion_performance_payload(db, promo)
+
+
+@router.get("/{promo_id}/timeline")
+def promotion_activity_timeline(
+    promo_id: int,
+    limit: int = Query(24, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    return _campaign_activity_payload(db, promo, limit)
+
 
 @router.get("/{promo_id}/outreach")
 def promotion_outreach(
