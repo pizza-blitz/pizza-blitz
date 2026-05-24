@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "90%",
-    note: "Internal beta with provider sync and owner reporting comparisons now visible",
+    value: "91%",
+    note: "Internal beta with provider sync, owner reporting and beta review command now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "74%",
-    note: "Provider readiness, external IDs, comparison proofs and retry audits are now tracked",
+    value: "76%",
+    note: "Provider readiness, comparison proofs, beta blockers and production handoff are now tracked",
   },
   {
     label: "Target Date",
@@ -179,6 +179,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Reports now show same weekday last week, same month last year, product movers, category movers and channel/product decisions.",
   },
+  {
+    title: "Weekly beta review",
+    status: "done",
+    value: "Roadmap now shows proof audit, remaining beta blockers, production handoff and the next database-readiness path.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -211,6 +216,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Reporting comparison depth",
     status: "done",
     value: "Owner reports now show same-day, same-month, product, category and channel comparison signals.",
+  },
+  {
+    title: "Weekly beta review",
+    status: "done",
+    value: "Proof audit, blocker correction list and next production database path are now visible on the roadmap.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -247,7 +257,7 @@ const timeline: TimelinePhase[] = [
       },
       {
         title: "Production readiness pass",
-        status: "planned",
+        status: "active",
         value: "Database, backups, environment secrets, deployment checks and monitoring baseline.",
       },
       {
@@ -472,18 +482,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "7 Jun 2026",
     focus: "Weekly beta review",
-    status: "active",
+    status: "done",
     planned: [
       "Run E2E proofs",
       "Review remaining blockers",
       "Refresh roadmap page status",
     ],
-    output: "Two-week beta scope is corrected before production work.",
+    output: "Proof audit, remaining blocker list, beta review command and production database handoff were completed.",
   },
   {
     date: "8 Jun 2026",
     focus: "Production database path",
-    status: "planned",
+    status: "active",
     planned: [
       "Define production DB choice",
       "Confirm migration steps",
@@ -628,8 +638,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "12",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, production ops, visual audit and roadmap.",
+    value: "13",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -639,12 +649,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Reporting comparison work is now ready for the weekly beta review pass.",
+    note: "Weekly beta review is complete and the production database path is now active.",
   },
   {
     label: "Next Risk",
-    value: "Beta Review",
-    note: "Proof audit, blocker correction and next production-risk alignment are now the active track.",
+    value: "Production DB",
+    note: "Database choice, migration checklist and backup verification are now the active track.",
   },
 ];
 
@@ -713,6 +723,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-reporting-comparison-dashboard.png",
   },
   {
+    area: "Weekly beta review",
+    proof: "verify-weekly-beta-review.cjs",
+    status: "passed",
+    value: "Proof audit, blocker list, beta decision and production database handoff are visible.",
+    artifact: "visible-weekly-beta-review.png",
+  },
+  {
     area: "Production operations",
     proof: "verify-production-ops-readiness.cjs",
     status: "passed",
@@ -732,6 +749,80 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "The day tracker, current next step and stabilization command board remain visible.",
     artifact: "visible-roadmap-command-board.png",
+  },
+];
+
+const betaReviewMetrics: StabilizationMetric[] = [
+  {
+    label: "Proof Audit",
+    value: "13 / 13",
+    note: "Critical browser and API proofs now have named artifacts on the roadmap.",
+  },
+  {
+    label: "Known Blockers",
+    value: "5",
+    note: "Live credentials, production DB, backups, deployment secrets and live delivery tracking remain production blockers.",
+  },
+  {
+    label: "Beta Decision",
+    value: "Controlled",
+    note: "The portal is fit for internal demo and controlled beta, not open public launch.",
+  },
+  {
+    label: "Next Handoff",
+    value: "DB Path",
+    note: "The next work slice should choose the production database and prove backup/restore readiness.",
+  },
+];
+
+const betaReviewOutcomes: RoadmapItem[] = [
+  {
+    title: "Proof audit completed",
+    status: "done",
+    value: "Build, roadmap, reporting, weekly stabilization, and visual route proofs are green after the latest reporting and provider-sync work.",
+  },
+  {
+    title: "Remaining blocker list refreshed",
+    status: "done",
+    value: "Real payment credentials, provider tokens, delivery live tracking, production DB, backups and deployment secrets are now called out as production blockers.",
+  },
+  {
+    title: "Controlled beta decision",
+    status: "done",
+    value: "The system is suitable for internal operations demo and controlled staff/customer walkthroughs while live integrations remain guarded.",
+  },
+  {
+    title: "Production database handoff",
+    status: "active",
+    value: "Next slice should define the DB choice, migration path, backup verification and restore drill before deployment work.",
+  },
+];
+
+const betaBlockers: RoadmapItem[] = [
+  {
+    title: "Live payment and bank settlement",
+    status: "planned",
+    value: "Add real gateway credentials, run low-value payment proof and reconcile settlement reports.",
+  },
+  {
+    title: "Live provider sending",
+    status: "planned",
+    value: "Switch WhatsApp, SMS, email, social and ad flows from safe dry-run/readiness into token-backed live sending.",
+  },
+  {
+    title: "Production database and backups",
+    status: "active",
+    value: "Move from local/dev storage to managed production DB, backup schedule and restore verification.",
+  },
+  {
+    title: "Deployment and secret security",
+    status: "planned",
+    value: "Lock environment variables, session secrets, logging, rollback path and monitoring before open beta.",
+  },
+  {
+    title: "Customer-facing delivery tracking",
+    status: "planned",
+    value: "Expose rider state, delivery exceptions and clearer customer tracking for live delivery orders.",
   },
 ];
 
@@ -856,6 +947,87 @@ export default function RoadmapPage() {
         </div>
       </section>
 
+      <section data-testid="weekly-beta-review-command" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-orange-600" />
+              <h2 className="text-xl font-black text-slate-950">Weekly Beta Review Command</h2>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+              Proof audit, remaining blockers, beta decision and production database handoff.
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black uppercase text-orange-700">
+            <Target className="h-3.5 w-3.5" />
+            Controlled Beta
+          </span>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {betaReviewMetrics.map((metric) => (
+            <div key={metric.label} className="rounded-lg border border-slate-200 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">{metric.label}</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{metric.value}</p>
+              <p className="mt-2 text-sm leading-5 text-slate-500">{metric.note}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div>
+            <div className="mb-4 flex items-start gap-3">
+              <div className="rounded-md bg-emerald-50 p-2 text-emerald-600">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-950">Review Outcomes</h3>
+                <p className="mt-1 text-sm text-slate-500">What we can confidently say after the proof pass.</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {betaReviewOutcomes.map((item) => (
+                <RoadmapRow key={item.title} item={item} />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-4 flex items-start gap-3">
+              <div className="rounded-md bg-orange-50 p-2 text-orange-600">
+                <Flag className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-950">Remaining Beta Blockers</h3>
+                <p className="mt-1 text-sm text-slate-500">What still prevents a fully open production launch.</p>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {betaBlockers.map((item) => (
+                <RoadmapRow key={item.title} item={item} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-700" />
+              <h3 className="font-black text-emerald-950">Beta Decision</h3>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-emerald-800">
+              Controlled internal beta: the portal is ready for owner/staff walkthroughs and guarded customer demos.
+            </p>
+          </div>
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+            <div className="flex items-center gap-2">
+              <Rocket className="h-4 w-4 text-orange-700" />
+              <h3 className="font-black text-orange-950">Production Database Path</h3>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-orange-800">
+              Define DB choice, migration checklist, backup verification and restore drill.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <StatusList
           icon={CheckCircle2}
@@ -972,7 +1144,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Weekly beta review: run proof audit, correct blockers, refresh remaining risk list and prepare production database path."
+          text="Production database path: define production DB choice, migration checklist, backup verification and restore drill."
         />
       </section>
     </div>
