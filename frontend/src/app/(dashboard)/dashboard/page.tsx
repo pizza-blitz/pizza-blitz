@@ -1,7 +1,23 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { TrendingUp, ShoppingBag, DollarSign, Calendar, ArrowUpRight, ArrowDownRight, Award, Clock } from 'lucide-react';
+import {
+  AlertTriangle,
+  Award,
+  BellRing,
+  Calendar,
+  Clock,
+  DollarSign,
+  ExternalLink,
+  Flame,
+  ShoppingBag,
+  TimerReset,
+  TrendingUp,
+  Truck,
+  ArrowUpRight,
+  ArrowDownRight,
+} from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 function formatCurrency(value: number | undefined | null, fractionDigits = 0) {
@@ -27,53 +43,270 @@ function EmptyChartState({ label }: { label: string }) {
   );
 }
 
+type DashboardOrder = {
+  id: number;
+  status: string;
+  order_type: string;
+  fulfillment_type?: string | null;
+  total_amount?: number;
+  customer_name?: string | null;
+  created_at?: string | null;
+  payment_due?: boolean;
+  delivery_assignment?: {
+    assigned_to?: string | null;
+    status?: string | null;
+  } | null;
+};
+
+type FlowReadiness = {
+  summary: {
+    today_order_count: number;
+    active_order_count: number;
+    open_count: number;
+    preparing_count: number;
+    ready_count: number;
+    ready_to_close_count: number;
+    payment_due_count: number;
+    closed_count: number;
+  };
+  next_actions: string[];
+};
+
+type DeliveryQueue = {
+  summary: {
+    open_delivery_count: number;
+    unassigned_count: number;
+    assigned_count: number;
+    out_for_delivery_count: number;
+    address_review_count: number;
+    payment_due_count: number;
+  };
+};
+
+type OwnerAlert = {
+  title: string;
+  detail: string;
+  tone: "emerald" | "amber" | "orange" | "sky" | "red" | "slate";
+};
+
+function CommandMetric({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  testId,
+}: {
+  label: string;
+  value: number | string;
+  detail: string;
+  icon: typeof TimerReset;
+  testId: string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+          <p data-testid={testId} className="mt-1 text-2xl font-black leading-none text-slate-950">
+            {value}
+          </p>
+        </div>
+        <span className="rounded-md bg-slate-50 p-2 text-slate-600">
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+      <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function StatePill({
+  label,
+  value,
+  tone = "slate",
+  testId,
+}: {
+  label: string;
+  value: number;
+  tone?: "emerald" | "amber" | "orange" | "sky" | "red" | "slate";
+  testId: string;
+}) {
+  const toneClass = {
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
+    orange: "border-orange-200 bg-orange-50 text-orange-700",
+    sky: "border-sky-200 bg-sky-50 text-sky-700",
+    red: "border-red-200 bg-red-50 text-red-700",
+    slate: "border-slate-200 bg-slate-50 text-slate-700",
+  }[tone];
+
+  return (
+    <div className={`rounded-md border px-3 py-2 ${toneClass}`}>
+      <p className="text-[10px] font-black uppercase tracking-wide opacity-75">{label}</p>
+      <p data-testid={testId} className="mt-1 text-xl font-black leading-none">{value}</p>
+    </div>
+  );
+}
+
+function OwnerAlertRow({ alert }: { alert: OwnerAlert }) {
+  const toneClass = {
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    orange: "border-orange-200 bg-orange-50 text-orange-800",
+    sky: "border-sky-200 bg-sky-50 text-sky-800",
+    red: "border-red-200 bg-red-50 text-red-800",
+    slate: "border-slate-200 bg-slate-50 text-slate-800",
+  }[alert.tone];
+
+  return (
+    <li className={`rounded-md border px-3 py-3 ${toneClass}`}>
+      <p className="text-sm font-black">{alert.title}</p>
+      <p className="mt-1 text-xs font-semibold opacity-80">{alert.detail}</p>
+    </li>
+  );
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [insights, setInsights] = useState<any>(null);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [lifetime, setLifetime] = useState<any>(null);
+  const [todayOrders, setTodayOrders] = useState<DashboardOrder[]>([]);
+  const [totalCollectedToday, setTotalCollectedToday] = useState(0);
+  const [flowReadiness, setFlowReadiness] = useState<FlowReadiness | null>(null);
+  const [deliveryQueue, setDeliveryQueue] = useState<DeliveryQueue | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState("30days");
 
   useEffect(() => {
-    fetchAllData();
+    const controller = new AbortController();
+    fetchAllData(controller.signal);
+    return () => controller.abort();
   }, [period]);
 
-  const fetchAllData = async () => {
+  const fetchAllData = async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
-      const [statsRes, insightsRes, monthlyRes, lifetimeRes] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`), { credentials: "include" }).then(r => r.json()),
-        fetchInsights(),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-breakdown`), { credentials: "include" }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/lifetime-summary`), { credentials: "include" }).then(r => r.json())
+      const [statsRes, _insightsRes, monthlyRes, lifetimeRes, todayRes, flowRes, queueRes] = await Promise.all([
+        fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`), { credentials: "include", signal }).then(r => r.json()),
+        fetchInsights(signal),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-breakdown`), { credentials: "include", signal }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/lifetime-summary`), { credentials: "include", signal }).then(r => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/orders/today"), { credentials: "include", cache: "no-store", signal }).then(r => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/orders/flow-readiness"), { credentials: "include", cache: "no-store", signal }).then(r => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/delivery/queue"), { credentials: "include", cache: "no-store", signal }).then(r => r.json())
       ]);
 
+      if (signal?.aborted) return;
       setStats(statsRes);
       setMonthlyData(monthlyRes);
       setLifetime(lifetimeRes);
+      setTodayOrders(todayRes.orders || []);
+      setTotalCollectedToday(Number(todayRes.total_collected_today || 0));
+      setFlowReadiness(flowRes);
+      setDeliveryQueue(queueRes);
     } catch (error) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch dashboard data", error);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
     }
   };
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (signal?: AbortSignal) => {
     try {
       const [comparison, dayOfWeek, forecast, profitTrend] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/same-period?period=30days`), { credentials: "include" }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/day-of-week`), { credentials: "include" }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-forecast`), { credentials: "include" }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/profit-trend?months=1`), { credentials: "include" }).then(r => r.json())
+        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/same-period?period=30days`), { credentials: "include", signal }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/day-of-week`), { credentials: "include", signal }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-forecast`), { credentials: "include", signal }).then(r => r.json()),
+        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/profit-trend?months=1`), { credentials: "include", signal }).then(r => r.json())
       ]);
+      if (signal?.aborted) return null;
       const data = { comparison, dayOfWeek, forecast, profitTrend };
       setInsights(data);
       return data;
     } catch (error) {
+      if (signal?.aborted) return null;
       console.error("Failed to fetch insights", error);
+      return null;
     }
   };
+
+  const commandBoard = React.useMemo(() => {
+    const flow = flowReadiness?.summary;
+    const delivery = deliveryQueue?.summary;
+    const activeOrders = todayOrders.filter((order) => order.status !== "closed");
+    const deliveryOrders = todayOrders.filter(
+      (order) =>
+        (order.fulfillment_type || order.order_type || "").toLowerCase() === "delivery" &&
+        order.status !== "closed"
+    );
+    const ownerAlerts: OwnerAlert[] = [];
+
+    if (flow?.payment_due_count) {
+      ownerAlerts.push({
+        title: "Payment due",
+        detail: `Confirm payment for ${flow.payment_due_count} active order(s).`,
+        tone: "amber",
+      });
+    }
+    if (flow?.ready_to_close_count) {
+      ownerAlerts.push({
+        title: "Ready to close",
+        detail: `Print receipt and close ${flow.ready_to_close_count} ready order(s).`,
+        tone: "emerald",
+      });
+    }
+    if (flow?.open_count) {
+      ownerAlerts.push({
+        title: "Start prep",
+        detail: `Start kitchen prep for ${flow.open_count} newly received order(s).`,
+        tone: "orange",
+      });
+    }
+    if (delivery?.unassigned_count) {
+      ownerAlerts.push({
+        title: "Assign riders",
+        detail: `Assign riders to ${delivery.unassigned_count} delivery order(s).`,
+        tone: "sky",
+      });
+    }
+    if (delivery?.address_review_count) {
+      ownerAlerts.push({
+        title: "Address review",
+        detail: `Confirm address details for ${delivery.address_review_count} delivery order(s).`,
+        tone: "red",
+      });
+    }
+    if (!ownerAlerts.length) {
+      ownerAlerts.push({
+        title: "No active blockers",
+        detail: "Kitchen, payment and delivery queues are clear right now.",
+        tone: "slate",
+      });
+    }
+
+    return {
+      todayOrders: flow?.today_order_count ?? todayOrders.length,
+      activeOrders: flow?.active_order_count ?? activeOrders.length,
+      open: flow?.open_count ?? activeOrders.filter((order) => order.status === "open").length,
+      preparing: flow?.preparing_count ?? activeOrders.filter((order) => order.status === "preparing").length,
+      ready: flow?.ready_count ?? activeOrders.filter((order) => order.status === "ready").length,
+      readyToClose: flow?.ready_to_close_count ?? 0,
+      paymentDue: flow?.payment_due_count ?? activeOrders.filter((order) => order.payment_due).length,
+      closed: flow?.closed_count ?? todayOrders.filter((order) => order.status === "closed").length,
+      deliveryOpen: delivery?.open_delivery_count ?? deliveryOrders.length,
+      deliveryUnassigned: delivery?.unassigned_count ?? 0,
+      deliveryAssigned: delivery?.assigned_count ?? 0,
+      deliveryOut: delivery?.out_for_delivery_count ?? 0,
+      deliveryAddressReview: delivery?.address_review_count ?? 0,
+      deliveryPaymentDue: delivery?.payment_due_count ?? 0,
+      ownerAlerts,
+      activeValue: activeOrders.reduce((sum, order) => sum + Number(order.total_amount || 0), 0),
+    };
+  }, [deliveryQueue, flowReadiness, todayOrders]);
 
   if (isLoading && !stats) return <div className="p-8 text-center text-gray-500 animate-pulse">Loading Advanced Intelligence...</div>;
 
@@ -144,6 +377,102 @@ export default function Dashboard() {
           })}
         </div>
       )}
+
+      <section
+        data-testid="today-command-board"
+        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"
+      >
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-2xl font-black text-slate-950">Today Command Board</h2>
+              <span className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black uppercase text-emerald-700">
+                <BellRing className="h-3.5 w-3.5" />
+                Live Ops
+              </span>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm font-medium text-slate-500">
+              Owner view for kitchen state, delivery handoff and action alerts.
+            </p>
+          </div>
+          <Link
+            href="/operations"
+            className="inline-flex h-10 w-fit items-center gap-2 rounded-md border border-slate-200 bg-slate-950 px-4 text-sm font-black text-white shadow-sm hover:bg-slate-800"
+          >
+            Kitchen Ops
+            <ExternalLink className="h-4 w-4" />
+          </Link>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <CommandMetric
+            label="Today's Orders"
+            value={commandBoard.todayOrders}
+            detail={`${commandBoard.closed} closed, ${formatCurrency(totalCollectedToday, 2)} collected`}
+            icon={TimerReset}
+            testId="today-orders-count"
+          />
+          <CommandMetric
+            label="Kitchen Active"
+            value={commandBoard.activeOrders}
+            detail={`${commandBoard.open} new, ${commandBoard.preparing} preparing, ${commandBoard.ready} ready`}
+            icon={Flame}
+            testId="kitchen-active-count"
+          />
+          <CommandMetric
+            label="Delivery Handoff"
+            value={commandBoard.deliveryOpen}
+            detail={`${commandBoard.deliveryUnassigned} unassigned, ${commandBoard.deliveryOut} on road`}
+            icon={Truck}
+            testId="delivery-handoff-count"
+          />
+          <CommandMetric
+            label="Owner Alerts"
+            value={commandBoard.ownerAlerts.length}
+            detail={`${commandBoard.readyToClose} close-ready, ${commandBoard.paymentDue} payment due`}
+            icon={AlertTriangle}
+            testId="owner-alert-count"
+          />
+        </div>
+
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.1fr_1.1fr_0.9fr]">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">Kitchen State</h3>
+              <span className="text-xs font-bold text-slate-500">{formatCurrency(commandBoard.activeValue, 2)} active value</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <StatePill label="New" value={commandBoard.open} tone="orange" testId="kitchen-state-new" />
+              <StatePill label="Preparing" value={commandBoard.preparing} tone="sky" testId="kitchen-state-preparing" />
+              <StatePill label="Ready" value={commandBoard.ready} tone="emerald" testId="kitchen-state-ready" />
+              <StatePill label="Close" value={commandBoard.readyToClose} tone="amber" testId="kitchen-state-close" />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">Delivery State</h3>
+              <span className="text-xs font-bold text-slate-500">{commandBoard.deliveryOpen} open handoff</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <StatePill label="Unassigned" value={commandBoard.deliveryUnassigned} tone="orange" testId="delivery-state-unassigned" />
+              <StatePill label="Assigned" value={commandBoard.deliveryAssigned} tone="sky" testId="delivery-state-assigned" />
+              <StatePill label="On Road" value={commandBoard.deliveryOut} tone="emerald" testId="delivery-state-out" />
+              <StatePill label="Address" value={commandBoard.deliveryAddressReview} tone="red" testId="delivery-state-address" />
+              <StatePill label="Payment" value={commandBoard.deliveryPaymentDue} tone="amber" testId="delivery-state-payment" />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">Owner Alerts</h3>
+            <ul data-testid="owner-alert-list" className="mt-3 space-y-2">
+              {commandBoard.ownerAlerts.slice(0, 4).map((alert) => (
+                <OwnerAlertRow key={`${alert.title}-${alert.detail}`} alert={alert} />
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
 
       {/* Advanced Section: Lifetime Summary & Monthly Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

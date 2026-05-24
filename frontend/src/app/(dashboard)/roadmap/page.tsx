@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "98%",
-    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer/counter/delivery proof and dashboard polish now visible",
+    value: "99%",
+    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer/counter/delivery proof, dashboard polish and ops command visibility now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "86%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, delivery handoff and visual polish proof are now tracked",
+    value: "87%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, delivery handoff, visual polish and ops command proof are now tracked",
   },
   {
     label: "Target Date",
@@ -218,6 +218,11 @@ const completedValue: RoadmapItem[] = [
     title: "Dashboard visual polish",
     status: "done",
     value: "Mobile navigation now has active state, dashboard cards are denser on mobile, currency formatting is consistent and chart empty states are explicit.",
+  },
+  {
+    title: "Operational dashboards",
+    status: "done",
+    value: "Dashboard now exposes today's orders, kitchen state, delivery handoff and owner alerts from live order-flow and delivery queue data.",
   },
 ];
 
@@ -620,18 +625,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "15 Jun 2026",
     focus: "Operational dashboards",
-    status: "active",
+    status: "done",
     planned: [
       "Today command board",
       "Kitchen and delivery state",
       "Owner alerts",
     ],
-    output: "Daily operator visibility improves.",
+    output: "Today command board, kitchen state, delivery handoff and owner alerts are now visible from live order-flow data.",
   },
   {
     date: "16 Jun 2026",
     focus: "Marketing live-readiness review",
-    status: "planned",
+    status: "active",
     planned: [
       "Campaign sender checklist",
       "Social posting checklist",
@@ -688,8 +693,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "20",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "21",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -699,12 +704,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Dashboard polish and delivery order E2E are now proof-backed.",
+    note: "Operational command board, dashboard polish and delivery order E2E are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Operational Dashboards",
-    note: "Today command board, kitchen/delivery state and owner alerts are now the active track.",
+    value: "Marketing Live Readiness",
+    note: "Campaign sender checklist, social posting checklist and ad launch checklist are now the active track.",
   },
 ];
 
@@ -843,6 +848,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-dashboard-visual-polish-mobile.png",
   },
   {
+    area: "Operational dashboard command",
+    proof: "verify-operational-dashboard-command.cjs",
+    status: "passed",
+    value: "Today's orders, kitchen state, delivery handoff and owner alerts stay connected to live order-flow data.",
+    artifact: "visible-operational-dashboard-command-board.png",
+  },
+  {
     area: "Roadmap command board",
     proof: "verify-roadmap-command-board.cjs",
     status: "passed",
@@ -854,7 +866,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "20 / 20",
+    value: "21 / 21",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -869,8 +881,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Operational Dashboards",
-    note: "The next work slice should improve today command board visibility, kitchen/delivery state and owner alerts.",
+    value: "Marketing Live Readiness",
+    note: "The next work slice should review campaign sender, social posting and ad launch readiness before live credentials.",
   },
 ];
 
@@ -927,8 +939,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Operational dashboards handoff",
+    status: "done",
+    value: "Today command board, kitchen state, delivery handoff and owner alerts are now visible from live order-flow data.",
+  },
+  {
+    title: "Marketing live-readiness handoff",
     status: "active",
-    value: "Next slice should improve today command board visibility, kitchen and delivery state and owner alerts.",
+    value: "Next slice should review campaign sender checklist, social posting checklist and ad launch checklist.",
   },
 ];
 
@@ -1278,7 +1295,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Operational dashboards: tighten today command board visibility, kitchen and delivery state and owner alerts."
+          text="Marketing live-readiness review: confirm campaign sender checklist, social posting checklist and ad launch checklist before live credentials."
         />
       </section>
     </div>
