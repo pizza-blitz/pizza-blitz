@@ -97,12 +97,14 @@ async function main() {
     await page.getByText("verify-production-ops-readiness.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-social-publishing-readiness.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-ad-provider-sync.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-reporting-comparison-dashboard.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("QA command board, route audit matrix", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Real WhatsApp/SMS/email readiness", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Social publishing readiness", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Ad provider sync", { exact: true }).first().waitFor({ timeout: 15000 });
-    await page.getByText("Reporting comparison depth: same day last week", {
+    await page.getByText("Reporting comparison depth", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Weekly beta review: run proof audit", {
       exact: false,
     }).waitFor({ timeout: 15000 });
 

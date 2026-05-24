@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "89%",
-    note: "Internal beta with messaging, social and ad provider sync readiness now visible",
+    value: "90%",
+    note: "Internal beta with provider sync and owner reporting comparisons now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "73%",
-    note: "Provider readiness, external IDs, schedule blockers and retry audits are now tracked",
+    value: "74%",
+    note: "Provider readiness, external IDs, comparison proofs and retry audits are now tracked",
   },
   {
     label: "Target Date",
@@ -174,6 +174,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Ads now show provider credentials, external campaign ID audit, safe dry-run/apply sync and pause/resume guardrails.",
   },
+  {
+    title: "Reporting comparison depth",
+    status: "done",
+    value: "Reports now show same weekday last week, same month last year, product movers, category movers and channel/product decisions.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -201,6 +206,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Ad provider sync",
     status: "done",
     value: "Meta provider credentials, external campaign IDs, pause/resume guardrails and launch audit are now visible.",
+  },
+  {
+    title: "Reporting comparison depth",
+    status: "done",
+    value: "Owner reports now show same-day, same-month, product, category and channel comparison signals.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -451,18 +461,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "6 Jun 2026",
     focus: "Reporting comparison depth",
-    status: "active",
+    status: "done",
     planned: [
       "Same day last week",
       "Same month last year",
       "Channel and product comparisons",
     ],
-    output: "Owner reporting becomes more decision-focused.",
+    output: "Owner comparison command, same-day/month baselines, product/category movers and browser/API proof were completed.",
   },
   {
     date: "7 Jun 2026",
     focus: "Weekly beta review",
-    status: "planned",
+    status: "active",
     planned: [
       "Run E2E proofs",
       "Review remaining blockers",
@@ -618,8 +628,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "11",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, production ops, visual audit and roadmap.",
+    value: "12",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -629,12 +639,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Provider-readiness work is now ready for the reporting comparison pass.",
+    note: "Reporting comparison work is now ready for the weekly beta review pass.",
   },
   {
     label: "Next Risk",
-    value: "Reporting",
-    note: "Same-day, same-week and same-month comparisons are now the active track.",
+    value: "Beta Review",
+    note: "Proof audit, blocker correction and next production-risk alignment are now the active track.",
   },
 ];
 
@@ -694,6 +704,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Meta credentials, external campaign IDs, dry-run/apply sync and pause/resume guardrails are visible.",
     artifact: "visible-ad-provider-sync.png",
+  },
+  {
+    area: "Reporting comparison",
+    proof: "verify-reporting-comparison-dashboard.cjs",
+    status: "passed",
+    value: "Same weekday, same month last year, product movers, category movers and channel decisions are visible.",
+    artifact: "visible-reporting-comparison-dashboard.png",
   },
   {
     area: "Production operations",
@@ -955,7 +972,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Reporting comparison depth: same day last week, same month last year, channel and product comparison dashboards."
+          text="Weekly beta review: run proof audit, correct blockers, refresh remaining risk list and prepare production database path."
         />
       </section>
     </div>

@@ -49,12 +49,13 @@ export default function Reports() {
         }
         return payload;
       };
-      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, marketingRes, orderChannelRes, customerSegmentRes] = await Promise.all([
+      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, ownerComparisonRes, marketingRes, orderChannelRes, customerSegmentRes] = await Promise.all([
         fetchJson(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`),
         fetchJson('/api/v1/restaurant/sales/'),
         fetchJson('/api/v1/restaurant/stats/insights/monthly-forecast'),
         fetchJson('/api/v1/restaurant/stats/insights/profit-trend?months=12'),
         fetchJson(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
+        fetchJson(`/api/v1/restaurant/stats/compare/owner-command-dashboard?period=${comparisonPeriod}`),
         fetchJson('/api/v1/restaurant/promotions/performance?limit=25'),
         fetchJson(`/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`),
         fetchJson('/api/v1/restaurant/customers/segments/report')
@@ -66,6 +67,7 @@ export default function Reports() {
         forecast: forecastRes,
         trends: trendRes.trend || [],
         comparison: comparisonRes,
+        ownerComparison: ownerComparisonRes,
         marketing: marketingRes,
         orderChannels: orderChannelRes,
         customerSegments: customerSegmentRes
@@ -142,6 +144,7 @@ export default function Reports() {
   const formatPercent = (value: number) => `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
   const comparison = data?.comparison;
+  const ownerComparison = data?.ownerComparison;
   const marketing = data?.marketing;
   const orderChannels = data?.orderChannels;
   const customerSegments = data?.customerSegments;
@@ -218,6 +221,10 @@ export default function Reports() {
         yoyChange: percentChange(row.current_sale, row.last_year_sale),
       }))
     : [];
+  const productMoverRows = ownerComparison?.product_movers || [];
+  const categoryMoverRows = ownerComparison?.category_movers || [];
+  const ownerChannelRows = ownerComparison?.channel_mix || [];
+  const ownerActionRows = ownerComparison?.owner_actions || [];
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -277,6 +284,152 @@ export default function Reports() {
         </div>
       ) : (
         <>
+          {ownerComparison && (
+            <section data-testid="owner-comparison-dashboard" className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Owner Comparison Command</p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">Same Day, Same Month, Product and Channel Signals</h2>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-500">
+                  {ownerComparison.period.current_start} to {ownerComparison.period.current_end}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[0.82fr_1.18fr]">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-1">
+                    <OwnerSnapshotCard
+                      title="Today"
+                      label={ownerComparison.same_day.current.weekday}
+                      value={formatMoney(ownerComparison.same_day.current.sales)}
+                      detail={`${ownerComparison.same_day.current.orders || 0} orders | ${formatMoney(ownerComparison.same_day.current.profit)} profit`}
+                    />
+                    <OwnerSnapshotCard
+                      title="Same Weekday Last Week"
+                      label={ownerComparison.same_day.same_weekday_last_week.date}
+                      value={formatMoney(ownerComparison.same_day.same_weekday_last_week.sales)}
+                      detail={`${formatPercent(Number(ownerComparison.same_day.last_week_change_percent || 0))} vs last week`}
+                    />
+                    <OwnerSnapshotCard
+                      title="Same Day Last Year"
+                      label={ownerComparison.same_day.same_day_last_year.date}
+                      value={formatMoney(ownerComparison.same_day.same_day_last_year.sales)}
+                      detail={`${formatPercent(Number(ownerComparison.same_day.last_year_change_percent || 0))} vs last year`}
+                    />
+                  </div>
+
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-orange-700">Same Month Last Year</p>
+                        <h3 className="mt-1 text-lg font-black text-gray-950">Month-to-date comparison</h3>
+                      </div>
+                      <Calendar className="h-5 w-5 text-orange-700" />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+                      <MarketingCommandMetric label="This Month" value={formatMoney(ownerComparison.same_month.current.revenue)} />
+                      <MarketingCommandMetric label="Previous Month" value={formatPercent(Number(ownerComparison.same_month.previous_month_change_percent || 0))} />
+                      <MarketingCommandMetric label="Last Year Month" value={formatPercent(Number(ownerComparison.same_month.last_year_change_percent || 0))} />
+                    </div>
+                    <p className="mt-3 text-xs font-bold leading-5 text-orange-900">
+                      Current: {ownerComparison.same_month.current.start_date} to {ownerComparison.same_month.current.end_date} | Last year: {ownerComparison.same_month.same_month_last_year.start_date} to {ownerComparison.same_month.same_month_last_year.end_date}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[1.05fr_0.95fr]">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Product Movers</p>
+                        <h3 className="mt-1 text-lg font-black text-gray-950">What to push on the menu</h3>
+                      </div>
+                      <ShoppingBag className="h-5 w-5 text-orange-600" />
+                    </div>
+                    <div className="space-y-3">
+                      {productMoverRows.length ? (
+                        productMoverRows.slice(0, 5).map((row: any) => (
+                          <div key={`product-mover-${row.key}`} className="rounded-lg border border-gray-200 bg-white p-4">
+                            <div className="mb-2 flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-black text-gray-950">{row.name}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                                  {row.category} | {row.current.quantity || 0} sold
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-black text-gray-950">{formatMoney(row.current.revenue)}</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-orange-700">{row.movement}</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest">
+                              <span className="rounded-md bg-gray-100 px-2 py-1 text-gray-600">Share {Number(row.current_share_percent || 0).toFixed(1)}%</span>
+                              <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700">Prev {formatPercent(Number(row.previous_change_percent || 0))}</span>
+                              <span className="rounded-md bg-green-50 px-2 py-1 text-green-700">YoY {formatPercent(Number(row.yoy_change_percent || 0))}</span>
+                            </div>
+                            <p className="mt-2 text-xs font-bold text-gray-600">{row.recommended_action}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm font-bold text-gray-400">
+                          Product movers will populate after orders are captured.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">Category Movers</p>
+                      <div className="space-y-2">
+                        {categoryMoverRows.length ? (
+                          categoryMoverRows.slice(0, 5).map((row: any) => (
+                            <div key={`category-mover-${row.key}`} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2">
+                              <div>
+                                <p className="text-sm font-black text-gray-950">{row.name}</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.current.quantity || 0} units</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-black text-gray-950">{formatMoney(row.current.revenue)}</p>
+                                <p className="text-[10px] font-black text-gray-500">{formatPercent(Number(row.previous_change_percent || 0))} prev</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-center text-sm font-bold text-gray-400">No category split yet.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">Channel and Product Decisions</p>
+                      <div className="space-y-2">
+                        {ownerActionRows.map((action: string) => (
+                          <p key={action} className="rounded-md bg-gray-50 px-3 py-2 text-sm font-bold leading-5 text-gray-700">
+                            {action}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">Channel Snapshot</p>
+                      <div className="space-y-2">
+                        {ownerChannelRows.slice(0, 4).map((row: any) => (
+                          <div key={`owner-channel-${row.key}`} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2">
+                            <span className="text-sm font-black text-gray-950">{row.label}</span>
+                            <span className="text-xs font-black text-gray-600">{Number(row.current_share_percent || 0).toFixed(1)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
           {data?.comparison && (
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
               <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
@@ -1236,6 +1389,33 @@ function MarketingCommandMetric({ label, value }: { label: string; value: string
     <div className="rounded-lg border border-gray-200 bg-white p-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 break-words text-lg font-black text-gray-950">{value}</p>
+    </div>
+  );
+}
+
+function OwnerSnapshotCard({
+  title,
+  label,
+  value,
+  detail,
+}: {
+  title: string;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{title}</p>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-lg font-black text-gray-950">{value}</p>
+          <p className="mt-1 text-xs font-bold leading-5 text-gray-500">{detail}</p>
+        </div>
+        <span className="rounded-md bg-white px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-600">
+          {label}
+        </span>
+      </div>
     </div>
   );
 }

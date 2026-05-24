@@ -1,9 +1,12 @@
+import calendar
+from datetime import date, datetime, timedelta
+from collections import defaultdict
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, text
 from app.api.deps import get_db, require_roles
-from app.models.domain import DailySales, FixedCost, RestaurantOrder
-from datetime import datetime, timedelta
+from app.models.domain import DailySales, FixedCost, MenuItem, RestaurantOrder
 
 router = APIRouter()
 
@@ -158,6 +161,163 @@ def _dimension_comparison_rows(current: dict, previous: dict, last_year: dict, t
             "yoy_change_percent": _percent_change(current_revenue, last_year_revenue),
         })
     return rows
+
+def _safe_replace_year(value: date, year: int) -> date:
+    try:
+        return value.replace(year=year)
+    except ValueError:
+        return value.replace(year=year, day=28)
+
+def _format_sql_date(value, fmt: str) -> str:
+    if not value:
+        return "N/A"
+    if hasattr(value, "strftime"):
+        return value.strftime(fmt)
+    try:
+        return date.fromisoformat(str(value)).strftime(fmt)
+    except ValueError:
+        return str(value)
+
+def _previous_month_to_date(value: date) -> tuple[date, date]:
+    year = value.year
+    month = value.month - 1
+    if month == 0:
+        year -= 1
+        month = 12
+    last_day = calendar.monthrange(year, month)[1]
+    end_day = min(value.day, last_day)
+    return date(year, month, 1), date(year, month, end_day)
+
+def _same_month_last_year_to_date(value: date) -> tuple[date, date]:
+    year = value.year - 1
+    month = value.month
+    last_day = calendar.monthrange(year, month)[1]
+    end_day = min(value.day, last_day)
+    return date(year, month, 1), date(year, month, end_day)
+
+def _daily_sales_snapshot(db: Session, target_date: date, label: str) -> dict:
+    sales = db.query(DailySales).filter(DailySales.date == target_date).first()
+    order_summary = _order_aggregate_range(db, target_date, target_date)
+    sale = float(sales.total_sale or 0) if sales else float(order_summary["revenue"] or 0)
+    expense = float(sales.total_expense or 0) if sales else 0.0
+    profit = float(sales.profit or (sale - expense)) if sales else sale - expense
+    return {
+        "label": label,
+        "date": target_date.isoformat(),
+        "weekday": target_date.strftime("%A"),
+        "sales": round(sale, 2),
+        "expenses": round(expense, 2),
+        "profit": round(profit, 2),
+        "orders": int(order_summary["orders"] or 0),
+        "order_revenue": round(float(order_summary["revenue"] or 0), 2),
+        "average_order_value": order_summary["average_order_value"],
+    }
+
+def _line_item_revenue(item: dict) -> float:
+    if "line_total" in item:
+        return float(item.get("line_total") or 0)
+    return float(item.get("price") or 0) * int(item.get("quantity") or 0)
+
+def _order_item_mix(db: Session, start_date: date, end_date: date) -> dict:
+    menu_categories = {
+        int(row.id): (row.category or "Unmapped")
+        for row in db.query(MenuItem.id, MenuItem.category).all()
+    }
+    totals: dict[str, dict] = {}
+    orders = _order_query(db, start_date, end_date).all()
+    for order in orders:
+        for item in order.items or []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "Item").strip() or "Item"
+            menu_item_id = item.get("menu_item_id")
+            category = str(item.get("category") or "Unmapped").strip() or "Unmapped"
+            if menu_item_id is not None:
+                try:
+                    category = menu_categories.get(int(menu_item_id), category)
+                except (TypeError, ValueError):
+                    pass
+            quantity = int(item.get("quantity") or 0)
+            revenue = _line_item_revenue(item)
+            if quantity <= 0 and revenue <= 0:
+                continue
+            if name not in totals:
+                totals[name] = {
+                    "key": name.lower().replace(" ", "_"),
+                    "name": name,
+                    "category": category,
+                    "quantity": 0,
+                    "revenue": 0.0,
+                    "orders": 0,
+                }
+            totals[name]["quantity"] += quantity
+            totals[name]["revenue"] += revenue
+            totals[name]["orders"] += 1
+    for row in totals.values():
+        row["revenue"] = round(float(row["revenue"] or 0), 2)
+        row["average_unit_revenue"] = round(row["revenue"] / row["quantity"], 2) if row["quantity"] else 0
+    return totals
+
+def _item_comparison_rows(current: dict, previous: dict, last_year: dict, total_revenue: float, limit: int = 10) -> list[dict]:
+    rows = []
+    keys = sorted(
+        set(current.keys()) | set(previous.keys()) | set(last_year.keys()),
+        key=lambda key: current.get(key, {}).get("revenue", 0),
+        reverse=True,
+    )
+    for key in keys[:limit]:
+        current_row = current.get(key) or {"name": key, "category": "Unmapped", "quantity": 0, "revenue": 0, "orders": 0}
+        previous_row = previous.get(key) or {"quantity": 0, "revenue": 0, "orders": 0}
+        last_year_row = last_year.get(key) or {"quantity": 0, "revenue": 0, "orders": 0}
+        current_revenue = float(current_row["revenue"] or 0)
+        previous_revenue = float(previous_row["revenue"] or 0)
+        last_year_revenue = float(last_year_row["revenue"] or 0)
+        previous_change = _percent_change(current_revenue, previous_revenue)
+        yoy_change = _percent_change(current_revenue, last_year_revenue)
+        if current_revenue > 0 and previous_revenue == 0 and last_year_revenue == 0:
+            movement = "new"
+            action = "Watch as new seller"
+        elif previous_change >= 20 or yoy_change >= 20:
+            movement = "growing"
+            action = "Feature in next offer"
+        elif previous_change <= -15 or yoy_change <= -15:
+            movement = "declining"
+            action = "Review price or placement"
+        else:
+            movement = "steady"
+            action = "Keep visible"
+        rows.append({
+            "key": key,
+            "name": current_row.get("name") or key,
+            "category": current_row.get("category") or "Unmapped",
+            "current": current_row,
+            "previous": previous_row,
+            "last_year": last_year_row,
+            "current_share_percent": round((current_revenue / total_revenue) * 100, 2) if total_revenue else 0,
+            "previous_change_percent": previous_change,
+            "yoy_change_percent": yoy_change,
+            "movement": movement,
+            "recommended_action": action,
+        })
+    return rows
+
+def _category_map_from_items(items: dict) -> dict:
+    categories = defaultdict(lambda: {"quantity": 0, "revenue": 0.0, "orders": 0})
+    for row in items.values():
+        category = str(row.get("category") or "Unmapped")
+        categories[category]["quantity"] += int(row.get("quantity") or 0)
+        categories[category]["revenue"] += float(row.get("revenue") or 0)
+        categories[category]["orders"] += int(row.get("orders") or 0)
+    return {
+        category: {
+            "name": category,
+            "category": category,
+            "quantity": values["quantity"],
+            "revenue": round(values["revenue"], 2),
+            "orders": values["orders"],
+        }
+        for category, values in categories.items()
+    }
 
 @router.get("/dashboard-stats")
 def get_dashboard_stats(period: str = "30days", db: Session = Depends(get_db)):
@@ -567,6 +727,142 @@ def order_channel_comparison_dashboard(
         "insights": insights[:5],
     }
 
+@router.get("/compare/owner-command-dashboard")
+def owner_comparison_command_dashboard(
+    period: str = Query("30days"),
+    product_limit: int = Query(10, ge=3, le=25),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    days = _period_days(period)
+    today = datetime.utcnow().date()
+    current_start = today - timedelta(days=days - 1)
+    current_end = today
+    previous_start = current_start - timedelta(days=days)
+    previous_end = current_start - timedelta(days=1)
+    last_year_start = _safe_replace_year(current_start, current_start.year - 1)
+    last_year_end = _safe_replace_year(current_end, current_end.year - 1)
+
+    last_week_date = today - timedelta(days=7)
+    last_year_date = _safe_replace_year(today, today.year - 1)
+    current_day = _daily_sales_snapshot(db, today, "Today")
+    same_weekday_last_week = _daily_sales_snapshot(db, last_week_date, "Same weekday last week")
+    same_day_last_year = _daily_sales_snapshot(db, last_year_date, "Same day last year")
+
+    current_month_start = today.replace(day=1)
+    current_month_end = today
+    previous_month_start, previous_month_end = _previous_month_to_date(today)
+    last_year_month_start, last_year_month_end = _same_month_last_year_to_date(today)
+    current_month = _aggregate_range(db, current_month_start, current_month_end)
+    previous_month = _aggregate_range(db, previous_month_start, previous_month_end)
+    same_month_last_year = _aggregate_range(db, last_year_month_start, last_year_month_end)
+
+    current_orders = _order_aggregate_range(db, current_start, current_end)
+    previous_orders = _order_aggregate_range(db, previous_start, previous_end)
+    last_year_orders = _order_aggregate_range(db, last_year_start, last_year_end)
+    current_revenue = float(current_orders["revenue"] or 0)
+
+    current_items = _order_item_mix(db, current_start, current_end)
+    previous_items = _order_item_mix(db, previous_start, previous_end)
+    last_year_items = _order_item_mix(db, last_year_start, last_year_end)
+    product_movers = _item_comparison_rows(
+        current_items,
+        previous_items,
+        last_year_items,
+        current_revenue,
+        product_limit,
+    )
+    category_movers = _item_comparison_rows(
+        _category_map_from_items(current_items),
+        _category_map_from_items(previous_items),
+        _category_map_from_items(last_year_items),
+        current_revenue,
+        min(product_limit, 8),
+    )
+    channel_mix = _dimension_comparison_rows(
+        _order_dimension_map(db, current_start, current_end, RestaurantOrder.order_type),
+        _order_dimension_map(db, previous_start, previous_end, RestaurantOrder.order_type),
+        _order_dimension_map(db, last_year_start, last_year_end, RestaurantOrder.order_type),
+        current_revenue,
+    )
+
+    top_product = product_movers[0] if product_movers else None
+    weak_product = next((row for row in product_movers if row["movement"] == "declining"), None)
+    top_category = category_movers[0] if category_movers else None
+    top_channel = channel_mix[0] if channel_mix else None
+    owner_actions = []
+    if top_product:
+        owner_actions.append(
+            f"{top_product['name']} leads product revenue; {top_product['recommended_action'].lower()}."
+        )
+    if weak_product:
+        owner_actions.append(
+            f"{weak_product['name']} is trailing comparison baselines; review menu placement or price."
+        )
+    if top_category:
+        owner_actions.append(
+            f"{top_category['name']} is the strongest category with {top_category['current_share_percent']}% of order revenue."
+        )
+    if top_channel:
+        owner_actions.append(
+            f"{top_channel['label']} is the strongest channel with {top_channel['current_share_percent']}% share."
+        )
+    if current_day["sales"] < same_weekday_last_week["sales"]:
+        owner_actions.append("Today is behind the same weekday last week; push a same-day offer or staff upsell.")
+    if not owner_actions:
+        owner_actions.append("Capture more orders to unlock stronger product and channel recommendations.")
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "period": {
+            "label": period,
+            "days": days,
+            "current_start": current_start.isoformat(),
+            "current_end": current_end.isoformat(),
+            "previous_start": previous_start.isoformat(),
+            "previous_end": previous_end.isoformat(),
+            "last_year_start": last_year_start.isoformat(),
+            "last_year_end": last_year_end.isoformat(),
+        },
+        "same_day": {
+            "current": current_day,
+            "same_weekday_last_week": same_weekday_last_week,
+            "same_day_last_year": same_day_last_year,
+            "last_week_change_percent": _percent_change(current_day["sales"], same_weekday_last_week["sales"]),
+            "last_year_change_percent": _percent_change(current_day["sales"], same_day_last_year["sales"]),
+        },
+        "same_month": {
+            "current": {
+                **current_month,
+                "start_date": current_month_start.isoformat(),
+                "end_date": current_month_end.isoformat(),
+            },
+            "previous_month": {
+                **previous_month,
+                "start_date": previous_month_start.isoformat(),
+                "end_date": previous_month_end.isoformat(),
+            },
+            "same_month_last_year": {
+                **same_month_last_year,
+                "start_date": last_year_month_start.isoformat(),
+                "end_date": last_year_month_end.isoformat(),
+            },
+            "previous_month_change_percent": _percent_change(current_month["revenue"], previous_month["revenue"]),
+            "last_year_change_percent": _percent_change(current_month["revenue"], same_month_last_year["revenue"]),
+        },
+        "orders": {
+            "current": current_orders,
+            "previous": previous_orders,
+            "last_year": last_year_orders,
+            "revenue_change_percent": _percent_change(current_orders["revenue"], previous_orders["revenue"]),
+            "yoy_revenue_change_percent": _percent_change(current_orders["revenue"], last_year_orders["revenue"]),
+        },
+        "product_movers": product_movers,
+        "category_movers": category_movers,
+        "channel_mix": channel_mix,
+        "owner_actions": owner_actions[:6],
+    }
+
 @router.get("/insights/day-of-week")
 def day_of_week_analysis(db: Session = Depends(get_db)):
     records = db.query(DailySales).all()
@@ -894,7 +1190,7 @@ def ceo_weekly_summary(db: Session = Depends(get_db)):
         "week_on_week_change": wow,
         "direction": "up" if wow >= 0 else "down",
         "profit_margin": margin,
-        "best_day": {"date": best.date.strftime("%A %d %b") if best else "N/A", "revenue": float(best.total_sale) if best else 0},
-        "worst_day": {"date": worst.date.strftime("%A %d %b") if worst else "N/A", "revenue": float(worst.total_sale) if worst else 0},
+        "best_day": {"date": _format_sql_date(best.date, "%A %d %b") if best else "N/A", "revenue": float(best.total_sale) if best else 0},
+        "worst_day": {"date": _format_sql_date(worst.date, "%A %d %b") if worst else "N/A", "revenue": float(worst.total_sale) if worst else 0},
         "ai_recommendation": (f"Strong week with {wow}% growth. Maintain consistency on slower days." if wow > 10 else f"Stable week. Push weekend promotions." if wow > 0 else f"Revenue declined {abs(wow)}% vs last week. Review pricing and staffing.")
     }
