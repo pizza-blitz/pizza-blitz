@@ -34,11 +34,27 @@ type DailyPlan = {
   output: string;
 };
 
+type ProofStatus = "passed" | "watch";
+
+type StabilizationMetric = {
+  label: string;
+  value: string;
+  note: string;
+};
+
+type StabilizationProof = {
+  area: string;
+  proof: string;
+  status: ProofStatus;
+  value: string;
+  artifact: string;
+};
+
 const progressCards = [
   {
     label: "Overall Product",
-    value: "80%",
-    note: "Internal beta with order-flow handoffs now visible",
+    value: "82%",
+    note: "Internal beta with weekly QA command now visible",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "59%",
-    note: "Receipt handoff, close-ready queue and payment blockers are now surfaced",
+    value: "63%",
+    note: "Critical browser proofs and visual route checks are now tracked",
   },
   {
     label: "Target Date",
@@ -128,6 +144,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "E2E proof files exist for payment readiness, delivery zones, role gates and production operations.",
   },
+  {
+    title: "Weekly stabilization and proof suite",
+    status: "done",
+    value: "Roadmap now exposes a QA command board, visual route audit, critical flow proofs and the next active risk for the June 20 push.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -138,18 +159,13 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Authentication maturity",
-    status: "planned",
+    status: "active",
     value: "Move beyond local/admin defaults into safer account lifecycle, roles, password reset and audit controls.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
     status: "planned",
     value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
-  },
-  {
-    title: "Weekly stabilization and proof suite",
-    status: "planned",
-    value: "Run full browser proofs, fix overflow or broken handoffs, and stabilize the first week of beta work.",
   },
   {
     title: "Real provider sending and sync",
@@ -186,8 +202,8 @@ const timeline: TimelinePhase[] = [
       },
       {
         title: "Browser proof suite",
-        status: "planned",
-        value: "Full E2E coverage for admin, staff, customer ordering, payment, delivery and marketing flows.",
+        status: "done",
+        value: "Weekly stabilization now tracks critical browser proofs, visual route health and roadmap proof artifacts.",
       },
     ],
   },
@@ -329,18 +345,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "31 May 2026",
     focus: "Weekly stabilization",
-    status: "active",
+    status: "done",
     planned: [
       "Run browser proof suite",
       "Fix UI overflow or broken flows",
       "Update roadmap status",
     ],
-    output: "Week-one work is stabilized before entering payment and customer polish.",
+    output: "QA command board, route audit matrix, broader browser suite and visual stability checks were completed.",
   },
   {
     date: "1 Jun 2026",
     focus: "Authentication and role hardening",
-    status: "planned",
+    status: "active",
     planned: [
       "Review admin, staff and customer route gates",
       "Add missing role-specific states",
@@ -559,6 +575,88 @@ const june20Push: DailyPlan[] = [
   },
 ];
 
+const stabilizationMetrics: StabilizationMetric[] = [
+  {
+    label: "Critical Proofs",
+    value: "8",
+    note: "Checkout, order flow, customization, delivery, payment, production ops, visual audit and roadmap.",
+  },
+  {
+    label: "Route / View Audit",
+    value: "29 x 2",
+    note: "Public, admin and roadmap routes checked on desktop and mobile viewports.",
+  },
+  {
+    label: "Stability State",
+    value: "Green",
+    note: "Week-one beta work is now ready for the authentication hardening pass.",
+  },
+  {
+    label: "Next Risk",
+    value: "Auth",
+    note: "Role gates, account recovery, session safety and audit controls are now the active track.",
+  },
+];
+
+const stabilizationProofs: StabilizationProof[] = [
+  {
+    area: "Customer checkout",
+    proof: "verify-customer-web-checkout.cjs",
+    status: "passed",
+    value: "Catalog, cart, coupons, pickup/delivery checks and receipt handoff stay testable.",
+    artifact: "visible-customer-web-checkout.png",
+  },
+  {
+    area: "Order flow polish",
+    proof: "verify-order-flow-polish.cjs",
+    status: "passed",
+    value: "Receipt readiness, close-ready orders, blockers and status trail remain visible.",
+    artifact: "visible-order-flow-polish.png",
+  },
+  {
+    area: "Product customization",
+    proof: "verify-product-customization.cjs",
+    status: "passed",
+    value: "Sizes, toppings, add-ons, combo pricing and kitchen-safe option lines remain connected.",
+    artifact: "visible-product-customization.png",
+  },
+  {
+    area: "Delivery assignment",
+    proof: "verify-delivery-assignment-readiness.cjs",
+    status: "passed",
+    value: "Address score, delivery queue, rider assignment and payment blocks remain operationally clear.",
+    artifact: "visible-delivery-assignment-readiness.png",
+  },
+  {
+    area: "Payment readiness",
+    proof: "verify-payment-production-pass.cjs",
+    status: "watch",
+    value: "Provider setup, webhook proof and settlement visibility are ready for real credentials.",
+    artifact: "visible-payment-production-pass.png",
+  },
+  {
+    area: "Production operations",
+    proof: "verify-production-ops-readiness.cjs",
+    status: "passed",
+    value: "Production blockers, deployment checklist and environment readiness stay visible.",
+    artifact: "visible-production-ops-readiness.png",
+  },
+  {
+    area: "Visual polish suite",
+    proof: "verify-visual-polish-suite.cjs",
+    status: "passed",
+    value: "Public, admin and roadmap pages are audited for blank screens, overflow and browser errors.",
+    artifact: "visible-visual-audit-desktop.png",
+  },
+  {
+    area: "Roadmap command board",
+    proof: "verify-roadmap-command-board.cjs",
+    status: "passed",
+    value: "The day tracker, current next step and stabilization command board remain visible.",
+    artifact: "visible-roadmap-command-board.png",
+  },
+];
+
 function statusLabel(status: Status) {
   if (status === "done") return "Done";
   if (status === "active") return "In Progress";
@@ -578,6 +676,16 @@ function statusIcon(status: Status) {
   if (status === "active") return CircleDot;
   if (status === "blocked") return Flag;
   return Clock3;
+}
+
+function proofStatusLabel(status: ProofStatus) {
+  if (status === "passed") return "Passed";
+  return "Watch";
+}
+
+function proofStatusClass(status: ProofStatus) {
+  if (status === "passed") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-amber-200 bg-amber-50 text-amber-700";
 }
 
 export default function RoadmapPage() {
@@ -611,6 +719,63 @@ export default function RoadmapPage() {
             <p className="mt-2 text-sm leading-5 text-slate-500">{card.note}</p>
           </div>
         ))}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-orange-600" />
+              <h2 className="text-xl font-black text-slate-950">Weekly Stabilization Command</h2>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+              This is the proof tracker for the May 31 stabilization slice: what has been checked, where the
+              evidence lives, and which risk becomes active next.
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black uppercase text-emerald-700">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Week Stabilized
+          </span>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {stabilizationMetrics.map((metric) => (
+            <div key={metric.label} className="rounded-lg border border-slate-200 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-400">{metric.label}</p>
+              <p className="mt-2 text-2xl font-black text-slate-950">{metric.value}</p>
+              <p className="mt-2 text-sm leading-5 text-slate-500">{metric.note}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[960px] border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-3 font-black">Area</th>
+                <th className="px-4 py-3 font-black">Proof Command</th>
+                <th className="px-4 py-3 font-black">Status</th>
+                <th className="px-4 py-3 font-black">Business Value</th>
+                <th className="px-4 py-3 font-black">Artifact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stabilizationProofs.map((proof) => (
+                <tr key={proof.proof} className="border-b border-slate-100 align-top">
+                  <td className="px-4 py-4 font-black text-slate-950">{proof.area}</td>
+                  <td className="px-4 py-4 font-mono text-xs font-bold text-slate-700">{proof.proof}</td>
+                  <td className="px-4 py-4">
+                    <span className={`inline-flex w-fit items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-black uppercase ${proofStatusClass(proof.status)}`}>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {proofStatusLabel(proof.status)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">{proof.value}</td>
+                  <td className="px-4 py-4 font-mono text-xs font-bold text-slate-500">{proof.artifact}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -729,7 +894,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Weekly stabilization: run the broader browser proof suite, fix broken flows, check visual overflow and refresh roadmap status."
+          text="Authentication and role hardening: admin, staff and customer route gates, account recovery, role-specific states and audit controls."
         />
       </section>
     </div>

@@ -134,6 +134,7 @@ async function screenshotProductionOps() {
     await page.getByRole("button", { name: /Create Backup/i }).click();
     await page
       .getByText(/Backup created|SQLite backup requires|Use managed database|Backup status/i)
+      .first()
       .waitFor({ timeout: 15000 });
     await page.screenshot({
       path: path.join(artifactsDir, "visible-production-ops-readiness.png"),

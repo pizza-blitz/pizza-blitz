@@ -10,6 +10,7 @@ const artifactsDir = path.join(__dirname, "artifacts");
 
 const adminRoutes = [
   { route: "/dashboard", label: "Business Intelligence" },
+  { route: "/roadmap", label: "Roadmap Command Board" },
   { route: "/ceo", label: "CEO" },
   { route: "/orders", label: "Order" },
   { route: "/operations", label: "Kitchen" },
@@ -120,7 +121,7 @@ async function assertVisualHealth(page, watch, route, expectedLabel, viewportNam
   watch.clear();
   const response = await page.goto(`${baseURL}${route}`, { waitUntil: "domcontentloaded" });
   assert(response && response.ok(), `${viewportName} ${route} returned HTTP ${response?.status() || "no response"}.`);
-  await page.waitForLoadState("networkidle", { timeout: 9000 }).catch(() => undefined);
+  await page.waitForLoadState("networkidle", { timeout: 2500 }).catch(() => undefined);
 
   const health = await page.evaluate(() => {
     const text = document.body.innerText || "";
@@ -170,7 +171,7 @@ async function runViewportAudit(viewport) {
     }
 
     await page.goto(`${baseURL}/dashboard`, { waitUntil: "domcontentloaded" });
-    await page.waitForLoadState("networkidle", { timeout: 9000 }).catch(() => undefined);
+    await page.waitForLoadState("networkidle", { timeout: 2500 }).catch(() => undefined);
     await page.screenshot({
       path: path.join(artifactsDir, `visible-visual-audit-${viewport.name}.png`),
       fullPage: true,
