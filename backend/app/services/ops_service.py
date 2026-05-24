@@ -346,6 +346,129 @@ LAUNCH_CRITICAL_ROUTE_PROOFS = [
     },
 ]
 
+FINAL_ACCEPTANCE_WALKTHROUGHS = [
+    {
+        "key": "admin",
+        "title": "Admin Walkthrough",
+        "owner": "Owner / Admin",
+        "focus": "Business control, blocker review and reporting confidence.",
+        "steps": [
+            {
+                "key": "admin_ops",
+                "label": "Production Ops",
+                "route": "/ops",
+                "module_key": "production_operations",
+                "proof": "verify-production-ops-readiness.cjs",
+                "detail": "Review readiness score, launch blockers, backups, secrets and deployment checklist.",
+            },
+            {
+                "key": "admin_roadmap",
+                "label": "Roadmap Command Board",
+                "route": "/roadmap",
+                "module_key": "production_operations",
+                "proof": "verify-roadmap-command-board.cjs",
+                "detail": "Confirm day tracker, proof audit and next handoff are current.",
+            },
+            {
+                "key": "admin_reports",
+                "label": "Reports",
+                "route": "/reports",
+                "module_key": "finance_reporting",
+                "proof": "verify-reporting-comparison-dashboard.cjs",
+                "detail": "Review sales comparison, exports and management reporting views.",
+            },
+            {
+                "key": "admin_marketing",
+                "label": "Promotions",
+                "route": "/promotions",
+                "module_key": "growth_publishing",
+                "proof": "verify-marketing-live-readiness-command.cjs",
+                "detail": "Confirm campaign, social and ad launch readiness before sending live offers.",
+            },
+        ],
+    },
+    {
+        "key": "staff",
+        "title": "Staff/POS Walkthrough",
+        "owner": "Counter / Kitchen / Delivery Staff",
+        "focus": "Counter order entry, kitchen state and delivery handoff.",
+        "steps": [
+            {
+                "key": "staff_counter",
+                "label": "Counter Orders",
+                "route": "/orders",
+                "module_key": "ordering_flow",
+                "proof": "verify-counter-order-e2e.cjs",
+                "detail": "Place a counter order, confirm totals and keep payment/order status visible.",
+            },
+            {
+                "key": "staff_delivery",
+                "label": "Delivery Operations",
+                "route": "/operations",
+                "module_key": "delivery_operations",
+                "proof": "verify-delivery-order-e2e.cjs",
+                "detail": "Assign delivery, validate zone/charge handoff and close the order loop.",
+            },
+            {
+                "key": "staff_command",
+                "label": "Operational Command Board",
+                "route": "/operations",
+                "module_key": "delivery_operations",
+                "proof": "verify-operational-dashboard-command.cjs",
+                "detail": "Review kitchen state, delivery state and owner alerts from live order data.",
+            },
+            {
+                "key": "staff_order_polish",
+                "label": "Order Flow Polish",
+                "route": "/orders",
+                "module_key": "ordering_flow",
+                "proof": "verify-order-flow-polish.cjs",
+                "detail": "Confirm core order flow remains clear enough for a staff handoff.",
+            },
+        ],
+    },
+    {
+        "key": "customer",
+        "title": "Customer Walkthrough",
+        "owner": "Customer",
+        "focus": "Website order, account capture, checkout and tracking confidence.",
+        "steps": [
+            {
+                "key": "customer_checkout",
+                "label": "Customer Checkout",
+                "route": "/order",
+                "module_key": "ordering_flow",
+                "proof": "verify-customer-web-checkout.cjs",
+                "detail": "Choose products, add cart details and complete checkout intent.",
+            },
+            {
+                "key": "customer_account",
+                "label": "Customer Account",
+                "route": "/account",
+                "module_key": "marketing_crm",
+                "proof": "verify-customer-account-lifecycle.cjs",
+                "detail": "Confirm customer identity, opt-in and profile lifecycle are captured.",
+            },
+            {
+                "key": "customer_customization",
+                "label": "Product Customization",
+                "route": "/order",
+                "module_key": "product_catalog",
+                "proof": "verify-product-customization.cjs",
+                "detail": "Confirm sizes, toppings and add-ons remain selectable in the order path.",
+            },
+            {
+                "key": "customer_full_order",
+                "label": "Full Customer Order",
+                "route": "/track",
+                "module_key": "ordering_flow",
+                "proof": "verify-full-customer-order-e2e.cjs",
+                "detail": "Run the full web order and tracking proof before the June 20 checkpoint.",
+            },
+        ],
+    },
+]
+
 
 def database_backend() -> str:
     try:
@@ -783,6 +906,128 @@ def launch_candidate_report(db: Session) -> dict:
             "security_blockers": security_plan.get("blockers", [])[:8],
         },
         "next_actions": next_actions,
+    }
+
+
+def final_acceptance_report(db: Session) -> dict:
+    readiness = readiness_report(db)
+    launch_candidate = launch_candidate_report(db)
+    data_quality = data_quality_report(db)
+    modules = readiness.get("module_readiness") or []
+    module_by_key = {module["key"]: module for module in modules}
+
+    lanes = []
+    for lane in FINAL_ACCEPTANCE_WALKTHROUGHS:
+        steps = []
+        for step in lane["steps"]:
+            module = module_by_key.get(step["module_key"])
+            steps.append(
+                {
+                    **step,
+                    "status": module["status"] if module else "fail",
+                    "score": module["score"] if module else 0,
+                    "next_action": (
+                        module["next_actions"][0]
+                        if module and module.get("next_actions")
+                        else "Run this walkthrough proof before beta handoff."
+                    ),
+                }
+            )
+        lanes.append(
+            {
+                "key": lane["key"],
+                "title": lane["title"],
+                "owner": lane["owner"],
+                "focus": lane["focus"],
+                "status": _rollup_status(steps),
+                "score": _readiness_score(steps),
+                "steps": steps,
+            }
+        )
+
+    acceptance_gates = [
+        {
+            "key": "admin_walkthrough",
+            "label": "Admin walkthrough",
+            "status": lanes[0]["status"],
+            "proof": "verify-production-ops-readiness.cjs + verify-roadmap-command-board.cjs",
+            "detail": "Owner can review blockers, reports, roadmap and launch controls from visible pages.",
+        },
+        {
+            "key": "staff_walkthrough",
+            "label": "Staff/POS walkthrough",
+            "status": lanes[1]["status"],
+            "proof": "verify-counter-order-e2e.cjs + verify-delivery-order-e2e.cjs",
+            "detail": "Counter, kitchen and delivery staff flows stay represented and proof-backed.",
+        },
+        {
+            "key": "customer_walkthrough",
+            "label": "Customer walkthrough",
+            "status": lanes[2]["status"],
+            "proof": "verify-customer-web-checkout.cjs + verify-full-customer-order-e2e.cjs",
+            "detail": "Customer order, customization, account capture and tracking paths stay represented.",
+        },
+        {
+            "key": "launch_candidate",
+            "label": "Launch candidate hardening",
+            "status": launch_candidate.get("status", "warn"),
+            "proof": "verify-launch-candidate-hardening.cjs",
+            "detail": "Critical routes, E2E proof ownership, blockers and release decision remain visible.",
+        },
+        {
+            "key": "data_quality",
+            "label": "Data quality handoff",
+            "status": data_quality.get("status", "warn"),
+            "proof": "verify-data-quality-export-command.cjs",
+            "detail": "Customer export, report export, import readiness and backup/restore proof remain visible.",
+        },
+    ]
+    blocker_count = (
+        launch_candidate.get("summary", {}).get("launch_blockers", 0)
+        + len(launch_candidate.get("blocker_review", {}).get("deployment_blockers", []))
+        + len(launch_candidate.get("blocker_review", {}).get("database_blockers", []))
+        + len(launch_candidate.get("blocker_review", {}).get("security_blockers", []))
+    )
+    all_status_items = acceptance_gates + lanes
+    status = _rollup_status(all_status_items)
+    decision = "hold"
+    if status == "pass" and blocker_count == 0:
+        decision = "ready"
+    elif readiness.get("overall") != "blocked":
+        decision = "conditional"
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": status,
+        "score": _readiness_score(all_status_items),
+        "decision": decision,
+        "summary": {
+            "lanes_total": len(lanes),
+            "lanes_ready": sum(1 for lane in lanes if lane["status"] == "pass"),
+            "lanes_attention": sum(1 for lane in lanes if lane["status"] == "warn"),
+            "lanes_blocked": sum(1 for lane in lanes if lane["status"] == "fail"),
+            "steps_total": sum(len(lane["steps"]) for lane in lanes),
+            "proofs_total": len({step["proof"] for lane in lanes for step in lane["steps"]}),
+            "acceptance_gates": len(acceptance_gates),
+            "production_blockers": blocker_count,
+            "launch_score": launch_candidate.get("score", 0),
+            "readiness_score": readiness.get("readiness_score", 0),
+        },
+        "lanes": lanes,
+        "acceptance_gates": acceptance_gates,
+        "blockers": {
+            "launch_blockers": launch_candidate.get("blocker_review", {}).get("hard_blockers", [])[:8],
+            "setup_actions": launch_candidate.get("blocker_review", {}).get("setup_actions", [])[:8],
+            "deployment_blockers": launch_candidate.get("blocker_review", {}).get("deployment_blockers", [])[:8],
+            "database_blockers": launch_candidate.get("blocker_review", {}).get("database_blockers", [])[:8],
+            "security_blockers": launch_candidate.get("blocker_review", {}).get("security_blockers", [])[:8],
+        },
+        "next_actions": [
+            "Run the admin walkthrough through /ops, /roadmap, /reports and /promotions.",
+            "Run the staff walkthrough through counter orders, kitchen/operations and delivery assignment.",
+            "Run the customer walkthrough through /order, account capture, product customization and /track.",
+            "Keep the June 20 beta checkpoint as a hold until live credentials, database, backups and deployment secrets are complete.",
+        ],
     }
 
 

@@ -257,11 +257,13 @@ type LaunchProofGate = {
   detail: string;
 };
 
+type ReleaseDecision = "ready" | "conditional" | "hold";
+
 type LaunchCandidateReport = {
   generated_at: string;
   status: CheckStatus;
   score: number;
-  release_decision: "ready" | "conditional" | "hold";
+  release_decision: ReleaseDecision;
   summary: {
     critical_routes: number;
     routes_ready: number;
@@ -286,8 +288,60 @@ type LaunchCandidateReport = {
   next_actions: string[];
 };
 
+type FinalAcceptanceStep = {
+  key: string;
+  label: string;
+  route: string;
+  module_key: string;
+  proof: string;
+  detail: string;
+  status: CheckStatus;
+  score: number;
+  next_action: string;
+};
+
+type FinalAcceptanceLane = {
+  key: "admin" | "staff" | "customer";
+  title: string;
+  owner: string;
+  focus: string;
+  status: CheckStatus;
+  score: number;
+  steps: FinalAcceptanceStep[];
+};
+
+type FinalAcceptanceReport = {
+  generated_at: string;
+  status: CheckStatus;
+  score: number;
+  decision: ReleaseDecision;
+  summary: {
+    lanes_total: number;
+    lanes_ready: number;
+    lanes_attention: number;
+    lanes_blocked: number;
+    steps_total: number;
+    proofs_total: number;
+    acceptance_gates: number;
+    production_blockers: number;
+    launch_score: number;
+    readiness_score: number;
+  };
+  lanes: FinalAcceptanceLane[];
+  acceptance_gates: LaunchProofGate[];
+  blockers: {
+    launch_blockers: GoLiveItem[];
+    setup_actions: GoLiveItem[];
+    deployment_blockers: string[];
+    database_blockers: string[];
+    security_blockers: string[];
+  };
+  next_actions: string[];
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [finalAcceptance, setFinalAcceptance] = useState<FinalAcceptanceReport | null>(null);
   const [launchCandidate, setLaunchCandidate] = useState<LaunchCandidateReport | null>(null);
   const [dataQuality, setDataQuality] = useState<DataQualityReport | null>(null);
   const [backups, setBackups] = useState<BackupRun[]>([]);
@@ -303,14 +357,18 @@ export default function ProductionOpsPage() {
 
   const fetchOps = async () => {
     setLoading(true);
-    const [readinessResponse, launchCandidateResponse, dataQualityResponse, backupResponse] = await Promise.all([
+    const [readinessResponse, finalAcceptanceResponse, launchCandidateResponse, dataQualityResponse, backupResponse] = await Promise.all([
       fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/final-acceptance`),
       fetchWithAuth(`${OPS_API}/launch-candidate`),
       fetchWithAuth(`${OPS_API}/data-quality`),
       fetchWithAuth(`${OPS_API}/backups`),
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
+    }
+    if (finalAcceptanceResponse.ok) {
+      setFinalAcceptance(await finalAcceptanceResponse.json());
     }
     if (launchCandidateResponse.ok) {
       setLaunchCandidate(await launchCandidateResponse.json());
@@ -410,6 +468,8 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {finalAcceptance ? <FinalAcceptanceWalkthroughCommand report={finalAcceptance} /> : null}
 
       {launchCandidate ? <LaunchCandidateHardeningCommand report={launchCandidate} /> : null}
 
@@ -755,6 +815,150 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
     </div>
+  );
+}
+
+function FinalAcceptanceWalkthroughCommand({ report }: { report: FinalAcceptanceReport }) {
+  const blockerList = [
+    ...report.blockers.launch_blockers.map((item) => item.detail || item.label),
+    ...report.blockers.deployment_blockers,
+    ...report.blockers.database_blockers,
+    ...report.blockers.security_blockers,
+  ].slice(0, 6);
+
+  return (
+    <section
+      data-testid="final-acceptance-walkthrough-command"
+      className="mb-8 rounded-xl border border-emerald-500/20 bg-[#101512] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-300">Final Acceptance Walkthrough</p>
+          <h2 className="mt-2 text-2xl font-black">Final Acceptance Walkthrough Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Admin, staff/POS and customer walkthrough lanes before the June 20 beta delivery checkpoint.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(report.status)}`}>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {report.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${releaseDecisionClass(report.decision)}`}>
+            {report.decision}
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+            {report.score}% ready
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <DataQualityMetric icon={Users} label="Walkthroughs" value={`${report.summary.lanes_total}`} />
+        <DataQualityMetric icon={CheckCircle2} label="Ready Lanes" value={`${report.summary.lanes_ready}`} />
+        <DataQualityMetric icon={FileText} label="Proofs" value={`${report.summary.proofs_total}`} />
+        <DataQualityMetric icon={AlertTriangle} label="Blockers" value={`${report.summary.production_blockers}`} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
+        {report.lanes.map((lane) => (
+          <div
+            key={lane.key}
+            data-testid={`${lane.key}-walkthrough-lane`}
+            className="rounded-xl border border-white/5 bg-black/25 p-5"
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-widest text-emerald-300">{lane.owner}</p>
+                <h3 className="mt-1 break-words text-lg font-black text-white">{lane.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-gray-500">{lane.focus}</p>
+              </div>
+              <StatusBadge status={lane.status} />
+            </div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <SummaryPill label="Score" value={`${lane.score}%`} />
+              <SummaryPill label="Steps" value={`${lane.steps.length}`} />
+            </div>
+            <div className="space-y-3">
+              {lane.steps.map((step) => (
+                <a
+                  key={step.key}
+                  href={step.route}
+                  className="block rounded-xl border border-white/5 bg-[#111113] p-4 hover:border-emerald-400/40 hover:bg-emerald-500/5"
+                >
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-black text-white">{step.label}</p>
+                      <p className="mt-1 text-xs font-bold text-gray-500">{step.route}</p>
+                    </div>
+                    <StatusBadge status={step.status} />
+                  </div>
+                  <p className="break-words text-[11px] font-black leading-4 text-emerald-100">{step.proof}</p>
+                  <p className="mt-2 text-sm leading-6 text-gray-500">{step.detail}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="final-acceptance-gates" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-emerald-300" />
+            <h3 className="font-black">Acceptance Gates</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.acceptance_gates.map((gate) => (
+              <div key={gate.key} className="rounded-xl border border-white/5 bg-[#111113] p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-black text-white">{gate.label}</p>
+                  <StatusBadge status={gate.status} />
+                </div>
+                <p className="break-words text-[11px] font-black leading-4 text-emerald-100">{gate.proof}</p>
+                <p className="mt-2 text-sm leading-6 text-gray-500">{gate.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="final-acceptance-decision" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Rocket className="h-5 w-5 text-emerald-300" />
+            <h3 className="font-black">Beta Checkpoint Decision</h3>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <SummaryPill label="Launch" value={`${report.summary.launch_score}%`} />
+            <SummaryPill label="Readiness" value={`${report.summary.readiness_score}%`} />
+          </div>
+          <div className="space-y-2">
+            {blockerList.length ? (
+              blockerList.map((blocker, index) => (
+                <p key={`${blocker}-${index}`} className="rounded-lg bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-gray-300">
+                  {blocker}
+                </p>
+              ))
+            ) : (
+              <p className="rounded-lg bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-gray-300">
+                No production blockers are currently listed.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="final-acceptance-next-actions"
+        className="mt-6 grid grid-cols-1 gap-3 rounded-xl border border-emerald-500/10 bg-emerald-500/5 p-4 md:grid-cols-2"
+      >
+        {report.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-emerald-50/90">
+            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-emerald-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1434,7 +1638,7 @@ function statusClass(status: CheckStatus) {
   return "bg-yellow-500/15 text-yellow-300";
 }
 
-function releaseDecisionClass(status: LaunchCandidateReport["release_decision"]) {
+function releaseDecisionClass(status: ReleaseDecision) {
   if (status === "ready") return "bg-green-500/15 text-green-300";
   if (status === "hold") return "bg-red-500/15 text-red-300";
   return "bg-yellow-500/15 text-yellow-300";

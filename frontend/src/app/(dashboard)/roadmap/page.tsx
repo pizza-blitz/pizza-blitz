@@ -239,6 +239,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops now shows critical route coverage, E2E proof ownership, production blockers and release decision in one launch command board.",
   },
+  {
+    title: "Final acceptance walkthrough command",
+    status: "done",
+    value: "Production Ops now shows admin, staff/POS and customer walkthrough lanes with acceptance gates before the June 20 checkpoint.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -281,6 +286,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Launch candidate hardening command",
     status: "done",
     value: "Critical route stability, proof queue, blocker review and release decision are now visible in Production Ops.",
+  },
+  {
+    title: "Final acceptance walkthrough command",
+    status: "done",
+    value: "Admin, staff/POS and customer walkthrough lanes plus beta checkpoint gates are now visible in Production Ops.",
   },
   {
     title: "Reporting comparison depth",
@@ -699,18 +709,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "19 Jun 2026",
     focus: "Final acceptance walkthrough",
-    status: "active",
+    status: "done",
     planned: [
       "Admin walkthrough",
       "Staff walkthrough",
       "Customer order walkthrough",
     ],
-    output: "Final gaps are visible before the June 20 target.",
+    output: "Admin, staff/POS and customer walkthrough lanes plus beta checkpoint gates are now visible in Production Ops.",
   },
   {
     date: "20 Jun 2026",
     focus: "Beta delivery checkpoint",
-    status: "planned",
+    status: "active",
     planned: [
       "Run final build",
       "Run smoke and core E2E proofs",
@@ -723,8 +733,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "24",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "25",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -734,12 +744,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Launch candidate hardening, data quality export, marketing live-readiness, operational command board and dashboard polish are now proof-backed.",
+    note: "Final acceptance, launch candidate hardening, data quality export, marketing live-readiness, operational command board and dashboard polish are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Final Acceptance",
-    note: "Admin, staff and customer walkthroughs are now the active track.",
+    value: "Beta Delivery",
+    note: "Final build, smoke proofs and known-gap documentation are now the active track.",
   },
 ];
 
@@ -885,6 +895,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-launch-candidate-hardening-command.png",
   },
   {
+    area: "Final acceptance walkthrough",
+    proof: "verify-final-acceptance-walkthrough.cjs",
+    status: "passed",
+    value: "Admin, staff/POS and customer walkthrough lanes plus acceptance gates stay visible in Production Ops.",
+    artifact: "visible-final-acceptance-walkthrough-command.png",
+  },
+  {
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
@@ -917,7 +934,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "24 / 24",
+    value: "25 / 25",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -932,8 +949,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Final Acceptance",
-    note: "The next work slice should run admin, staff and customer walkthroughs before the June 20 checkpoint.",
+    value: "Beta Delivery",
+    note: "The next work slice should run final build, smoke proofs and known-gap documentation for the June 20 checkpoint.",
   },
 ];
 
@@ -1010,8 +1027,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Final acceptance walkthrough handoff",
+    status: "done",
+    value: "Admin, staff/POS and customer walkthrough lanes plus beta checkpoint gates are now visible in Production Ops.",
+  },
+  {
+    title: "Beta delivery checkpoint handoff",
     status: "active",
-    value: "Next slice should run admin, staff and customer walkthroughs before the June 20 checkpoint.",
+    value: "Next slice should run final build, smoke proofs and known-gap documentation for the June 20 checkpoint.",
   },
 ];
 
@@ -1361,7 +1383,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Final acceptance walkthrough: run admin, staff and customer walkthroughs before the June 20 checkpoint."
+          text="Beta delivery checkpoint: run final build, smoke proofs and known-gap documentation for June 20."
         />
       </section>
     </div>

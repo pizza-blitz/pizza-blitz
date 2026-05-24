@@ -125,6 +125,10 @@ async function screenshotProductionOps() {
 
     const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByTestId("final-acceptance-walkthrough-command").waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Final Acceptance Walkthrough Command" }).waitFor({ timeout: 15000 });
+    await page.getByText("Admin Walkthrough", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Beta Checkpoint Decision", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByTestId("launch-candidate-hardening-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Launch Candidate Hardening Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Critical Route Stability", { exact: true }).waitFor({ timeout: 15000 });
