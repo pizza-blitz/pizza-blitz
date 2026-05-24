@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "82%",
-    note: "Internal beta with weekly QA command now visible",
+    value: "84%",
+    note: "Internal beta with authentication hardening now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "63%",
-    note: "Critical browser proofs and visual route checks are now tracked",
+    value: "67%",
+    note: "Admin-only security overview, role gates and recovery controls are now tracked",
   },
   {
     label: "Target Date",
@@ -149,6 +149,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Roadmap now exposes a QA command board, visual route audit, critical flow proofs and the next active risk for the June 20 push.",
   },
+  {
+    title: "Authentication and role hardening",
+    status: "done",
+    value: "Security overview is now admin-only, Settings shows role gates, account recovery controls and audit controls, and browser/API proof covers admin, staff and customer boundaries.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -158,9 +163,9 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Add real Cashfree or Razorpay credentials, run live low-value checkout and compare provider payout reports.",
   },
   {
-    title: "Authentication maturity",
+    title: "Customer account lifecycle and consent",
     status: "active",
-    value: "Move beyond local/admin defaults into safer account lifecycle, roles, password reset and audit controls.",
+    value: "Polish customer profile, order history, contact preferences and consent states after checkout.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -356,18 +361,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "1 Jun 2026",
     focus: "Authentication and role hardening",
-    status: "active",
+    status: "done",
     planned: [
       "Review admin, staff and customer route gates",
       "Add missing role-specific states",
       "Plan account recovery and audit needs",
     ],
-    output: "Security model becomes clearer before production deployment.",
+    output: "Admin-only security overview, role gate command board, recovery controls, audit controls and browser/API proof were completed.",
   },
   {
     date: "2 Jun 2026",
     focus: "Customer account lifecycle",
-    status: "planned",
+    status: "active",
     planned: [
       "Customer profile polish",
       "Order history visibility",
@@ -593,8 +598,8 @@ const stabilizationMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Risk",
-    value: "Auth",
-    note: "Role gates, account recovery, session safety and audit controls are now the active track.",
+    value: "Customer",
+    note: "Customer profile, order history and consent polish are now the active track.",
   },
 ];
 
@@ -894,7 +899,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Authentication and role hardening: admin, staff and customer route gates, account recovery, role-specific states and audit controls."
+          text="Customer account lifecycle: customer profile polish, order history visibility, contact preferences and consent management."
         />
       </section>
     </div>

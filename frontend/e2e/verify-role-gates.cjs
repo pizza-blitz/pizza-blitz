@@ -105,8 +105,30 @@ async function requestBackend(endpoint, cookie, options = {}) {
   });
 }
 
+async function requestFrontend(endpoint, cookie, options = {}) {
+  const headers = cookie ? { Cookie: cookie } : {};
+  return fetch(`${baseURL}${endpoint}`, {
+    ...options,
+    headers: {
+      ...headers,
+      ...(options.headers || {}),
+    },
+    cache: "no-store",
+  });
+}
+
 async function assertStatus(endpoint, expectedStatus, cookie, label, options = {}) {
   const response = await requestBackend(endpoint, cookie, options);
+  if (response.status !== expectedStatus) {
+    throw new Error(
+      `${label} expected ${expectedStatus}, received ${response.status}. Body: ${await response.text()}`
+    );
+  }
+  return response;
+}
+
+async function assertFrontendStatus(endpoint, expectedStatus, cookie, label, options = {}) {
+  const response = await requestFrontend(endpoint, cookie, options);
   if (response.status !== expectedStatus) {
     throw new Error(
       `${label} expected ${expectedStatus}, received ${response.status}. Body: ${await response.text()}`
@@ -148,6 +170,10 @@ async function screenshotSettingsWithAdmin() {
 
     const response = await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Settings returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByText("Authentication Hardening Command", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Security overview API", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Account Recovery Controls", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Audit Controls", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Backend API Role Gates", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Manual Payment Webhook", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: 10000 });
@@ -161,11 +187,41 @@ async function screenshotSettingsWithAdmin() {
   }
 }
 
+async function assertStaffSettingsRedirect() {
+  const staffBrowserURL = baseURL.replace("127.0.0.1", "localhost");
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    baseURL: staffBrowserURL,
+    viewport: { width: 1280, height: 900 },
+  });
+  const page = await context.newPage();
+  const watch = createBrowserWatch(page);
+
+  try {
+    const login = await context.request.post(`${staffBrowserURL}/api/admin-session`, {
+      data: { id: staffId, password: staffPassword, role: "staff" },
+    });
+    assert(login.ok(), `Staff browser login failed: ${await login.text()}`);
+
+    await page.goto(`${staffBrowserURL}/settings`, { waitUntil: "domcontentloaded" });
+    await page.waitForURL(/\/orders/, { timeout: 10000 });
+    await page.getByRole("heading", { name: "Counter POS" }).waitFor({ timeout: 10000 });
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-role-gates-staff-redirect.png"),
+      fullPage: true,
+    });
+    watch.assertClean("staff settings redirect");
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(`${apiURL}/api/v1/restaurant/ops/readiness`, "restaurant API");
   await waitForHttp(baseURL, "frontend");
 
+  await assertFrontendStatus("/api/security-overview", 401, "", "anonymous security overview");
   await assertStatus("/api/v1/restaurant/ops/readiness", 401, "", "anonymous ops readiness");
   await assertStatus("/api/v1/restaurant/orders/today", 401, "", "anonymous today's orders");
   await assertStatus(
@@ -188,6 +244,23 @@ async function main() {
   const adminCookie = await portalLogin("admin");
   const staffCookie = await portalLogin("staff");
   const customerCookie = await customerLogin();
+
+  await assertFrontendStatus("/api/security-overview", 403, staffCookie, "staff security overview");
+  const securityOverviewResponse = await assertFrontendStatus(
+    "/api/security-overview",
+    200,
+    adminCookie,
+    "admin security overview"
+  );
+  const securityOverview = await securityOverviewResponse.json();
+  assert(
+    securityOverview.gateChecks?.some((check) => check.name === "Security overview API"),
+    "Security overview did not include the protected API gate check."
+  );
+  assert(
+    securityOverview.recoveryControls?.length >= 3 && securityOverview.auditControls?.length >= 3,
+    "Security overview did not include recovery and audit controls."
+  );
 
   const adminReadiness = await assertStatus(
     "/api/v1/restaurant/ops/readiness",
@@ -214,6 +287,7 @@ async function main() {
   assert(staffJwtResponse.ok, `Staff JWT login failed: ${JSON.stringify(staffJwt)}`);
   assert(staffJwt.role === "staff" && staffJwt.access_token, "Staff JWT login did not return a staff token.");
 
+  await assertStaffSettingsRedirect();
   await screenshotSettingsWithAdmin();
   console.log("Role gate proof passed.");
 }

@@ -97,8 +97,8 @@ async function main() {
     await page.getByText("verify-production-ops-readiness.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("QA command board, route audit matrix", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByText("Authentication and role hardening", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Authentication and role hardening: admin, staff and customer route gates", {
+    await page.getByText("Customer account lifecycle", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Customer account lifecycle: customer profile polish", {
       exact: false,
     }).waitFor({ timeout: 15000 });
 

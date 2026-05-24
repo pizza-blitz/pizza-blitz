@@ -8,6 +8,7 @@ import {
   CUSTOMER_COOKIE,
   STAFF_COOKIE,
   maxAgeForRole,
+  verifySessionToken,
 } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,37 @@ function formatDuration(seconds: number) {
   return `${Math.round(hours / 24)} days`;
 }
 
-export async function GET() {
+function cookieValue(request: Request, name: string) {
+  return request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.split("=")
+    .slice(1)
+    .join("=");
+}
+
+export async function GET(request: Request) {
+  const adminSession = await verifySessionToken(
+    cookieValue(request, ADMIN_COOKIE),
+    "admin"
+  );
+  if (!adminSession) {
+    const staffSession = await verifySessionToken(
+      cookieValue(request, STAFF_COOKIE),
+      "staff"
+    );
+    return NextResponse.json(
+      {
+        detail: staffSession
+          ? "Admin session is required for the security overview."
+          : "Admin session is required.",
+      },
+      { status: staffSession ? 403 : 401 }
+    );
+  }
+
   const adminId = process.env.PIZZA_BLITZ_ADMIN_ID || "admin";
   const adminPassword = process.env.PIZZA_BLITZ_ADMIN_PASSWORD || "admin123";
   const staffId = process.env.PIZZA_BLITZ_STAFF_ID || "staff";
@@ -77,6 +108,66 @@ export async function GET() {
         duration: formatDuration(maxAgeForRole("customer")),
         protectedRoutes: 1,
         status: "Ready",
+      },
+    ],
+    gateChecks: [
+      {
+        name: "Security overview API",
+        status: "Admin only",
+        proof: "/api/security-overview",
+        detail: "Anonymous users receive 401 and staff users receive 403 before any role matrix is returned.",
+      },
+      {
+        name: "Admin-only routes",
+        status: "Enforced",
+        proof: `${adminOnlyRoutePrefixes.length} route groups`,
+        detail: "Dashboard, roadmap, reports, customers, marketing, production ops and settings require an admin session.",
+      },
+      {
+        name: "Counter staff routes",
+        status: "Restricted",
+        proof: `${staffRoutePrefixes.length} route groups`,
+        detail: "Counter staff can use orders, kitchen operations and receipts, then gets redirected away from owner/admin areas.",
+      },
+      {
+        name: "Customer account routes",
+        status: "Session required",
+        proof: "/account",
+        detail: "Customers must sign in with their order phone before viewing saved profile and order history.",
+      },
+    ],
+    recoveryControls: [
+      {
+        name: "Admin recovery",
+        status: "Runbook ready",
+        detail: "Reset admin ID/password through environment variables and rotate the session secret to invalidate old cookies.",
+      },
+      {
+        name: "Staff recovery",
+        status: "Runbook ready",
+        detail: "Counter staff can be locked out by changing staff credentials while owner/admin access remains separate.",
+      },
+      {
+        name: "Customer recovery",
+        status: "Phone based",
+        detail: "Customer account access is recovered through the checkout phone until OTP/email verification is connected.",
+      },
+    ],
+    auditControls: [
+      {
+        name: "Session inventory",
+        status: "Visible",
+        detail: "Settings shows cookie names, session duration and protected-route counts for each role.",
+      },
+      {
+        name: "Default credential warnings",
+        status: "Visible",
+        detail: "Default admin/staff IDs, default passwords and fallback signing secret are called out before production use.",
+      },
+      {
+        name: "Role gate proof",
+        status: "Automated",
+        detail: "Browser/API proof checks anonymous, admin, staff and customer access boundaries.",
       },
     ],
     hardening: [

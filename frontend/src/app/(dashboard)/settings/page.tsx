@@ -50,9 +50,19 @@ type HardeningCheck = {
   detail: string;
 };
 
+type SecurityControl = {
+  name: string;
+  status: string;
+  detail: string;
+  proof?: string;
+};
+
 type SecurityOverview = {
   roles: RoleAccess[];
   sessions: SessionStatus[];
+  gateChecks: SecurityControl[];
+  recoveryControls: SecurityControl[];
+  auditControls: SecurityControl[];
   hardening: HardeningCheck[];
 };
 
@@ -300,8 +310,13 @@ export default function Settings() {
 
   useEffect(() => {
     let isMounted = true;
-    fetch("/api/security-overview", { cache: "no-store" })
-      .then((response) => response.json())
+    fetch("/api/security-overview", { cache: "no-store", credentials: "include" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Security overview requires an admin session.");
+        }
+        return response.json();
+      })
       .then((data: SecurityOverview) => {
         if (isMounted) {
           setSecurityOverview(data);
@@ -620,6 +635,80 @@ export default function Settings() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <ClipboardCheck className="h-5 w-5 text-indigo-700" />
+                    <h4 className="font-black text-gray-950">Authentication Hardening Command</h4>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-gray-600">
+                    Admin-only security overview, staff route restrictions, customer account guard, recovery notes and audit evidence.
+                  </p>
+                </div>
+                <span className="inline-flex w-fit items-center gap-2 rounded-md bg-white px-3 py-2 text-xs font-black uppercase text-indigo-700">
+                  <Shield className="h-3.5 w-3.5" />
+                  Role Gates Active
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+                {securityOverview.gateChecks.map((check) => (
+                  <div key={check.name} className="rounded-lg border border-white bg-white/75 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-black text-gray-900">{check.name}</p>
+                      <span className="rounded-md bg-indigo-100 px-2 py-1 text-xs font-black text-indigo-700">
+                        {check.status}
+                      </span>
+                    </div>
+                    {check.proof && (
+                      <p className="mt-2 font-mono text-xs font-bold text-indigo-700">{check.proof}</p>
+                    )}
+                    <p className="mt-2 text-sm leading-5 text-gray-600">{check.detail}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-lg border border-white bg-white/75 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <RefreshCw className="h-4 w-4 text-indigo-700" />
+                    <p className="font-black text-gray-900">Account Recovery Controls</p>
+                  </div>
+                  <div className="space-y-2">
+                    {securityOverview.recoveryControls.map((control) => (
+                      <div key={control.name} className="rounded-md bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-bold text-gray-900">{control.name}</p>
+                          <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-black text-green-700">
+                            {control.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-5 text-gray-600">{control.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white bg-white/75 p-4">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Route className="h-4 w-4 text-indigo-700" />
+                    <p className="font-black text-gray-900">Audit Controls</p>
+                  </div>
+                  <div className="space-y-2">
+                    {securityOverview.auditControls.map((control) => (
+                      <div key={control.name} className="rounded-md bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-bold text-gray-900">{control.name}</p>
+                          <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-black text-green-700">
+                            {control.status}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-5 text-gray-600">{control.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="overflow-hidden rounded-lg border border-gray-100">
