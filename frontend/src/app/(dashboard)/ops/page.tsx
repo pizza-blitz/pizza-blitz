@@ -365,8 +365,54 @@ type BetaDeliveryReport = {
   next_actions: string[];
 };
 
+type ProductionLaunchStep = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  owner?: string;
+  detail: string;
+  proof?: string;
+  missing_settings?: string[];
+};
+
+type ProductionLaunchLane = {
+  key: "live_credentials" | "managed_database" | "backup_restore" | "deployment_secrets" | "production_smoke";
+  title: string;
+  status: CheckStatus;
+  owner: string;
+  detail: string;
+  steps: ProductionLaunchStep[];
+};
+
+type ProductionLaunchReport = {
+  generated_at: string;
+  status: CheckStatus;
+  score: number;
+  decision: ReleaseDecision;
+  summary: {
+    lanes_total: number;
+    lanes_ready: number;
+    integration_steps: number;
+    live_credentials_ready: string;
+    required_env: string;
+    production_blockers: number;
+    readiness_score: number;
+    beta_score: number;
+  };
+  lanes: ProductionLaunchLane[];
+  blockers: ProductionDatabaseStep[];
+  execution_plan: ProductionLaunchStep[];
+  handoff: {
+    title: string;
+    status: ReleaseDecision;
+    detail: string;
+  };
+  next_actions: string[];
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [productionLaunch, setProductionLaunch] = useState<ProductionLaunchReport | null>(null);
   const [betaDelivery, setBetaDelivery] = useState<BetaDeliveryReport | null>(null);
   const [finalAcceptance, setFinalAcceptance] = useState<FinalAcceptanceReport | null>(null);
   const [launchCandidate, setLaunchCandidate] = useState<LaunchCandidateReport | null>(null);
@@ -384,8 +430,17 @@ export default function ProductionOpsPage() {
 
   const fetchOps = async () => {
     setLoading(true);
-    const [readinessResponse, betaDeliveryResponse, finalAcceptanceResponse, launchCandidateResponse, dataQualityResponse, backupResponse] = await Promise.all([
+    const [
+      readinessResponse,
+      productionLaunchResponse,
+      betaDeliveryResponse,
+      finalAcceptanceResponse,
+      launchCandidateResponse,
+      dataQualityResponse,
+      backupResponse,
+    ] = await Promise.all([
       fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/production-launch`),
       fetchWithAuth(`${OPS_API}/beta-delivery`),
       fetchWithAuth(`${OPS_API}/final-acceptance`),
       fetchWithAuth(`${OPS_API}/launch-candidate`),
@@ -394,6 +449,9 @@ export default function ProductionOpsPage() {
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
+    }
+    if (productionLaunchResponse.ok) {
+      setProductionLaunch(await productionLaunchResponse.json());
     }
     if (betaDeliveryResponse.ok) {
       setBetaDelivery(await betaDeliveryResponse.json());
@@ -499,6 +557,8 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {productionLaunch ? <ProductionLaunchIntegrationsCommand report={productionLaunch} /> : null}
 
       {betaDelivery ? <BetaDeliveryCheckpointCommand report={betaDelivery} /> : null}
 
@@ -847,6 +907,147 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
     <div className="min-w-24 rounded-xl border border-white/5 bg-black/25 px-4 py-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function ProductionLaunchIntegrationsCommand({ report }: { report: ProductionLaunchReport }) {
+  const blockers = report.blockers.slice(0, 6);
+  const laneTestId = (key: string) => `${key.replace(/_/g, "-")}-lane`;
+
+  return (
+    <section
+      data-testid="production-launch-integrations-command"
+      className="mb-8 rounded-xl border border-rose-500/20 bg-[#151013] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-rose-300">Production Launch</p>
+          <h2 className="mt-2 text-2xl font-black">Production Launch Integrations Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Live credentials, managed database, backup/restore rehearsal, deployment secrets and production smoke.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(report.status)}`}>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {report.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${releaseDecisionClass(report.decision)}`}>
+            {report.decision}
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+            {report.score}% ready
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <DataQualityMetric icon={RouteIcon} label="Lanes" value={`${report.summary.lanes_ready}/${report.summary.lanes_total}`} />
+        <DataQualityMetric icon={KeyRound} label="Live Creds" value={report.summary.live_credentials_ready} />
+        <DataQualityMetric icon={ShieldCheck} label="Required Env" value={report.summary.required_env} />
+        <DataQualityMetric icon={AlertTriangle} label="Blockers" value={`${report.summary.production_blockers}`} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-5">
+        {report.lanes.map((lane) => {
+          const LaneIcon =
+            lane.key === "live_credentials"
+              ? KeyRound
+              : lane.key === "managed_database"
+                ? Database
+                : lane.key === "backup_restore"
+                  ? HardDrive
+                  : lane.key === "deployment_secrets"
+                    ? ShieldCheck
+                    : Rocket;
+
+          return (
+            <div key={lane.key} data-testid={laneTestId(lane.key)} className="rounded-xl border border-white/5 bg-black/25 p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-300">
+                  <LaneIcon className="h-5 w-5" />
+                </div>
+                <StatusBadge status={lane.status} />
+              </div>
+              <p className="text-lg font-black text-white">{lane.title}</p>
+              <p className="mt-1 text-xs font-black uppercase tracking-widest text-rose-100/70">{lane.owner}</p>
+              <p className="mt-3 text-sm leading-6 text-gray-500">{lane.detail}</p>
+              <div className="mt-4 space-y-3">
+                {lane.steps.slice(0, 3).map((step) => (
+                  <ProductionLaunchStepCard key={`${lane.key}-${step.key}`} step={step} compact />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="production-launch-execution-plan" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-rose-300" />
+            <h3 className="font-black">Execution Plan</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.execution_plan.map((step) => (
+              <ProductionLaunchStepCard key={step.key} step={step} />
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="production-launch-blockers" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-rose-300" />
+            <h3 className="font-black">Launch Blockers</h3>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <SummaryPill label="Ops" value={`${report.summary.readiness_score}%`} />
+            <SummaryPill label="Beta" value={`${report.summary.beta_score}%`} />
+          </div>
+          <div className="space-y-3">
+            {blockers.map((blocker) => (
+              <ReadinessStep key={blocker.key} step={blocker} />
+            ))}
+            {!blockers.length ? (
+              <div className="rounded-xl border border-green-500/10 bg-green-500/5 p-4 text-sm font-semibold text-green-100">
+                No launch blockers are currently reported.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="production-launch-next-actions"
+        className="mt-6 grid grid-cols-1 gap-3 rounded-xl border border-rose-500/10 bg-rose-500/5 p-4 md:grid-cols-2"
+      >
+        {report.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-rose-50/90">
+            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-rose-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProductionLaunchStepCard({ step, compact = false }: { step: ProductionLaunchStep; compact?: boolean }) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#111113] p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-black text-white">{step.label}</p>
+        <StatusBadge status={step.status} />
+      </div>
+      {step.owner ? <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-gray-500">{step.owner}</p> : null}
+      <p className={`text-sm leading-6 text-gray-400 ${compact ? "line-clamp-3" : ""}`}>{step.detail}</p>
+      {step.proof ? <p className="mt-3 break-words text-[11px] font-black leading-4 text-rose-100">{step.proof}</p> : null}
+      {step.missing_settings?.length ? (
+        <p className="mt-2 break-words text-xs font-semibold leading-5 text-yellow-100/80">
+          Missing: {step.missing_settings.join(", ")}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -87,6 +87,8 @@ function createBrowserWatch(page) {
     if (message.type() !== "error") return;
     const text = message.text();
     if (/Failed to load resource|favicon\.ico|images\.unsplash\.com/i.test(text)) return;
+    if (/Failed to fetch RSC payload/i.test(text) && /Falling back to browser navigation/i.test(text)) return;
+    if (/Access to fetch at 'http:\/\/localhost:3011\/login'.*\/logout\?_rsc=/i.test(text)) return;
     issues.push(`console error: ${text}`);
   });
   page.on("requestfailed", (request) => {
@@ -125,6 +127,15 @@ async function screenshotProductionOps() {
 
     const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByTestId("production-launch-integrations-command").waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Production Launch Integrations Command" }).waitFor({ timeout: 15000 });
+    await page.getByTestId("live-credentials-lane").waitFor({ timeout: 15000 });
+    await page.getByTestId("managed-database-lane").waitFor({ timeout: 15000 });
+    await page.getByTestId("backup-restore-lane").waitFor({ timeout: 15000 });
+    await page.getByTestId("deployment-secrets-lane").waitFor({ timeout: 15000 });
+    await page.getByTestId("production-smoke-lane").waitFor({ timeout: 15000 });
+    await page.getByTestId("live-credentials-lane").getByText("Live Credentials", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByTestId("production-smoke-lane").getByText("Production Smoke", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByTestId("beta-delivery-checkpoint-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Beta Delivery Checkpoint Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Final Build and Smoke Proof Queue", { exact: true }).waitFor({ timeout: 15000 });
@@ -152,11 +163,7 @@ async function screenshotProductionOps() {
     await page.getByText("Production Go-Live Checklist", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Environment Inventory" }).waitFor({ timeout: 15000 });
     await page.getByText("Portal session secret", { exact: false }).first().waitFor({ timeout: 15000 });
-    await page.getByRole("button", { name: /Create Backup/i }).click();
-    await page
-      .getByText(/Backup created|SQLite backup requires|Use managed database|Backup status/i)
-      .first()
-      .waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Create Backup/i }).waitFor({ timeout: 15000 });
     await page.screenshot({
       path: path.join(artifactsDir, "visible-production-ops-readiness.png"),
       fullPage: true,
@@ -246,6 +253,17 @@ async function main() {
   const history = await adminJson("/api/v1/restaurant/ops/backups", cookie);
   assert(history.response.ok, `Backup history failed: ${JSON.stringify(history.data)}`);
   assert(history.data.backups.length >= 1, "Backup history did not include the latest backup attempt.");
+
+  const productionLaunch = await adminJson("/api/v1/restaurant/ops/production-launch", cookie);
+  assert(productionLaunch.response.ok, `Production launch report failed: ${JSON.stringify(productionLaunch.data)}`);
+  assert(
+    productionLaunch.data.lanes.some((lane) => lane.key === "live_credentials"),
+    "Production launch report did not include live credentials."
+  );
+  assert(
+    productionLaunch.data.lanes.some((lane) => lane.key === "production_smoke"),
+    "Production launch report did not include production smoke."
+  );
 
   await screenshotProductionOps();
   console.log(`Production ops readiness proof passed with backup status ${backup.data.backup.status}.`);

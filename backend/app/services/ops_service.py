@@ -1254,6 +1254,285 @@ def beta_delivery_report(db: Session) -> dict:
     }
 
 
+def production_launch_report(db: Session) -> dict:
+    readiness = readiness_report(db)
+    beta_delivery = beta_delivery_report(db)
+    payment_status = payment_provider_status()
+    campaign_statuses = [campaign_provider_status(channel) for channel in ["whatsapp", "sms", "email"]]
+    social_statuses = [social_provider_status(platform) for platform in ["facebook", "instagram"]]
+    ads_status = ad_provider_status()
+    production_plan = readiness.get("production_database_plan") or {}
+    security_plan = readiness.get("environment_security_plan") or {}
+    deployment_plan = readiness.get("deployment_pipeline_plan") or {}
+    backup_freshness = readiness.get("backup_freshness") or {}
+    environment_summary = readiness.get("environment_summary") or {}
+
+    payment_live_ready = (
+        payment_status.get("provider") != "manual"
+        and payment_status.get("checkout_configured")
+        and payment_status.get("webhook_configured")
+    )
+    payment_missing = [
+        *payment_status.get("missing_checkout_settings", []),
+        *payment_status.get("missing_webhook_settings", []),
+    ]
+    if payment_status.get("provider") == "manual":
+        payment_missing.append("PAYMENT_PROVIDER=cashfree or razorpay")
+
+    campaign_ready = sum(1 for status in campaign_statuses if status.get("configured"))
+    campaign_missing = sorted({
+        setting
+        for status in campaign_statuses
+        for setting in status.get("missing_settings", [])
+    })
+    social_ready = sum(1 for status in social_statuses if status.get("configured"))
+    social_missing = sorted({
+        setting
+        for status in social_statuses
+        for setting in status.get("missing_settings", [])
+    })
+    ads_missing = ads_status.get("missing_settings", [])
+
+    live_credential_steps = [
+        {
+            "key": "payment_gateway",
+            "label": "Payment gateway credentials",
+            "status": "pass" if payment_live_ready else "warn",
+            "owner": "Admin / payment provider",
+            "detail": "Cashfree or Razorpay live checkout and webhook credentials must replace manual payment mode before public launch.",
+            "proof": "verify-payment-production-pass.cjs",
+            "missing_settings": sorted(set(payment_missing)),
+        },
+        {
+            "key": "message_providers",
+            "label": "WhatsApp/SMS/email credentials",
+            "status": "pass" if campaign_ready == len(campaign_statuses) else "warn",
+            "owner": "Marketing / provider accounts",
+            "detail": f"{campaign_ready}/{len(campaign_statuses)} campaign channels are configured for real sending.",
+            "proof": "verify-messaging-readiness.cjs",
+            "missing_settings": campaign_missing,
+        },
+        {
+            "key": "social_and_ads",
+            "label": "Social and Meta Ads credentials",
+            "status": "pass" if social_ready == len(social_statuses) and ads_status.get("configured") else "warn",
+            "owner": "Marketing / Meta business",
+            "detail": f"{social_ready}/{len(social_statuses)} social channels plus Meta Ads must be connected before automated publishing.",
+            "proof": "verify-social-publishing-readiness.cjs + verify-ad-provider-sync.cjs",
+            "missing_settings": sorted({*social_missing, *ads_missing}),
+        },
+    ]
+
+    lanes = [
+        {
+            "key": "live_credentials",
+            "title": "Live Credentials",
+            "status": _rollup_status(live_credential_steps),
+            "owner": "Admin / provider accounts",
+            "detail": "Real payment, messaging, social and ad-provider credentials are grouped here so no launch dependency stays hidden.",
+            "steps": live_credential_steps,
+        },
+        {
+            "key": "managed_database",
+            "title": "Managed Database",
+            "status": production_plan.get("status", "warn"),
+            "owner": "Engineering / database owner",
+            "detail": production_plan.get("decision") or "Production must run on a managed PostgreSQL-compatible database.",
+            "steps": [
+                {
+                    "key": step.get("key"),
+                    "label": step.get("label"),
+                    "status": step.get("status", "warn"),
+                    "owner": "Engineering",
+                    "detail": step.get("detail"),
+                    "proof": "verify-production-database-path.cjs",
+                    "missing_settings": [],
+                }
+                for step in production_plan.get("migration_steps", [])[:4]
+            ],
+        },
+        {
+            "key": "backup_restore",
+            "title": "Backup/Restore Rehearsal",
+            "status": backup_freshness.get("status", "warn"),
+            "owner": "Operations / engineering",
+            "detail": "A fresh backup or managed snapshot plus restore rehearsal is required before real customer traffic.",
+            "steps": [
+                {
+                    "key": step.get("key"),
+                    "label": step.get("label"),
+                    "status": step.get("status", "warn"),
+                    "owner": "Operations",
+                    "detail": step.get("detail"),
+                    "proof": "verify-data-quality-export-command.cjs",
+                    "missing_settings": [],
+                }
+                for step in production_plan.get("backup_restore_drill", [])[:4]
+            ],
+        },
+        {
+            "key": "deployment_secrets",
+            "title": "Deployment Secrets",
+            "status": security_plan.get("status", "warn"),
+            "owner": "Engineering / deployment owner",
+            "detail": security_plan.get("summary") or "Required env vars and sensitive secrets must be set in the deployment host.",
+            "steps": [
+                {
+                    "key": step.get("key"),
+                    "label": step.get("label"),
+                    "status": step.get("status", "warn"),
+                    "owner": "Engineering",
+                    "detail": step.get("detail"),
+                    "proof": "verify-environment-secrets-security.cjs",
+                    "missing_settings": [],
+                }
+                for step in security_plan.get("deployment_env", [])[:4]
+            ],
+        },
+        {
+            "key": "production_smoke",
+            "title": "Production Smoke",
+            "status": deployment_plan.get("status", "warn"),
+            "owner": "Launch captain",
+            "detail": "Build, deploy, log inspection, rollback ownership and browser smoke tests are the final launch gate.",
+            "steps": [
+                {
+                    "key": "frontend_build",
+                    "label": "Run production build",
+                    "status": "pass",
+                    "owner": "Engineering",
+                    "detail": "Run npm run build before promoting the public environment.",
+                    "proof": "npm run build",
+                    "missing_settings": [],
+                },
+                {
+                    "key": "ops_smoke",
+                    "label": "Run Production Ops smoke",
+                    "status": beta_delivery.get("status", "warn"),
+                    "owner": "Launch captain",
+                    "detail": "Open /ops, /roadmap, customer checkout and staff order paths against production.",
+                    "proof": "verify-production-ops-readiness.cjs",
+                    "missing_settings": [],
+                },
+                {
+                    "key": "deploy_smoke",
+                    "label": "Deploy and smoke test",
+                    "status": deployment_plan.get("status", "warn"),
+                    "owner": "Launch captain",
+                    "detail": "Deploy to the public host, inspect logs, run browser smoke and confirm rollback owner.",
+                    "proof": "verify-deployment-pipeline.cjs",
+                    "missing_settings": [],
+                },
+            ],
+        },
+    ]
+
+    blocker_details = [
+        *[
+            item.get("detail") or item.get("label")
+            for item in readiness.get("launch_blockers", [])
+        ],
+        *production_plan.get("blockers", []),
+        *security_plan.get("blockers", []),
+        *deployment_plan.get("blockers", []),
+        *[
+            f"{step['label']}: {', '.join(step['missing_settings'])}"
+            for step in live_credential_steps
+            if step.get("missing_settings")
+        ],
+    ]
+    blockers = [
+        {
+            "key": f"launch_blocker_{index + 1}",
+            "label": "Production launch blocker",
+            "status": "warn",
+            "detail": detail,
+        }
+        for index, detail in enumerate(dict.fromkeys(filter(None, blocker_details)))
+    ][:14]
+
+    execution_plan = [
+        {
+            "key": "collect_live_credentials",
+            "label": "Collect live credentials",
+            "status": lanes[0]["status"],
+            "owner": "Admin / provider accounts",
+            "detail": "Collect payment, messaging, social and ad credentials, then store them in the deployment secret manager.",
+            "proof": "verify-production-launch-integrations.cjs",
+        },
+        {
+            "key": "provision_managed_database",
+            "label": "Provision managed database",
+            "status": production_plan.get("status", "warn"),
+            "owner": "Engineering",
+            "detail": "Create the managed PostgreSQL database, set SQLALCHEMY_DATABASE_URI and run migrations.",
+            "proof": "verify-production-database-path.cjs",
+        },
+        {
+            "key": "set_deployment_secrets",
+            "label": "Set deployment secrets",
+            "status": security_plan.get("status", "warn"),
+            "owner": "Engineering",
+            "detail": "Set required env vars, rotate default credentials and keep sensitive values masked.",
+            "proof": "verify-environment-secrets-security.cjs",
+        },
+        {
+            "key": "backup_restore_rehearsal",
+            "label": "Run backup/restore rehearsal",
+            "status": backup_freshness.get("status", "warn"),
+            "owner": "Operations",
+            "detail": "Create a backup or snapshot, restore it into a clean database and run smoke checks.",
+            "proof": "verify-data-quality-export-command.cjs",
+        },
+        {
+            "key": "deploy_smoke",
+            "label": "Deploy and smoke test",
+            "status": deployment_plan.get("status", "warn"),
+            "owner": "Launch captain",
+            "detail": "Promote the environment, inspect logs, run smoke proofs and record rollback ownership.",
+            "proof": "verify-deployment-pipeline.cjs",
+        },
+    ]
+
+    status = _rollup_status([*lanes, *execution_plan])
+    decision = "hold"
+    if status == "pass" and not blockers:
+        decision = "ready"
+    elif status != "fail" and readiness.get("overall") != "blocked":
+        decision = "conditional"
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": status,
+        "score": _readiness_score([*lanes, *execution_plan]),
+        "decision": decision,
+        "summary": {
+            "lanes_total": len(lanes),
+            "lanes_ready": sum(1 for lane in lanes if lane["status"] == "pass"),
+            "integration_steps": sum(len(lane["steps"]) for lane in lanes),
+            "live_credentials_ready": f"{sum(1 for step in live_credential_steps if step['status'] == 'pass')}/{len(live_credential_steps)}",
+            "required_env": f"{environment_summary.get('required_configured', 0)}/{environment_summary.get('required_total', 0)}",
+            "production_blockers": len(blockers),
+            "readiness_score": readiness.get("readiness_score", 0),
+            "beta_score": beta_delivery.get("score", 0),
+        },
+        "lanes": lanes,
+        "blockers": blockers,
+        "execution_plan": execution_plan,
+        "handoff": {
+            "title": "Production launch integrations",
+            "status": decision,
+            "detail": "The system now shows which live provider, database, backup, secret and deploy gates are ready before the June 20 launch window.",
+        },
+        "next_actions": [
+            "Replace manual payment mode with the chosen live gateway credentials.",
+            "Provision the managed database and run migrations against production secrets.",
+            "Run backup/restore rehearsal before routing real customer traffic.",
+            "Deploy to the public host and run customer, staff, ops and roadmap smoke checks.",
+        ],
+    }
+
+
 def _production_database_plan(*, environment: str, backup_freshness: dict) -> dict:
     backend = database_backend()
     current_path = sqlite_database_path()

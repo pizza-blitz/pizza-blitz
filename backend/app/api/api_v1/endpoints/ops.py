@@ -9,6 +9,7 @@ from app.services.ops_service import (
     final_acceptance_report,
     launch_candidate_report,
     list_backups,
+    production_launch_report,
     readiness_report,
 )
 
@@ -53,6 +54,14 @@ def beta_delivery_readiness(
     session: dict = Depends(require_roles("admin")),
 ):
     return beta_delivery_report(db)
+
+
+@router.get("/production-launch")
+def production_launch_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    return production_launch_report(db)
 
 
 @router.get("/backups")

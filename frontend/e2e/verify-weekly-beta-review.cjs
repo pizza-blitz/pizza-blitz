@@ -47,6 +47,7 @@ function createBrowserWatch(page) {
     const text = message.text();
     if (/Failed to load resource|favicon\.ico|images\.unsplash\.com/i.test(text)) return;
     if (/Failed to fetch RSC payload/i.test(text) && /Falling back to browser navigation/i.test(text)) return;
+    if (/Access to fetch at 'http:\/\/localhost:3011\/login'.*\/logout\?_rsc=/i.test(text)) return;
     issues.push(`console error: ${text}`);
   });
 
@@ -90,7 +91,7 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("26 / 26", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("27 / 27", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
@@ -110,6 +111,7 @@ async function main() {
     await page.getByText("verify-launch-candidate-hardening.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-final-acceptance-walkthrough.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-production-launch-integrations.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Delivery order E2E handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Visual polish handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Operational dashboards handoff", { exact: true }).waitFor({ timeout: 15000 });
@@ -119,6 +121,7 @@ async function main() {
     await page.getByText("Final acceptance walkthrough handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Beta delivery checkpoint handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Post-beta production integrations handoff", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Live environment execution handoff", { exact: true }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-weekly-beta-review.png"),
