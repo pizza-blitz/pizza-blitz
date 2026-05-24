@@ -112,6 +112,7 @@ async function main() {
     await page.getByText("verify-data-quality-export-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-launch-candidate-hardening.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-final-acceptance-walkthrough.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("QA command board, route audit matrix", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Real WhatsApp/SMS/email readiness", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Social publishing readiness", { exact: true }).first().waitFor({ timeout: 15000 });
@@ -120,7 +121,8 @@ async function main() {
     await page.getByText("Data quality and export command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Launch candidate hardening command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Final acceptance walkthrough command", { exact: true }).first().waitFor({ timeout: 15000 });
-    await page.getByText("Beta delivery checkpoint:", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Beta delivery checkpoint command", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Production launch integrations:", { exact: false }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-weekly-stabilization-command.png"),

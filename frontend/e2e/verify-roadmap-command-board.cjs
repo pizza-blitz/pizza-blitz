@@ -101,7 +101,8 @@ async function main() {
     await page.getByText("verify-data-quality-export-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-launch-candidate-hardening.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-final-acceptance-walkthrough.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Beta delivery checkpoint:", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Production launch integrations:", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Route / View Audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
@@ -112,6 +113,7 @@ async function main() {
     await page.getByText("Data quality and export command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Launch candidate hardening command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Final acceptance walkthrough command", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Beta delivery checkpoint command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByRole("link", { name: /Roadmap/i }).waitFor({ timeout: 15000 });
 
     await page.screenshot({

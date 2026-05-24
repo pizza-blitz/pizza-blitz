@@ -339,8 +339,35 @@ type FinalAcceptanceReport = {
   next_actions: string[];
 };
 
+type BetaDeliveryReport = {
+  generated_at: string;
+  status: CheckStatus;
+  score: number;
+  decision: ReleaseDecision;
+  summary: {
+    proofs_total: number;
+    proofs_ready: number;
+    proofs_attention: number;
+    proofs_blocked: number;
+    known_gaps: number;
+    production_steps: number;
+    readiness_score: number;
+    final_acceptance_score: number;
+  };
+  proof_queue: LaunchProofGate[];
+  known_gaps: ProductionDatabaseStep[];
+  production_plan: ProductionDatabaseStep[];
+  handoff: {
+    title: string;
+    status: ReleaseDecision;
+    detail: string;
+  };
+  next_actions: string[];
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [betaDelivery, setBetaDelivery] = useState<BetaDeliveryReport | null>(null);
   const [finalAcceptance, setFinalAcceptance] = useState<FinalAcceptanceReport | null>(null);
   const [launchCandidate, setLaunchCandidate] = useState<LaunchCandidateReport | null>(null);
   const [dataQuality, setDataQuality] = useState<DataQualityReport | null>(null);
@@ -357,8 +384,9 @@ export default function ProductionOpsPage() {
 
   const fetchOps = async () => {
     setLoading(true);
-    const [readinessResponse, finalAcceptanceResponse, launchCandidateResponse, dataQualityResponse, backupResponse] = await Promise.all([
+    const [readinessResponse, betaDeliveryResponse, finalAcceptanceResponse, launchCandidateResponse, dataQualityResponse, backupResponse] = await Promise.all([
       fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/beta-delivery`),
       fetchWithAuth(`${OPS_API}/final-acceptance`),
       fetchWithAuth(`${OPS_API}/launch-candidate`),
       fetchWithAuth(`${OPS_API}/data-quality`),
@@ -366,6 +394,9 @@ export default function ProductionOpsPage() {
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
+    }
+    if (betaDeliveryResponse.ok) {
+      setBetaDelivery(await betaDeliveryResponse.json());
     }
     if (finalAcceptanceResponse.ok) {
       setFinalAcceptance(await finalAcceptanceResponse.json());
@@ -468,6 +499,8 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {betaDelivery ? <BetaDeliveryCheckpointCommand report={betaDelivery} /> : null}
 
       {finalAcceptance ? <FinalAcceptanceWalkthroughCommand report={finalAcceptance} /> : null}
 
@@ -815,6 +848,118 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
     </div>
+  );
+}
+
+function BetaDeliveryCheckpointCommand({ report }: { report: BetaDeliveryReport }) {
+  return (
+    <section
+      data-testid="beta-delivery-checkpoint-command"
+      className="mb-8 rounded-xl border border-amber-500/20 bg-[#15120c] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300">Beta Delivery Checkpoint</p>
+          <h2 className="mt-2 text-2xl font-black">Beta Delivery Checkpoint Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Final build, smoke/core proofs, known gaps and next production plan for the June 20 checkpoint.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(report.status)}`}>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {report.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${releaseDecisionClass(report.decision)}`}>
+            {report.decision}
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+            {report.score}% ready
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <DataQualityMetric icon={FileText} label="Proofs" value={`${report.summary.proofs_total}`} />
+        <DataQualityMetric icon={CheckCircle2} label="Ready Proofs" value={`${report.summary.proofs_ready}`} />
+        <DataQualityMetric icon={AlertTriangle} label="Known Gaps" value={`${report.summary.known_gaps}`} />
+        <DataQualityMetric icon={Rocket} label="Prod Steps" value={`${report.summary.production_steps}`} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="beta-proof-queue" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-amber-300" />
+            <h3 className="font-black">Final Build and Smoke Proof Queue</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.proof_queue.map((proof) => (
+              <div key={proof.key} className="rounded-xl border border-white/5 bg-[#111113] p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-black text-white">{proof.label}</p>
+                  <StatusBadge status={proof.status} />
+                </div>
+                <p className="break-words text-[11px] font-black leading-4 text-amber-100">{proof.proof}</p>
+                <p className="mt-2 text-sm leading-6 text-gray-500">{proof.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="known-gap-documentation" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-300" />
+            <h3 className="font-black">Known Gap Documentation</h3>
+          </div>
+          <div className="space-y-3">
+            {report.known_gaps.map((gap) => (
+              <ReadinessStep key={gap.key} step={gap} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="next-production-plan" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <Rocket className="h-5 w-5 text-amber-300" />
+            <h3 className="font-black">Next Production Plan</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.production_plan.map((step) => (
+              <ReadinessStep key={step.key} step={step} />
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="beta-handoff-decision" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-amber-300" />
+            <h3 className="font-black">Checkpoint Handoff</h3>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <SummaryPill label="Final" value={`${report.summary.final_acceptance_score}%`} />
+            <SummaryPill label="Ready" value={`${report.summary.readiness_score}%`} />
+          </div>
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4">
+            <p className="text-sm font-black uppercase tracking-widest text-amber-200">{report.handoff.title}</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-amber-50/80">{report.handoff.detail}</p>
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="beta-delivery-next-actions"
+        className="mt-6 grid grid-cols-1 gap-3 rounded-xl border border-amber-500/10 bg-amber-500/5 p-4 md:grid-cols-2"
+      >
+        {report.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-amber-50/90">
+            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-amber-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 

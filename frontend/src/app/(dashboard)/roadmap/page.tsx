@@ -244,6 +244,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops now shows admin, staff/POS and customer walkthrough lanes with acceptance gates before the June 20 checkpoint.",
   },
+  {
+    title: "Beta delivery checkpoint command",
+    status: "done",
+    value: "Production Ops now shows final build, smoke proof queue, known gaps and next production plan for the June 20 checkpoint.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -291,6 +296,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Final acceptance walkthrough command",
     status: "done",
     value: "Admin, staff/POS and customer walkthrough lanes plus beta checkpoint gates are now visible in Production Ops.",
+  },
+  {
+    title: "Beta delivery checkpoint command",
+    status: "done",
+    value: "Final build, smoke/core proof queue, known-gap documentation and production next steps are now visible in Production Ops.",
   },
   {
     title: "Reporting comparison depth",
@@ -720,21 +730,21 @@ const june20Push: DailyPlan[] = [
   {
     date: "20 Jun 2026",
     focus: "Beta delivery checkpoint",
-    status: "active",
+    status: "done",
     planned: [
       "Run final build",
       "Run smoke and core E2E proofs",
       "Document remaining production integrations",
     ],
-    output: "Beta milestone delivered with clear known gaps and next production plan.",
+    output: "Beta checkpoint now shows final build, smoke/core proof queue, known gaps and next production plan in Production Ops.",
   },
 ];
 
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "25",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "26",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -744,12 +754,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Final acceptance, launch candidate hardening, data quality export, marketing live-readiness, operational command board and dashboard polish are now proof-backed.",
+    note: "Beta delivery, final acceptance, launch candidate hardening, data quality export, marketing live-readiness and operational command board are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Beta Delivery",
-    note: "Final build, smoke proofs and known-gap documentation are now the active track.",
+    value: "Production Launch",
+    note: "Live credentials, managed database, backups, deployment secrets and production smoke are now the next track.",
   },
 ];
 
@@ -902,6 +912,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-final-acceptance-walkthrough-command.png",
   },
   {
+    area: "Beta delivery checkpoint",
+    proof: "verify-beta-delivery-checkpoint.cjs",
+    status: "passed",
+    value: "Final build, smoke/core proof queue, known gaps and next production plan stay visible in Production Ops.",
+    artifact: "visible-beta-delivery-checkpoint-command.png",
+  },
+  {
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
@@ -934,7 +951,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "25 / 25",
+    value: "26 / 26",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -949,8 +966,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Beta Delivery",
-    note: "The next work slice should run final build, smoke proofs and known-gap documentation for the June 20 checkpoint.",
+    value: "Production Launch",
+    note: "The next work slice should connect live credentials, managed database, backups, deployment secrets and production smoke.",
   },
 ];
 
@@ -1032,8 +1049,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Beta delivery checkpoint handoff",
+    status: "done",
+    value: "Final build, smoke/core proof queue, known-gap documentation and production next steps are now visible in Production Ops.",
+  },
+  {
+    title: "Post-beta production integrations handoff",
     status: "active",
-    value: "Next slice should run final build, smoke proofs and known-gap documentation for the June 20 checkpoint.",
+    value: "Next slice should connect live credentials, managed database, backups, deployment secrets and production smoke.",
   },
 ];
 
@@ -1383,7 +1405,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Beta delivery checkpoint: run final build, smoke proofs and known-gap documentation for June 20."
+          text="Production launch integrations: connect live credentials, managed database, backups, deployment secrets and production smoke."
         />
       </section>
     </div>

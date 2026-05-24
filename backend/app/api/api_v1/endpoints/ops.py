@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
 from app.services.ops_service import (
+    beta_delivery_report,
     create_database_backup,
     data_quality_report,
     final_acceptance_report,
@@ -44,6 +45,14 @@ def final_acceptance_readiness(
     session: dict = Depends(require_roles("admin")),
 ):
     return final_acceptance_report(db)
+
+
+@router.get("/beta-delivery")
+def beta_delivery_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    return beta_delivery_report(db)
 
 
 @router.get("/backups")

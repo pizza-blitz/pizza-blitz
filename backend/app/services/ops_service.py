@@ -469,6 +469,102 @@ FINAL_ACCEPTANCE_WALKTHROUGHS = [
     },
 ]
 
+BETA_DELIVERY_PROOF_QUEUE = [
+    {
+        "key": "frontend_build",
+        "label": "Final frontend build",
+        "proof": "npm run build",
+        "status": "pass",
+        "detail": "Next.js production build is the required final checkpoint before handoff.",
+    },
+    {
+        "key": "production_ops",
+        "label": "Production Ops smoke",
+        "proof": "verify-production-ops-readiness.cjs",
+        "status_source": "launch_candidate",
+        "source_key": "ops_smoke",
+        "detail": "Production Ops, environment inventory, backup action and deployment checklist stay visible.",
+    },
+    {
+        "key": "roadmap",
+        "label": "Roadmap proof",
+        "proof": "verify-roadmap-command-board.cjs",
+        "status": "pass",
+        "detail": "Roadmap, proof audit and daily execution tracker stay visible.",
+    },
+    {
+        "key": "final_acceptance",
+        "label": "Final acceptance walkthrough",
+        "proof": "verify-final-acceptance-walkthrough.cjs",
+        "status_source": "final_acceptance",
+        "detail": "Admin, staff/POS and customer walkthrough lanes stay visible for review.",
+    },
+    {
+        "key": "customer_checkout",
+        "label": "Customer checkout smoke",
+        "proof": "verify-customer-web-checkout.cjs",
+        "status_source": "route",
+        "route_key": "customer_checkout",
+        "detail": "Customer web order path remains represented in the final checkpoint queue.",
+    },
+    {
+        "key": "counter_order",
+        "label": "Counter order smoke",
+        "proof": "verify-counter-order-e2e.cjs",
+        "status_source": "route",
+        "route_key": "counter_orders",
+        "detail": "Staff counter/POS order path remains represented in the final checkpoint queue.",
+    },
+    {
+        "key": "delivery_order",
+        "label": "Delivery order smoke",
+        "proof": "verify-delivery-order-e2e.cjs",
+        "status_source": "route",
+        "route_key": "delivery_ops",
+        "detail": "Delivery assignment and handoff path remains represented in the final checkpoint queue.",
+    },
+    {
+        "key": "data_quality",
+        "label": "Data quality export smoke",
+        "proof": "verify-data-quality-export-command.cjs",
+        "status_source": "data_quality",
+        "detail": "Customer export, report export, import readiness and backup/restore proof stay visible.",
+    },
+]
+
+BETA_KNOWN_GAPS = [
+    {
+        "key": "real_payments",
+        "label": "Real payment credentials",
+        "status": "warn",
+        "detail": "Manual/local payment readiness is represented; live Cashfree/Razorpay credentials and webhook verification remain production work.",
+    },
+    {
+        "key": "managed_database",
+        "label": "Managed production database",
+        "status": "warn",
+        "detail": "Local SQLite is acceptable for development; production still needs managed PostgreSQL-compatible storage.",
+    },
+    {
+        "key": "backup_restore",
+        "label": "Backup and restore rehearsal",
+        "status": "warn",
+        "detail": "A fresh backup and restore rehearsal must be completed before public traffic.",
+    },
+    {
+        "key": "deployment_secrets",
+        "label": "Deployment secrets and host",
+        "status": "warn",
+        "detail": "Production host secrets, log access, rollback owner and deployed smoke run remain the next operations track.",
+    },
+    {
+        "key": "live_marketing",
+        "label": "Live marketing providers",
+        "status": "warn",
+        "detail": "WhatsApp/SMS/email/social/ad provider credentials are readiness-tracked but still need live account configuration.",
+    },
+]
+
 
 def database_backend() -> str:
     try:
@@ -1027,6 +1123,133 @@ def final_acceptance_report(db: Session) -> dict:
             "Run the staff walkthrough through counter orders, kitchen/operations and delivery assignment.",
             "Run the customer walkthrough through /order, account capture, product customization and /track.",
             "Keep the June 20 beta checkpoint as a hold until live credentials, database, backups and deployment secrets are complete.",
+        ],
+    }
+
+
+def beta_delivery_report(db: Session) -> dict:
+    readiness = readiness_report(db)
+    launch_candidate = launch_candidate_report(db)
+    final_acceptance = final_acceptance_report(db)
+    data_quality = data_quality_report(db)
+    proof_by_key = {gate["key"]: gate for gate in launch_candidate.get("proof_gates", [])}
+    route_by_key = {route["key"]: route for route in launch_candidate.get("critical_routes", [])}
+
+    proof_queue = []
+    for proof in BETA_DELIVERY_PROOF_QUEUE:
+        status = proof.get("status")
+        if proof.get("status_source") == "launch_candidate":
+            status = proof_by_key.get(proof["source_key"], {}).get("status", "warn")
+        elif proof.get("status_source") == "final_acceptance":
+            status = final_acceptance.get("status", "warn")
+        elif proof.get("status_source") == "route":
+            status = route_by_key.get(proof["route_key"], {}).get("status", "warn")
+        elif proof.get("status_source") == "data_quality":
+            status = data_quality.get("status", "warn")
+        proof_queue.append({**proof, "status": status or "warn"})
+
+    deployment_plan = readiness.get("deployment_pipeline_plan") or {}
+    production_plan = readiness.get("production_database_plan") or {}
+    security_plan = readiness.get("environment_security_plan") or {}
+    known_gaps = [
+        *BETA_KNOWN_GAPS,
+        *[
+            {
+                "key": f"deployment_{index}",
+                "label": "Deployment blocker",
+                "status": "warn",
+                "detail": blocker,
+            }
+            for index, blocker in enumerate(deployment_plan.get("blockers", [])[:3])
+        ],
+        *[
+            {
+                "key": f"database_{index}",
+                "label": "Database blocker",
+                "status": "warn",
+                "detail": blocker,
+            }
+            for index, blocker in enumerate(production_plan.get("blockers", [])[:3])
+        ],
+        *[
+            {
+                "key": f"security_{index}",
+                "label": "Security blocker",
+                "status": "warn",
+                "detail": blocker,
+            }
+            for index, blocker in enumerate(security_plan.get("blockers", [])[:3])
+        ],
+    ][:12]
+
+    production_plan_steps = [
+        {
+            "key": "live_credentials",
+            "label": "Connect live credentials",
+            "status": "warn",
+            "detail": "Add real payment, messaging, social and ad credentials through the deployment secret store.",
+        },
+        {
+            "key": "managed_database",
+            "label": "Move to managed database",
+            "status": production_plan.get("status", "warn"),
+            "detail": "Set SQLALCHEMY_DATABASE_URI, run migrations and seed verified launch data.",
+        },
+        {
+            "key": "backup_rehearsal",
+            "label": "Run backup/restore drill",
+            "status": readiness.get("backup_freshness", {}).get("status", "warn"),
+            "detail": "Create a fresh backup or managed snapshot and rehearse restore before public beta traffic.",
+        },
+        {
+            "key": "deployment_smoke",
+            "label": "Deploy and smoke test",
+            "status": deployment_plan.get("status", "warn"),
+            "detail": "Deploy to the production host, inspect logs, run smoke proofs and confirm rollback owner.",
+        },
+    ]
+
+    all_status_items = proof_queue + known_gaps + production_plan_steps + [
+        {
+            "key": "final_acceptance",
+            "status": final_acceptance.get("status", "warn"),
+        }
+    ]
+    status = _rollup_status(all_status_items)
+    decision = "hold"
+    if status == "pass" and not known_gaps:
+        decision = "ready"
+    elif readiness.get("overall") != "blocked":
+        decision = "conditional"
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": status,
+        "score": _readiness_score(all_status_items),
+        "decision": decision,
+        "summary": {
+            "proofs_total": len(proof_queue),
+            "proofs_ready": sum(1 for proof in proof_queue if proof["status"] == "pass"),
+            "proofs_attention": sum(1 for proof in proof_queue if proof["status"] == "warn"),
+            "proofs_blocked": sum(1 for proof in proof_queue if proof["status"] == "fail"),
+            "known_gaps": len(known_gaps),
+            "production_steps": len(production_plan_steps),
+            "readiness_score": readiness.get("readiness_score", 0),
+            "final_acceptance_score": final_acceptance.get("score", 0),
+        },
+        "proof_queue": proof_queue,
+        "known_gaps": known_gaps,
+        "production_plan": production_plan_steps,
+        "handoff": {
+            "title": "June 20 beta delivery checkpoint",
+            "status": decision,
+            "detail": "Beta is proof-backed for local review; public production launch remains gated by live credentials, managed database, backup/restore rehearsal and deployment secrets.",
+        },
+        "next_actions": [
+            "Run final build and the checkpoint proof queue before publishing a beta handoff note.",
+            "Document known production gaps beside the beta handoff so no live dependency is hidden.",
+            "Move next into live credentials, managed database, deployment secrets, backups and production smoke.",
+            "Keep this checkpoint visible in Production Ops until the public launch environment is ready.",
         ],
     }
 
