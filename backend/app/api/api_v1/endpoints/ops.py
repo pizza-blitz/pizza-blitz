@@ -5,6 +5,7 @@ from app.api.deps import get_db, require_roles
 from app.services.ops_service import (
     create_database_backup,
     data_quality_report,
+    launch_candidate_report,
     list_backups,
     readiness_report,
 )
@@ -26,6 +27,14 @@ def data_quality_readiness(
     session: dict = Depends(require_roles("admin")),
 ):
     return data_quality_report(db)
+
+
+@router.get("/launch-candidate")
+def launch_candidate_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    return launch_candidate_report(db)
 
 
 @router.get("/backups")

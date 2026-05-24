@@ -14,6 +14,7 @@ import {
   Link as LinkIcon,
   ListChecks,
   RefreshCw,
+  Route as RouteIcon,
   Rocket,
   ShieldCheck,
   Upload,
@@ -236,8 +237,58 @@ type DataQualityReport = {
   next_actions: string[];
 };
 
+type LaunchCriticalRoute = {
+  key: string;
+  label: string;
+  route: string;
+  module_key: string;
+  proof: string;
+  status: CheckStatus;
+  score: number;
+  detail: string;
+  next_action: string;
+};
+
+type LaunchProofGate = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  proof: string;
+  detail: string;
+};
+
+type LaunchCandidateReport = {
+  generated_at: string;
+  status: CheckStatus;
+  score: number;
+  release_decision: "ready" | "conditional" | "hold";
+  summary: {
+    critical_routes: number;
+    routes_ready: number;
+    routes_attention: number;
+    routes_blocked: number;
+    proof_gates: number;
+    launch_blockers: number;
+    setup_actions: number;
+    module_score: number;
+    readiness_score: number;
+  };
+  critical_routes: LaunchCriticalRoute[];
+  proof_gates: LaunchProofGate[];
+  hardening_checks: ProductionDatabaseStep[];
+  blocker_review: {
+    hard_blockers: GoLiveItem[];
+    setup_actions: GoLiveItem[];
+    deployment_blockers: string[];
+    database_blockers: string[];
+    security_blockers: string[];
+  };
+  next_actions: string[];
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [launchCandidate, setLaunchCandidate] = useState<LaunchCandidateReport | null>(null);
   const [dataQuality, setDataQuality] = useState<DataQualityReport | null>(null);
   const [backups, setBackups] = useState<BackupRun[]>([]);
   const [message, setMessage] = useState("");
@@ -252,13 +303,17 @@ export default function ProductionOpsPage() {
 
   const fetchOps = async () => {
     setLoading(true);
-    const [readinessResponse, dataQualityResponse, backupResponse] = await Promise.all([
+    const [readinessResponse, launchCandidateResponse, dataQualityResponse, backupResponse] = await Promise.all([
       fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/launch-candidate`),
       fetchWithAuth(`${OPS_API}/data-quality`),
       fetchWithAuth(`${OPS_API}/backups`),
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
+    }
+    if (launchCandidateResponse.ok) {
+      setLaunchCandidate(await launchCandidateResponse.json());
     }
     if (dataQualityResponse.ok) {
       setDataQuality(await dataQualityResponse.json());
@@ -355,6 +410,8 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {launchCandidate ? <LaunchCandidateHardeningCommand report={launchCandidate} /> : null}
 
       {dataQuality ? <DataQualityCommand report={dataQuality} /> : null}
 
@@ -698,6 +755,166 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
     </div>
+  );
+}
+
+function LaunchCandidateHardeningCommand({ report }: { report: LaunchCandidateReport }) {
+  const blockerCount =
+    report.blocker_review.hard_blockers.length +
+    report.blocker_review.deployment_blockers.length +
+    report.blocker_review.database_blockers.length +
+    report.blocker_review.security_blockers.length;
+  const topBlockers = [
+    ...report.blocker_review.hard_blockers.map((item) => item.detail || item.label),
+    ...report.blocker_review.deployment_blockers,
+    ...report.blocker_review.database_blockers,
+    ...report.blocker_review.security_blockers,
+  ].slice(0, 6);
+
+  return (
+    <section
+      data-testid="launch-candidate-hardening-command"
+      className="mb-8 rounded-xl border border-violet-500/20 bg-[#121018] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-300">Launch Candidate Hardening</p>
+          <h2 className="mt-2 text-2xl font-black">Launch Candidate Hardening Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Critical route coverage, E2E proof ownership and production blocker review before the final acceptance walkthrough.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(report.status)}`}>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {report.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${releaseDecisionClass(report.release_decision)}`}>
+            {report.release_decision}
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+            {report.score}% ready
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <DataQualityMetric icon={RouteIcon} label="Critical Routes" value={`${report.summary.critical_routes}`} />
+        <DataQualityMetric icon={CheckCircle2} label="Routes Ready" value={`${report.summary.routes_ready}`} />
+        <DataQualityMetric icon={FileText} label="Proof Gates" value={`${report.summary.proof_gates}`} />
+        <DataQualityMetric icon={AlertTriangle} label="Blockers" value={`${blockerCount}`} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="critical-route-stability" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <RouteIcon className="h-5 w-5 text-violet-300" />
+            <h3 className="font-black">Critical Route Stability</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.critical_routes.map((route) => (
+              <a
+                key={route.key}
+                href={route.route}
+                className="rounded-xl border border-white/5 bg-[#111113] p-4 hover:border-violet-400/40 hover:bg-violet-500/5"
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words font-black text-white">{route.label}</p>
+                    <p className="mt-1 text-xs font-bold text-gray-500">{route.route}</p>
+                  </div>
+                  <StatusBadge status={route.status} />
+                </div>
+                <div className="mb-3 grid grid-cols-1 gap-2">
+                  <div className="rounded-lg bg-white/5 p-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">Score</p>
+                    <p className="mt-1 text-sm font-black text-violet-200">{route.score}%</p>
+                  </div>
+                  <div className="rounded-lg bg-white/5 p-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">Proof</p>
+                    <p className="mt-1 break-words text-[11px] font-black leading-4 text-gray-200">{route.proof}</p>
+                  </div>
+                </div>
+                <p className="text-sm font-semibold leading-6 text-gray-500">{route.next_action}</p>
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="e2e-failure-review" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-violet-300" />
+            <h3 className="font-black">E2E Failure Review</h3>
+          </div>
+          <div className="space-y-3">
+            {report.proof_gates.map((gate) => (
+              <div key={gate.key} className="rounded-xl border border-white/5 bg-[#111113] p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-black text-white">{gate.label}</p>
+                  <StatusBadge status={gate.status} />
+                </div>
+                <p className="break-all text-xs font-black text-violet-200">{gate.proof}</p>
+                <p className="mt-2 text-sm leading-6 text-gray-500">{gate.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="production-blocker-review" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-6">
+          <div className="mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-violet-300" />
+            <h3 className="font-black">Production Blocker Review</h3>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <SummaryPill label="Hard" value={`${report.summary.launch_blockers}`} />
+            <SummaryPill label="Setup" value={`${report.summary.setup_actions}`} />
+          </div>
+          <div className="space-y-2">
+            {topBlockers.length ? (
+              topBlockers.map((blocker, index) => (
+                <p key={`${blocker}-${index}`} className="rounded-lg bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-gray-300">
+                  {blocker}
+                </p>
+              ))
+            ) : (
+              <p className="rounded-lg bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-gray-300">
+                No production blockers are currently listed.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div data-testid="launch-release-decision" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Rocket className="h-5 w-5 text-violet-300" />
+            <h3 className="font-black">Release Decision</h3>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <SummaryPill label="Module Score" value={`${report.summary.module_score}%`} />
+            <SummaryPill label="Readiness" value={`${report.summary.readiness_score}%`} />
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.hardening_checks.map((check) => (
+              <ReadinessStep key={check.key} step={check} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="launch-candidate-next-actions"
+        className="mt-6 grid grid-cols-1 gap-3 rounded-xl border border-violet-500/10 bg-violet-500/5 p-4 md:grid-cols-2"
+      >
+        {report.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-violet-50/90">
+            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-violet-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1214,6 +1431,12 @@ function overallClass(status?: Readiness["overall"]) {
 function statusClass(status: CheckStatus) {
   if (status === "pass") return "bg-green-500/15 text-green-300";
   if (status === "fail") return "bg-red-500/15 text-red-300";
+  return "bg-yellow-500/15 text-yellow-300";
+}
+
+function releaseDecisionClass(status: LaunchCandidateReport["release_decision"]) {
+  if (status === "ready") return "bg-green-500/15 text-green-300";
+  if (status === "hold") return "bg-red-500/15 text-red-300";
   return "bg-yellow-500/15 text-yellow-300";
 }
 

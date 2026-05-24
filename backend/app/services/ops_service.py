@@ -287,6 +287,65 @@ ENVIRONMENT_VARIABLE_GROUPS = [
     },
 ]
 
+LAUNCH_CRITICAL_ROUTE_PROOFS = [
+    {
+        "key": "ops",
+        "label": "Production Ops",
+        "route": "/ops",
+        "module_key": "production_operations",
+        "proof": "verify-production-ops-readiness.cjs",
+    },
+    {
+        "key": "roadmap",
+        "label": "Roadmap Command Board",
+        "route": "/roadmap",
+        "module_key": "production_operations",
+        "proof": "verify-roadmap-command-board.cjs",
+    },
+    {
+        "key": "customer_checkout",
+        "label": "Customer Checkout",
+        "route": "/order",
+        "module_key": "ordering_flow",
+        "proof": "verify-customer-web-checkout.cjs",
+    },
+    {
+        "key": "counter_orders",
+        "label": "Counter Orders",
+        "route": "/orders",
+        "module_key": "ordering_flow",
+        "proof": "verify-counter-order-e2e.cjs",
+    },
+    {
+        "key": "delivery_ops",
+        "label": "Delivery Operations",
+        "route": "/operations",
+        "module_key": "delivery_operations",
+        "proof": "verify-delivery-order-e2e.cjs",
+    },
+    {
+        "key": "reports",
+        "label": "Reports",
+        "route": "/reports",
+        "module_key": "finance_reporting",
+        "proof": "verify-reporting-comparison-dashboard.cjs",
+    },
+    {
+        "key": "promotions",
+        "label": "Promotions",
+        "route": "/promotions",
+        "module_key": "growth_publishing",
+        "proof": "verify-marketing-live-readiness-command.cjs",
+    },
+    {
+        "key": "customers",
+        "label": "Customers",
+        "route": "/customers",
+        "module_key": "marketing_crm",
+        "proof": "verify-data-quality-export-command.cjs",
+    },
+]
+
 
 def database_backend() -> str:
     try:
@@ -572,6 +631,156 @@ def data_quality_report(db: Session) -> dict:
                 "status": "warn",
                 "detail": "Restore a backup into a clean database and run login, customer export, sales export and order smoke proof.",
             },
+        },
+        "next_actions": next_actions,
+    }
+
+
+def launch_candidate_report(db: Session) -> dict:
+    readiness = readiness_report(db)
+    data_quality = data_quality_report(db)
+    modules = readiness.get("module_readiness") or []
+    module_by_key = {module["key"]: module for module in modules}
+    deployment_plan = readiness.get("deployment_pipeline_plan") or {}
+    production_plan = readiness.get("production_database_plan") or {}
+    security_plan = readiness.get("environment_security_plan") or {}
+    launch_blockers = readiness.get("launch_blockers") or []
+    setup_actions = readiness.get("setup_actions") or []
+
+    critical_routes = []
+    for route in LAUNCH_CRITICAL_ROUTE_PROOFS:
+        module = module_by_key.get(route["module_key"])
+        status = module["status"] if module else "fail"
+        score = module["score"] if module else 0
+        critical_routes.append(
+            {
+                **route,
+                "status": status,
+                "score": score,
+                "detail": (
+                    module["detail"]
+                    if module
+                    else "Route is not represented in the launch module readiness matrix."
+                ),
+                "next_action": (
+                    module["next_actions"][0]
+                    if module and module.get("next_actions")
+                    else "Run the route proof before final acceptance."
+                ),
+            }
+        )
+
+    proof_gates = [
+        {
+            "key": "frontend_build",
+            "label": "Frontend production build",
+            "status": _gate_status(deployment_plan.get("build_gate"), "frontend_build"),
+            "proof": "npm run build",
+            "detail": "Next.js production build must pass before every launch-candidate handoff.",
+        },
+        {
+            "key": "ops_smoke",
+            "label": "Production Ops smoke",
+            "status": _route_collection_status([critical_routes[0]]),
+            "proof": "verify-production-ops-readiness.cjs",
+            "detail": "Ops readiness, backup action, deployment checklist and environment inventory stay visible.",
+        },
+        {
+            "key": "route_smoke",
+            "label": "Critical route smoke",
+            "status": _route_collection_status(critical_routes),
+            "proof": "verify-launch-candidate-hardening.cjs",
+            "detail": "Launch candidate board tracks every critical customer, staff and admin route with a named proof.",
+        },
+        {
+            "key": "production_blockers",
+            "label": "Production blocker review",
+            "status": "fail" if launch_blockers else "warn" if setup_actions else "pass",
+            "proof": "ops/readiness launch_blockers",
+            "detail": f"{len(launch_blockers)} hard blocker(s), {len(setup_actions)} setup action(s) remain in the readiness API.",
+        },
+        {
+            "key": "data_quality",
+            "label": "Data quality export proof",
+            "status": data_quality.get("status", "warn"),
+            "proof": "verify-data-quality-export-command.cjs",
+            "detail": "Customer export, report export, import readiness and backup/restore proof remain visible.",
+        },
+    ]
+
+    hardening_checks = [
+        {
+            "key": "route_inventory",
+            "label": "Critical route inventory",
+            "status": "pass" if len(critical_routes) >= 8 else "fail",
+            "detail": f"{len(critical_routes)} critical route(s) have named proof ownership.",
+        },
+        {
+            "key": "proof_gate_inventory",
+            "label": "Proof gate inventory",
+            "status": "pass" if all(gate.get("proof") for gate in proof_gates) else "fail",
+            "detail": f"{len(proof_gates)} launch proof gate(s) are listed for handoff.",
+        },
+        {
+            "key": "deployment_pipeline",
+            "label": "Deployment pipeline review",
+            "status": deployment_plan.get("status", "warn"),
+            "detail": deployment_plan.get("summary") or "Deployment pipeline status is not available.",
+        },
+        {
+            "key": "production_database",
+            "label": "Production database review",
+            "status": production_plan.get("status", "warn"),
+            "detail": production_plan.get("decision") or "Production database plan is not available.",
+        },
+        {
+            "key": "environment_security",
+            "label": "Environment security review",
+            "status": security_plan.get("status", "warn"),
+            "detail": security_plan.get("summary") or "Environment security plan is not available.",
+        },
+    ]
+
+    all_status_items = critical_routes + proof_gates + hardening_checks
+    release_status = _rollup_status(all_status_items)
+    release_decision = "hold"
+    if release_status == "pass":
+        release_decision = "ready"
+    elif readiness.get("overall") != "blocked":
+        release_decision = "conditional"
+
+    next_actions = [
+        "Run npm run build and the launch candidate proof queue before final acceptance.",
+        "Review launch_blockers and setup_actions in Production Ops after every credential or database change.",
+        "Click through /ops, /roadmap, /order, /orders, /operations, /reports, /promotions and /customers before June 20.",
+        "Keep production blockers visible until real credentials, managed database, backups and deployment secrets are complete.",
+    ]
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": release_status,
+        "score": _readiness_score(all_status_items),
+        "release_decision": release_decision,
+        "summary": {
+            "critical_routes": len(critical_routes),
+            "routes_ready": sum(1 for route in critical_routes if route["status"] == "pass"),
+            "routes_attention": sum(1 for route in critical_routes if route["status"] == "warn"),
+            "routes_blocked": sum(1 for route in critical_routes if route["status"] == "fail"),
+            "proof_gates": len(proof_gates),
+            "launch_blockers": len(launch_blockers),
+            "setup_actions": len(setup_actions),
+            "module_score": readiness.get("launch_summary", {}).get("implementation_score", 0),
+            "readiness_score": readiness.get("readiness_score", 0),
+        },
+        "critical_routes": critical_routes,
+        "proof_gates": proof_gates,
+        "hardening_checks": hardening_checks,
+        "blocker_review": {
+            "hard_blockers": launch_blockers[:8],
+            "setup_actions": setup_actions[:8],
+            "deployment_blockers": deployment_plan.get("blockers", [])[:8],
+            "database_blockers": production_plan.get("blockers", [])[:8],
+            "security_blockers": security_plan.get("blockers", [])[:8],
         },
         "next_actions": next_actions,
     }
@@ -1736,6 +1945,17 @@ def _readiness_score(items: list[dict]) -> int:
     weights = {"pass": 1.0, "warn": 0.5, "fail": 0.0}
     score = sum(weights.get(item["status"], 0) for item in items) / len(items)
     return round(score * 100)
+
+
+def _gate_status(items: Optional[list[dict]], key: str) -> str:
+    for item in items or []:
+        if item.get("key") == key:
+            return item.get("status", "warn")
+    return "warn"
+
+
+def _route_collection_status(routes: list[dict]) -> str:
+    return _rollup_status(routes)
 
 
 def _rollup_status(items: list[dict]) -> str:

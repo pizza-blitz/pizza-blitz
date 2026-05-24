@@ -234,6 +234,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops now shows customer export, report export, import readiness and backup/restore checks in one command board.",
   },
+  {
+    title: "Launch candidate hardening command",
+    status: "done",
+    value: "Production Ops now shows critical route coverage, E2E proof ownership, production blockers and release decision in one launch command board.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -271,6 +276,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Data quality and export command",
     status: "done",
     value: "Customer CSV export, report export checks, import readiness and backup/restore proof are now visible in Production Ops.",
+  },
+  {
+    title: "Launch candidate hardening command",
+    status: "done",
+    value: "Critical route stability, proof queue, blocker review and release decision are now visible in Production Ops.",
   },
   {
     title: "Reporting comparison depth",
@@ -678,18 +688,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "18 Jun 2026",
     focus: "Launch candidate hardening",
-    status: "active",
+    status: "done",
     planned: [
       "Fix E2E failures",
       "Review production blockers",
       "Stabilize critical routes",
     ],
-    output: "Release candidate becomes stable enough for final review.",
+    output: "Critical route stability, E2E proof ownership, production blocker review and release decision are now visible in Production Ops.",
   },
   {
     date: "19 Jun 2026",
     focus: "Final acceptance walkthrough",
-    status: "planned",
+    status: "active",
     planned: [
       "Admin walkthrough",
       "Staff walkthrough",
@@ -713,8 +723,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "23",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "24",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -724,12 +734,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Data quality export, marketing live-readiness, operational command board and dashboard polish are now proof-backed.",
+    note: "Launch candidate hardening, data quality export, marketing live-readiness, operational command board and dashboard polish are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Launch Candidate",
-    note: "Fix E2E failures, review production blockers and stabilize critical routes are now the active track.",
+    value: "Final Acceptance",
+    note: "Admin, staff and customer walkthroughs are now the active track.",
   },
 ];
 
@@ -868,6 +878,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-data-quality-export-command.png",
   },
   {
+    area: "Launch candidate hardening",
+    proof: "verify-launch-candidate-hardening.cjs",
+    status: "passed",
+    value: "Critical routes, E2E proof ownership, blocker review and release decision stay visible in Production Ops.",
+    artifact: "visible-launch-candidate-hardening-command.png",
+  },
+  {
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
@@ -900,7 +917,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "23 / 23",
+    value: "24 / 24",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -915,8 +932,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Launch Candidate",
-    note: "The next work slice should fix E2E failures, review production blockers and stabilize critical routes.",
+    value: "Final Acceptance",
+    note: "The next work slice should run admin, staff and customer walkthroughs before the June 20 checkpoint.",
   },
 ];
 
@@ -988,8 +1005,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Launch candidate hardening handoff",
+    status: "done",
+    value: "Critical route stability, E2E proof ownership, blocker review and release decision are now visible in Production Ops.",
+  },
+  {
+    title: "Final acceptance walkthrough handoff",
     status: "active",
-    value: "Next slice should fix E2E failures, review production blockers and stabilize critical routes.",
+    value: "Next slice should run admin, staff and customer walkthroughs before the June 20 checkpoint.",
   },
 ];
 
@@ -1339,7 +1361,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Launch candidate hardening: fix E2E failures, review production blockers and stabilize critical routes."
+          text="Final acceptance walkthrough: run admin, staff and customer walkthroughs before the June 20 checkpoint."
         />
       </section>
     </div>
