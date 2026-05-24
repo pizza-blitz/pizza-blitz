@@ -53,18 +53,18 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "86%",
-    note: "Internal beta with customer account lifecycle now visible",
+    value: "87%",
+    note: "Internal beta with messaging provider readiness now visible",
   },
   {
     label: "Marketing Engine",
-    value: "86%",
-    note: "Campaigns, consent, queues, ROI, social and ads are largely working",
+    value: "88%",
+    note: "Campaigns, consent, queues, ROI, provider readiness, social and ads are largely working",
   },
   {
     label: "Production Readiness",
-    value: "69%",
-    note: "Customer profile, order history and consent controls are now tracked",
+    value: "70%",
+    note: "Customer profile, provider readiness and safe dry-run controls are now tracked",
   },
   {
     label: "Target Date",
@@ -159,6 +159,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Customer account now has editable profile/contact preferences, consent ledger, visible order history, loyalty context and a signed profile update path.",
   },
+  {
+    title: "Real WhatsApp/SMS/email readiness",
+    status: "done",
+    value: "Promotions now show channel credential checks, template compliance states, dry-run-only safe test sends and masked readiness receipts.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -174,8 +179,13 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Real WhatsApp/SMS/email readiness",
+    status: "done",
+    value: "Provider setup panels, template compliance and safe test-send workflow are visible in the promotions command board.",
+  },
+  {
+    title: "Social publishing readiness",
     status: "active",
-    value: "Move campaign sending from dry-run controls toward provider setup, template compliance and safe test-send workflow.",
+    value: "Turn social post shells into an operational publish-readiness flow with token visibility, schedule/retry state and delivery audit.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -393,18 +403,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "3 Jun 2026",
     focus: "Real WhatsApp/SMS/email readiness",
-    status: "active",
+    status: "done",
     planned: [
       "Provider setup panels",
       "Template compliance states",
       "Safe test-send workflow",
     ],
-    output: "Marketing senders move from dry-run to provider-ready operations.",
+    output: "Provider readiness, template compliance, dry-run-only safe test sends and masked receipts were completed.",
   },
   {
     date: "4 Jun 2026",
     focus: "Social publishing readiness",
-    status: "planned",
+    status: "active",
     planned: [
       "Live token setup visibility",
       "Schedule and retry posting",
@@ -593,8 +603,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "8",
-    note: "Checkout, order flow, customization, delivery, payment, production ops, visual audit and roadmap.",
+    value: "9",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -648,6 +658,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "watch",
     value: "Provider setup, webhook proof and settlement visibility are ready for real credentials.",
     artifact: "visible-payment-production-pass.png",
+  },
+  {
+    area: "Messaging readiness",
+    proof: "verify-messaging-readiness.cjs",
+    status: "passed",
+    value: "WhatsApp, SMS and email provider setup, template compliance and safe test-send receipts are visible.",
+    artifact: "visible-messaging-readiness.png",
   },
   {
     area: "Production operations",
@@ -909,7 +926,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Real WhatsApp/SMS/email readiness: provider setup panels, template compliance states and safe test-send workflow."
+          text="Social publishing readiness: live token setup visibility, schedule/retry posting and delivery audit improvements."
         />
       </section>
     </div>

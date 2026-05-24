@@ -31,7 +31,7 @@ const adminRoutes = [
   { route: "/vendors", label: "Vendor" },
   { route: "/waste", label: "Waste" },
   { route: "/expenses", label: "Expense" },
-  { route: "/ai-insights", label: "AI" },
+  { route: "/ai-insights", label: "Neural Insights" },
   { route: "/purchase-orders", label: "Purchase" },
   { route: "/settings", label: "Settings" },
 ];

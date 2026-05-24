@@ -146,10 +146,10 @@ async function screenshotCampaignConsole(campaignName) {
 
     const response = await page.goto(`${baseURL}/promotions`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
-    await page.getByText("Provider Send Console", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("WhatsApp / SMS / Email Readiness", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText(campaignName, { exact: false }).first().click();
     await page.getByText("Recent Delivery Attempts", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByText("dry_run", { exact: false }).first().waitFor({ timeout: 15000 });
+    await page.getByText("dry run", { exact: false }).first().waitFor({ timeout: 15000 });
     await page.screenshot({
       path: path.join(artifactsDir, "visible-campaign-sending.png"),
       fullPage: true,

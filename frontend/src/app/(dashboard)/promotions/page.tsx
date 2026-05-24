@@ -174,12 +174,56 @@ type ProviderStatus = {
   configured: boolean;
   unsupported: boolean;
   missing_settings: string[];
+  readiness_label?: string;
+  credential_checks?: ProviderCredentialCheck[];
+  template_status?: string;
+  template_label?: string;
+  template_detail?: string;
+  compliance_checks?: ProviderComplianceCheck[];
+  safe_test_send?: {
+    mode: "dry_run_only";
+    live_send_blocked: boolean;
+    requires_approval: boolean;
+  };
+  next_action?: string;
+};
+
+type ProviderCredentialCheck = {
+  key: string;
+  label: string;
+  configured: boolean;
+};
+
+type ProviderComplianceCheck = {
+  label: string;
+  status: "enforced" | "manual" | "ready";
+  detail: string;
 };
 
 type ProviderReadiness = {
   send_enabled: boolean;
   configured_count: number;
   channels: ProviderStatus[];
+  safe_test_mode?: "dry_run_only";
+  live_send_blocked?: boolean;
+  compliance_summary?: string[];
+  next_action?: string;
+};
+
+type ProviderTestSendResult = {
+  status: "dry_run_test_generated";
+  mode: "dry_run_only";
+  generated_at: string;
+  test_id: string;
+  channel: ChannelKey;
+  provider_status: ProviderStatus;
+  recipient_masked: string;
+  normalized_destination: string;
+  message_preview: string;
+  queued: boolean;
+  live_send_blocked: boolean;
+  compliance_checks: ProviderComplianceCheck[];
+  next_action: string;
 };
 
 type AudienceChannelReadiness = {
@@ -496,6 +540,12 @@ function dateInputValue(offsetDays = 0) {
   return nextDate.toISOString().slice(0, 10);
 }
 
+function defaultTestRecipient(channel: ChannelKey) {
+  if (channel === "email") return "guest@example.com";
+  if (channel === "sms") return "+919876543210";
+  return "+919876543210";
+}
+
 function campaignDurationDays(promotion: Promotion) {
   const start = new Date(`${promotion.start_date}T00:00:00`);
   const end = new Date(`${promotion.end_date}T00:00:00`);
@@ -522,6 +572,11 @@ export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [providerReadiness, setProviderReadiness] = useState<ProviderReadiness | null>(null);
+  const [providerTestChannel, setProviderTestChannel] = useState<ChannelKey>("whatsapp");
+  const [providerTestRecipient, setProviderTestRecipient] = useState(defaultTestRecipient("whatsapp"));
+  const [providerTestTemplate, setProviderTestTemplate] = useState(emptyForm.message_template);
+  const [providerTestResult, setProviderTestResult] = useState<ProviderTestSendResult | null>(null);
+  const [providerTesting, setProviderTesting] = useState(false);
   const [outreach, setOutreach] = useState<Outreach | null>(null);
   const [dispatch, setDispatch] = useState<Dispatch | null>(null);
   const [deliveryHistory, setDeliveryHistory] = useState<DeliveryHistory | null>(null);
@@ -598,6 +653,10 @@ export default function PromotionsPage() {
   const bestCampaign = performanceRollup?.best_campaign || null;
   const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
   const hygieneChannels = channelOptions.map((option) => option.value);
+  const providerChannels = (["whatsapp", "sms", "email"] as ChannelKey[]).map((channel) => ({
+    channel,
+    status: providerReadiness?.channels.find((item) => item.channel === channel),
+  }));
   const deliveryAuditCounts = deliveryHistory?.audit_counts || {
     consent_blocked_count: deliveryHistory?.consent_blocked_count || 0,
     missing_destination_count: deliveryHistory?.missing_destination_count || 0,
@@ -615,6 +674,41 @@ export default function PromotionsPage() {
       return;
     }
     setProviderReadiness(await response.json());
+  };
+
+  const changeProviderTestChannel = (channel: ChannelKey) => {
+    setProviderTestChannel(channel);
+    setProviderTestRecipient(defaultTestRecipient(channel));
+    setProviderTestResult(null);
+  };
+
+  const runProviderTestSend = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setProviderTesting(true);
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/providers/test-send`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: providerTestChannel,
+          recipient: providerTestRecipient,
+          message_template: providerTestTemplate,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail || "Safe test send could not be generated.");
+        return;
+      }
+      setProviderTestResult(data);
+      setMessage(`${channelLabel(providerTestChannel)} safe test send generated in dry-run mode.`);
+      await fetchProviderReadiness();
+    } catch {
+      setMessage("Safe test send could not be generated.");
+    } finally {
+      setProviderTesting(false);
+    }
   };
 
   const fetchPlaybook = async () => {
@@ -1223,6 +1317,147 @@ export default function PromotionsPage() {
         <Metric label="Audience" value={outreach?.audience_count || 0} icon={Users} />
       </div>
 
+      <section
+        data-testid="messaging-readiness-command"
+        className="mb-8 rounded-xl border border-orange-500/10 bg-[#1a1a1c] p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              WhatsApp / SMS / Email Readiness
+            </p>
+            <h2 className="mt-1 text-xl font-black">Provider setup, template compliance and safe test-send</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Confirm credentials, production content checks and dry-run proofs before any campaign can move into live sending.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-sky-500/10 px-4 py-2 text-xs font-black uppercase text-sky-200">
+              Safe test: dry-run only
+            </span>
+            <span
+              className={`rounded-full px-4 py-2 text-xs font-black uppercase ${
+                providerReadiness?.live_send_blocked === false
+                  ? "bg-green-500/10 text-green-300"
+                  : "bg-yellow-500/10 text-yellow-300"
+              }`}
+            >
+              {providerReadiness?.configured_count || 0}/3 providers ready
+            </span>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {providerChannels.map(({ channel, status }) => (
+            <ProviderCard key={channel} status={status} channel={channel} />
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <form
+            data-testid="safe-test-send-form"
+            onSubmit={runProviderTestSend}
+            className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5"
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-400">Safe Test Send</p>
+                <h3 className="mt-1 text-lg font-black">Generate a dry-run receipt</h3>
+              </div>
+              <Send className="h-5 w-5 text-orange-300" />
+            </div>
+            <div className="space-y-4">
+              <Select
+                label="Test Channel"
+                value={providerTestChannel}
+                options={channelOptions}
+                onChange={(value) => changeProviderTestChannel(value as ChannelKey)}
+              />
+              <label className="space-y-2">
+                <span className="text-xs font-black uppercase tracking-widest text-gray-500">Test Recipient</span>
+                <input
+                  data-testid="safe-test-recipient"
+                  value={providerTestRecipient}
+                  onChange={(event) => setProviderTestRecipient(event.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 outline-none focus:border-orange-500"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-black uppercase tracking-widest text-gray-500">Template Preview</span>
+                <textarea
+                  data-testid="safe-test-template"
+                  value={providerTestTemplate}
+                  onChange={(event) => setProviderTestTemplate(event.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-white/10 bg-black/30 p-4 text-sm leading-6 outline-none focus:border-orange-500"
+                />
+              </label>
+              <button
+                data-testid="run-safe-test-send"
+                type="submit"
+                disabled={providerTesting}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-black text-white hover:bg-orange-600 disabled:cursor-wait disabled:bg-orange-500/50"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {providerTesting ? "Generating" : "Run Safe Test Send"}
+              </button>
+            </div>
+          </form>
+
+          <div
+            data-testid="safe-test-send-result"
+            className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7"
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-400">Readiness Receipt</p>
+                <h3 className="mt-1 text-lg font-black">
+                  {providerTestResult ? "Dry-run test generated" : "Waiting for safe test"}
+                </h3>
+              </div>
+              <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-black uppercase text-blue-200">
+                Live send blocked
+              </span>
+            </div>
+            {providerTestResult ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <MiniSignal icon={MessageCircle} label="Channel" value={channelLabel(providerTestResult.channel)} />
+                  <MiniSignal icon={Send} label="Mode" value="Dry Run" />
+                  <MiniSignal icon={Users} label="Recipient" value={providerTestResult.recipient_masked} />
+                  <MiniSignal icon={CheckCircle2} label="Queued" value={providerTestResult.queued ? "Yes" : "No"} />
+                </div>
+                <div className="rounded-lg border border-white/5 bg-white/[0.03] p-4">
+                  <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-500">Message Preview</p>
+                  <p className="text-sm font-semibold leading-6 text-gray-300">{providerTestResult.message_preview}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {providerTestResult.compliance_checks.map((check) => (
+                    <div key={`${providerTestResult.test_id}-${check.label}`} className="rounded-lg border border-white/5 bg-white/[0.03] p-3">
+                      <p className="text-sm font-black text-white">{check.label}</p>
+                      <p className="mt-1 text-xs font-semibold uppercase text-green-300">{check.status}</p>
+                      <p className="mt-2 text-xs leading-5 text-gray-500">{check.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-white/10 p-8 text-center text-sm font-semibold leading-6 text-gray-500">
+                Choose a channel and run a safe test to see the masked recipient, rendered message and compliance receipt.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+          {(providerReadiness?.compliance_summary || ["Consent gate ready.", "Destination validation ready.", "Dry-run proof required."]).map((item) => (
+            <div key={item} className="rounded-lg border border-white/5 bg-black/25 p-3 text-sm font-semibold leading-6 text-gray-400">
+              {item}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section data-testid="scheduled-campaign-queue" className="mb-8 rounded-xl border border-orange-500/10 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -1769,39 +2004,6 @@ export default function PromotionsPage() {
               Playbook recommendations are loading.
             </div>
           )}
-        </div>
-      </section>
-
-      <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-black">Provider Send Console</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Live sending stays disabled until the channel credentials and global send switch are ready.
-            </p>
-          </div>
-          <span
-            className={`rounded-full px-4 py-2 text-xs font-black uppercase ${
-              providerReadiness?.send_enabled
-                ? "bg-green-500/10 text-green-300"
-                : "bg-yellow-500/10 text-yellow-300"
-            }`}
-          >
-            {providerReadiness?.send_enabled ? "Send switch on" : "Send switch off"}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {(["whatsapp", "sms", "email"] as ChannelKey[]).map((channel) => {
-            const status = providerReadiness?.channels.find((item) => item.channel === channel);
-            return (
-              <ProviderCard
-                key={channel}
-                status={status}
-                channel={channel}
-              />
-            );
-          })}
         </div>
       </section>
 
@@ -2944,9 +3146,10 @@ function ProviderCard({
   };
   const Icon = iconMap[channel];
   const ready = Boolean(status?.configured);
+  const credentialChecks = status?.credential_checks || [];
 
   return (
-    <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+    <div data-testid={`provider-readiness-${channel}`} className="rounded-xl border border-white/5 bg-black/25 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
@@ -2968,7 +3171,7 @@ function ProviderCard({
             ready ? "bg-green-500/10 text-green-300" : "bg-yellow-500/10 text-yellow-300"
           }`}
         >
-          {ready ? "Ready" : "Setup"}
+          {status?.readiness_label || (ready ? "Provider ready" : "Setup needed")}
         </span>
       </div>
 
@@ -2979,7 +3182,7 @@ function ProviderCard({
           ) : (
             <AlertTriangle className="h-3.5 w-3.5 text-yellow-300" />
           )}
-          {ready ? "Live send available" : "Missing setup"}
+          {status?.safe_test_send?.mode === "dry_run_only" ? "Safe test available" : ready ? "Live send available" : "Missing setup"}
         </div>
         <p className="text-sm font-semibold leading-6 text-gray-400">
           {ready
@@ -2987,6 +3190,29 @@ function ProviderCard({
             : status?.missing_settings?.join(", ") || "Provider status is loading."}
         </p>
       </div>
+
+      <div className="mt-4 space-y-2">
+        {credentialChecks.map((check) => (
+          <div key={`${channel}-${check.key}`} className="flex items-center justify-between gap-3 text-xs font-semibold">
+            <span className="text-gray-500">{check.label}</span>
+            <span className={check.configured ? "text-green-300" : "text-yellow-300"}>
+              {check.configured ? "ready" : "missing"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.03] p-3">
+        <p className="text-xs font-black uppercase tracking-widest text-gray-500">Template Compliance</p>
+        <p className="mt-2 text-sm font-black text-white">{status?.template_label || "Template status loading"}</p>
+        <p className="mt-1 text-xs leading-5 text-gray-500">
+          {status?.template_detail || "Provider template checks appear here."}
+        </p>
+      </div>
+
+      <p className="mt-4 text-xs font-semibold leading-5 text-gray-500">
+        {status?.next_action || "Refresh readiness before sending."}
+      </p>
     </div>
   );
 }

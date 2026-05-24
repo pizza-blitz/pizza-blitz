@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.api.deps import get_db, require_roles
+from app.core.config import settings
 from app.models.domain import (
     AdCampaign,
     AdCampaignLaunch,
@@ -218,6 +219,12 @@ class CampaignDeliveryRetryRequest(BaseModel):
     dry_run: bool = True
     status: str = "needs_attention"
     reason: str = "all"
+
+
+class ProviderTestSendRequest(BaseModel):
+    channel: str = Field(..., min_length=1)
+    recipient: str = Field(..., min_length=3)
+    message_template: str = Field(..., min_length=8)
 
 
 class PromotionScheduleRequest(BaseModel):
@@ -557,6 +564,148 @@ def _ad_campaign_dict(campaign: AdCampaign) -> dict:
         "status": campaign.status,
         "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
     }
+
+
+def _provider_credential_checks(channel: str, status: dict) -> list[dict]:
+    credential_map = {
+        "whatsapp": [
+            ("CAMPAIGN_SEND_ENABLED=true", "Global campaign send switch"),
+            ("WHATSAPP_ACCESS_TOKEN", "Meta access token"),
+            ("WHATSAPP_PHONE_NUMBER_ID", "WhatsApp phone number ID"),
+        ],
+        "sms": [
+            ("CAMPAIGN_SEND_ENABLED=true", "Global campaign send switch"),
+            ("TWILIO_ACCOUNT_SID", "Twilio account SID"),
+            ("TWILIO_AUTH_TOKEN", "Twilio auth token"),
+            ("TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID", "Twilio sender identity"),
+        ],
+        "email": [
+            ("CAMPAIGN_SEND_ENABLED=true", "Global campaign send switch"),
+            ("RESEND_API_KEY", "Resend API key"),
+            ("RESEND_FROM_EMAIL", "Verified from email"),
+        ],
+    }
+    missing = set(status.get("missing_settings") or [])
+    return [
+        {
+            "key": key,
+            "label": label,
+            "configured": key not in missing and not status.get("unsupported"),
+        }
+        for key, label in credential_map.get(channel, [])
+    ]
+
+
+def _provider_template_state(channel: str) -> dict:
+    if channel == "whatsapp":
+        if settings.WHATSAPP_TEMPLATE_NAME:
+            return {
+                "status": "ready",
+                "label": f"Template {settings.WHATSAPP_TEMPLATE_NAME} / {settings.WHATSAPP_TEMPLATE_LANGUAGE}",
+                "detail": "Meta template messaging is configured for production review.",
+            }
+        return {
+            "status": "needs_template",
+            "label": "Meta template pending",
+            "detail": "Set WHATSAPP_TEMPLATE_NAME before production WhatsApp broadcasts.",
+        }
+    if channel == "sms":
+        return {
+            "status": "ready",
+            "label": "SMS text body ready",
+            "detail": "SMS uses approved text content and sender identity checks.",
+        }
+    return {
+        "status": "ready",
+        "label": "Email subject/body ready",
+        "detail": "Email uses verified sender and template preview checks.",
+    }
+
+
+def _messaging_compliance_checks(channel: str) -> list[dict]:
+    checks = [
+        {
+            "label": "Marketing consent gate",
+            "status": "enforced",
+            "detail": "Campaign delivery skips customers without opt-in consent.",
+        },
+        {
+            "label": "Destination validation",
+            "status": "enforced",
+            "detail": "Email, SMS and WhatsApp destinations are normalized before sending.",
+        },
+        {
+            "label": "Dry run before live send",
+            "status": "enforced",
+            "detail": "The send queue requires a dry run before live campaign sending.",
+        },
+    ]
+    if channel == "whatsapp":
+        checks.append(
+            {
+                "label": "Template approval",
+                "status": "manual",
+                "detail": "Meta template approval must be verified before production WhatsApp broadcasts.",
+            }
+        )
+    return checks
+
+
+def _provider_readiness_status(channel: str) -> dict:
+    status = campaign_provider_status(channel)
+    template_state = _provider_template_state(channel)
+    missing = status.get("missing_settings") or []
+    if status.get("configured"):
+        readiness_label = "Provider ready"
+        next_action = "Run dry-run proof, then approve the live campaign send checklist."
+    else:
+        readiness_label = "Setup needed"
+        next_action = f"Configure {', '.join(missing) if missing else 'supported provider settings'}."
+
+    return {
+        **status,
+        "readiness_label": readiness_label,
+        "credential_checks": _provider_credential_checks(channel, status),
+        "template_status": template_state["status"],
+        "template_label": template_state["label"],
+        "template_detail": template_state["detail"],
+        "compliance_checks": _messaging_compliance_checks(channel),
+        "safe_test_send": {
+            "mode": "dry_run_only",
+            "live_send_blocked": True,
+            "requires_approval": True,
+        },
+        "next_action": next_action,
+    }
+
+
+def _render_provider_test_message(template: str) -> str:
+    values = {
+        "name": "Test Customer",
+        "offer": "10% off",
+        "code": "TEST10",
+        "end_date": date.today().isoformat(),
+        "order_link": f"{_public_site_url()}/order",
+    }
+    try:
+        return template.format(**values).strip()
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported template variable: {exc.args[0]}",
+        ) from exc
+
+
+def _masked_destination(channel: str, destination: str) -> str:
+    if channel == "email":
+        local, _, domain = destination.partition("@")
+        if not domain:
+            return "***"
+        return f"{local[:2]}***@{domain}"
+    digits = "".join(character for character in destination if character.isdigit())
+    if len(digits) <= 4:
+        return "****"
+    return f"{'*' * max(len(digits) - 4, 4)}{digits[-4:]}"
 
 
 def _message_destination(customer: Customer, channel: str) -> Optional[str]:
@@ -1731,11 +1880,56 @@ def campaign_provider_statuses(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     channels = ["whatsapp", "sms", "email"]
-    statuses = [campaign_provider_status(channel) for channel in channels]
+    statuses = [_provider_readiness_status(channel) for channel in channels]
+    all_configured = all(status["configured"] for status in statuses)
     return {
         "send_enabled": all(status["enabled"] for status in statuses),
         "configured_count": sum(1 for status in statuses if status["configured"]),
         "channels": statuses,
+        "safe_test_mode": "dry_run_only",
+        "live_send_blocked": not all_configured or not settings.CAMPAIGN_SEND_ENABLED,
+        "compliance_summary": [
+            "Consent is enforced before campaign delivery.",
+            "Destinations are normalized before send attempts.",
+            "Safe test sends never call live provider APIs.",
+        ],
+        "next_action": (
+            "All providers are configured. Run dry-run proofs before live campaign sends."
+            if all_configured and settings.CAMPAIGN_SEND_ENABLED
+            else "Finish provider credentials, then run a dry-run proof for each channel."
+        ),
+    }
+
+
+@router.post("/providers/test-send")
+def provider_test_send(
+    payload: ProviderTestSendRequest,
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    channel = payload.channel.strip().lower()
+    if channel not in VALID_CHANNELS:
+        raise HTTPException(status_code=422, detail="Unsupported provider test channel.")
+
+    destination = normalize_campaign_destination(channel, payload.recipient.strip())
+    if not destination:
+        raise HTTPException(status_code=422, detail="Recipient could not be normalized for this channel.")
+
+    message_preview = _render_provider_test_message(payload.message_template.strip())
+    provider_status = _provider_readiness_status(channel)
+    return {
+        "status": "dry_run_test_generated",
+        "mode": "dry_run_only",
+        "generated_at": datetime.utcnow().isoformat(),
+        "test_id": f"provider-dryrun-{channel}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        "channel": channel,
+        "provider_status": provider_status,
+        "recipient_masked": _masked_destination(channel, destination),
+        "normalized_destination": destination,
+        "message_preview": message_preview,
+        "queued": False,
+        "live_send_blocked": True,
+        "compliance_checks": provider_status["compliance_checks"],
+        "next_action": provider_status["next_action"],
     }
 
 
