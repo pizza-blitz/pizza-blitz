@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "91%",
-    note: "Internal beta with provider sync, owner reporting and beta review command now visible",
+    value: "92%",
+    note: "Internal beta with provider sync, owner reporting, beta review and DB path command now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "76%",
-    note: "Provider readiness, comparison proofs, beta blockers and production handoff are now tracked",
+    value: "78%",
+    note: "Provider readiness, comparison proofs, DB migration path and backup/restore drill are now tracked",
   },
   {
     label: "Target Date",
@@ -184,6 +184,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Roadmap now shows proof audit, remaining beta blockers, production handoff and the next database-readiness path.",
   },
+  {
+    title: "Production database path",
+    status: "done",
+    value: "Production Ops now shows managed PostgreSQL target, migration checklist, backup/restore drill and DB blockers.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -223,6 +228,11 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Proof audit, blocker correction list and next production database path are now visible on the roadmap.",
   },
   {
+    title: "Production database path",
+    status: "done",
+    value: "Managed PostgreSQL target, SQLALCHEMY_DATABASE_URI handoff, Alembic migration steps and restore rehearsal are now visible.",
+  },
+  {
     title: "Delivery live tracking and assignment refinement",
     status: "planned",
     value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
@@ -235,7 +245,7 @@ const immediateRemaining: RoadmapItem[] = [
   {
     title: "Deployment, backups and environment security",
     status: "planned",
-    value: "Move to production database, configure backups, secure secrets and add monitoring.",
+    value: "Provision managed DB credentials, secure secrets, verify restore, deploy, monitor and rehearse rollback.",
   },
 ];
 
@@ -258,7 +268,7 @@ const timeline: TimelinePhase[] = [
       {
         title: "Production readiness pass",
         status: "active",
-        value: "Database, backups, environment secrets, deployment checks and monitoring baseline.",
+        value: "Database path is defined; credentials, restore proof, environment secrets, deployment checks and monitoring remain.",
       },
       {
         title: "Browser proof suite",
@@ -493,18 +503,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "8 Jun 2026",
     focus: "Production database path",
-    status: "active",
+    status: "done",
     planned: [
       "Define production DB choice",
       "Confirm migration steps",
       "Add backup verification",
     ],
-    output: "Database readiness moves from local/dev toward deployment.",
+    output: "Managed PostgreSQL target, migration checklist, backup/restore drill, blockers and browser/API proof were completed.",
   },
   {
     date: "9 Jun 2026",
     focus: "Environment and secrets security",
-    status: "planned",
+    status: "active",
     planned: [
       "List required env vars",
       "Mask sensitive settings",
@@ -638,8 +648,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "13",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, production ops, visual audit and roadmap.",
+    value: "14",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -649,12 +659,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Weekly beta review is complete and the production database path is now active.",
+    note: "Production database path is defined and environment/secrets hardening is now active.",
   },
   {
     label: "Next Risk",
-    value: "Production DB",
-    note: "Database choice, migration checklist and backup verification are now the active track.",
+    value: "Secrets",
+    note: "Credential storage, deployment env vars, session secrets and restore proof are now the active track.",
   },
 ];
 
@@ -730,6 +740,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-weekly-beta-review.png",
   },
   {
+    area: "Production database path",
+    proof: "verify-production-database-path.cjs",
+    status: "passed",
+    value: "Managed DB target, migration checklist, backup/restore drill and blockers are visible.",
+    artifact: "visible-production-database-path.png",
+  },
+  {
     area: "Production operations",
     proof: "verify-production-ops-readiness.cjs",
     status: "passed",
@@ -755,7 +772,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "13 / 13",
+    value: "14 / 14",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -770,8 +787,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "DB Path",
-    note: "The next work slice should choose the production database and prove backup/restore readiness.",
+    value: "Secrets",
+    note: "The next work slice should harden credentials, deployment env vars and restore proof.",
   },
 ];
 
@@ -793,8 +810,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Production database handoff",
+    status: "done",
+    value: "Production Ops now exposes the managed DB choice, migration path, backup verification and restore drill before deployment work.",
+  },
+  {
+    title: "Environment secrets handoff",
     status: "active",
-    value: "Next slice should define the DB choice, migration path, backup verification and restore drill before deployment work.",
+    value: "Next slice should lock credentials, deployment env vars, session secrets and rollback-ready restore proof.",
   },
 ];
 
@@ -812,7 +834,7 @@ const betaBlockers: RoadmapItem[] = [
   {
     title: "Production database and backups",
     status: "active",
-    value: "Move from local/dev storage to managed production DB, backup schedule and restore verification.",
+    value: "Path is defined; managed credentials, scheduled snapshots and restore rehearsal still need production proof.",
   },
   {
     title: "Deployment and secret security",
@@ -1144,7 +1166,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Production database path: define production DB choice, migration checklist, backup verification and restore drill."
+          text="Environment and secrets security: lock production env vars, session secrets, credential storage and restore proof."
         />
       </section>
     </div>

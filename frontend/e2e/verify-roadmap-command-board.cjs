@@ -88,6 +88,8 @@ async function main() {
     await page.getByText("Weekly Beta Review Command", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Production database path", { exact: false }).first().waitFor({ timeout: 15000 });
     await page.getByText("verify-weekly-beta-review.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-production-database-path.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Environment and secrets security: lock production env vars", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Route / View Audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });

@@ -373,6 +373,10 @@ def readiness_report(db: Session) -> dict:
         "environment_manifest": environment_manifest,
         "environment_summary": _environment_summary(environment_manifest),
         "backup_freshness": backup_freshness,
+        "production_database_plan": _production_database_plan(
+            environment=environment,
+            backup_freshness=backup_freshness,
+        ),
         "readiness_score": _readiness_score(go_live_items),
         "launch_blockers": launch_blockers,
         "setup_actions": setup_actions,
@@ -383,6 +387,98 @@ def readiness_report(db: Session) -> dict:
         "failed_checks": failed,
         "warning_checks": warnings,
         "checks": checks,
+    }
+
+
+def _production_database_plan(*, environment: str, backup_freshness: dict) -> dict:
+    backend = database_backend()
+    current_path = sqlite_database_path()
+    managed_database_ready = backend not in {"sqlite", "unknown"}
+    production_mode_ready = environment == "production"
+    backup_ready = backup_freshness.get("status") == "pass"
+    status = "pass" if managed_database_ready and production_mode_ready and backup_ready else "warn"
+
+    blockers = []
+    if not managed_database_ready:
+        blockers.append("SQLALCHEMY_DATABASE_URI still needs a managed PostgreSQL-compatible database URL.")
+    if not production_mode_ready:
+        blockers.append("ENVIRONMENT is not production yet.")
+    if not backup_ready:
+        blockers.append(backup_freshness.get("detail") or "A successful backup or managed snapshot proof is still required.")
+    blockers.append("Restore rehearsal must be run before public beta traffic.")
+
+    return {
+        "decision": "Use a managed PostgreSQL-compatible database for production.",
+        "status": status,
+        "current_backend": backend,
+        "current_path": str(current_path) if current_path else None,
+        "target_backend": "Managed PostgreSQL",
+        "target_driver": "postgresql+psycopg2",
+        "readiness_metrics": [
+            {"label": "Current DB", "value": backend},
+            {"label": "Target DB", "value": "PostgreSQL"},
+            {"label": "Mode", "value": "production" if production_mode_ready else "development"},
+            {"label": "Backup", "value": backup_freshness.get("status", "warn")},
+        ],
+        "migration_steps": [
+            {
+                "key": "choose_provider",
+                "label": "Choose managed PostgreSQL provider",
+                "status": "pass",
+                "detail": "Target is PostgreSQL-compatible managed storage so SQLAlchemy, Alembic, backups and deployment hosts stay aligned.",
+            },
+            {
+                "key": "set_database_url",
+                "label": "Set SQLALCHEMY_DATABASE_URI",
+                "status": "pass" if managed_database_ready else "warn",
+                "detail": "Use postgresql+psycopg2://... in production secrets; keep local SQLite only for development.",
+            },
+            {
+                "key": "run_migrations",
+                "label": "Run Alembic migrations",
+                "status": "warn",
+                "detail": "Run alembic upgrade head against the managed database before importing menu, customers or orders.",
+            },
+            {
+                "key": "seed_baseline",
+                "label": "Seed menu and admin baseline",
+                "status": "warn",
+                "detail": "Load verified menu, customization options, delivery zones and admin/staff credentials after migrations.",
+            },
+            {
+                "key": "production_smoke",
+                "label": "Run production smoke proof",
+                "status": "warn",
+                "detail": "Prove login, reports, orders, backups and payment-readiness checks against the managed database.",
+            },
+        ],
+        "backup_restore_drill": [
+            {
+                "key": "snapshot_policy",
+                "label": "Snapshot policy",
+                "status": "warn" if not managed_database_ready else "pass",
+                "detail": "Managed DB must have daily snapshots or pg_dump equivalent with retention documented.",
+            },
+            {
+                "key": "backup_freshness",
+                "label": "Backup freshness",
+                "status": backup_freshness.get("status", "warn"),
+                "detail": backup_freshness.get("detail") or "Latest backup status is not available.",
+            },
+            {
+                "key": "restore_rehearsal",
+                "label": "Restore rehearsal",
+                "status": "warn",
+                "detail": "Restore a backup into a clean database and run the admin/order/report smoke proof before public launch.",
+            },
+            {
+                "key": "rollback_window",
+                "label": "Rollback window",
+                "status": "warn",
+                "detail": "Keep a rollback plan for the first beta week with latest backup location, owner and recovery steps.",
+            },
+        ],
+        "blockers": blockers,
     }
 
 

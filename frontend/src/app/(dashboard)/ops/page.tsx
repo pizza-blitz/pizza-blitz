@@ -48,6 +48,26 @@ type ModuleMetric = {
   value: string;
 };
 
+type ProductionDatabaseStep = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  detail: string;
+};
+
+type ProductionDatabasePlan = {
+  decision: string;
+  status: CheckStatus;
+  current_backend: string;
+  current_path?: string | null;
+  target_backend: string;
+  target_driver: string;
+  readiness_metrics: ModuleMetric[];
+  migration_steps: ProductionDatabaseStep[];
+  backup_restore_drill: ProductionDatabaseStep[];
+  blockers: string[];
+};
+
 type LaunchModule = {
   key: string;
   title: string;
@@ -104,6 +124,7 @@ type Readiness = {
   };
   payment?: PaymentStatus;
   readiness_score: number;
+  production_database_plan?: ProductionDatabasePlan;
   launch_blockers: GoLiveItem[];
   setup_actions: GoLiveItem[];
   go_live_sections: GoLiveSection[];
@@ -255,6 +276,10 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {readiness?.production_database_plan ? (
+        <ProductionDatabaseCommand plan={readiness.production_database_plan} />
+      ) : null}
 
       {readiness?.module_readiness?.length ? (
         <section className="mb-8 rounded-xl border border-white/5 bg-[#111113] p-6">
@@ -583,6 +608,96 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
     <div className="min-w-24 rounded-xl border border-white/5 bg-black/25 px-4 py-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function ProductionDatabaseCommand({ plan }: { plan: ProductionDatabasePlan }) {
+  return (
+    <section
+      data-testid="production-database-path-command"
+      className="mb-8 rounded-xl border border-orange-500/20 bg-[#111113] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-400">Production Database Path</p>
+          <h2 className="mt-2 text-2xl font-black">Production Database Path Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{plan.decision}</p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(plan.status)}`}>
+          <Database className="h-3.5 w-3.5" />
+          {plan.status}
+        </span>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {plan.readiness_metrics.map((metric) => (
+          <div key={metric.label} className="rounded-xl border border-white/5 bg-black/25 p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{metric.label}</p>
+            <p className="mt-2 break-words text-xl font-black text-white">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-orange-300" />
+            <h3 className="font-black">Migration Checklist</h3>
+          </div>
+          <div className="space-y-3">
+            {plan.migration_steps.map((step) => (
+              <ReadinessStep key={step.key} step={step} />
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <HardDrive className="h-5 w-5 text-orange-300" />
+            <h3 className="font-black">Backup And Restore Drill</h3>
+          </div>
+          <div className="space-y-3">
+            {plan.backup_restore_drill.map((step) => (
+              <ReadinessStep key={step.key} step={step} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Detail label="Target Backend" value={`${plan.target_backend} (${plan.target_driver})`} />
+        <Detail label="Current Backend" value={plan.current_backend} />
+        <Detail label="Current Database Path" value={plan.current_path || "managed or in-memory"} />
+      </div>
+
+      {plan.blockers.length ? (
+        <div className="mt-6 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-300" />
+            <h3 className="font-black text-yellow-100">Current Blockers</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {plan.blockers.map((blocker) => (
+              <p key={blocker} className="rounded-lg bg-black/25 px-3 py-2 text-sm font-bold leading-6 text-yellow-50">
+                {blocker}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ReadinessStep({ step }: { step: ProductionDatabaseStep }) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#111113] p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-black text-white">{step.label}</p>
+        <StatusBadge status={step.status} />
+      </div>
+      <p className="text-sm leading-6 text-gray-400">{step.detail}</p>
     </div>
   );
 }

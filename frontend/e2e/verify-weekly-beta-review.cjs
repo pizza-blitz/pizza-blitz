@@ -90,14 +90,15 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("13 / 13", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("14 / 14", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Remaining Beta Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Production Database Path", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-weekly-beta-review.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Production database path: define production DB choice", {
+    await page.getByText("verify-production-database-path.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Environment and secrets security: lock production env vars", {
       exact: false,
     }).waitFor({ timeout: 15000 });
 
