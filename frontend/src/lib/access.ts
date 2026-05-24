@@ -4,6 +4,7 @@ export const staffRoutePrefixes = ["/orders", "/operations", "/receipt"];
 
 export const adminOnlyRoutePrefixes = [
   "/dashboard",
+  "/roadmap",
   "/ceo",
   "/shifts",
   "/daily",

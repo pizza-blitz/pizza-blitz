@@ -1,11 +1,11 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
 import type { SessionRole } from "@/lib/session";
-import { 
-  LayoutDashboard, Package, Receipt, ShoppingCart, 
-  BarChart3, Settings, PlusCircle, Utensils, 
-  Sparkles, DollarSign, Trash2, Crown, 
-  Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2, ShieldCheck
+import {
+  LayoutDashboard, Package, Receipt, ShoppingCart,
+  BarChart3, Settings, PlusCircle, Utensils,
+  Sparkles, DollarSign, Trash2, Crown,
+  Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2, ShieldCheck, CalendarDays
 } from "lucide-react";
 
 type PortalNavItem = {
@@ -17,6 +17,7 @@ type PortalNavItem = {
 
 export const portalNavItems: PortalNavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Roadmap", href: "/roadmap", icon: CalendarDays },
   { name: "CEO Command", href: "/ceo", icon: Crown },
   { name: "POS (Orders)", href: "/orders", icon: ShoppingCart, allowedRoles: ["admin", "staff"] },
   { name: "Kitchen Ops", href: "/operations", icon: Flame, allowedRoles: ["admin", "staff"] },
