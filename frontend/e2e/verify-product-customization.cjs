@@ -4,6 +4,8 @@ const { chromium } = require("@playwright/test");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
+const adminId = process.env.E2E_ADMIN_ID || "admin";
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 const artifactsDir = path.join(__dirname, "artifacts");
 
 function assert(condition, message) {
@@ -104,7 +106,7 @@ async function screenshotPublicCustomization(item, selectedOptions) {
   try {
     const response = await page.goto(`${baseURL}/order`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Public order page returned HTTP ${response?.status() || "no response"}.`);
-    await page.getByText("Checkout", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByRole("heading", { name: "Checkout" }).waitFor({ timeout: 10000 });
 
     const search = page.getByPlaceholder(/search/i).first();
     if (await search.count()) {
@@ -134,6 +136,39 @@ async function screenshotPublicCustomization(item, selectedOptions) {
   }
 }
 
+async function screenshotCustomizationCommand(orderId) {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 1440, height: 1200 },
+  });
+  const page = await context.newPage();
+  const watch = createBrowserWatch(page);
+
+  try {
+    const login = await context.request.post(`${baseURL}/api/admin-session`, {
+      data: { id: adminId, password: adminPassword, role: "admin" },
+    });
+    assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
+
+    const response = await page.goto(`${baseURL}/menu`, { waitUntil: "domcontentloaded" });
+    assert(response && response.ok(), `Menu page returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByRole("heading", { name: "Menu Intelligence" }).waitFor({ timeout: 10000 });
+    await page.getByText("Customization Command", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Max Upgrade", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Kitchen-Safe Lines", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText(`#${orderId}`, { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Combo: Garlic Bread + Drink", { exact: false }).first().waitFor({ timeout: 10000 });
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-product-customization-command.png"),
+      fullPage: true,
+    });
+    watch.assertClean("customization command board");
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(`${apiURL}/health`, "restaurant API");
@@ -141,6 +176,10 @@ async function main() {
 
   const menuResult = await apiJson("/api/v1/restaurant/menu/menu-with-customizations");
   assert(menuResult.response.ok, `Could not load customized menu: ${JSON.stringify(menuResult.data)}`);
+  const readinessBefore = await apiJson("/api/v1/restaurant/menu/customizations/readiness");
+  assert(readinessBefore.response.ok, `Could not load customization readiness: ${JSON.stringify(readinessBefore.data)}`);
+  assert(readinessBefore.data.summary?.active_group_count >= 6, "Customization readiness did not expose all option groups.");
+  assert(readinessBefore.data.groups?.some((group) => group.name === "Combo" && group.status === "ready"), "Combo group is not ready.");
   const pizza = menuResult.data.find(
     (item) =>
       item.category === "Pizza" &&
@@ -203,8 +242,24 @@ async function main() {
     orderedItem.selected_options.some((option) => option.option_name === "Garlic Bread + Drink"),
     "Stored selected options did not include combo choice."
   );
+  assert(
+    orderedItem.selected_options.some((option) => option.group_name === "Size" && option.option_name === "Large"),
+    "Stored selected options did not keep grouped size detail."
+  );
+
+  const readinessAfter = await apiJson("/api/v1/restaurant/menu/customizations/readiness");
+  assert(readinessAfter.response.ok, `Could not refresh customization readiness: ${JSON.stringify(readinessAfter.data)}`);
+  assert(
+    readinessAfter.data.recent_customized_lines?.some((line) => line.order_id === orderId),
+    "Customization readiness did not show the latest customized kitchen line."
+  );
+  assert(
+    readinessAfter.data.top_options?.some((option) => /Garlic Bread \+ Drink/.test(option.option)),
+    "Customization readiness did not count the combo choice."
+  );
 
   await screenshotPublicCustomization(pizza, selectedOptions);
+  await screenshotCustomizationCommand(orderId);
   console.log(`Product customization proof passed for order #${orderId}.`);
 }
 

@@ -1,3 +1,5 @@
+from collections import Counter
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,11 +7,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
-from app.models.domain import InventoryItem, MenuCustomizationGroup, MenuItem, Recipe
+from app.models.domain import InventoryItem, MenuCustomizationGroup, MenuItem, Recipe, RestaurantOrder
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
     customized_menu_payload,
     find_menu_item_for_order,
+    groups_for_menu_item,
     seed_default_customizations,
     serialize_customization_group,
 )
@@ -57,6 +60,142 @@ def get_menu_customizations(db: Session = Depends(get_db)):
 @router.get("/menu-with-customizations")
 def get_menu_with_customizations(db: Session = Depends(get_db)):
     return customized_menu_payload(db)
+
+
+@router.get("/customizations/readiness")
+def get_customization_readiness(db: Session = Depends(get_db)):
+    seed_default_customizations(db)
+    db.commit()
+    groups = (
+        db.query(MenuCustomizationGroup)
+        .filter(MenuCustomizationGroup.is_active == True)  # noqa: E712
+        .order_by(MenuCustomizationGroup.sort_order.asc(), MenuCustomizationGroup.id.asc())
+        .all()
+    )
+    items = db.query(MenuItem).order_by(MenuItem.category.asc(), MenuItem.name.asc()).all()
+    active_items = [item for item in items if item.is_available]
+    item_groups = {item.id: groups_for_menu_item(groups, item) for item in active_items}
+    customizable_items = [
+        item for item in active_items if item_groups.get(item.id)
+    ]
+
+    category_names = sorted({item.category for item in active_items if item.category})
+    category_coverage = []
+    for category in category_names:
+        category_items = [item for item in active_items if item.category == category]
+        customizable_count = sum(1 for item in category_items if item_groups.get(item.id))
+        category_coverage.append(
+            {
+                "category": category,
+                "item_count": len(category_items),
+                "customizable_count": customizable_count,
+                "fixed_count": len(category_items) - customizable_count,
+                "coverage_percent": round(
+                    (customizable_count / len(category_items)) * 100
+                )
+                if category_items
+                else 0,
+            }
+        )
+
+    group_rows = []
+    required_groups_without_defaults = 0
+    all_option_deltas: list[float] = []
+    for group in groups:
+        active_options = [option for option in group.options if option.is_active]
+        deltas = [float(option.price_delta or 0) for option in active_options]
+        all_option_deltas.extend(deltas)
+        default_count = sum(1 for option in active_options if option.is_default)
+        needs_default = int(group.min_select or 0) > 0
+        if needs_default and default_count == 0:
+            required_groups_without_defaults += 1
+        group_rows.append(
+            {
+                "id": group.id,
+                "name": group.name,
+                "categories": group.applies_to_categories or [],
+                "selection_type": group.selection_type,
+                "min_select": group.min_select,
+                "max_select": group.max_select,
+                "option_count": len(active_options),
+                "default_count": default_count,
+                "price_min": round(min(deltas), 2) if deltas else 0,
+                "price_max": round(max(deltas), 2) if deltas else 0,
+                "status": "ready"
+                if active_options and (not needs_default or default_count > 0)
+                else "review",
+            }
+        )
+
+    option_counter: Counter[str] = Counter()
+    recent_customized_lines = []
+    recent_orders = (
+        db.query(RestaurantOrder)
+        .order_by(RestaurantOrder.created_at.desc(), RestaurantOrder.id.desc())
+        .limit(50)
+        .all()
+    )
+    for order in recent_orders:
+        for item in order.items or []:
+            selected_options = item.get("selected_options") or []
+            if not selected_options:
+                continue
+            quantity = int(item.get("quantity") or 1)
+            for option in selected_options:
+                label = f"{option.get('group_name') or 'Option'}: {option.get('option_name')}"
+                option_counter[label] += quantity
+            if len(recent_customized_lines) < 8:
+                recent_customized_lines.append(
+                    {
+                        "order_id": order.id,
+                        "item": item.get("name") or "Item",
+                        "quantity": quantity,
+                        "unit_price": round(float(item.get("price") or 0), 2),
+                        "customization_total": round(float(item.get("customization_total") or 0), 2),
+                        "selected_options": selected_options,
+                    }
+                )
+
+    next_actions = []
+    if required_groups_without_defaults:
+        next_actions.append(
+            f"Add defaults to {required_groups_without_defaults} required customization group(s)."
+        )
+    if not any(group.name == "Combo" for group in groups):
+        next_actions.append("Add combo upgrade options before launching bundle offers.")
+    if active_items and not customizable_items:
+        next_actions.append("Attach customization groups to at least the pizza category.")
+    if not recent_customized_lines:
+        next_actions.append("Run one customer customized order proof before beta demos.")
+    if not next_actions:
+        next_actions.append("Keep checking receipts and kitchen lines after every new option-set change.")
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "active_group_count": len(groups),
+            "active_option_count": sum(row["option_count"] for row in group_rows),
+            "customizable_item_count": len(customizable_items),
+            "fixed_item_count": len(active_items) - len(customizable_items),
+            "covered_category_count": sum(
+                1 for row in category_coverage if row["customizable_count"] > 0
+            ),
+            "required_groups_without_defaults": required_groups_without_defaults,
+            "max_upgrade_delta": round(max(all_option_deltas), 2) if all_option_deltas else 0,
+            "average_option_delta": round(sum(all_option_deltas) / len(all_option_deltas), 2)
+            if all_option_deltas
+            else 0,
+            "recent_customized_line_count": len(recent_customized_lines),
+        },
+        "groups": group_rows,
+        "category_coverage": category_coverage,
+        "top_options": [
+            {"option": option, "quantity": quantity}
+            for option, quantity in option_counter.most_common(8)
+        ],
+        "recent_customized_lines": recent_customized_lines,
+        "next_actions": next_actions,
+    }
 
 
 @router.post("/customizations/price")

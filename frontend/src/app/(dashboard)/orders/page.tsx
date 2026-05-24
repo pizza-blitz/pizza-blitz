@@ -127,7 +127,16 @@ type Order = {
   table_number?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
-  items: Array<{ name: string; quantity: number; price: number }>;
+  items: Array<{
+    name: string;
+    quantity: number;
+    price: number;
+    selected_options?: {
+      group_name?: string;
+      option_name: string;
+      price_delta: number;
+    }[];
+  }>;
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
@@ -146,6 +155,12 @@ const emptyCustomer = {
   delivery_address: "",
   notes: "",
 };
+
+function optionSummary(option: NonNullable<Order["items"][number]["selected_options"]>[number]) {
+  const delta = Number(option.price_delta || 0);
+  const suffix = delta > 0 ? ` +Rs ${delta}` : "";
+  return `${option.group_name || "Option"}: ${option.option_name}${suffix}`;
+}
 
 export default function OrdersPage() {
   const [tables, setTables] = useState<Table[]>([]);
@@ -794,6 +809,21 @@ export default function OrdersPage() {
                     <span className="text-sm text-gray-400">{order.items.length} item types</span>
                     <span className="font-black">Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
                   </div>
+                  {order.items.some((item) => item.selected_options?.length) && (
+                    <div className="mt-2 space-y-1 rounded-lg border border-white/5 bg-black/20 px-3 py-2">
+                      {order.items
+                        .filter((item) => item.selected_options?.length)
+                        .slice(0, 2)
+                        .map((item, index) => (
+                          <p
+                            key={`${order.id}-${item.name}-${index}`}
+                            className="text-xs font-semibold leading-5 text-orange-100/80"
+                          >
+                            {item.quantity}x {item.name}: {item.selected_options?.map(optionSummary).join(" | ")}
+                          </p>
+                        ))}
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {order.source === "customer_website" && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-300">
@@ -1000,7 +1030,7 @@ export default function OrdersPage() {
                         </p>
                         {!!selectedOptions.length && (
                           <p className="mt-1 max-w-xl text-xs font-semibold text-orange-100/80">
-                            {selectedOptions.map((option) => option.option_name).join(", ")}
+                            {selectedOptions.map(optionSummary).join(" | ")}
                           </p>
                         )}
                       </div>
@@ -1042,9 +1072,9 @@ export default function OrdersPage() {
                                           ? "border-orange-400 bg-orange-500 text-white"
                                           : "border-white/10 bg-black/25 text-gray-300 hover:border-orange-400/60"
                                       }`}
-                                    >
-                                      {option.name}
-                                      {option.price_delta > 0 ? ` +${option.price_delta}` : ""}
+                                      >
+                                        {option.name}
+                                      {option.price_delta > 0 ? ` +Rs ${option.price_delta}` : ""}
                                     </button>
                                   );
                                 })}

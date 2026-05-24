@@ -1142,7 +1142,7 @@ export default function PublicOrderPage() {
                       <h3 className="mt-1 min-h-12 text-lg font-black leading-6">{item.name}</h3>
                       {selectedOptions.length > 0 && (
                         <p className="mt-2 line-clamp-2 text-xs font-semibold text-slate-500">
-                          {selectedOptions.map((option) => option.option_name).join(", ")}
+                          {selectedOptions.map(optionLabel).join(" | ")}
                         </p>
                       )}
                       <div className="mt-4 flex items-center justify-between gap-3">
@@ -1158,6 +1158,12 @@ export default function PublicOrderPage() {
                   </div>
                   {(item.customization_groups || []).length > 0 && (
                     <div className="space-y-3 border-t border-slate-100 bg-slate-50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+                        <span>Build this item</span>
+                        <span>
+                          Base Rs {Number(item.selling_price || 0).toLocaleString()} + upgrades Rs {customizationTotalForItem(item, draft).toLocaleString()}
+                        </span>
+                      </div>
                       {item.customization_groups?.map((group) => {
                         const selectedIds = new Set(draft[group.id] || []);
                         return (
@@ -1166,11 +1172,15 @@ export default function PublicOrderPage() {
                               <p className="text-xs font-black uppercase tracking-widest text-slate-500">
                                 {group.name}
                               </p>
-                              {group.selection_type === "multiple" && (
+                              {group.min_select > 0 ? (
+                                <span className="text-xs font-bold text-red-700">
+                                  required
+                                </span>
+                              ) : group.selection_type === "multiple" ? (
                                 <span className="text-xs font-bold text-slate-400">
                                   up to {group.max_select}
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {group.options.map((option) => {
@@ -1187,7 +1197,7 @@ export default function PublicOrderPage() {
                                     }`}
                                   >
                                     {option.name}
-                                    {option.price_delta > 0 ? ` +${option.price_delta}` : ""}
+                                    {option.price_delta > 0 ? ` +Rs ${option.price_delta}` : ""}
                                   </button>
                                 );
                               })}
@@ -1383,8 +1393,8 @@ export default function PublicOrderPage() {
                     {item.selected_options.length > 0 && (
                       <p className="mt-1 text-xs font-semibold text-slate-500">
                         {item.selected_options
-                          .map((option) => option.option_name)
-                          .join(", ")}
+                          .map(optionLabel)
+                          .join(" | ")}
                       </p>
                     )}
                   </div>
@@ -1643,6 +1653,12 @@ export default function PublicOrderPage() {
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function optionLabel(option: SelectedOption) {
+  const delta = Number(option.price_delta || 0);
+  const suffix = delta > 0 ? ` +Rs ${delta}` : "";
+  return `${option.group_name}: ${option.option_name}${suffix}`;
 }
 
 function offerLabel(promotion: ActivePromotion) {

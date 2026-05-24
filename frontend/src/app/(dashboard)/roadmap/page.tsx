@@ -37,8 +37,8 @@ type DailyPlan = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "76%",
-    note: "Internal beta with delivery assignment readiness now visible",
+    value: "78%",
+    note: "Internal beta with product customization command now visible",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +47,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "55%",
-    note: "Address review, dispatch assignment and payment blocks are now surfaced",
+    value: "57%",
+    note: "Server-priced customization, receipt lines and kitchen labels are now proofed",
   },
   {
     label: "Target Date",
@@ -114,6 +114,11 @@ const completedValue: RoadmapItem[] = [
     value: "Staff now see address score, review warnings, dispatch next action, payment blocks and rider assignment state in the live operations board.",
   },
   {
+    title: "Product customization depth",
+    status: "done",
+    value: "Sizes, crusts, toppings, add-ons, combos and sauces are now tracked through readiness, server pricing, cart, POS, operations and receipts.",
+  },
+  {
     title: "Payment, delivery, roles and production proofs",
     status: "done",
     value: "E2E proof files exist for payment readiness, delivery zones, role gates and production operations.",
@@ -137,9 +142,9 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
   },
   {
-    title: "Product customization depth",
+    title: "Order flow polish",
     status: "planned",
-    value: "Complete combos, add-ons, size pricing, topping rules and kitchen/POS behavior.",
+    value: "Clean order status transitions, receipt handoff, staff ergonomics and small broken-flow fixes before beta demos.",
   },
   {
     title: "Real provider sending and sync",
@@ -297,18 +302,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "29 May 2026",
     focus: "Product customization depth",
-    status: "active",
+    status: "done",
     planned: [
       "Size and topping pricing rules",
       "Add-ons and combo pricing",
       "Kitchen-safe order line display",
     ],
-    output: "Pizza ordering gets closer to Domino's-style customization.",
+    output: "Customization command board, server-priced options, grouped cart labels and kitchen/receipt option lines were completed.",
   },
   {
     date: "30 May 2026",
     focus: "Order flow polish",
-    status: "planned",
+    status: "active",
     planned: [
       "Clean order status transitions",
       "Polish receipts",
@@ -719,7 +724,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Product customization depth: sizes, toppings, add-ons, combos and kitchen-safe customized order display."
+          text="Order flow polish: cleaner status transitions, receipt handoff, staff ergonomics and full browser walkthrough stability."
         />
       </section>
     </div>

@@ -20,6 +20,7 @@ type OrderItem = {
   quantity: number;
   price: number;
   selected_options?: {
+    group_name?: string;
     option_name: string;
     price_delta: number;
   }[];
@@ -67,6 +68,12 @@ function titleCase(value?: string | null) {
     .replace(/_/g, " ")
     .replace(/-/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function optionSummary(option: NonNullable<OrderItem["selected_options"]>[number]) {
+  const delta = Number(option.price_delta || 0);
+  const suffix = delta > 0 ? ` +Rs ${delta}` : "";
+  return `${option.group_name || "Option"}: ${option.option_name}${suffix}`;
 }
 
 export default function ReceiptPage() {
@@ -235,8 +242,8 @@ export default function ReceiptPage() {
                       {!!item.selected_options?.length && (
                         <span className="mt-1 block text-xs font-semibold text-slate-500">
                           {item.selected_options
-                            .map((option) => option.option_name)
-                            .join(", ")}
+                            .map(optionSummary)
+                            .join(" | ")}
                         </span>
                       )}
                     </span>

@@ -5,6 +5,7 @@ import {
   BarChart3,
   CheckCircle,
   Edit2,
+  ListChecks,
   Plus,
   RefreshCw,
   Save,
@@ -18,6 +19,7 @@ import { getApiUrl } from "@/lib/api";
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
 const CUSTOMIZED_MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
 const CUSTOMIZATIONS_API = getApiUrl("/api/v1/restaurant/menu/customizations");
+const CUSTOMIZATION_READINESS_API = getApiUrl("/api/v1/restaurant/menu/customizations/readiness");
 const PROFITABILITY_API = getApiUrl("/api/v1/restaurant/menu/profitability");
 
 type CustomizationOption = {
@@ -64,6 +66,57 @@ type ProfitabilityResponse = {
   total_items: number;
 };
 
+type CustomizationReadiness = {
+  summary: {
+    active_group_count: number;
+    active_option_count: number;
+    customizable_item_count: number;
+    fixed_item_count: number;
+    covered_category_count: number;
+    required_groups_without_defaults: number;
+    max_upgrade_delta: number;
+    average_option_delta: number;
+    recent_customized_line_count: number;
+  };
+  groups: {
+    id: number;
+    name: string;
+    categories: string[];
+    selection_type: string;
+    min_select: number;
+    max_select: number;
+    option_count: number;
+    default_count: number;
+    price_min: number;
+    price_max: number;
+    status: string;
+  }[];
+  category_coverage: {
+    category: string;
+    item_count: number;
+    customizable_count: number;
+    fixed_count: number;
+    coverage_percent: number;
+  }[];
+  top_options: {
+    option: string;
+    quantity: number;
+  }[];
+  recent_customized_lines: {
+    order_id: number;
+    item: string;
+    quantity: number;
+    unit_price: number;
+    customization_total: number;
+    selected_options: {
+      group_name?: string;
+      option_name: string;
+      price_delta: number;
+    }[];
+  }[];
+  next_actions: string[];
+};
+
 const emptyForm: MenuItem = {
   name: "",
   category: "Pizza",
@@ -75,6 +128,7 @@ const emptyForm: MenuItem = {
 export default function MenuManagement() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [customizationGroups, setCustomizationGroups] = useState<CustomizationGroup[]>([]);
+  const [customizationReadiness, setCustomizationReadiness] = useState<CustomizationReadiness | null>(null);
   const [profitability, setProfitability] = useState<ProfitabilityResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -88,14 +142,16 @@ export default function MenuManagement() {
 
   const fetchMenu = async () => {
     setIsLoading(true);
-    const [menuRes, profitabilityRes, customizationsRes] = await Promise.all([
+    const [menuRes, profitabilityRes, customizationsRes, readinessRes] = await Promise.all([
       fetch(CUSTOMIZED_MENU_API),
       fetch(PROFITABILITY_API),
       fetch(CUSTOMIZATIONS_API),
+      fetch(CUSTOMIZATION_READINESS_API),
     ]);
     setItems(await menuRes.json());
     setProfitability(await profitabilityRes.json());
     setCustomizationGroups(await customizationsRes.json());
+    setCustomizationReadiness(await readinessRes.json());
     setIsLoading(false);
   };
 
@@ -190,11 +246,17 @@ export default function MenuManagement() {
 
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Metric label="Menu Items" value={items.length} />
-        <Metric label="Available" value={items.filter((item) => item.is_available).length} />
-        <Metric label="Option Sets" value={customizationGroups.length} />
         <Metric
-          label="Avg Margin"
-          value={`${Math.round(avgMargin(profitability?.items || []))}%`}
+          label="Customizable"
+          value={customizationReadiness?.summary.customizable_item_count ?? 0}
+        />
+        <Metric
+          label="Option Sets"
+          value={customizationReadiness?.summary.active_group_count ?? customizationGroups.length}
+        />
+        <Metric
+          label="Avg Upgrade"
+          value={`Rs ${Math.round(customizationReadiness?.summary.average_option_delta || 0)}`}
         />
       </div>
 
@@ -299,6 +361,97 @@ export default function MenuManagement() {
         </div>
 
         <div className="space-y-6 xl:col-span-4">
+          <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black">
+                  <ListChecks className="h-5 w-5 text-orange-400" /> Customization Command
+                </h2>
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  Sizes, toppings, add-ons and combo readiness for live orders.
+                </p>
+              </div>
+              <span className="rounded-full bg-green-500/15 px-3 py-1 text-xs font-black text-green-300">
+                {customizationReadiness?.summary.required_groups_without_defaults
+                  ? "Review"
+                  : "Ready"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <CommandMetric
+                label="Options"
+                value={customizationReadiness?.summary.active_option_count ?? 0}
+              />
+              <CommandMetric
+                label="Max Upgrade"
+                value={`Rs ${Math.round(customizationReadiness?.summary.max_upgrade_delta || 0)}`}
+              />
+              <CommandMetric
+                label="Categories"
+                value={customizationReadiness?.summary.covered_category_count ?? 0}
+              />
+              <CommandMetric
+                label="Recent Lines"
+                value={customizationReadiness?.summary.recent_customized_line_count ?? 0}
+              />
+            </div>
+
+            <div className="mt-4 rounded-xl border border-white/5 bg-black/25 p-4">
+              <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                Next Actions
+              </p>
+              <div className="mt-3 space-y-2">
+                {(customizationReadiness?.next_actions || ["Loading customization readiness."]).map((action) => (
+                  <p key={action} className="text-sm font-semibold leading-5 text-gray-300">
+                    {action}
+                  </p>
+                ))}
+              </div>
+            </div>
+
+            {!!customizationReadiness?.top_options.length && (
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-black uppercase tracking-widest text-gray-500">
+                  Top Choices
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {customizationReadiness.top_options.slice(0, 5).map((option) => (
+                    <span
+                      key={option.option}
+                      className="rounded-full border border-orange-400/20 bg-orange-400/10 px-3 py-1 text-xs font-black text-orange-200"
+                    >
+                      {option.option} x{option.quantity}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!!customizationReadiness?.recent_customized_lines.length && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                  Kitchen-Safe Lines
+                </p>
+                {customizationReadiness.recent_customized_lines.slice(0, 3).map((line) => (
+                  <div key={`${line.order_id}-${line.item}`} className="rounded-lg bg-black/25 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-sm font-black text-white">#{line.order_id} {line.item}</p>
+                      <span className="text-xs font-black text-green-300">
+                        +Rs {Math.round(line.customization_total)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold text-gray-400">
+                      {line.selected_options.map((option) =>
+                        `${option.group_name || "Option"}: ${option.option_name}`
+                      ).join(" | ")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
             <h2 className="mb-5 text-lg font-black">Customization Matrix</h2>
             <div className="space-y-3">
@@ -446,6 +599,15 @@ function Metric({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-5">
       <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-2xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function CommandMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-black/25 p-3">
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-1 text-lg font-black text-white">{value}</p>
     </div>
   );
 }

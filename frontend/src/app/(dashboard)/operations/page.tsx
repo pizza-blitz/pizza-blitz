@@ -135,9 +135,15 @@ function paymentClass(status: string) {
   return "bg-zinc-100 text-zinc-700 border-zinc-200";
 }
 
+function optionSummary(option: NonNullable<OrderItem["selected_options"]>[number]) {
+  const delta = Number(option.price_delta || 0);
+  const suffix = delta > 0 ? ` +Rs ${delta}` : "";
+  return `${option.group_name}: ${option.option_name}${suffix}`;
+}
+
 function itemSummary(item: OrderItem) {
   const optionNames = (item.selected_options || [])
-    .map((option) => option.option_name)
+    .map(optionSummary)
     .filter(Boolean);
   return optionNames.length
     ? `${item.quantity}x ${item.name} (${optionNames.join(", ")})`
