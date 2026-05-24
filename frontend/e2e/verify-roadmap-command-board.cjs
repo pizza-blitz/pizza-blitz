@@ -93,7 +93,8 @@ async function main() {
     await page.getByText("verify-deployment-pipeline.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-full-customer-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-counter-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Delivery order E2E: prove delivery charge", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-delivery-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Visual polish review:", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Route / View Audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });

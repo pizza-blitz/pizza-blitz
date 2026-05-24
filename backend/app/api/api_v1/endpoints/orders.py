@@ -255,6 +255,42 @@ def order_tracking_steps(order: RestaurantOrder) -> list[dict]:
     status = (order.status or "open").lower()
     payment_status = (order.payment_status or "pending").lower()
     payment_ready = payment_status == "paid" or (order.payment_method or "").lower() != "prepaid"
+    assignment_status = (
+        (order.delivery_assignment.status or "unassigned").lower()
+        if order.delivery_assignment
+        else "unassigned"
+    )
+    if (order.order_type or "").lower() == "delivery":
+        steps = [
+            ("placed", True, "Order placed"),
+            ("payment", payment_ready, "Payment checked"),
+            (
+                "preparing",
+                status in {"preparing", "ready", "closed"}
+                or assignment_status in {"assigned", "out_for_delivery", "delivered"},
+                "Preparing",
+            ),
+            (
+                "assigned",
+                assignment_status in {"assigned", "out_for_delivery", "delivered"},
+                "Rider assigned",
+            ),
+            (
+                "out_for_delivery",
+                assignment_status in {"out_for_delivery", "delivered"},
+                "Out for delivery",
+            ),
+            (
+                "delivered",
+                assignment_status == "delivered" or status == "closed",
+                "Delivered",
+            ),
+        ]
+        return [
+            {"key": key, "label": label, "complete": complete}
+            for key, complete, label in steps
+        ]
+
     steps = [
         ("placed", True, "Order placed"),
         ("payment", payment_ready, "Payment checked"),
@@ -270,11 +306,25 @@ def order_tracking_steps(order: RestaurantOrder) -> list[dict]:
 
 def serialize_order_tracking(order: RestaurantOrder) -> dict:
     payload = serialize_order(order)
+    assignment = order.delivery_assignment
+    delivery_status = assignment.status if assignment else None
+    next_action = order_next_action(order)
+    if (order.order_type or "").lower() == "delivery":
+        if delivery_status == "assigned":
+            next_action = "Delivery partner assigned. Your order will leave shortly."
+        elif delivery_status == "out_for_delivery":
+            next_action = "Rider is on the way with your order."
+        elif delivery_status == "delivered":
+            next_action = "Delivery completed. Thank you for ordering."
+        elif order.status == "closed":
+            next_action = "Order completed. Thank you for ordering."
+        else:
+            next_action = "Order received. Assigning a delivery partner."
     payload.update(
         {
             "eta_window": order_eta_window(order),
             "tracking_steps": order_tracking_steps(order),
-            "next_action": order_next_action(order),
+            "next_action": next_action,
         }
     )
     return payload

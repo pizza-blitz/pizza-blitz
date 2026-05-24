@@ -7,10 +7,12 @@ import {
   Clock,
   CreditCard,
   Loader2,
+  MapPin,
   Phone,
   ReceiptText,
   Search,
   ShoppingBag,
+  Truck,
   Utensils,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
@@ -26,6 +28,16 @@ type TrackingStep = {
 type TrackedOrder = {
   id: number;
   order_type: string;
+  fulfillment_type?: string | null;
+  delivery_address?: string | null;
+  delivery_zone?: string | null;
+  delivery_fee?: number;
+  delivery_assignment?: {
+    assigned_to?: string | null;
+    status: string;
+    notes?: string | null;
+    next_action?: string | null;
+  } | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   items: {
@@ -66,6 +78,8 @@ export default function TrackOrderPage() {
     if (!order?.created_at) return "";
     return new Date(order.created_at).toLocaleString();
   }, [order?.created_at]);
+  const isDeliveryOrder = (order?.fulfillment_type || order?.order_type || "").toLowerCase() === "delivery";
+  const deliveryStatus = order?.delivery_assignment?.status?.replaceAll("_", " ") || "unassigned";
 
   const lookupOrder = async (nextOrderId = orderId, nextPhone = phone) => {
     const trimmedOrderId = nextOrderId.trim();
@@ -185,7 +199,9 @@ export default function TrackOrderPage() {
                 </div>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-5">
+              <div
+                className={`grid gap-3 ${isDeliveryOrder ? "md:grid-cols-3 xl:grid-cols-6" : "md:grid-cols-5"}`}
+              >
                 {order.tracking_steps.map((step) => (
                   <div
                     key={step.key}
@@ -206,6 +222,45 @@ export default function TrackOrderPage() {
                   </div>
                 ))}
               </div>
+
+              {isDeliveryOrder && (
+                <div
+                  data-testid="track-delivery-status"
+                  className="mt-5 rounded-lg border border-red-100 bg-red-50 p-4"
+                >
+                  <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-red-700">
+                        Delivery Handoff
+                      </p>
+                      <h4 className="mt-1 text-lg font-black text-red-950">
+                        {deliveryStatus}
+                      </h4>
+                    </div>
+                    <Truck className="h-5 w-5 text-red-700" />
+                  </div>
+                  <div className="grid gap-3 text-sm md:grid-cols-3">
+                    <Detail
+                      label="Rider"
+                      value={order.delivery_assignment?.assigned_to || "Assigning"}
+                    />
+                    <Detail
+                      label="Zone"
+                      value={order.delivery_zone || "Selected"}
+                    />
+                    <Detail
+                      label="Fee"
+                      value={`Rs ${Number(order.delivery_fee || 0).toLocaleString()}`}
+                    />
+                  </div>
+                  {order.delivery_address && (
+                    <p className="mt-3 flex items-start gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-900">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                      {order.delivery_address}
+                    </p>
+                  )}
+                </div>
+              )}
             </section>
 
             <aside className="rounded-lg border border-slate-200 bg-white p-5 lg:col-span-4">

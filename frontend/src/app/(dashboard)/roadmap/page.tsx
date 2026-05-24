@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "96%",
-    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer order and counter order proof now visible",
+    value: "97%",
+    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer, counter and delivery order proof now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "84%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, customer handoff and counter handoff proof are now tracked",
+    value: "85%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks and customer/counter/delivery handoff proof are now tracked",
   },
   {
     label: "Target Date",
@@ -208,6 +208,11 @@ const completedValue: RoadmapItem[] = [
     title: "Counter order E2E",
     status: "done",
     value: "Staff POS now proves customized order creation, bill/receipt, kitchen status handoff, close action and paid payment state.",
+  },
+  {
+    title: "Delivery order E2E",
+    status: "done",
+    value: "Delivery orders now prove charge, zone, rider assignment, dispatch, delivered close, payment state and customer tracking.",
   },
 ];
 
@@ -588,18 +593,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "13 Jun 2026",
     focus: "Delivery order E2E",
-    status: "active",
+    status: "done",
     planned: [
       "Delivery charge applied",
       "Assignment and status update",
       "Customer tracking proof",
     ],
-    output: "Delivery order workflow is demo-ready.",
+    output: "Delivery charge, rider assignment, dispatch, delivered close, payment state and customer tracking were proved end to end.",
   },
   {
     date: "14 Jun 2026",
     focus: "Visual polish review",
-    status: "planned",
+    status: "active",
     planned: [
       "Mobile and desktop screenshots",
       "Text overflow cleanup",
@@ -678,8 +683,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "18",
-    note: "Checkout, customer E2E, counter E2E, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "19",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -689,12 +694,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Deployment pipeline is mapped and counter order E2E is now proof-backed.",
+    note: "Deployment pipeline is mapped and delivery order E2E is now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Delivery E2E",
-    note: "Delivery charge, assignment, status update and customer tracking proof are now the active track.",
+    value: "Visual Polish",
+    note: "Mobile/desktop screenshots, text overflow cleanup and navigation polish are now the active track.",
   },
 ];
 
@@ -719,6 +724,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Staff POS creation, bill route, kitchen status, close action and paid payment state stay connected.",
     artifact: "visible-counter-order-e2e.png",
+  },
+  {
+    area: "Delivery order E2E",
+    proof: "verify-delivery-order-e2e.cjs",
+    status: "passed",
+    value: "Delivery charge, rider assignment, dispatch, delivered close and customer tracking stay connected.",
+    artifact: "visible-delivery-order-e2e.png",
   },
   {
     area: "Order flow polish",
@@ -830,7 +842,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "18 / 18",
+    value: "19 / 19",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -845,8 +857,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Delivery E2E",
-    note: "The next work slice should prove delivery charge, assignment, status update and customer tracking.",
+    value: "Visual Polish",
+    note: "The next work slice should tighten mobile/desktop screenshots, overflow cleanup and navigation polish.",
   },
 ];
 
@@ -893,8 +905,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Delivery order E2E handoff",
+    status: "done",
+    value: "Delivery charge, rider assignment, status update and customer tracking are now proved from order to delivery.",
+  },
+  {
+    title: "Visual polish handoff",
     status: "active",
-    value: "Next slice should prove delivery charge, rider assignment, status update and customer tracking from order to delivery.",
+    value: "Next slice should tighten mobile and desktop screenshots, text overflow cleanup, navigation polish and empty states.",
   },
 ];
 
@@ -1244,7 +1261,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Delivery order E2E: prove delivery charge, rider assignment, status update and customer tracking proof."
+          text="Visual polish review: mobile and desktop screenshots, text overflow cleanup, navigation polish and empty states."
         />
       </section>
     </div>
