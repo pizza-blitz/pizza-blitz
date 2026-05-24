@@ -53,18 +53,18 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "88%",
-    note: "Internal beta with messaging and social provider readiness now visible",
+    value: "89%",
+    note: "Internal beta with messaging, social and ad provider sync readiness now visible",
   },
   {
     label: "Marketing Engine",
-    value: "90%",
-    note: "Campaigns, consent, queues, ROI, messaging, social readiness and ads are largely working",
+    value: "92%",
+    note: "Campaigns, consent, queues, ROI, messaging, social readiness, ads and provider sync are largely working",
   },
   {
     label: "Production Readiness",
-    value: "71%",
-    note: "Provider readiness, schedule blockers and retry audits are now tracked",
+    value: "73%",
+    note: "Provider readiness, external IDs, schedule blockers and retry audits are now tracked",
   },
   {
     label: "Target Date",
@@ -169,6 +169,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Social now shows hidden-token readiness, scheduled post blockers, delivery issue audit and retry dry-run controls.",
   },
+  {
+    title: "Ad provider sync",
+    status: "done",
+    value: "Ads now show provider credentials, external campaign ID audit, safe dry-run/apply sync and pause/resume guardrails.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -194,8 +199,8 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Ad provider sync",
-    status: "active",
-    value: "Connect Meta ad launch readiness to provider controls, external campaign IDs, pause/resume guardrails and launch audit.",
+    status: "done",
+    value: "Meta provider credentials, external campaign IDs, pause/resume guardrails and launch audit are now visible.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -435,18 +440,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "5 Jun 2026",
     focus: "Ad provider sync",
-    status: "active",
+    status: "done",
     planned: [
       "Provider launch controls",
       "External campaign id handling",
       "Pause/resume guardrails",
     ],
-    output: "Ad management becomes safer for real Meta usage.",
+    output: "Ad provider sync command, external ID dry-run/apply, pause/resume guardrails and browser/API proof were completed.",
   },
   {
     date: "6 Jun 2026",
     focus: "Reporting comparison depth",
-    status: "planned",
+    status: "active",
     planned: [
       "Same day last week",
       "Same month last year",
@@ -613,8 +618,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "10",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, production ops, visual audit and roadmap.",
+    value: "11",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -624,12 +629,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Week-one beta work is now ready for the authentication hardening pass.",
+    note: "Provider-readiness work is now ready for the reporting comparison pass.",
   },
   {
     label: "Next Risk",
-    value: "Customer",
-    note: "Customer profile, order history and consent polish are now the active track.",
+    value: "Reporting",
+    note: "Same-day, same-week and same-month comparisons are now the active track.",
   },
 ];
 
@@ -682,6 +687,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Meta token readiness, schedule blockers, retry dry-run controls and delivery recovery actions are visible.",
     artifact: "visible-social-publishing-readiness.png",
+  },
+  {
+    area: "Ad provider sync",
+    proof: "verify-ad-provider-sync.cjs",
+    status: "passed",
+    value: "Meta credentials, external campaign IDs, dry-run/apply sync and pause/resume guardrails are visible.",
+    artifact: "visible-ad-provider-sync.png",
   },
   {
     area: "Production operations",
@@ -943,7 +955,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Ad provider sync: provider launch controls, external campaign ID handling and pause/resume guardrails."
+          text="Reporting comparison depth: same day last week, same month last year, channel and product comparison dashboards."
         />
       </section>
     </div>

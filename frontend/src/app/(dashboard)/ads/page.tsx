@@ -57,6 +57,21 @@ type ProviderStatus = {
   configured: boolean;
   missing_settings: string[];
   launch_mode: string;
+  readiness_label?: string;
+  graph_version?: string;
+  credential_checks?: {
+    key: string;
+    label: string;
+    configured: boolean;
+  }[];
+  external_sync?: {
+    external_id_required_for_actions: boolean;
+    paused_launch_mode: boolean;
+    dry_run_available: boolean;
+    local_status_sync_available: boolean;
+  };
+  guardrails?: string[];
+  next_action?: string;
 };
 
 type AdsSummary = {
@@ -78,6 +93,9 @@ type AdLaunch = {
   external_campaign_id?: string | null;
   error?: string | null;
   dry_run: boolean;
+  issue_reason?: string;
+  retryable?: boolean;
+  recovery_action?: string;
   attempted_at?: string | null;
 };
 
@@ -87,6 +105,7 @@ type LaunchHistory = {
   dry_run_count: number;
   failed_count: number;
   skipped_count: number;
+  retryable_count?: number;
   launches: AdLaunch[];
 };
 
@@ -108,6 +127,7 @@ type ActionHistory = {
   resume_count: number;
   complete_count: number;
   duplicate_count: number;
+  external_sync_count?: number;
   actions: AdAction[];
 };
 
@@ -128,6 +148,48 @@ type LaunchReadiness = {
   blocked_count: number;
   planned_budget: number;
   campaigns: ReadinessCampaign[];
+};
+
+type SyncChecklistItem = {
+  label: string;
+  passed: boolean;
+  detail: string;
+};
+
+type SyncCampaign = {
+  id: number;
+  name: string;
+  status: CampaignStatus;
+  external_campaign_id?: string | null;
+  provider_state: "synced" | "local_only" | "needs_review" | string;
+  sync_ready: boolean;
+  guardrails: string[];
+};
+
+type AdSyncReadiness = {
+  generated_at: string;
+  provider_status: ProviderStatus;
+  audit: {
+    attempted_count: number;
+    launched_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    retryable_count: number;
+    external_sync_count: number;
+    provider_setup_issue_count: number;
+    provider_issue_count: number;
+    external_id_issue_count: number;
+    needs_review_count: number;
+    external_id_count: number;
+    provider_state_count: number;
+    unsynced_live_count: number;
+    action_count: number;
+  };
+  checklist: SyncChecklistItem[];
+  campaigns: SyncCampaign[];
+  guardrails: string[];
+  next_action: string;
 };
 
 type BudgetHealth = {
@@ -182,6 +244,8 @@ type MetricsForm = {
   revenue: number;
 };
 
+type AdSyncStatus = "launched" | "paused" | "completed" | "failed";
+
 const emptyCampaign: CampaignForm = {
   name: "",
   objective: "traffic",
@@ -211,11 +275,19 @@ const platformLabels: Record<PlatformKey, string> = {
   instagram: "Instagram",
 };
 
+const syncStatusOptions: { value: AdSyncStatus; label: string }[] = [
+  { value: "paused", label: "Paused" },
+  { value: "launched", label: "Launched" },
+  { value: "completed", label: "Completed" },
+  { value: "failed", label: "Failed" },
+];
+
 export default function AdsManagerPage() {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [summary, setSummary] = useState<AdsSummary | null>(null);
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
+  const [syncReadiness, setSyncReadiness] = useState<AdSyncReadiness | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<LaunchHistory | null>(null);
   const [actionHistory, setActionHistory] = useState<ActionHistory | null>(null);
@@ -230,9 +302,15 @@ export default function AdsManagerPage() {
   });
   const [showAdd, setShowAdd] = useState(false);
   const [message, setMessage] = useState("");
+  const [syncResult, setSyncResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [launching, setLaunching] = useState<"dry_run" | "launch" | null>(null);
   const [actioning, setActioning] = useState<"pause" | "resume" | "complete" | "duplicate" | null>(null);
+  const [syncing, setSyncing] = useState<"dry_run" | "apply" | null>(null);
+  const [syncForm, setSyncForm] = useState<{ external_campaign_id: string; status: AdSyncStatus }>({
+    external_campaign_id: "",
+    status: "paused",
+  });
 
   const selectedCampaign = useMemo(
     () => campaigns.find((campaign) => campaign.id === selectedId) || null,
@@ -264,19 +342,25 @@ export default function AdsManagerPage() {
       spend: selectedCampaign.spend,
       revenue: selectedCampaign.revenue,
     });
+    setSyncForm({
+      external_campaign_id: selectedCampaign.external_campaign_id || "",
+      status: syncStatusFromCampaign(selectedCampaign.status),
+    });
   }, [selectedCampaign]);
 
   const fetchAds = async (preferredCampaignId?: number | null) => {
     setLoading(true);
-    const [statusResponse, summaryResponse, campaignsResponse, readinessResponse] = await Promise.all([
+    const [statusResponse, summaryResponse, campaignsResponse, readinessResponse, syncResponse] = await Promise.all([
       fetchWithAuth(`${ADS_API}/provider-status`),
       fetchWithAuth(`${ADS_API}/summary`),
       fetchWithAuth(`${ADS_API}/campaigns`),
       fetchWithAuth(`${ADS_API}/launch-readiness`),
+      fetchWithAuth(`${ADS_API}/sync-readiness`),
     ]);
     if (statusResponse.ok) setProviderStatus(await statusResponse.json());
     if (summaryResponse.ok) setSummary(await summaryResponse.json());
     if (readinessResponse.ok) setLaunchReadiness(await readinessResponse.json());
+    if (syncResponse.ok) setSyncReadiness(await syncResponse.json());
     if (campaignsResponse.ok) {
       const data: AdCampaign[] = await campaignsResponse.json();
       setCampaigns(data);
@@ -473,6 +557,40 @@ export default function AdsManagerPage() {
     setActioning(null);
   };
 
+  const syncExternalCampaign = async (dryRun: boolean) => {
+    if (!selectedCampaign) return;
+    setSyncing(dryRun ? "dry_run" : "apply");
+    setSyncResult("");
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${selectedCampaign.id}/external-sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        external_campaign_id: syncForm.external_campaign_id || null,
+        status: syncForm.status,
+        dry_run: dryRun,
+        note: dryRun ? "External sync dry run from Ads command board." : "External sync applied from Ads command board.",
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "External campaign sync failed.");
+      setSyncing(null);
+      return;
+    }
+    const externalId = data.sync_preview?.external_campaign_id || syncForm.external_campaign_id || "no external id";
+    const resultText = dryRun
+      ? `Dry run ready: ${externalId} can sync as ${syncForm.status}.`
+      : `External sync applied: ${externalId} is now ${data.campaign.status}.`;
+    setSyncResult(resultText);
+    setMessage(resultText);
+    if (!dryRun) {
+      await fetchAds(selectedCampaign.id);
+      await fetchActions(selectedCampaign.id);
+      await fetchLaunches(selectedCampaign.id);
+    }
+    setSyncing(null);
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -512,6 +630,139 @@ export default function AdsManagerPage() {
         <Metric label="Revenue" value={`Rs ${Math.round(summary?.total_revenue || 0).toLocaleString()}`} icon={CheckCircle2} />
         <Metric label="ROAS" value={`${summary?.roas || 0}x`} icon={Send} />
       </div>
+
+      <section
+        data-testid="ad-provider-sync-command"
+        className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">Provider Sync</p>
+            <h2 className="mt-1 text-xl font-black">Ad Provider Sync</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">
+              Provider launch controls, external campaign IDs, pause/resume guardrails and launch audit in one place.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-4 py-2 text-xs font-black uppercase ${
+              syncReadiness?.provider_status.configured
+                ? "bg-green-500/10 text-green-300"
+                : "bg-yellow-500/10 text-yellow-300"
+            }`}
+          >
+            {syncReadiness?.provider_status.readiness_label || "Checking"}
+          </span>
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-4">
+          <ReadinessMetric
+            label="External IDs"
+            value={syncReadiness?.audit.external_id_count || 0}
+            icon={LinkIcon}
+          />
+          <ReadinessMetric
+            label="Unsynced Live"
+            value={syncReadiness?.audit.unsynced_live_count || 0}
+            icon={AlertTriangle}
+          />
+          <ReadinessMetric
+            label="Retryable"
+            value={syncReadiness?.audit.retryable_count || 0}
+            icon={RefreshCw}
+          />
+          <ReadinessMetric
+            label="Sync Actions"
+            value={syncReadiness?.audit.external_sync_count || 0}
+            icon={History}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+            <p className="mb-3 text-xs font-black uppercase tracking-widest text-gray-500">Credentials</p>
+            <div className="space-y-3">
+              {(syncReadiness?.provider_status.credential_checks || []).map((check) => (
+                <div key={check.key} className="flex items-start gap-3 text-sm">
+                  {check.configured ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-300" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+                  )}
+                  <div>
+                    <p className="font-bold text-white">{check.label}</p>
+                    <p className="break-all text-xs text-gray-500">{check.key}</p>
+                  </div>
+                </div>
+              ))}
+              {!syncReadiness?.provider_status.credential_checks?.length && (
+                <p className="text-sm text-gray-500">Provider credentials are loading.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+            <p className="mb-3 text-xs font-black uppercase tracking-widest text-gray-500">Sync Checklist</p>
+            <div className="space-y-3">
+              {(syncReadiness?.checklist || []).map((item) => (
+                <div key={item.label} className="flex items-start gap-3 text-sm">
+                  {item.passed ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-300" />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+                  )}
+                  <div>
+                    <p className="font-bold text-white">{item.label}</p>
+                    <p className="text-xs leading-5 text-gray-500">{item.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+            <p className="mb-3 text-xs font-black uppercase tracking-widest text-gray-500">Next Action</p>
+            <p className="text-sm font-semibold leading-6 text-gray-300">
+              {syncReadiness?.next_action || providerStatus?.next_action || "Load sync readiness to see the next action."}
+            </p>
+            <div className="mt-4 rounded-lg border border-white/5 bg-black/30 p-3 text-xs leading-5 text-gray-500">
+              Graph version: {syncReadiness?.provider_status.graph_version || providerStatus?.graph_version || "not set"}
+            </div>
+          </div>
+        </div>
+
+        {syncReadiness?.campaigns.length ? (
+          <div className="mt-5 rounded-xl border border-white/5 bg-black/25 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-black">External ID Audit</h3>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                {syncReadiness.campaigns.length} checked
+              </span>
+            </div>
+            <div className="space-y-2">
+              {syncReadiness.campaigns.slice(0, 5).map((campaign) => (
+                <div
+                  key={`sync-${campaign.id}`}
+                  className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-sm md:grid-cols-12"
+                >
+                  <div className="md:col-span-4">
+                    <p className="font-bold text-white">{campaign.name}</p>
+                    <p className="text-xs text-gray-500">{campaign.external_campaign_id || "No external Meta ID"}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(campaign.status)}`}>
+                      {campaign.status}
+                    </span>
+                  </div>
+                  <div className="font-bold text-gray-300 md:col-span-2">{campaign.provider_state.replaceAll("_", " ")}</div>
+                  <div className="text-gray-500 md:col-span-4">
+                    {campaign.guardrails[0] || "Ready for provider sync."}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
@@ -737,6 +988,81 @@ export default function AdsManagerPage() {
                   )}
                 </div>
 
+                <div
+                  data-testid="ad-external-sync-panel"
+                  className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5"
+                >
+                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-gray-500">External Sync</p>
+                      <h3 className="mt-1 text-lg font-black">Meta Campaign ID</h3>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                      {selectedCampaign.external_campaign_id ? "ID attached" : "Local only"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+                    <label className="space-y-2 lg:col-span-3">
+                      <span className="text-xs font-black uppercase tracking-widest text-gray-500">
+                        External Campaign ID
+                      </span>
+                      <input
+                        data-testid="external-campaign-id"
+                        type="text"
+                        value={syncForm.external_campaign_id}
+                        onChange={(event) =>
+                          setSyncForm({ ...syncForm, external_campaign_id: event.target.value })
+                        }
+                        placeholder="meta_campaign_123"
+                        className="w-full rounded-xl border border-white/10 bg-black/30 p-4 outline-none focus:border-orange-500"
+                      />
+                    </label>
+                    <Select
+                      label="Provider Status"
+                      value={syncForm.status}
+                      options={syncStatusOptions}
+                      onChange={(value) => setSyncForm({ ...syncForm, status: value as AdSyncStatus })}
+                    />
+                    <div className="grid grid-cols-2 gap-3 self-end">
+                      <button
+                        data-testid="dry-run-ad-sync"
+                        onClick={() => syncExternalCampaign(true)}
+                        disabled={syncing !== null}
+                        className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-3 text-sm font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Dry Run
+                      </button>
+                      <button
+                        data-testid="apply-ad-sync"
+                        onClick={() => syncExternalCampaign(false)}
+                        disabled={syncing !== null}
+                        className="flex items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <LinkIcon className="h-4 w-4" /> Apply
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 text-sm text-gray-300 md:grid-cols-2">
+                    <p>
+                      Current external ID:{" "}
+                      <span className="font-black text-white">
+                        {selectedCampaign.external_campaign_id || "Not attached"}
+                      </span>
+                    </p>
+                    <p>
+                      Guardrail:{" "}
+                      <span className="font-black text-white">
+                        {selectedCampaign.external_campaign_id ? "Pause/resume can be audited" : "Sync ID before provider actions"}
+                      </span>
+                    </p>
+                  </div>
+                  {syncResult && (
+                    <div className="mt-4 rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-sm font-bold text-green-200">
+                      {syncResult}
+                    </div>
+                  )}
+                </div>
+
                 {budgetHealth && (
                   <div
                     data-testid="ad-budget-command"
@@ -837,7 +1163,7 @@ export default function AdsManagerPage() {
                     <div className="mb-4 flex items-center justify-between gap-3">
                       <h3 className="font-black">Recent Launch Attempts</h3>
                       <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
-                        {history.launched_count} launched / {history.failed_count} failed
+                        {history.launched_count} launched / {history.retryable_count || 0} retryable
                       </span>
                     </div>
                     <div className="space-y-2">
@@ -859,7 +1185,7 @@ export default function AdsManagerPage() {
                             {launch.attempted_at ? new Date(launch.attempted_at).toLocaleString() : "Not attempted"}
                           </div>
                           <div className="break-all text-gray-400 md:col-span-4">
-                            {launch.error || "Ready"}
+                            {launch.error || launch.recovery_action || "Ready"}
                           </div>
                         </div>
                       ))}
@@ -1015,6 +1341,13 @@ function setSelectedCampaignParam(campaignId: number) {
   const url = new URL(window.location.href);
   url.searchParams.set("campaign", String(campaignId));
   window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
+}
+
+function syncStatusFromCampaign(status: CampaignStatus): AdSyncStatus {
+  if (status === "launched" || status === "paused" || status === "completed" || status === "failed") {
+    return status;
+  }
+  return "paused";
 }
 
 function statusClass(status: CampaignStatus) {

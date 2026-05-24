@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
+from app.core.config import settings
 from app.models.domain import AdCampaign, AdCampaignAction, AdCampaignLaunch
 from app.services.ad_campaign_service import ad_provider_status, launch_meta_campaign
 
@@ -15,6 +16,7 @@ router = APIRouter()
 VALID_AD_OBJECTIVES = {"awareness", "traffic", "engagement", "leads", "sales"}
 VALID_AD_PLATFORMS = {"facebook", "instagram"}
 VALID_AD_STATUSES = {"draft", "planned", "ready", "launched", "paused", "completed", "failed"}
+VALID_AD_SYNC_STATUSES = {"launched", "paused", "completed", "failed"}
 
 
 class AdCampaignCreate(BaseModel):
@@ -58,6 +60,13 @@ class AdCampaignDuplicateRequest(BaseModel):
     note: Optional[str] = None
 
 
+class AdProviderSyncRequest(BaseModel):
+    external_campaign_id: Optional[str] = None
+    status: str = "paused"
+    dry_run: bool = True
+    note: Optional[str] = None
+
+
 def _parse_optional_date(value: Optional[str]) -> Optional[date]:
     if not value:
         return None
@@ -92,6 +101,16 @@ def _normalize_status(value: str) -> str:
     status = value.strip().lower()
     if status not in VALID_AD_STATUSES:
         raise HTTPException(status_code=422, detail="Unsupported ad campaign status.")
+    return status
+
+
+def _normalize_sync_status(value: str) -> str:
+    status = _normalize_status(value)
+    if status not in VALID_AD_SYNC_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail="External sync status must be launched, paused, completed, or failed.",
+        )
     return status
 
 
@@ -140,6 +159,9 @@ def _launch_dict(launch: AdCampaignLaunch) -> dict:
         "external_campaign_id": launch.external_campaign_id,
         "error": launch.error,
         "dry_run": launch.dry_run,
+        "issue_reason": _launch_issue_reason(launch),
+        "retryable": launch.status in {"failed", "skipped"},
+        "recovery_action": _launch_recovery_action(launch),
         "attempted_at": launch.attempted_at.isoformat() if launch.attempted_at else None,
     }
 
@@ -165,6 +187,7 @@ def _launch_counts(launches: list[AdCampaignLaunch]) -> dict:
         "dry_run_count": sum(1 for launch in launches if launch.status == "dry_run"),
         "failed_count": sum(1 for launch in launches if launch.status == "failed"),
         "skipped_count": sum(1 for launch in launches if launch.status == "skipped"),
+        "retryable_count": sum(1 for launch in launches if launch.status in {"failed", "skipped"}),
     }
 
 
@@ -175,6 +198,7 @@ def _action_counts(actions: list[AdCampaignAction]) -> dict:
         "resume_count": sum(1 for action in actions if action.action == "resume"),
         "complete_count": sum(1 for action in actions if action.action == "complete"),
         "duplicate_count": sum(1 for action in actions if action.action == "duplicate"),
+        "external_sync_count": sum(1 for action in actions if action.action == "external_sync"),
     }
 
 
@@ -204,6 +228,126 @@ def _record_ad_action(
 
 def _actor_from_session(session: dict) -> str:
     return str(session.get("display_name") or session.get("subject") or session.get("role") or "portal")
+
+
+def _ad_credential_checks(provider_status: dict) -> list[dict]:
+    missing = set(provider_status.get("missing_settings") or [])
+    return [
+        {
+            "key": "ADS_LAUNCH_ENABLED=true",
+            "label": "Ad launch safety switch",
+            "configured": "ADS_LAUNCH_ENABLED=true" not in missing,
+        },
+        {
+            "key": "META_AD_ACCOUNT_ID",
+            "label": "Meta ad account ID",
+            "configured": "META_AD_ACCOUNT_ID" not in missing,
+        },
+        {
+            "key": "META_AD_ACCESS_TOKEN",
+            "label": "Meta marketing API token",
+            "configured": "META_AD_ACCESS_TOKEN" not in missing,
+        },
+    ]
+
+
+def _ad_provider_readiness() -> dict:
+    status = ad_provider_status()
+    missing = status.get("missing_settings") or []
+    return {
+        **status,
+        "readiness_label": "Provider ready" if status.get("configured") else "Setup needed",
+        "credential_checks": _ad_credential_checks(status),
+        "graph_version": settings.META_GRAPH_VERSION,
+        "external_sync": {
+            "external_id_required_for_actions": True,
+            "paused_launch_mode": status.get("launch_mode") == "paused_campaign",
+            "dry_run_available": True,
+            "local_status_sync_available": True,
+        },
+        "guardrails": [
+            "Live launch creates a paused Meta campaign shell for review before ad sets and creatives are activated.",
+            "Live launch is blocked until provider credentials and campaign preflight checks pass.",
+            "External campaign ID must be attached before pause or resume is treated as Meta-connected.",
+        ],
+        "next_action": (
+            "Run dry-run proof, then launch or sync the external Meta campaign ID."
+            if status.get("configured")
+            else f"Configure {', '.join(missing) if missing else 'Meta Ads provider settings'}, then rerun dry-run proof."
+        ),
+    }
+
+
+def _launch_issue_reason(launch: AdCampaignLaunch) -> str:
+    error = (launch.error or "").lower()
+    if launch.status == "launched":
+        return "none" if launch.external_campaign_id else "external_id"
+    if launch.status == "dry_run":
+        return "dry_run"
+    if "provider not configured" in error or "meta_ad" in error or "ads_launch_enabled" in error:
+        return "provider_setup"
+    if launch.status == "failed":
+        return "provider"
+    if launch.status == "skipped":
+        return "needs_review"
+    return "pending"
+
+
+def _launch_recovery_action(launch: AdCampaignLaunch) -> str:
+    reason = _launch_issue_reason(launch)
+    if launch.status == "launched":
+        return "Provider campaign created; keep external ID attached before pausing or resuming."
+    if launch.status == "dry_run":
+        return "Dry run passed; launch live after provider setup and business review."
+    if reason == "provider_setup":
+        return "Configure Meta ad credentials and enable ADS_LAUNCH_ENABLED before retrying."
+    if reason == "external_id":
+        return "Attach the Meta campaign ID through external sync before treating it as provider-connected."
+    if reason == "provider":
+        return "Review the Meta API error, then retry launch after the provider issue is cleared."
+    if reason == "needs_review":
+        return "Review the skipped attempt and rerun dry-run once launch blockers are cleared."
+    return "Monitor the pending provider attempt."
+
+
+def _launch_audit_counts(launches: list[AdCampaignLaunch]) -> dict:
+    return {
+        "provider_setup_issue_count": sum(
+            1 for launch in launches if _launch_issue_reason(launch) == "provider_setup"
+        ),
+        "provider_issue_count": sum(1 for launch in launches if _launch_issue_reason(launch) == "provider"),
+        "external_id_issue_count": sum(1 for launch in launches if _launch_issue_reason(launch) == "external_id"),
+        "needs_review_count": sum(1 for launch in launches if _launch_issue_reason(launch) == "needs_review"),
+    }
+
+
+def _campaign_sync_guardrails(campaign: AdCampaign) -> list[str]:
+    guardrails: list[str] = []
+    if campaign.status in {"launched", "paused", "completed"} and not campaign.external_campaign_id:
+        guardrails.append("Attach external Meta campaign ID before provider-state actions.")
+    if campaign.status == "failed":
+        guardrails.append("Review the provider failure before relaunch or external sync.")
+    if campaign.status in {"draft", "planned", "ready"}:
+        guardrails.append("Run launch dry-run or external sync before marking provider-connected.")
+    if campaign.external_campaign_id:
+        guardrails.append("External Meta campaign ID is attached for audit and pause/resume handoff.")
+    return guardrails
+
+
+def _campaign_sync_row(campaign: AdCampaign) -> dict:
+    has_external_id = bool((campaign.external_campaign_id or "").strip())
+    provider_state = "synced" if has_external_id else "local_only"
+    if campaign.status == "failed":
+        provider_state = "needs_review"
+    return {
+        "id": campaign.id,
+        "name": campaign.name,
+        "status": campaign.status,
+        "external_campaign_id": campaign.external_campaign_id,
+        "provider_state": provider_state,
+        "sync_ready": has_external_id or campaign.status in {"draft", "planned", "ready", "failed"},
+        "guardrails": _campaign_sync_guardrails(campaign),
+    }
 
 
 def _inclusive_days(start: date, end: date) -> int:
@@ -343,7 +487,7 @@ def _campaign_launch_blockers(campaign: AdCampaign, provider_status: dict) -> li
 def ads_provider_status(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
-    return ad_provider_status()
+    return _ad_provider_readiness()
 
 
 @router.get("/summary")
@@ -389,7 +533,7 @@ def ads_launch_readiness(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
-    provider_status = ad_provider_status()
+    provider_status = _ad_provider_readiness()
     campaigns = (
         db.query(AdCampaign)
         .filter(AdCampaign.status.in_(["draft", "planned", "ready", "failed"]))
@@ -428,6 +572,86 @@ def ads_launch_readiness(
         "blocked_count": blocked_count,
         "planned_budget": round(planned_budget, 2),
         "campaigns": rows,
+    }
+
+
+@router.get("/sync-readiness")
+def ads_sync_readiness(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    provider_status = _ad_provider_readiness()
+    all_campaigns = db.query(AdCampaign).all()
+    campaigns = (
+        db.query(AdCampaign)
+        .order_by(AdCampaign.updated_at.desc(), AdCampaign.id.desc())
+        .limit(limit)
+        .all()
+    )
+    launches = (
+        db.query(AdCampaignLaunch)
+        .order_by(AdCampaignLaunch.attempted_at.desc(), AdCampaignLaunch.id.desc())
+        .limit(limit)
+        .all()
+    )
+    actions = (
+        db.query(AdCampaignAction)
+        .order_by(AdCampaignAction.created_at.desc(), AdCampaignAction.id.desc())
+        .limit(limit)
+        .all()
+    )
+    external_id_count = sum(1 for campaign in all_campaigns if campaign.external_campaign_id)
+    provider_state_count = sum(
+        1 for campaign in all_campaigns if campaign.status in {"launched", "paused", "completed"}
+    )
+    unsynced_live_count = sum(
+        1
+        for campaign in all_campaigns
+        if campaign.status in {"launched", "paused", "completed"} and not campaign.external_campaign_id
+    )
+    audit = {
+        **_launch_counts(launches),
+        **_launch_audit_counts(launches),
+        **_action_counts(actions),
+        "external_id_count": external_id_count,
+        "provider_state_count": provider_state_count,
+        "unsynced_live_count": unsynced_live_count,
+    }
+    checklist = [
+        {
+            "label": "Meta launch credentials",
+            "passed": provider_status["configured"],
+            "detail": provider_status["readiness_label"],
+        },
+        {
+            "label": "Paused launch guardrail",
+            "passed": provider_status["external_sync"]["paused_launch_mode"],
+            "detail": "Live launch creates paused Meta campaign shells.",
+        },
+        {
+            "label": "External ID audit",
+            "passed": True,
+            "detail": f"{external_id_count} campaign(s) currently carry a Meta campaign ID.",
+        },
+        {
+            "label": "Unsynced live campaigns",
+            "passed": unsynced_live_count == 0,
+            "detail": f"{unsynced_live_count} live/paused/completed campaign(s) need external ID sync.",
+        },
+    ]
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "provider_status": provider_status,
+        "audit": audit,
+        "checklist": checklist,
+        "campaigns": [_campaign_sync_row(campaign) for campaign in campaigns],
+        "guardrails": provider_status["guardrails"],
+        "next_action": (
+            "Add external campaign IDs to unsynced live campaigns before running pause/resume."
+            if unsynced_live_count
+            else provider_status["next_action"]
+        ),
     }
 
 
@@ -523,6 +747,77 @@ def ad_campaign_actions(
     }
 
 
+@router.post("/campaigns/{campaign_id}/external-sync")
+def sync_ad_campaign_external_state(
+    campaign_id: int,
+    payload: AdProviderSyncRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+
+    next_status = _normalize_sync_status(payload.status)
+    external_id = (payload.external_campaign_id or campaign.external_campaign_id or "").strip() or None
+    if next_status in {"launched", "paused", "completed"} and not external_id:
+        raise HTTPException(
+            status_code=422,
+            detail="External campaign ID is required for launched, paused, or completed provider sync.",
+        )
+
+    previous_status = campaign.status
+    previous_external_id = campaign.external_campaign_id
+    sync_preview = {
+        "provider": "meta-ads",
+        "previous_status": previous_status,
+        "next_status": next_status,
+        "previous_external_campaign_id": previous_external_id,
+        "external_campaign_id": external_id,
+        "dry_run": payload.dry_run,
+        "guardrails": _campaign_sync_guardrails(campaign),
+    }
+
+    if payload.dry_run:
+        return {
+            "campaign": _ad_campaign_dict(campaign),
+            "dry_run": True,
+            "sync_preview": sync_preview,
+            "guardrails": _ad_provider_readiness()["guardrails"],
+        }
+
+    campaign.external_campaign_id = external_id
+    campaign.status = next_status
+    campaign.updated_at = datetime.utcnow()
+    action = _record_ad_action(
+        db,
+        campaign=campaign,
+        action="external_sync",
+        previous_status=previous_status,
+        next_status=campaign.status,
+        note=payload.note,
+        actor=_actor_from_session(session),
+        response_payload={
+            **sync_preview,
+            "source": "provider_sync_command",
+            "dry_run": False,
+        },
+    )
+    db.commit()
+    db.refresh(campaign)
+    db.refresh(action)
+    return {
+        "campaign": _ad_campaign_dict(campaign),
+        "action": _action_dict(action),
+        "dry_run": False,
+        "sync_preview": {
+            **sync_preview,
+            "next_status": campaign.status,
+            "external_campaign_id": campaign.external_campaign_id,
+        },
+    }
+
+
 @router.post("/campaigns/{campaign_id}/pause")
 def pause_ad_campaign(
     campaign_id: int,
@@ -549,7 +844,11 @@ def pause_ad_campaign(
         next_status=campaign.status,
         note=payload.note,
         actor=_actor_from_session(session),
-        response_payload={"source": "portal"},
+        response_payload={
+            "source": "portal",
+            "external_campaign_id": campaign.external_campaign_id,
+            "provider_guardrail": "Local pause recorded; confirm external pause in Meta or through provider sync.",
+        },
     )
     db.commit()
     db.refresh(campaign)
@@ -582,7 +881,11 @@ def resume_ad_campaign(
         next_status=campaign.status,
         note=payload.note,
         actor=_actor_from_session(session),
-        response_payload={"source": "portal", "external_campaign_id": campaign.external_campaign_id},
+        response_payload={
+            "source": "portal",
+            "external_campaign_id": campaign.external_campaign_id,
+            "provider_guardrail": "Resume returns to launched only when an external Meta campaign ID is attached.",
+        },
     )
     db.commit()
     db.refresh(campaign)
@@ -614,7 +917,11 @@ def complete_ad_campaign(
         next_status=campaign.status,
         note=payload.note,
         actor=_actor_from_session(session),
-        response_payload={"source": "portal", "budget_health": _campaign_budget_health(campaign)},
+        response_payload={
+            "source": "portal",
+            "external_campaign_id": campaign.external_campaign_id,
+            "budget_health": _campaign_budget_health(campaign),
+        },
     )
     db.commit()
     db.refresh(campaign)
@@ -751,7 +1058,7 @@ def launch_ad_campaign(
     if campaign.status == "launched" and not payload.force_relaunch and not payload.dry_run:
         raise HTTPException(status_code=409, detail="Campaign is already marked as launched.")
 
-    provider_status = ad_provider_status()
+    provider_status = _ad_provider_readiness()
     blockers = _campaign_launch_blockers(campaign, provider_status)
     if blockers and not payload.dry_run:
         raise HTTPException(
@@ -773,6 +1080,7 @@ def launch_ad_campaign(
                 "launch_mode": "paused_campaign",
                 "objective": campaign.objective,
                 "blockers": blockers,
+                "guardrails": provider_status["guardrails"],
             },
         )
     else:

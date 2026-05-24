@@ -39,6 +39,7 @@ export default function AIInsights() {
         </div>
       </div>
       <div className="text-center space-y-2">
+        <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter leading-none">Neural Insights</h1>
         <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter italic">Analyzing Pizza Blitz Dataset</h2>
         <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">Gemini 1.5 Flash is extracting patterns...</p>
       </div>
