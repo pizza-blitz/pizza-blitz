@@ -58,13 +58,13 @@ const progressCards = [
   },
   {
     label: "Marketing Engine",
-    value: "92%",
-    note: "Campaigns, consent, queues, ROI, messaging, social readiness, ads and provider sync are largely working",
+    value: "94%",
+    note: "Campaigns, consent, queues, ROI, messaging, social readiness, ads, provider sync and live-readiness command visibility are largely working",
   },
   {
     label: "Production Readiness",
-    value: "87%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, delivery handoff, visual polish and ops command proof are now tracked",
+    value: "88%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, delivery handoff, visual polish, ops command and marketing live-readiness proof are now tracked",
   },
   {
     label: "Target Date",
@@ -224,6 +224,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Dashboard now exposes today's orders, kitchen state, delivery handoff and owner alerts from live order-flow and delivery queue data.",
   },
+  {
+    title: "Marketing live-readiness command",
+    status: "done",
+    value: "Promotions now show one live-readiness board for campaign sender, social posting and Meta ads handoff from existing provider APIs.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -251,6 +256,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Ad provider sync",
     status: "done",
     value: "Meta provider credentials, external campaign IDs, pause/resume guardrails and launch audit are now visible.",
+  },
+  {
+    title: "Marketing live-readiness command",
+    status: "done",
+    value: "The promotions page now combines campaign sender, social posting and ad launch readiness into one visible decision board.",
   },
   {
     title: "Reporting comparison depth",
@@ -636,18 +646,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "16 Jun 2026",
     focus: "Marketing live-readiness review",
-    status: "active",
+    status: "done",
     planned: [
       "Campaign sender checklist",
       "Social posting checklist",
       "Ad launch checklist",
     ],
-    output: "Marketing features are ready for credential-based testing.",
+    output: "Promotions now shows campaign sender, social posting and ad launch readiness in one proof-backed command board.",
   },
   {
     date: "17 Jun 2026",
     focus: "Data quality and import/export",
-    status: "planned",
+    status: "active",
     planned: [
       "Customer import/export checks",
       "Report exports",
@@ -693,8 +703,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "21",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "22",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -704,12 +714,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Operational command board, dashboard polish and delivery order E2E are now proof-backed.",
+    note: "Marketing live-readiness, operational command board, dashboard polish and delivery order E2E are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Marketing Live Readiness",
-    note: "Campaign sender checklist, social posting checklist and ad launch checklist are now the active track.",
+    value: "Data Quality",
+    note: "Customer import/export checks, report exports and backup/restore proof are now the active track.",
   },
 ];
 
@@ -792,6 +802,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-ad-provider-sync.png",
   },
   {
+    area: "Marketing live-readiness",
+    proof: "verify-marketing-live-readiness-command.cjs",
+    status: "passed",
+    value: "Campaign sender, social posting and Meta ads readiness are visible in one promotions command board.",
+    artifact: "visible-marketing-live-readiness-command.png",
+  },
+  {
     area: "Reporting comparison",
     proof: "verify-reporting-comparison-dashboard.cjs",
     status: "passed",
@@ -866,7 +883,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "21 / 21",
+    value: "22 / 22",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -881,8 +898,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Marketing Live Readiness",
-    note: "The next work slice should review campaign sender, social posting and ad launch readiness before live credentials.",
+    value: "Data Quality",
+    note: "The next work slice should review customer import/export checks, report exports and backup/restore proof.",
   },
 ];
 
@@ -944,8 +961,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Marketing live-readiness handoff",
+    status: "done",
+    value: "Campaign sender checklist, social posting checklist and ad launch checklist are now visible together from the promotions command board.",
+  },
+  {
+    title: "Data quality handoff",
     status: "active",
-    value: "Next slice should review campaign sender checklist, social posting checklist and ad launch checklist.",
+    value: "Next slice should review customer import/export checks, report exports and backup/restore proof.",
   },
 ];
 
@@ -1295,7 +1317,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Marketing live-readiness review: confirm campaign sender checklist, social posting checklist and ad launch checklist before live credentials."
+          text="Data quality and import/export: customer import/export checks, report exports and backup/restore proof."
         />
       </section>
     </div>

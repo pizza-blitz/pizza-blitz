@@ -90,7 +90,7 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("21 / 21", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("22 / 22", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
@@ -105,10 +105,12 @@ async function main() {
     await page.getByText("verify-delivery-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Delivery order E2E handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Visual polish handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Operational dashboards handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Marketing live-readiness handoff", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Data quality handoff", { exact: true }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-weekly-beta-review.png"),

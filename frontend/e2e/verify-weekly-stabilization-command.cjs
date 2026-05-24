@@ -108,12 +108,13 @@ async function main() {
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("QA command board, route audit matrix", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Real WhatsApp/SMS/email readiness", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Social publishing readiness", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Ad provider sync", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Reporting comparison depth", { exact: true }).first().waitFor({ timeout: 15000 });
-    await page.getByText("Marketing live-readiness review:", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Data quality and import/export:", { exact: false }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-weekly-stabilization-command.png"),

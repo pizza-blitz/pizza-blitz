@@ -25,6 +25,8 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const PROMOTIONS_API = getApiUrl("/api/v1/restaurant/promotions");
+const SOCIAL_API = getApiUrl("/api/v1/restaurant/social");
+const ADS_API = getApiUrl("/api/v1/restaurant/ads");
 
 type Promotion = {
   id: number;
@@ -208,6 +210,96 @@ type ProviderReadiness = {
   live_send_blocked?: boolean;
   compliance_summary?: string[];
   next_action?: string;
+};
+
+type SocialPlatformKey = "facebook" | "instagram";
+
+type SocialProviderStatus = {
+  platform: SocialPlatformKey;
+  provider: string;
+  configured: boolean;
+  readiness_label?: string;
+  missing_settings?: string[];
+  next_action?: string;
+};
+
+type SocialReadiness = {
+  generated_at: string;
+  providers: Record<SocialPlatformKey, SocialProviderStatus>;
+  schedule: {
+    due_count: number;
+    eligible_count: number;
+    blocked_count: number;
+  };
+  audit: {
+    attempted_count: number;
+    published_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    retryable_count: number;
+    provider_issue_count: number;
+    asset_issue_count: number;
+    needs_review_count: number;
+  };
+  checklist: string[];
+  next_action: string;
+};
+
+type AdProviderStatus = {
+  provider: string;
+  configured: boolean;
+  readiness_label?: string;
+  missing_settings?: string[];
+  launch_mode?: string;
+  next_action?: string;
+};
+
+type AdLaunchReadiness = {
+  provider_status: AdProviderStatus;
+  ready_count: number;
+  blocked_count: number;
+  planned_budget: number;
+  campaigns: {
+    id: number;
+    name: string;
+    eligible: boolean;
+    blockers: string[];
+  }[];
+};
+
+type AdSyncReadiness = {
+  generated_at: string;
+  provider_status: AdProviderStatus;
+  audit: {
+    attempted_count: number;
+    launched_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    retryable_count: number;
+    external_sync_count: number;
+    provider_setup_issue_count: number;
+    provider_issue_count: number;
+    external_id_issue_count: number;
+    needs_review_count: number;
+    external_id_count: number;
+    provider_state_count: number;
+    unsynced_live_count: number;
+  };
+  checklist: {
+    label: string;
+    passed: boolean;
+    detail: string;
+  }[];
+  guardrails: string[];
+  next_action: string;
+};
+
+type MarketingChecklistItem = {
+  label: string;
+  passed: boolean;
+  detail: string;
 };
 
 type ProviderTestSendResult = {
@@ -587,6 +679,9 @@ export default function PromotionsPage() {
   const [performanceRollup, setPerformanceRollup] = useState<MarketingPerformanceRollup | null>(null);
   const [scheduleQueue, setScheduleQueue] = useState<ScheduledCampaignQueue | null>(null);
   const [sendQueue, setSendQueue] = useState<CampaignSendQueue | null>(null);
+  const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
+  const [adLaunchReadiness, setAdLaunchReadiness] = useState<AdLaunchReadiness | null>(null);
+  const [adSyncReadiness, setAdSyncReadiness] = useState<AdSyncReadiness | null>(null);
   const [sendQueueView, setSendQueueView] = useState<CampaignSendQueueView>("all");
   const [audienceHygiene, setAudienceHygiene] = useState<AudienceHygiene | null>(null);
   const [hygieneAudience, setHygieneAudience] = useState<AudienceKey>("marketing_opt_in");
@@ -624,6 +719,7 @@ export default function PromotionsPage() {
     fetchPerformanceRollup();
     fetchScheduleQueue();
     fetchSendQueue();
+    fetchMarketingLiveReadiness();
     fetchAudienceHygiene();
   }, []);
 
@@ -664,6 +760,98 @@ export default function PromotionsPage() {
     provider_issue_count: deliveryHistory?.provider_issue_count || 0,
     needs_review_count: deliveryHistory?.needs_review_count || 0,
   };
+  const socialProviderCount = Object.keys(socialReadiness?.providers || {}).length;
+  const socialProviderReadyCount = Object.values(socialReadiness?.providers || {}).filter(
+    (status) => status.configured
+  ).length;
+  const socialIssueCount =
+    (socialReadiness?.audit.provider_issue_count || 0) +
+    (socialReadiness?.audit.asset_issue_count || 0) +
+    (socialReadiness?.audit.needs_review_count || 0);
+  const adIssueCount =
+    (adSyncReadiness?.audit.provider_setup_issue_count || 0) +
+    (adSyncReadiness?.audit.provider_issue_count || 0) +
+    (adSyncReadiness?.audit.external_id_issue_count || 0) +
+    (adSyncReadiness?.audit.needs_review_count || 0);
+  const campaignSenderChecklist: MarketingChecklistItem[] = [
+    {
+      label: "Channel credentials",
+      passed: (providerReadiness?.configured_count || 0) === 3,
+      detail: `${providerReadiness?.configured_count || 0}/3 WhatsApp, SMS and email providers are configured.`,
+    },
+    {
+      label: "Dry-run coverage",
+      passed: (sendQueue?.summary.dry_run_needed_count || 0) === 0 && (sendQueue?.summary.campaign_count || 0) > 0,
+      detail: `${sendQueue?.summary.dry_run_done_count || 0} done, ${sendQueue?.summary.dry_run_needed_count || 0} still need proof.`,
+    },
+    {
+      label: "Audience quality",
+      passed: (sendQueue?.summary.audience_blocked_count || 0) === 0 && (sendQueue?.summary.missing_contacts || 0) === 0,
+      detail: `${sendQueue?.summary.send_ready_contacts || 0} contacts ready, ${sendQueue?.summary.missing_contacts || 0} missing destination.`,
+    },
+    {
+      label: "Live send gate",
+      passed:
+        (sendQueue?.summary.live_ready_count || 0) > 0 &&
+        (sendQueue?.summary.provider_blocked_count || 0) === 0 &&
+        providerReadiness?.live_send_blocked === false,
+      detail: `${sendQueue?.summary.live_ready_count || 0} campaign(s) live-ready, ${sendQueue?.summary.provider_blocked_count || 0} provider blocked.`,
+    },
+  ];
+  const socialPostingChecklist: MarketingChecklistItem[] = [
+    {
+      label: "Social providers",
+      passed: socialProviderCount > 0 && socialProviderReadyCount === socialProviderCount,
+      detail: `${socialProviderReadyCount}/${socialProviderCount || 2} Facebook and Instagram providers are ready.`,
+    },
+    {
+      label: "Auto-publish queue",
+      passed:
+        (socialReadiness?.schedule.blocked_count || 0) === 0 &&
+        (socialReadiness?.schedule.eligible_count || 0) >= (socialReadiness?.schedule.due_count || 0),
+      detail: `${socialReadiness?.schedule.eligible_count || 0} eligible, ${socialReadiness?.schedule.blocked_count || 0} blocked due posts.`,
+    },
+    {
+      label: "Content audit",
+      passed: socialIssueCount === 0,
+      detail: `${socialIssueCount} provider, asset or review issue(s) need attention.`,
+    },
+    {
+      label: "Dry-run history",
+      passed: (socialReadiness?.audit.dry_run_count || 0) > 0 || (socialReadiness?.audit.published_count || 0) > 0,
+      detail: `${socialReadiness?.audit.dry_run_count || 0} dry-run, ${socialReadiness?.audit.published_count || 0} published receipt(s).`,
+    },
+  ];
+  const adLaunchChecklist: MarketingChecklistItem[] = [
+    {
+      label: "Meta provider",
+      passed: Boolean(adLaunchReadiness?.provider_status.configured),
+      detail: adLaunchReadiness?.provider_status.readiness_label || "Meta provider readiness is loading.",
+    },
+    {
+      label: "Launch preflight",
+      passed: (adLaunchReadiness?.blocked_count || 0) === 0 && (adLaunchReadiness?.ready_count || 0) > 0,
+      detail: `${adLaunchReadiness?.ready_count || 0} ready, ${adLaunchReadiness?.blocked_count || 0} blocked campaign(s).`,
+    },
+    {
+      label: "External ID sync",
+      passed: (adSyncReadiness?.audit.unsynced_live_count || 0) === 0,
+      detail: `${adSyncReadiness?.audit.unsynced_live_count || 0} live/paused/completed campaign(s) need Meta ID sync.`,
+    },
+    {
+      label: "Provider action audit",
+      passed: adIssueCount === 0,
+      detail: `${adIssueCount} provider, setup, external ID or review issue(s).`,
+    },
+  ];
+  const marketingLiveChecks = [...campaignSenderChecklist, ...socialPostingChecklist, ...adLaunchChecklist];
+  const marketingPassedChecks = marketingLiveChecks.filter((item) => item.passed).length;
+  const marketingReadinessScore = Math.round((marketingPassedChecks / marketingLiveChecks.length) * 100);
+  const marketingNextActions = [
+    providerReadiness?.next_action,
+    socialReadiness?.next_action,
+    adSyncReadiness?.next_action || adLaunchReadiness?.provider_status.next_action,
+  ].filter(Boolean) as string[];
 
   const fetchProviderReadiness = async () => {
     const response = await fetch(`${PROMOTIONS_API}/providers/status`, {
@@ -755,6 +943,23 @@ export default function PromotionsPage() {
       return;
     }
     setSendQueue(await response.json());
+  };
+
+  const fetchMarketingLiveReadiness = async () => {
+    try {
+      const [socialResponse, adLaunchResponse, adSyncResponse] = await Promise.all([
+        fetch(`${SOCIAL_API}/readiness?limit=20`, { credentials: "include" }),
+        fetch(`${ADS_API}/launch-readiness?limit=20`, { credentials: "include" }),
+        fetch(`${ADS_API}/sync-readiness?limit=20`, { credentials: "include" }),
+      ]);
+      setSocialReadiness(socialResponse.ok ? await socialResponse.json() : null);
+      setAdLaunchReadiness(adLaunchResponse.ok ? await adLaunchResponse.json() : null);
+      setAdSyncReadiness(adSyncResponse.ok ? await adSyncResponse.json() : null);
+    } catch {
+      setSocialReadiness(null);
+      setAdLaunchReadiness(null);
+      setAdSyncReadiness(null);
+    }
   };
 
   const fetchAudienceHygiene = async (audience: AudienceKey = hygieneAudience) => {
@@ -1289,6 +1494,7 @@ export default function PromotionsPage() {
               fetchPerformanceRollup();
               fetchScheduleQueue();
               fetchSendQueue();
+              fetchMarketingLiveReadiness();
               fetchAudienceHygiene();
             }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
@@ -1316,6 +1522,97 @@ export default function PromotionsPage() {
         <Metric label="Scheduled" value={scheduledCount} icon={Calendar} />
         <Metric label="Audience" value={outreach?.audience_count || 0} icon={Users} />
       </div>
+
+      <section
+        data-testid="marketing-live-readiness-board"
+        className="mb-8 rounded-xl border border-sky-500/10 bg-[#101417] p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-sky-300">Marketing Live Readiness</p>
+            <h2 className="mt-1 text-xl font-black">Campaign sender, social publishing and Meta ads handoff</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              One checklist for the channels we discussed: promotional sends, auto social posts and ad launch readiness before real credentials go live.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              data-testid="marketing-live-readiness-score"
+              className={`rounded-full px-4 py-2 text-xs font-black uppercase ${marketingScoreClass(marketingReadinessScore)}`}
+            >
+              {marketingReadinessScore}% ready
+            </span>
+            <span className="rounded-full bg-white/10 px-4 py-2 text-xs font-black uppercase text-gray-300">
+              {marketingPassedChecks}/{marketingLiveChecks.length} checks passed
+            </span>
+          </div>
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <MarketingChecklistCard
+            testId="marketing-sender-checklist"
+            icon={Send}
+            label="Campaign Sender Checklist"
+            title="WhatsApp, SMS and email"
+            status={`${sendQueue?.summary.live_ready_count || 0} live-ready`}
+            href="#campaign-send-queue"
+            action="Open send queue"
+            items={campaignSenderChecklist}
+            metrics={[
+              { label: "Providers", value: `${providerReadiness?.configured_count || 0}/3` },
+              { label: "Ready Campaigns", value: `${sendQueue?.summary.ready_campaign_count || 0}` },
+              { label: "Ready Contacts", value: `${sendQueue?.summary.send_ready_contacts || 0}` },
+            ]}
+          />
+          <MarketingChecklistCard
+            testId="marketing-social-checklist"
+            icon={Share2}
+            label="Social Posting Checklist"
+            title="Facebook and Instagram"
+            status={`${socialReadiness?.schedule.eligible_count || 0} due-ready`}
+            href="/social"
+            action="Open social"
+            items={socialPostingChecklist}
+            metrics={[
+              { label: "Providers", value: `${socialProviderReadyCount}/${socialProviderCount || 2}` },
+              { label: "Due Posts", value: `${socialReadiness?.schedule.due_count || 0}` },
+              { label: "Blocked", value: `${socialReadiness?.schedule.blocked_count || 0}` },
+            ]}
+          />
+          <MarketingChecklistCard
+            testId="marketing-ad-checklist"
+            icon={Target}
+            label="Ad Launch Checklist"
+            title="Meta Ads"
+            status={`${adLaunchReadiness?.ready_count || 0} preflight-ready`}
+            href="/ads"
+            action="Open ads"
+            items={adLaunchChecklist}
+            metrics={[
+              { label: "Ready", value: `${adLaunchReadiness?.ready_count || 0}` },
+              { label: "Blocked", value: `${adLaunchReadiness?.blocked_count || 0}` },
+              { label: "Budget", value: `Rs ${Math.round(adLaunchReadiness?.planned_budget || 0).toLocaleString()}` },
+            ]}
+          />
+        </div>
+
+        <div
+          data-testid="marketing-live-readiness-next-actions"
+          className="grid grid-cols-1 gap-3 rounded-xl border border-white/5 bg-black/25 p-4 lg:grid-cols-3"
+        >
+          {marketingNextActions.map((action, index) => (
+            <div key={`${action}-${index}`} className="flex items-start gap-3 text-sm leading-6 text-gray-400">
+              <AlertTriangle className="mt-1 h-4 w-4 shrink-0 text-yellow-300" />
+              <span>{action}</span>
+            </div>
+          ))}
+          {!marketingNextActions.length && (
+            <div className="text-sm font-semibold leading-6 text-gray-500">
+              Live-readiness checks are loading from campaign, social and ad systems.
+            </div>
+          )}
+        </div>
+      </section>
 
       <section
         data-testid="messaging-readiness-command"
@@ -1551,7 +1848,7 @@ export default function PromotionsPage() {
         </div>
       </section>
 
-      <section data-testid="campaign-send-queue" className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+      <section id="campaign-send-queue" data-testid="campaign-send-queue" className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-black uppercase tracking-widest text-orange-400">
@@ -2866,6 +3163,98 @@ function MiniSignal({
       </div>
     </div>
   );
+}
+
+function MarketingChecklistCard({
+  testId,
+  icon: Icon,
+  label,
+  title,
+  status,
+  href,
+  action,
+  metrics,
+  items,
+}: {
+  testId: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  title: string;
+  status: string;
+  href: string;
+  action: string;
+  metrics: { label: string; value: string }[];
+  items: MarketingChecklistItem[];
+}) {
+  const passedCount = items.filter((item) => item.passed).length;
+
+  return (
+    <div data-testid={testId} className="rounded-xl border border-white/5 bg-black/25 p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-widest text-sky-300">{label}</p>
+            <h3 className="mt-1 break-words text-lg font-black leading-6 text-white">{title}</h3>
+          </div>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${checkRatioClass(passedCount, items.length)}`}>
+          {passedCount}/{items.length} ready
+        </span>
+      </div>
+
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        {metrics.map((metric) => (
+          <div key={`${label}-${metric.label}`} className="rounded-lg border border-white/5 bg-white/[0.03] p-3">
+            <p className="text-[11px] font-black uppercase tracking-widest text-gray-600">{metric.label}</p>
+            <p className="mt-1 break-words text-sm font-black text-gray-200">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        {items.map((item) => (
+          <div key={`${label}-${item.label}`} className="flex items-start gap-3">
+            {item.passed ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-300" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-300" />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-black text-gray-100">{item.label}</p>
+              <p className="mt-1 break-words text-xs font-semibold leading-5 text-gray-500">{item.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-4">
+        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+          {status}
+        </span>
+        <Link
+          href={href}
+          className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
+        >
+          {action} <ExternalLink className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function checkRatioClass(passedCount: number, totalCount: number) {
+  if (passedCount === totalCount) return "bg-green-500/15 text-green-300";
+  if (passedCount >= Math.ceil(totalCount / 2)) return "bg-yellow-500/15 text-yellow-300";
+  return "bg-red-500/15 text-red-300";
+}
+
+function marketingScoreClass(score: number) {
+  if (score >= 85) return "bg-green-500/15 text-green-300";
+  if (score >= 50) return "bg-yellow-500/15 text-yellow-300";
+  return "bg-red-500/15 text-red-300";
 }
 
 function ChannelReadinessCard({
