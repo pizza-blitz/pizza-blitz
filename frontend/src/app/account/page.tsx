@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Award,
+  CheckCircle2,
   Clock,
   History,
   Mail,
@@ -76,12 +77,25 @@ type CustomerHistory = {
   orders: Order[];
 };
 
+type ProfileDraft = {
+  name: string;
+  email: string;
+  opt_in_marketing: boolean;
+};
+
 export default function CustomerAccountPage() {
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [history, setHistory] = useState<CustomerHistory | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
+    name: "",
+    email: "",
+    opt_in_marketing: true,
+  });
+  const [profileMessage, setProfileMessage] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const lookupOrdersByPhone = async (lookupPhone: string) => {
     const normalizedPhone = lookupPhone.trim();
@@ -99,16 +113,25 @@ export default function CustomerAccountPage() {
       setMessage(data.detail || "Could not find orders for this phone number.");
       return;
     }
+    persistCustomer(data.customer);
+    setProfileDraft({
+      name: data.customer.name || "",
+      email: data.customer.email || "",
+      opt_in_marketing: data.customer.opt_in_marketing ?? true,
+    });
+    setHistory(data);
+  };
+
+  const persistCustomer = (customer: CustomerHistory["customer"]) => {
     window.localStorage.setItem(
       CUSTOMER_STORAGE_KEY,
       JSON.stringify({
-        name: data.customer.name || "",
-        phone: data.customer.phone,
-        email: data.customer.email || "",
-        opt_in_marketing: data.customer.opt_in_marketing ?? true,
+        name: customer.name || "",
+        phone: customer.phone,
+        email: customer.email || "",
+        opt_in_marketing: customer.opt_in_marketing ?? true,
       })
     );
-    setHistory(data);
   };
 
   useEffect(() => {
@@ -129,6 +152,47 @@ export default function CustomerAccountPage() {
   const lookupOrders = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     lookupOrdersByPhone(phone);
+  };
+
+  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!history) return;
+    setIsSavingProfile(true);
+    setProfileMessage("");
+
+    const response = await fetch("/api/customer-profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: profileDraft.name.trim(),
+        email: profileDraft.email.trim(),
+        opt_in_marketing: profileDraft.opt_in_marketing,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    setIsSavingProfile(false);
+
+    if (!response.ok) {
+      setProfileMessage(data.detail || "Could not save customer preferences.");
+      return;
+    }
+
+    const nextCustomer = {
+      ...history.customer,
+      ...data.customer,
+      phone: data.customer.phone || history.customer.phone,
+      total_orders: history.customer.total_orders,
+      total_spend: history.customer.total_spend,
+      last_order_at: history.customer.last_order_at,
+    };
+    persistCustomer(nextCustomer);
+    setHistory({ ...history, customer: nextCustomer });
+    setProfileDraft({
+      name: nextCustomer.name || "",
+      email: nextCustomer.email || "",
+      opt_in_marketing: nextCustomer.opt_in_marketing ?? true,
+    });
+    setProfileMessage("Profile and consent preferences saved.");
   };
 
   const saveReorderDraft = (items: ReorderItem[], sourceOrderId?: number) => {
@@ -354,9 +418,126 @@ export default function CustomerAccountPage() {
               </section>
             )}
 
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-              Offers and updates: {history.customer.opt_in_marketing ? "Enabled" : "Disabled"}
-            </div>
+            <section className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-red-700">Customer Lifecycle Command</p>
+                  <h2 className="mt-1 text-2xl font-black">Profile, orders, contact and consent</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Customer account data now has a visible lifecycle: saved identity, order history, reachable channels and marketing consent.
+                  </p>
+                </div>
+                <span className="inline-flex w-fit items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-xs font-black uppercase text-emerald-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Account Active
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                <MiniMetric
+                  icon={User}
+                  label="Profile"
+                  value={history.customer.name ? "Named" : "Name missing"}
+                />
+                <MiniMetric
+                  icon={History}
+                  label="Order History"
+                  value={`${history.orders.length} visible`}
+                />
+                <MiniMetric
+                  icon={Mail}
+                  label="Email"
+                  value={history.customer.email ? "Ready" : "Missing"}
+                />
+                <MiniMetric
+                  icon={Phone}
+                  label="Consent"
+                  value={history.customer.opt_in_marketing ? "Enabled" : "Disabled"}
+                />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-12">
+                <form onSubmit={saveProfile} className="rounded-lg border border-slate-100 p-4 lg:col-span-7">
+                  <h3 className="font-black">Profile & Contact Preferences</h3>
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-widest text-slate-500">Name</span>
+                      <input
+                        value={profileDraft.name}
+                        onChange={(event) => setProfileDraft((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="Customer name"
+                        className="mt-2 w-full rounded-md border border-slate-300 px-3 py-3 text-sm outline-none focus:border-red-600"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-black uppercase tracking-widest text-slate-500">Email</span>
+                      <input
+                        type="email"
+                        value={profileDraft.email}
+                        onChange={(event) => setProfileDraft((current) => ({ ...current, email: event.target.value }))}
+                        placeholder="Email for receipts and offers"
+                        className="mt-2 w-full rounded-md border border-slate-300 px-3 py-3 text-sm outline-none focus:border-red-600"
+                      />
+                    </label>
+                  </div>
+                  <label className="mt-4 flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <input
+                      type="checkbox"
+                      checked={profileDraft.opt_in_marketing}
+                      onChange={(event) =>
+                        setProfileDraft((current) => ({
+                          ...current,
+                          opt_in_marketing: event.target.checked,
+                        }))
+                      }
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-red-700"
+                    />
+                    <span>
+                      <span className="block font-bold text-slate-900">Allow Pizza Blitz offers and updates</span>
+                      <span className="mt-1 block text-sm leading-5 text-slate-600">
+                        Consent controls promotional WhatsApp, SMS and email audiences while receipts and order updates stay available.
+                      </span>
+                    </span>
+                  </label>
+                  {profileMessage && (
+                    <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                      {profileMessage}
+                    </div>
+                  )}
+                  <button
+                    disabled={isSavingProfile}
+                    className="mt-4 rounded-md bg-slate-950 px-5 py-3 text-sm font-black text-white hover:bg-red-700 disabled:bg-slate-300"
+                  >
+                    {isSavingProfile ? "Saving" : "Save Profile"}
+                  </button>
+                </form>
+
+                <div className="rounded-lg border border-slate-100 p-4 lg:col-span-5">
+                  <h3 className="font-black">Consent Ledger</h3>
+                  <div className="mt-4 space-y-3">
+                    <PreferenceRow
+                      label="Phone order updates"
+                      value="Always on"
+                      detail={history.customer.phone}
+                    />
+                    <PreferenceRow
+                      label="Email receipts"
+                      value={history.customer.email ? "Ready" : "Missing"}
+                      detail={history.customer.email || "Add email to activate"}
+                    />
+                    <PreferenceRow
+                      label="Promotional audiences"
+                      value={history.customer.opt_in_marketing ? "Allowed" : "Suppressed"}
+                      detail={
+                        history.customer.opt_in_marketing
+                          ? "Eligible for offers and loyalty campaigns"
+                          : "Excluded from promotional sends"
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <div className="space-y-4">
               {history.orders.map((order) => (
@@ -463,6 +644,28 @@ function Detail({ label, value }: { label: string; value: string }) {
     <div className="rounded-md bg-slate-50 p-3">
       <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
       <p className="mt-1 font-bold">{value}</p>
+    </div>
+  );
+}
+
+function PreferenceRow({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-md bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-bold text-slate-900">{label}</p>
+        <span className="rounded-md bg-white px-2 py-1 text-xs font-black uppercase text-slate-600">
+          {value}
+        </span>
+      </div>
+      <p className="mt-1 text-sm leading-5 text-slate-600">{detail}</p>
     </div>
   );
 }

@@ -56,6 +56,12 @@ class CustomerUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class CustomerSelfUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    opt_in_marketing: Optional[bool] = None
+
+
 def serialize_customer(customer: Customer) -> dict:
     return {
         "id": customer.id,
@@ -488,6 +494,39 @@ def customer_retention(
         ),
         "customers": retention_rows[:limit],
     }
+
+
+@router.patch("/profile")
+def update_customer_profile(
+    payload: CustomerSelfUpdate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("customer")),
+):
+    phone = (session.get("phone") or "").strip()
+    if not phone and str(session.get("subject") or "").startswith("customer:"):
+        phone = str(session["subject"]).split("customer:", 1)[1].strip()
+    if not phone:
+        raise HTTPException(status_code=401, detail="Customer session phone is required.")
+
+    customer = db.query(Customer).filter(Customer.phone == phone).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer profile was not found.")
+
+    updates = (
+        payload.model_dump(exclude_unset=True)
+        if hasattr(payload, "model_dump")
+        else payload.dict(exclude_unset=True)
+    )
+    if "name" in updates:
+        customer.name = updates["name"].strip() if updates["name"] else None
+    if "email" in updates:
+        customer.email = updates["email"].strip() if updates["email"] else None
+    if "opt_in_marketing" in updates:
+        customer.opt_in_marketing = bool(updates["opt_in_marketing"])
+
+    db.commit()
+    db.refresh(customer)
+    return serialize_customer(customer)
 
 
 @router.patch("/{customer_id}")

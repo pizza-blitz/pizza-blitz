@@ -53,18 +53,18 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "84%",
-    note: "Internal beta with authentication hardening now visible",
+    value: "86%",
+    note: "Internal beta with customer account lifecycle now visible",
   },
   {
     label: "Marketing Engine",
-    value: "84%",
-    note: "Campaigns, queues, ROI, social and ads are largely working",
+    value: "86%",
+    note: "Campaigns, consent, queues, ROI, social and ads are largely working",
   },
   {
     label: "Production Readiness",
-    value: "67%",
-    note: "Admin-only security overview, role gates and recovery controls are now tracked",
+    value: "69%",
+    note: "Customer profile, order history and consent controls are now tracked",
   },
   {
     label: "Target Date",
@@ -154,6 +154,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Security overview is now admin-only, Settings shows role gates, account recovery controls and audit controls, and browser/API proof covers admin, staff and customer boundaries.",
   },
+  {
+    title: "Customer account lifecycle",
+    status: "done",
+    value: "Customer account now has editable profile/contact preferences, consent ledger, visible order history, loyalty context and a signed profile update path.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -164,8 +169,13 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Customer account lifecycle and consent",
+    status: "done",
+    value: "Customer profile, order history, contact preferences and consent states are now visible and updateable after checkout.",
+  },
+  {
+    title: "Real WhatsApp/SMS/email readiness",
     status: "active",
-    value: "Polish customer profile, order history, contact preferences and consent states after checkout.",
+    value: "Move campaign sending from dry-run controls toward provider setup, template compliance and safe test-send workflow.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -372,18 +382,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "2 Jun 2026",
     focus: "Customer account lifecycle",
-    status: "active",
+    status: "done",
     planned: [
       "Customer profile polish",
       "Order history visibility",
       "Contact and consent management",
     ],
-    output: "Customer login becomes useful after checkout, not just a gate.",
+    output: "Customer profile editing, contact preferences, consent ledger, order history visibility and browser proof were completed.",
   },
   {
     date: "3 Jun 2026",
     focus: "Real WhatsApp/SMS/email readiness",
-    status: "planned",
+    status: "active",
     planned: [
       "Provider setup panels",
       "Template compliance states",
@@ -899,7 +909,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Customer account lifecycle: customer profile polish, order history visibility, contact preferences and consent management."
+          text="Real WhatsApp/SMS/email readiness: provider setup panels, template compliance states and safe test-send workflow."
         />
       </section>
     </div>

@@ -98,7 +98,8 @@ async function main() {
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("QA command board, route audit matrix", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Customer account lifecycle", { exact: true }).first().waitFor({ timeout: 15000 });
-    await page.getByText("Customer account lifecycle: customer profile polish", {
+    await page.getByText("Real WhatsApp/SMS/email readiness", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Real WhatsApp/SMS/email readiness: provider setup panels", {
       exact: false,
     }).waitFor({ timeout: 15000 });
 
