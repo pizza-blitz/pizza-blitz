@@ -581,6 +581,7 @@ export default function PublicOrderPage() {
     orderId && customerPhone.trim()
       ? `/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`
       : "/account";
+  const receiptHref = trackingHref;
 
   useEffect(() => {
     if (orderType !== "delivery") {
@@ -1236,12 +1237,30 @@ export default function PublicOrderPage() {
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4" /> Order #{orderId} {pendingPayment ? "created" : "confirmed"}
                 </div>
-                <Link
-                  href={trackingHref}
-                  className="mt-2 inline-flex text-sm font-black text-green-900 underline"
-                >
-                  Track this order
-                </Link>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-md border border-green-200 bg-white px-3 py-2">
+                    <p className="font-black uppercase text-green-900">Kitchen</p>
+                    <p className="mt-1 font-semibold text-green-700">Sent to operations</p>
+                  </div>
+                  <div className="rounded-md border border-green-200 bg-white px-3 py-2">
+                    <p className="font-black uppercase text-green-900">Bill</p>
+                    <p className="mt-1 font-semibold text-green-700">Receipt ready</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Link
+                    href={trackingHref}
+                    className="inline-flex text-sm font-black text-green-900 underline"
+                  >
+                    Track this order
+                  </Link>
+                  <Link
+                    href={receiptHref}
+                    className="inline-flex text-sm font-black text-green-900 underline"
+                  >
+                    View receipt
+                  </Link>
+                </div>
               </div>
             )}
 

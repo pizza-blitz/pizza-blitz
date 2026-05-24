@@ -94,6 +94,39 @@ type DeliveryQueueSummary = {
   payment_due_count: number;
 };
 
+type OrderFlowRow = {
+  id: number;
+  stage: string;
+  status: string;
+  payment_due: boolean;
+  ready_to_close: boolean;
+  receipt_ready: boolean;
+  invoice_generated: boolean;
+  customized: boolean;
+  customized_line_count: number;
+  receipt_url: string;
+  next_action: string;
+};
+
+type OrderFlowReadiness = {
+  summary: {
+    today_order_count: number;
+    active_order_count: number;
+    open_count: number;
+    preparing_count: number;
+    ready_count: number;
+    ready_to_close_count: number;
+    payment_due_count: number;
+    receipt_ready_count: number;
+    customized_line_count: number;
+    closed_count: number;
+  };
+  orders: OrderFlowRow[];
+  ready_to_close: OrderFlowRow[];
+  payment_due: OrderFlowRow[];
+  next_actions: string[];
+};
+
 const filters = [
   { id: "active", label: "Active" },
   { id: "open", label: "New" },
@@ -150,6 +183,12 @@ function itemSummary(item: OrderItem) {
     : `${item.quantity}x ${item.name}`;
 }
 
+function flowStepClass(isComplete: boolean, isCurrent: boolean) {
+  if (isComplete) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (isCurrent) return "border-orange-200 bg-orange-50 text-orange-700";
+  return "border-slate-200 bg-slate-50 text-slate-400";
+}
+
 export default function OperationsPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState("active");
@@ -157,6 +196,7 @@ export default function OperationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [deliveryQueueSummary, setDeliveryQueueSummary] = useState<DeliveryQueueSummary | null>(null);
+  const [orderFlow, setOrderFlow] = useState<OrderFlowReadiness | null>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
 
@@ -171,6 +211,10 @@ export default function OperationsPage() {
   );
   const addressReviewOrders = deliveryOrders.filter(
     (order) => order.requires_address_review || order.address_validation?.requires_review
+  );
+  const orderFlowById = useMemo(
+    () => new Map((orderFlow?.orders || []).map((row) => [row.id, row])),
+    [orderFlow]
   );
 
   const stats = useMemo(() => {
@@ -235,7 +279,7 @@ export default function OperationsPage() {
   const fetchOrders = async (options?: { preserveMessage?: boolean }) => {
     setIsLoading(true);
     try {
-      const [response, queueResponse] = await Promise.all([
+      const [response, queueResponse, flowResponse] = await Promise.all([
         fetch(`${ORDERS_API}/today`, {
           cache: "no-store",
           credentials: "include",
@@ -244,16 +288,23 @@ export default function OperationsPage() {
           cache: "no-store",
           credentials: "include",
         }),
+        fetch(`${ORDERS_API}/flow-readiness`, {
+          cache: "no-store",
+          credentials: "include",
+        }),
       ]);
       const data = await response.json();
       const queueData = await queueResponse.json();
+      const flowData = await flowResponse.json();
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
       if (!queueResponse.ok) throw new Error(queueData.detail || "Could not load delivery queue.");
+      if (!flowResponse.ok) throw new Error(flowData.detail || "Could not load order flow.");
 
       const queueById = new Map<number, any>(
         (queueData.orders || []).map((order: any) => [order.id, order])
       );
       setDeliveryQueueSummary(queueData.summary || null);
+      setOrderFlow(flowData || null);
       setOrders(
         (data.orders || []).map((order: Order) => {
           const queueOrder = queueById.get(order.id);
@@ -512,6 +563,60 @@ export default function OperationsPage() {
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
+            <h2 className="text-lg font-black text-gray-950">Order Flow Watch</h2>
+            <p className="text-sm text-gray-500">
+              Close-ready orders, payment blockers, receipts and handoff actions.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilter("ready")}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-black text-emerald-700 hover:bg-emerald-100"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Ready To Close
+            </button>
+            <button
+              onClick={() => setFilter("payment_due")}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-black text-amber-700 hover:bg-amber-100"
+            >
+              <CreditCard className="h-4 w-4" />
+              Payment Blocks
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {[
+            ["Active Orders", orderFlow?.summary.active_order_count ?? activeOrders.length, "text-gray-950"],
+            ["Ready To Close", orderFlow?.summary.ready_to_close_count ?? stats.ready, "text-emerald-700"],
+            ["Payment Blocks", orderFlow?.summary.payment_due_count ?? paymentDueOrders.length, "text-amber-700"],
+            ["Receipts Ready", orderFlow?.summary.receipt_ready_count ?? activeOrders.length, "text-sky-700"],
+            ["Custom Lines", orderFlow?.summary.customized_line_count ?? 0, "text-violet-700"],
+            ["Closed Today", orderFlow?.summary.closed_count ?? 0, "text-slate-700"],
+          ].map(([label, value, tone]) => (
+            <div key={label} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-gray-500">{label}</p>
+              <p className={`mt-2 text-2xl font-black ${tone}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+            Flow Next Actions
+          </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {(orderFlow?.next_actions || ["Loading order-flow actions."]).map((action) => (
+              <p key={action} className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                {action}
+              </p>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
             <h2 className="text-lg font-black text-gray-950">Delivery Dispatch Board</h2>
             <p className="text-sm text-gray-500">
               Rider assignment health for active delivery orders.
@@ -709,6 +814,33 @@ export default function OperationsPage() {
                 (order.payment_method || "").toLowerCase() === "prepaid" &&
                 order.payment_status !== "paid";
               const canClose = order.status !== "closed" && !isPrepaidDue;
+              const flow = orderFlowById.get(order.id);
+              const flowSteps = [
+                {
+                  key: "received",
+                  label: "Received",
+                  complete: true,
+                  current: order.status === "open",
+                },
+                {
+                  key: "prep",
+                  label: "Prep",
+                  complete: ["preparing", "ready", "closed"].includes(order.status),
+                  current: order.status === "preparing",
+                },
+                {
+                  key: "ready",
+                  label: "Ready",
+                  complete: ["ready", "closed"].includes(order.status),
+                  current: order.status === "ready",
+                },
+                {
+                  key: "closed",
+                  label: "Closed",
+                  complete: order.status === "closed",
+                  current: false,
+                },
+              ];
               const primaryLocation = order.table_number
                 ? `Table ${order.table_number}`
                 : (order.fulfillment_type || order.order_type).replace("-", " ");
@@ -752,6 +884,21 @@ export default function OperationsPage() {
                       .map((item) => itemSummary(item))
                       .join(" | ")}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {flowSteps.map((step) => (
+                      <span
+                        key={`${order.id}-${step.key}`}
+                        className={`rounded-md border px-2 py-1 text-[11px] font-black uppercase ${flowStepClass(step.complete, step.current)}`}
+                      >
+                        {step.label}
+                      </span>
+                    ))}
+                  </div>
+                  {flow?.next_action && (
+                    <p className="mt-2 text-xs font-semibold text-slate-500">
+                      Flow: {flow.next_action}
+                    </p>
+                  )}
                   {order.delivery_address && (
                     <p className="mt-2 flex items-center gap-1 truncate text-xs font-semibold text-gray-500">
                       <MapPin className="h-3.5 w-3.5 text-red-600" />

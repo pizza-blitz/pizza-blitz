@@ -451,6 +451,80 @@ def serialize_payment_queue_order(order: RestaurantOrder) -> dict:
     }
 
 
+def order_has_customization(order: RestaurantOrder) -> bool:
+    return any(
+        bool((item or {}).get("selected_options"))
+        for item in (order.items or [])
+        if isinstance(item, dict)
+    )
+
+
+def order_payment_due(order: RestaurantOrder) -> bool:
+    return (
+        (order.payment_method or "").lower() == "prepaid"
+        and (order.payment_status or "").lower() != "paid"
+    )
+
+
+def order_flow_stage(order: RestaurantOrder) -> str:
+    if order.status == "closed":
+        return "closed"
+    if order_payment_due(order):
+        return "payment_due"
+    if order.status == "ready":
+        return "ready_to_close"
+    if order.status == "preparing":
+        return "kitchen"
+    return "received"
+
+
+def serialize_order_flow_row(order: RestaurantOrder, invoice_ids: set[int]) -> dict:
+    metadata = order_metadata(order)
+    payment_due = order_payment_due(order)
+    ready_to_close = order.status == "ready" and not payment_due
+    customized = order_has_customization(order)
+    stage = order_flow_stage(order)
+    if ready_to_close:
+        next_action = "Print receipt and close after customer handoff."
+    elif payment_due:
+        next_action = "Confirm prepaid payment before closing."
+    elif order.status == "open":
+        next_action = "Move order to preparing when kitchen starts."
+    elif order.status == "preparing":
+        next_action = "Mark ready when the kitchen finishes."
+    elif order.status == "closed":
+        next_action = "Order is closed."
+    else:
+        next_action = order_next_action(order)
+
+    return {
+        "id": order.id,
+        "stage": stage,
+        "status": order.status,
+        "source": metadata["source"],
+        "fulfillment_type": metadata["fulfillment_type"],
+        "customer_name": order.customer_name,
+        "customer_phone": order.customer_phone,
+        "total_amount": round(float(order.total_amount or 0), 2),
+        "payment_status": order.payment_status,
+        "payment_method": order.payment_method,
+        "payment_due": payment_due,
+        "ready_to_close": ready_to_close,
+        "receipt_ready": order.id not in invoice_ids,
+        "invoice_generated": order.id in invoice_ids,
+        "customized": customized,
+        "customized_line_count": sum(
+            1
+            for item in (order.items or [])
+            if isinstance(item, dict) and item.get("selected_options")
+        ),
+        "eta_window": order_eta_window(order),
+        "receipt_url": f"/receipt/{order.id}",
+        "next_action": next_action,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+    }
+
+
 def payment_production_next_actions(
     *,
     active_provider: dict,
@@ -1242,6 +1316,63 @@ def todays_orders(
             for row in rows
         ],
         "total_collected_today": total,
+    }
+
+
+@router.get("/flow-readiness")
+def order_flow_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    rows = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.date == date.today())
+        .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
+        .all()
+    )
+    invoice_ids = {
+        int(invoice.order_id)
+        for invoice in db.query(Invoice.order_id).filter(Invoice.order_id.isnot(None)).all()
+        if invoice.order_id is not None
+    }
+    flow_rows = [serialize_order_flow_row(order, invoice_ids) for order in rows]
+    active_rows = [row for row in flow_rows if row["status"] != "closed"]
+    ready_to_close_rows = [row for row in active_rows if row["ready_to_close"]]
+    payment_due_rows = [row for row in active_rows if row["payment_due"]]
+    customized_rows = [row for row in flow_rows if row["customized"]]
+
+    next_actions: list[str] = []
+    if payment_due_rows:
+        next_actions.append(f"Confirm payment for {len(payment_due_rows)} prepaid order(s).")
+    if ready_to_close_rows:
+        next_actions.append(f"Print receipt and close {len(ready_to_close_rows)} ready order(s).")
+    preparing_count = sum(1 for row in active_rows if row["status"] == "preparing")
+    open_count = sum(1 for row in active_rows if row["status"] == "open")
+    if open_count:
+        next_actions.append(f"Start kitchen prep for {open_count} newly received order(s).")
+    if preparing_count:
+        next_actions.append(f"Move {preparing_count} preparing order(s) to ready when finished.")
+    if not next_actions:
+        next_actions.append("No active order-flow blockers right now.")
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "today_order_count": len(flow_rows),
+            "active_order_count": len(active_rows),
+            "open_count": open_count,
+            "preparing_count": preparing_count,
+            "ready_count": sum(1 for row in active_rows if row["status"] == "ready"),
+            "ready_to_close_count": len(ready_to_close_rows),
+            "payment_due_count": len(payment_due_rows),
+            "receipt_ready_count": sum(1 for row in active_rows if row["receipt_ready"]),
+            "customized_line_count": sum(row["customized_line_count"] for row in customized_rows),
+            "closed_count": sum(1 for row in flow_rows if row["status"] == "closed"),
+        },
+        "orders": flow_rows,
+        "ready_to_close": ready_to_close_rows[:8],
+        "payment_due": payment_due_rows[:8],
+        "next_actions": next_actions,
     }
 
 

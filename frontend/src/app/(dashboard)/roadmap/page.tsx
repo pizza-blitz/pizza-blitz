@@ -37,8 +37,8 @@ type DailyPlan = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "78%",
-    note: "Internal beta with product customization command now visible",
+    value: "80%",
+    note: "Internal beta with order-flow handoffs now visible",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +47,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "57%",
-    note: "Server-priced customization, receipt lines and kitchen labels are now proofed",
+    value: "59%",
+    note: "Receipt handoff, close-ready queue and payment blockers are now surfaced",
   },
   {
     label: "Target Date",
@@ -119,6 +119,11 @@ const completedValue: RoadmapItem[] = [
     value: "Sizes, crusts, toppings, add-ons, combos and sauces are now tracked through readiness, server pricing, cart, POS, operations and receipts.",
   },
   {
+    title: "Order flow polish",
+    status: "done",
+    value: "Customers now get receipt handoff after order placement, while staff see close-ready orders, payment blockers, receipt readiness and status trails.",
+  },
+  {
     title: "Payment, delivery, roles and production proofs",
     status: "done",
     value: "E2E proof files exist for payment readiness, delivery zones, role gates and production operations.",
@@ -142,9 +147,9 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
   },
   {
-    title: "Order flow polish",
+    title: "Weekly stabilization and proof suite",
     status: "planned",
-    value: "Clean order status transitions, receipt handoff, staff ergonomics and small broken-flow fixes before beta demos.",
+    value: "Run full browser proofs, fix overflow or broken handoffs, and stabilize the first week of beta work.",
   },
   {
     title: "Real provider sending and sync",
@@ -313,18 +318,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "30 May 2026",
     focus: "Order flow polish",
-    status: "active",
+    status: "done",
     planned: [
       "Clean order status transitions",
       "Polish receipts",
       "Improve staff order ergonomics",
     ],
-    output: "Counter and customer order flows become smoother for beta demos.",
+    output: "Order-flow watch, receipt handoff, ready-to-close visibility and status trails were completed.",
   },
   {
     date: "31 May 2026",
     focus: "Weekly stabilization",
-    status: "planned",
+    status: "active",
     planned: [
       "Run browser proof suite",
       "Fix UI overflow or broken flows",
@@ -724,7 +729,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Order flow polish: cleaner status transitions, receipt handoff, staff ergonomics and full browser walkthrough stability."
+          text="Weekly stabilization: run the broader browser proof suite, fix broken flows, check visual overflow and refresh roadmap status."
         />
       </section>
     </div>
