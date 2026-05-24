@@ -9,6 +9,7 @@ from app.services.ops_service import (
     final_acceptance_report,
     launch_candidate_report,
     list_backups,
+    live_environment_report,
     production_launch_report,
     readiness_report,
 )
@@ -62,6 +63,14 @@ def production_launch_readiness(
     session: dict = Depends(require_roles("admin")),
 ):
     return production_launch_report(db)
+
+
+@router.get("/live-environment")
+def live_environment_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    return live_environment_report(db)
 
 
 @router.get("/backups")

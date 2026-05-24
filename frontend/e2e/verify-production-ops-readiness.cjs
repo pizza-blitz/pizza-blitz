@@ -127,6 +127,14 @@ async function screenshotProductionOps() {
 
     const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByTestId("live-environment-execution-command").waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Live Environment Execution Command" }).waitFor({ timeout: 15000 });
+    await page.getByTestId("credential-cutover-phase").waitFor({ timeout: 15000 });
+    await page.getByTestId("database-migration-phase").waitFor({ timeout: 15000 });
+    await page.getByTestId("secret-sync-phase").waitFor({ timeout: 15000 });
+    await page.getByTestId("restore-rehearsal-phase").waitFor({ timeout: 15000 });
+    await page.getByTestId("public-host-smoke-phase").waitFor({ timeout: 15000 });
+    await page.getByTestId("go-no-go-checkpoint").waitFor({ timeout: 15000 });
     await page.getByTestId("production-launch-integrations-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Production Launch Integrations Command" }).waitFor({ timeout: 15000 });
     await page.getByTestId("live-credentials-lane").waitFor({ timeout: 15000 });
@@ -263,6 +271,17 @@ async function main() {
   assert(
     productionLaunch.data.lanes.some((lane) => lane.key === "production_smoke"),
     "Production launch report did not include production smoke."
+  );
+
+  const liveEnvironment = await adminJson("/api/v1/restaurant/ops/live-environment", cookie);
+  assert(liveEnvironment.response.ok, `Live environment report failed: ${JSON.stringify(liveEnvironment.data)}`);
+  assert(
+    liveEnvironment.data.phases.some((phase) => phase.key === "credential_cutover"),
+    "Live environment report did not include credential cutover."
+  );
+  assert(
+    liveEnvironment.data.cutover_windows.some((window) => window.key === "rollback"),
+    "Live environment report did not include rollback window."
   );
 
   await screenshotProductionOps();

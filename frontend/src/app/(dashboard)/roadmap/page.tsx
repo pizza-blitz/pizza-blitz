@@ -205,6 +205,11 @@ const completedValue: RoadmapItem[] = [
     value: "Production Ops now combines live credentials, managed database, backup/restore, deployment secrets and production smoke into one launch command board.",
   },
   {
+    title: "Live environment execution command",
+    status: "done",
+    value: "Production Ops now shows credential cutover, managed database migration, secret sync, restore rehearsal, public-host smoke and go/no-go signoff in one execution board.",
+  },
+  {
     title: "Full customer order E2E",
     status: "done",
     value: "Customer order journey now proves menu, customization, checkout, receipt link, tracking link and backend order handoff.",
@@ -339,8 +344,13 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Live environment execution",
+    status: "done",
+    value: "Credential cutover, DB migration, secret sync, restore rehearsal, cutover windows and go/no-go evidence are now visible in Production Ops.",
+  },
+  {
+    title: "Real credential activation and provider smoke",
     status: "planned",
-    value: "Use real provider credentials, managed database URL, deployment secrets and live host smoke tests to move from readiness to public launch execution.",
+    value: "Enter real gateway, messaging, social and ad credentials, then run low-value checkout, webhook, campaign, social and ad sync smoke against the live host.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -764,13 +774,24 @@ const june20Push: DailyPlan[] = [
     ],
     output: "Production Ops now shows live credentials, managed database, backup/restore, deployment secrets, launch blockers and production smoke in one command board.",
   },
+  {
+    date: "20 Jun 2026",
+    focus: "Live environment execution",
+    status: "done",
+    planned: [
+      "Credential cutover phases",
+      "Cutover window and rollback plan",
+      "Go/no-go evidence",
+    ],
+    output: "Live Environment Execution now shows credential cutover, DB migration, secret sync, restore rehearsal, public-host smoke, blockers and go/no-go signoff.",
+  },
 ];
 
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "27",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "28",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -780,12 +801,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Production launch integrations, beta delivery, final acceptance, launch candidate hardening, data quality export, marketing live-readiness and operational command board are now proof-backed.",
+    note: "Live environment execution, production launch integrations, beta delivery, final acceptance, launch candidate hardening, data quality export, marketing live-readiness and operational command board are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Live Environment",
-    note: "The next track is executing the real host setup with live credentials, managed database migration, restore rehearsal and production smoke.",
+    value: "Credential Activation",
+    note: "The next track is real provider credentials, low-value payment/webhook proof, campaign send smoke, social posting smoke and ad sync smoke.",
   },
 ];
 
@@ -952,6 +973,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-production-launch-integrations-command.png",
   },
   {
+    area: "Live environment execution",
+    proof: "verify-live-environment-execution.cjs",
+    status: "passed",
+    value: "Credential cutover, DB migration, secret sync, restore rehearsal, public-host smoke and go/no-go evidence stay visible in Production Ops.",
+    artifact: "visible-live-environment-execution-command.png",
+  },
+  {
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
@@ -984,7 +1012,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "27 / 27",
+    value: "28 / 28",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -999,8 +1027,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Live Environment",
-    note: "The next work slice should execute real credentials, managed database migration, backup restore rehearsal and production smoke on the live host.",
+    value: "Credential Activation",
+    note: "The next work slice should activate real provider credentials and run low-value payment, webhook, campaign, social and ad smoke against the live host.",
   },
 ];
 
@@ -1092,8 +1120,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Live environment execution handoff",
+    status: "done",
+    value: "Production Ops now shows the real provider, managed database, backup restore, deployment secret and public-host smoke execution sequence.",
+  },
+  {
+    title: "Credential activation handoff",
     status: "active",
-    value: "Next slice should run the real provider, managed database, backup restore, deployment secret and public-host smoke sequence.",
+    value: "Next slice should use real provider credentials and run payment/webhook, campaign, social and ad smoke checks against the live host.",
   },
 ];
 
@@ -1443,7 +1476,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Live environment execution: apply real credentials, managed database migration, backup restore rehearsal, deployment secrets and public-host smoke."
+          text="Credential activation: enter real gateway, messaging, social and ad credentials, then run payment/webhook, campaign, social and ad smoke on the live host."
         />
       </section>
     </div>

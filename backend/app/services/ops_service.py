@@ -1533,6 +1533,325 @@ def production_launch_report(db: Session) -> dict:
     }
 
 
+def live_environment_report(db: Session) -> dict:
+    readiness = readiness_report(db)
+    production_launch = production_launch_report(db)
+    production_plan = readiness.get("production_database_plan") or {}
+    security_plan = readiness.get("environment_security_plan") or {}
+    deployment_plan = readiness.get("deployment_pipeline_plan") or {}
+    backup_freshness = readiness.get("backup_freshness") or {}
+    environment_summary = readiness.get("environment_summary") or {}
+    lane_by_key = {lane["key"]: lane for lane in production_launch.get("lanes", [])}
+
+    phases = [
+        {
+            "key": "credential_cutover",
+            "title": "Credential Cutover",
+            "status": lane_by_key.get("live_credentials", {}).get("status", "warn"),
+            "owner": "Admin / provider accounts",
+            "goal": "Replace local/manual provider modes with live payment, messaging, social and ad credentials in the deployment secret store.",
+            "steps": [
+                {
+                    "key": "payment_live_credentials",
+                    "label": "Apply live payment credentials",
+                    "status": _gate_status(lane_by_key.get("live_credentials", {}).get("steps"), "payment_gateway"),
+                    "owner": "Admin / payment provider",
+                    "command": "Set PAYMENT_PROVIDER plus Cashfree/Razorpay checkout and webhook secrets",
+                    "proof": "verify-payment-production-pass.cjs",
+                    "detail": "Live checkout and webhook secrets must replace manual mode before paid public orders.",
+                },
+                {
+                    "key": "message_live_credentials",
+                    "label": "Apply WhatsApp/SMS/email credentials",
+                    "status": _gate_status(lane_by_key.get("live_credentials", {}).get("steps"), "message_providers"),
+                    "owner": "Marketing / provider accounts",
+                    "command": "Set CAMPAIGN_SEND_ENABLED=true with provider API keys and sender IDs",
+                    "proof": "verify-messaging-readiness.cjs",
+                    "detail": "Campaign channels should have real provider tokens and compliant templates before live sends.",
+                },
+                {
+                    "key": "meta_live_credentials",
+                    "label": "Apply social and ad credentials",
+                    "status": _gate_status(lane_by_key.get("live_credentials", {}).get("steps"), "social_and_ads"),
+                    "owner": "Marketing / Meta business",
+                    "command": "Set social publish and Meta Ads account tokens",
+                    "proof": "verify-social-publishing-readiness.cjs + verify-ad-provider-sync.cjs",
+                    "detail": "Facebook, Instagram and Meta Ads credentials should be present before automated posts or ad sync.",
+                },
+            ],
+        },
+        {
+            "key": "database_migration",
+            "title": "Database Migration",
+            "status": lane_by_key.get("managed_database", {}).get("status", "warn"),
+            "owner": "Engineering / database owner",
+            "goal": "Move from local SQLite to the managed PostgreSQL-compatible database and prove schema/data readiness.",
+            "steps": [
+                {
+                    "key": "freeze_local_writes",
+                    "label": "Freeze local writes",
+                    "status": "warn",
+                    "owner": "Engineering",
+                    "command": "Schedule a short cutover window and stop local write traffic",
+                    "proof": "launch runbook note",
+                    "detail": "Avoid order/customer drift while production data is migrated and smoke tested.",
+                },
+                {
+                    "key": "run_migrations",
+                    "label": "Run Alembic migrations",
+                    "status": _gate_status(production_plan.get("migration_steps"), "run_migrations"),
+                    "owner": "Engineering",
+                    "command": "alembic upgrade head",
+                    "proof": "verify-production-database-path.cjs",
+                    "detail": "Run the latest schema migration against the managed database URL.",
+                },
+                {
+                    "key": "seed_baseline",
+                    "label": "Seed launch baseline",
+                    "status": _gate_status(production_plan.get("migration_steps"), "seed_baseline"),
+                    "owner": "Operations / engineering",
+                    "command": "Load menu, customization, delivery zones and launch users",
+                    "proof": "verify-full-customer-order-e2e.cjs",
+                    "detail": "Production must contain verified menu, delivery and admin/staff baseline data.",
+                },
+            ],
+        },
+        {
+            "key": "secret_sync",
+            "title": "Secret Sync",
+            "status": lane_by_key.get("deployment_secrets", {}).get("status", "warn"),
+            "owner": "Engineering / deployment owner",
+            "goal": "Put required environment values into the live host and verify that sensitive values stay masked.",
+            "steps": [
+                {
+                    "key": "host_secret_store",
+                    "label": "Set deployment host secrets",
+                    "status": _gate_status(security_plan.get("deployment_env"), "host_secret_store"),
+                    "owner": "Engineering",
+                    "command": "Set required environment values in the deployment host secret manager",
+                    "proof": "verify-environment-secrets-security.cjs",
+                    "detail": "Required env vars should be set outside source files and never printed in readiness responses.",
+                },
+                {
+                    "key": "cors_live_origin",
+                    "label": "Pin live CORS origin",
+                    "status": _gate_status(security_plan.get("deployment_env"), "cors_origins"),
+                    "owner": "Engineering",
+                    "command": "Set BACKEND_CORS_ORIGINS to the public frontend domain",
+                    "proof": "verify-production-ops-readiness.cjs",
+                    "detail": "Credentialed browser calls must use explicit live origins, not wildcard CORS.",
+                },
+                {
+                    "key": "session_rotation",
+                    "label": "Rotate session secrets",
+                    "status": _gate_status(security_plan.get("rotation_drill"), "session_rotation"),
+                    "owner": "Engineering",
+                    "command": "Rotate AUTH_SECRET_KEY and PIZZA_BLITZ_SESSION_SECRET before public traffic",
+                    "proof": "verify-environment-secrets-security.cjs",
+                    "detail": "Live launch should not reuse local/default auth or portal session secrets.",
+                },
+            ],
+        },
+        {
+            "key": "restore_rehearsal",
+            "title": "Restore Rehearsal",
+            "status": lane_by_key.get("backup_restore", {}).get("status", "warn"),
+            "owner": "Operations / engineering",
+            "goal": "Create a backup or managed snapshot, restore into a clean environment and prove the recovery path.",
+            "steps": [
+                {
+                    "key": "fresh_backup",
+                    "label": "Create fresh backup or snapshot",
+                    "status": backup_freshness.get("status", "warn"),
+                    "owner": "Operations",
+                    "command": "Create managed DB snapshot or run the backup command before deploy",
+                    "proof": "verify-data-quality-export-command.cjs",
+                    "detail": backup_freshness.get("detail") or "A successful backup or managed snapshot proof is required.",
+                },
+                {
+                    "key": "restore_clean_db",
+                    "label": "Restore into clean database",
+                    "status": _gate_status(production_plan.get("backup_restore_drill"), "restore_rehearsal"),
+                    "owner": "Engineering",
+                    "command": "Restore the latest backup into a clean database and run smoke checks",
+                    "proof": "restore rehearsal evidence",
+                    "detail": "A restore rehearsal proves the rollback path before real customer traffic.",
+                },
+                {
+                    "key": "rollback_window",
+                    "label": "Confirm rollback window",
+                    "status": _gate_status(production_plan.get("backup_restore_drill"), "rollback_window"),
+                    "owner": "Launch captain",
+                    "command": "Document latest backup location, recovery owner and rollback deadline",
+                    "proof": "launch runbook note",
+                    "detail": "Rollback ownership must be explicit during the first live ordering window.",
+                },
+            ],
+        },
+        {
+            "key": "public_host_smoke",
+            "title": "Public Host Smoke",
+            "status": lane_by_key.get("production_smoke", {}).get("status", "warn"),
+            "owner": "Launch captain",
+            "goal": "Deploy the live host and prove customer, staff, admin and roadmap paths against the public environment.",
+            "steps": [
+                {
+                    "key": "frontend_build",
+                    "label": "Run final production build",
+                    "status": _gate_status(deployment_plan.get("build_gate"), "frontend_build"),
+                    "owner": "Engineering",
+                    "command": "npm run build",
+                    "proof": "npm run build",
+                    "detail": "The optimized frontend build must pass immediately before promotion.",
+                },
+                {
+                    "key": "deploy_live_host",
+                    "label": "Deploy live host",
+                    "status": _gate_status(deployment_plan.get("release_steps"), "promote_release"),
+                    "owner": "Launch captain",
+                    "command": "Promote release after build, migration, backup and secret checks",
+                    "proof": "verify-deployment-pipeline.cjs",
+                    "detail": "Deploy only after the release checklist is green and rollback ownership is known.",
+                },
+                {
+                    "key": "customer_staff_smoke",
+                    "label": "Run customer and staff smoke",
+                    "status": production_launch.get("status", "warn"),
+                    "owner": "Launch captain",
+                    "command": "Run checkout, counter order, delivery, ops and roadmap E2E proofs against the live URL",
+                    "proof": "verify-live-environment-execution.cjs",
+                    "detail": "The public host must prove customer checkout, staff POS, delivery, Ops and Roadmap paths together.",
+                },
+            ],
+        },
+    ]
+
+    phase_status = _rollup_status(phases)
+    blockers = [
+        {
+            "key": blocker.get("key", f"live_blocker_{index + 1}"),
+            "label": blocker.get("label", "Live environment blocker"),
+            "status": blocker.get("status", "warn"),
+            "detail": blocker.get("detail"),
+        }
+        for index, blocker in enumerate(production_launch.get("blockers", []))
+    ]
+    for missing_name in environment_summary.get("missing_required", []):
+        blockers.append(
+            {
+                "key": f"missing_env_{missing_name.lower()}",
+                "label": "Missing required environment",
+                "status": "warn",
+                "detail": f"{missing_name} must be set in the live deployment environment.",
+            }
+        )
+
+    evidence = [
+        {
+            "key": "live_environment_command",
+            "label": "Live environment execution command",
+            "status": "pass",
+            "proof": "verify-live-environment-execution.cjs",
+            "artifact": "visible-live-environment-execution-command.png",
+            "detail": "This board proves the cutover phases, blockers, evidence and go/no-go checkpoint are visible.",
+        },
+        {
+            "key": "production_launch_command",
+            "label": "Production launch integrations command",
+            "status": "pass",
+            "proof": "verify-production-launch-integrations.cjs",
+            "artifact": "visible-production-launch-integrations-command.png",
+            "detail": "Live credentials, database, backup, secrets and production smoke lanes are visible.",
+        },
+        {
+            "key": "deployment_pipeline",
+            "label": "Deployment pipeline proof",
+            "status": deployment_plan.get("status", "warn"),
+            "proof": "verify-deployment-pipeline.cjs",
+            "artifact": "visible-deployment-pipeline.png",
+            "detail": "Build gate, release checklist, rollback/log inspection and smoke path remain visible.",
+        },
+        {
+            "key": "ops_readiness",
+            "label": "Production Ops readiness proof",
+            "status": readiness.get("overall") == "ready" and "pass" or "warn",
+            "proof": "verify-production-ops-readiness.cjs",
+            "artifact": "visible-production-ops-readiness.png",
+            "detail": "Readiness, environment inventory and backup controls remain visible to admins.",
+        },
+    ]
+
+    cutover_windows = [
+        {
+            "key": "preflight",
+            "title": "Preflight",
+            "status": phase_status,
+            "window": "T-24h to T-2h",
+            "detail": "Confirm provider credentials, managed database URL, required secrets, backup proof and rollback owner.",
+        },
+        {
+            "key": "cutover",
+            "title": "Cutover",
+            "status": "warn",
+            "window": "T-60m to T",
+            "detail": "Freeze local writes, run migrations, seed launch baseline and promote the live host.",
+        },
+        {
+            "key": "smoke",
+            "title": "Smoke",
+            "status": lane_by_key.get("production_smoke", {}).get("status", "warn"),
+            "window": "T to T+60m",
+            "detail": "Run customer checkout, staff POS, delivery, payment/webhook, Ops and Roadmap smoke on the live URL.",
+        },
+        {
+            "key": "rollback",
+            "title": "Rollback",
+            "status": _gate_status(deployment_plan.get("rollback_checks"), "rollback_owner"),
+            "window": "T+60m to T+24h",
+            "detail": "Keep rollback owner, logs and restore evidence available during the first live traffic window.",
+        },
+    ]
+
+    go_no_go = {
+        "title": "Live environment go/no-go",
+        "status": "hold" if blockers else ("ready" if phase_status == "pass" else "conditional"),
+        "detail": "Move to public launch only after live credentials, managed database, restore rehearsal, deployment secrets and public-host smoke are proved together.",
+        "required_signoffs": [
+            "Admin confirms live provider credentials and settlement owner.",
+            "Engineering confirms managed database migration, secrets, CORS and rollback controls.",
+            "Operations confirms backup/restore evidence and live order smoke results.",
+        ],
+    }
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": phase_status,
+        "score": _readiness_score(phases),
+        "decision": go_no_go["status"],
+        "summary": {
+            "phases_total": len(phases),
+            "phases_ready": sum(1 for phase in phases if phase["status"] == "pass"),
+            "actions_total": sum(len(phase["steps"]) for phase in phases),
+            "evidence_total": len(evidence),
+            "live_blockers": len(blockers),
+            "required_env": f"{environment_summary.get('required_configured', 0)}/{environment_summary.get('required_total', 0)}",
+            "production_launch_score": production_launch.get("score", 0),
+            "readiness_score": readiness.get("readiness_score", 0),
+        },
+        "phases": phases,
+        "cutover_windows": cutover_windows,
+        "evidence": evidence,
+        "blockers": blockers[:14],
+        "go_no_go": go_no_go,
+        "next_actions": [
+            "Enter real gateway, messaging, social and ad credentials in the live host secret store.",
+            "Run the managed database migration and restore rehearsal with one assigned rollback owner.",
+            "Deploy the public host and run customer checkout, staff POS, delivery and Ops smoke against the live URL.",
+            "Record go/no-go signoff beside the evidence before opening public ordering.",
+        ],
+    }
+
+
 def _production_database_plan(*, environment: str, backup_freshness: dict) -> dict:
     backend = database_backend()
     current_path = sqlite_database_path()
