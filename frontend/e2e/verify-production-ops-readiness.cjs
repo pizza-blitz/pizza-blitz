@@ -129,6 +129,9 @@ async function screenshotProductionOps() {
     await page.getByTestId("production-database-path-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Production Database Path Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Backup And Restore Drill", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByTestId("environment-secrets-security-command").waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Environment Secrets Command" }).waitFor({ timeout: 15000 });
+    await page.getByText("Rotation And Recovery Drill", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Product Catalog", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Finance Reporting", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Production Go-Live Checklist", { exact: false }).waitFor({ timeout: 15000 });
@@ -173,6 +176,15 @@ async function main() {
   assert(
     readiness.data.production_database_plan.migration_steps.some((step) => step.label === "Run Alembic migrations"),
     "Production database plan did not include migration proof."
+  );
+  assert(readiness.data.environment_security_plan, "Readiness did not include environment security plan.");
+  assert(
+    readiness.data.environment_security_plan.secret_controls.some((step) => step.label === "PIZZA_BLITZ_SESSION_SECRET"),
+    "Environment security plan did not include portal session secret controls."
+  );
+  assert(
+    readiness.data.environment_security_plan.rotation_drill.some((step) => step.label === "Session secret rotation"),
+    "Environment security plan did not include session rotation drill."
   );
   assert(Array.isArray(readiness.data.module_readiness), "Readiness did not include module readiness.");
   assert(readiness.data.launch_summary?.modules_total >= 7, "Launch summary did not include the module total.");

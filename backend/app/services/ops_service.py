@@ -329,6 +329,7 @@ def readiness_report(db: Session) -> dict:
         _backup_storage_check(),
     ]
     environment_manifest = _environment_manifest()
+    environment_summary = _environment_summary(environment_manifest)
     go_live_sections = _go_live_sections(
         checks=checks,
         environment=environment,
@@ -371,11 +372,17 @@ def readiness_report(db: Session) -> dict:
         "payment_providers": payment_providers,
         "payment_webhook_contracts": _payment_webhook_contracts(),
         "environment_manifest": environment_manifest,
-        "environment_summary": _environment_summary(environment_manifest),
+        "environment_summary": environment_summary,
         "backup_freshness": backup_freshness,
         "production_database_plan": _production_database_plan(
             environment=environment,
             backup_freshness=backup_freshness,
+        ),
+        "environment_security_plan": _environment_security_plan(
+            environment=environment,
+            checks=checks,
+            environment_manifest=environment_manifest,
+            environment_summary=environment_summary,
         ),
         "readiness_score": _readiness_score(go_live_items),
         "launch_blockers": launch_blockers,
@@ -476,6 +483,146 @@ def _production_database_plan(*, environment: str, backup_freshness: dict) -> di
                 "label": "Rollback window",
                 "status": "warn",
                 "detail": "Keep a rollback plan for the first beta week with latest backup location, owner and recovery steps.",
+            },
+        ],
+        "blockers": blockers,
+    }
+
+
+def _environment_security_plan(
+    *,
+    environment: str,
+    checks: list[dict],
+    environment_manifest: list[dict],
+    environment_summary: dict,
+) -> dict:
+    check_by_key = {check["key"]: check for check in checks}
+    secret_checks = [
+        check_by_key["admin_password"],
+        check_by_key["staff_password"],
+        check_by_key["auth_secret"],
+        check_by_key["portal_session_secret"],
+    ]
+    secret_passed = sum(1 for check in secret_checks if check["status"] == "pass")
+    variables = [
+        variable
+        for group in environment_manifest
+        for variable in group["variables"]
+    ]
+    sensitive_variables = [variable for variable in variables if variable["sensitive"]]
+    configured_sensitive = [
+        variable
+        for variable in sensitive_variables
+        if variable["configured"]
+    ]
+    required_total = environment_summary["required_total"]
+    required_configured = environment_summary["required_configured"]
+    required_ready = required_total > 0 and required_configured == required_total
+    secrets_ready = secret_passed == len(secret_checks)
+    production_mode_ready = environment == "production"
+    status = "pass" if required_ready and secrets_ready and production_mode_ready else "warn"
+
+    blockers = []
+    if not production_mode_ready:
+        blockers.append("ENVIRONMENT must be set to production before public launch.")
+    for name in environment_summary["missing_required"]:
+        blockers.append(f"{name} is missing from the deployment environment.")
+    for check in secret_checks:
+        if check["status"] != "pass":
+            blockers.append(f"{check['label']}: {check['detail']}")
+    blockers.append("Secret rotation and rollback access rehearsal must be completed before open beta.")
+
+    return {
+        "summary": "Production launch needs required env vars in the host secret store, no default credentials, masked secret display and a rotation owner.",
+        "status": status,
+        "readiness_metrics": [
+            {"label": "Required Env", "value": f"{required_configured}/{required_total}"},
+            {"label": "Secret Checks", "value": f"{secret_passed}/{len(secret_checks)}"},
+            {"label": "Sensitive Set", "value": f"{len(configured_sensitive)}/{len(sensitive_variables)}"},
+            {"label": "Masking", "value": "Hidden"},
+        ],
+        "secret_controls": [
+            {
+                "key": "admin_password",
+                "label": "Admin password",
+                "status": check_by_key["admin_password"]["status"],
+                "detail": check_by_key["admin_password"]["detail"],
+            },
+            {
+                "key": "staff_password",
+                "label": "Staff password",
+                "status": check_by_key["staff_password"]["status"],
+                "detail": check_by_key["staff_password"]["detail"],
+            },
+            {
+                "key": "auth_secret",
+                "label": "AUTH_SECRET_KEY",
+                "status": check_by_key["auth_secret"]["status"],
+                "detail": check_by_key["auth_secret"]["detail"],
+            },
+            {
+                "key": "portal_session_secret",
+                "label": "PIZZA_BLITZ_SESSION_SECRET",
+                "status": check_by_key["portal_session_secret"]["status"],
+                "detail": check_by_key["portal_session_secret"]["detail"],
+            },
+            {
+                "key": "secret_masking",
+                "label": "Secret value masking",
+                "status": "pass",
+                "detail": "Sensitive environment values are reported as hidden and never returned through the readiness API.",
+            },
+        ],
+        "deployment_env": [
+            {
+                "key": "host_secret_store",
+                "label": "Host secret store",
+                "status": "warn" if not required_ready else "pass",
+                "detail": "Set required production values in the deployment host secret manager, not in source files.",
+            },
+            {
+                "key": "environment_mode",
+                "label": "ENVIRONMENT=production",
+                "status": "pass" if production_mode_ready else "warn",
+                "detail": "Production mode should be enabled only after the required secrets and database URL are set.",
+            },
+            {
+                "key": "cors_origins",
+                "label": "BACKEND_CORS_ORIGINS",
+                "status": check_by_key["cors_origins"]["status"],
+                "detail": check_by_key["cors_origins"]["detail"],
+            },
+            {
+                "key": "database_url",
+                "label": "SQLALCHEMY_DATABASE_URI",
+                "status": "pass" if "SQLALCHEMY_DATABASE_URI" not in environment_summary["missing_required"] else "warn",
+                "detail": "Production database credentials must be stored as a masked secret and rotated with deployment access.",
+            },
+        ],
+        "rotation_drill": [
+            {
+                "key": "credential_rotation",
+                "label": "Credential rotation owner",
+                "status": "warn",
+                "detail": "Assign an owner for rotating admin, staff, gateway, messaging and social provider credentials.",
+            },
+            {
+                "key": "session_rotation",
+                "label": "Session secret rotation",
+                "status": "warn",
+                "detail": "Document how to rotate AUTH_SECRET_KEY and PIZZA_BLITZ_SESSION_SECRET with a planned user re-login window.",
+            },
+            {
+                "key": "provider_token_rotation",
+                "label": "Provider token rotation",
+                "status": "warn",
+                "detail": "Keep payment, WhatsApp, SMS, email, Meta social and ads token rotation steps in the launch runbook.",
+            },
+            {
+                "key": "rollback_access",
+                "label": "Rollback access rehearsal",
+                "status": "warn",
+                "detail": "Confirm who can access deployment logs, rollback controls and restore credentials during the first beta week.",
             },
         ],
         "blockers": blockers,

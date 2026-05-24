@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "92%",
-    note: "Internal beta with provider sync, owner reporting, beta review and DB path command now visible",
+    value: "93%",
+    note: "Internal beta with provider sync, owner reporting, DB path and secrets command now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "78%",
-    note: "Provider readiness, comparison proofs, DB migration path and backup/restore drill are now tracked",
+    value: "80%",
+    note: "Provider readiness, DB path, masked secrets, env blockers and rotation drill are now tracked",
   },
   {
     label: "Target Date",
@@ -189,6 +189,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops now shows managed PostgreSQL target, migration checklist, backup/restore drill and DB blockers.",
   },
+  {
+    title: "Environment and secrets security",
+    status: "done",
+    value: "Production Ops now shows required env coverage, secret masking, credential checks, rotation drill and security blockers.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -233,6 +238,11 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Managed PostgreSQL target, SQLALCHEMY_DATABASE_URI handoff, Alembic migration steps and restore rehearsal are now visible.",
   },
   {
+    title: "Environment and secrets security",
+    status: "done",
+    value: "Required env vars, masked sensitive values, auth/session secrets, CORS and rotation recovery checks are now visible.",
+  },
+  {
     title: "Delivery live tracking and assignment refinement",
     status: "planned",
     value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
@@ -244,8 +254,8 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Deployment, backups and environment security",
-    status: "planned",
-    value: "Provision managed DB credentials, secure secrets, verify restore, deploy, monitor and rehearse rollback.",
+    status: "active",
+    value: "Secret security is mapped; deployment checklist, rollback logs, production env values and restore proof remain active.",
   },
 ];
 
@@ -268,7 +278,7 @@ const timeline: TimelinePhase[] = [
       {
         title: "Production readiness pass",
         status: "active",
-        value: "Database path is defined; credentials, restore proof, environment secrets, deployment checks and monitoring remain.",
+        value: "Database and secrets paths are defined; deployment checks, rollback logs, monitoring and restore proof remain.",
       },
       {
         title: "Browser proof suite",
@@ -514,18 +524,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "9 Jun 2026",
     focus: "Environment and secrets security",
-    status: "active",
+    status: "done",
     planned: [
       "List required env vars",
       "Mask sensitive settings",
       "Add missing setup checks",
     ],
-    output: "Production setup becomes safer and easier to validate.",
+    output: "Environment secrets command, masked readiness API, rotation drill, security blockers and browser/API proof were completed.",
   },
   {
     date: "10 Jun 2026",
     focus: "Deployment pipeline",
-    status: "planned",
+    status: "active",
     planned: [
       "Build verification",
       "Deployment checklist",
@@ -648,8 +658,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "14",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, production ops, visual audit and roadmap.",
+    value: "15",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -659,12 +669,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Production database path is defined and environment/secrets hardening is now active.",
+    note: "Environment and secrets security is mapped and deployment pipeline is now active.",
   },
   {
     label: "Next Risk",
-    value: "Secrets",
-    note: "Credential storage, deployment env vars, session secrets and restore proof are now the active track.",
+    value: "Deploy",
+    note: "Build verification, deployment checklist, rollback logs and production smoke proof are now the active track.",
   },
 ];
 
@@ -747,6 +757,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-production-database-path.png",
   },
   {
+    area: "Environment secrets security",
+    proof: "verify-environment-secrets-security.cjs",
+    status: "passed",
+    value: "Required env coverage, masked secrets, rotation drill and security blockers are visible.",
+    artifact: "visible-environment-secrets-security.png",
+  },
+  {
     area: "Production operations",
     proof: "verify-production-ops-readiness.cjs",
     status: "passed",
@@ -772,7 +789,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "14 / 14",
+    value: "15 / 15",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -787,8 +804,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Secrets",
-    note: "The next work slice should harden credentials, deployment env vars and restore proof.",
+    value: "Deploy",
+    note: "The next work slice should prove build, deployment checklist, rollback logs and production smoke path.",
   },
 ];
 
@@ -815,8 +832,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Environment secrets handoff",
+    status: "done",
+    value: "Production Ops now exposes required env coverage, masked sensitive values, session/auth secrets and rotation recovery work.",
+  },
+  {
+    title: "Deployment pipeline handoff",
     status: "active",
-    value: "Next slice should lock credentials, deployment env vars, session secrets and rollback-ready restore proof.",
+    value: "Next slice should prove build, deployment checklist, rollback/log inspection and production smoke readiness.",
   },
 ];
 
@@ -838,8 +860,8 @@ const betaBlockers: RoadmapItem[] = [
   },
   {
     title: "Deployment and secret security",
-    status: "planned",
-    value: "Lock environment variables, session secrets, logging, rollback path and monitoring before open beta.",
+    status: "active",
+    value: "Secret security is mapped; deployment logs, rollback path, monitoring and production smoke proof remain active.",
   },
   {
     title: "Customer-facing delivery tracking",
@@ -1166,7 +1188,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Environment and secrets security: lock production env vars, session secrets, credential storage and restore proof."
+          text="Deployment pipeline: verify build, deployment checklist, rollback/log inspection and production smoke readiness."
         />
       </section>
     </div>
