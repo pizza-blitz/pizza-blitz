@@ -5,6 +5,7 @@ from app.api.deps import get_db, require_roles
 from app.services.ops_service import (
     beta_delivery_report,
     create_database_backup,
+    credential_activation_report,
     data_quality_report,
     final_acceptance_report,
     launch_candidate_report,
@@ -71,6 +72,14 @@ def live_environment_readiness(
     session: dict = Depends(require_roles("admin")),
 ):
     return live_environment_report(db)
+
+
+@router.get("/credential-activation")
+def credential_activation_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    return credential_activation_report(db)
 
 
 @router.get("/backups")

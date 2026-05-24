@@ -210,6 +210,11 @@ const completedValue: RoadmapItem[] = [
     value: "Production Ops now shows credential cutover, managed database migration, secret sync, restore rehearsal, public-host smoke and go/no-go signoff in one execution board.",
   },
   {
+    title: "Credential activation command",
+    status: "done",
+    value: "Production Ops now shows gateway, messaging, social and ad credential readiness, low-value smoke plan, blockers and provider go/no-go signoff.",
+  },
+  {
     title: "Full customer order E2E",
     status: "done",
     value: "Customer order journey now proves menu, customization, checkout, receipt link, tracking link and backend order handoff.",
@@ -349,8 +354,13 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Real credential activation and provider smoke",
+    status: "done",
+    value: "Gateway, webhook, WhatsApp/SMS/email, social publishing and Meta Ads activation readiness are now visible with smoke steps and blockers.",
+  },
+  {
+    title: "Live provider smoke pilot",
     status: "planned",
-    value: "Enter real gateway, messaging, social and ad credentials, then run low-value checkout, webhook, campaign, social and ad sync smoke against the live host.",
+    value: "Use real credentials to execute low-value checkout, signed webhook, owner-approved campaign sends, social publish and paused ad sync against the live host.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -785,13 +795,24 @@ const june20Push: DailyPlan[] = [
     ],
     output: "Live Environment Execution now shows credential cutover, DB migration, secret sync, restore rehearsal, public-host smoke, blockers and go/no-go signoff.",
   },
+  {
+    date: "20 Jun 2026",
+    focus: "Credential activation",
+    status: "done",
+    planned: [
+      "Gateway and webhook activation",
+      "Messaging/social/ad provider readiness",
+      "Provider smoke go/no-go",
+    ],
+    output: "Credential Activation now shows gateway, webhook, campaign send, social publish and ad sync readiness with blockers and smoke proof steps.",
+  },
 ];
 
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "28",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "29",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -801,12 +822,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Live environment execution, production launch integrations, beta delivery, final acceptance, launch candidate hardening, data quality export, marketing live-readiness and operational command board are now proof-backed.",
+    note: "Credential activation, live environment execution, production launch integrations, beta delivery, final acceptance, launch candidate hardening, data quality export, marketing live-readiness and operational command board are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Credential Activation",
-    note: "The next track is real provider credentials, low-value payment/webhook proof, campaign send smoke, social posting smoke and ad sync smoke.",
+    value: "Live Provider Smoke",
+    note: "The next track is executing real low-value payment, signed webhook, owner-approved campaign sends, social publish and paused ad sync on the live host.",
   },
 ];
 
@@ -980,6 +1001,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-live-environment-execution-command.png",
   },
   {
+    area: "Credential activation",
+    proof: "verify-credential-activation-command.cjs",
+    status: "passed",
+    value: "Gateway, webhook, campaign, social and ad provider activation readiness plus smoke go/no-go stay visible in Production Ops.",
+    artifact: "visible-credential-activation-command.png",
+  },
+  {
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
@@ -1012,7 +1040,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "28 / 28",
+    value: "29 / 29",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -1027,8 +1055,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Credential Activation",
-    note: "The next work slice should activate real provider credentials and run low-value payment, webhook, campaign, social and ad smoke against the live host.",
+    value: "Live Provider Smoke",
+    note: "The next work slice should run real low-value payment, signed webhook, campaign send, social publish and paused ad sync smoke against the live host.",
   },
 ];
 
@@ -1125,8 +1153,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Credential activation handoff",
+    status: "done",
+    value: "Production Ops now shows real provider credential readiness and payment/webhook, campaign, social and ad smoke checks.",
+  },
+  {
+    title: "Live provider smoke handoff",
     status: "active",
-    value: "Next slice should use real provider credentials and run payment/webhook, campaign, social and ad smoke checks against the live host.",
+    value: "Next slice should execute real low-value checkout, signed webhook, test campaign sends, social publish and paused ad sync on the live host.",
   },
 ];
 
@@ -1476,7 +1509,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Credential activation: enter real gateway, messaging, social and ad credentials, then run payment/webhook, campaign, social and ad smoke on the live host."
+          text="Live provider smoke: execute real low-value checkout, signed webhook, test campaign sends, social publish and paused ad sync on the live host."
         />
       </section>
     </div>

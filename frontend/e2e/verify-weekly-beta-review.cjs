@@ -91,7 +91,7 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("28 / 28", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("29 / 29", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
@@ -113,6 +113,7 @@ async function main() {
     await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-production-launch-integrations.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-live-environment-execution.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-credential-activation-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Delivery order E2E handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Visual polish handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Operational dashboards handoff", { exact: true }).waitFor({ timeout: 15000 });
@@ -124,6 +125,7 @@ async function main() {
     await page.getByText("Post-beta production integrations handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Live environment execution handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Credential activation handoff", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Live provider smoke handoff", { exact: true }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-weekly-beta-review.png"),

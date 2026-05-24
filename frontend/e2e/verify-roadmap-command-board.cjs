@@ -105,7 +105,8 @@ async function main() {
     await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-production-launch-integrations.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-live-environment-execution.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Credential activation:", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-credential-activation-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Live provider smoke:", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Route / View Audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
@@ -119,6 +120,7 @@ async function main() {
     await page.getByText("Beta delivery checkpoint command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Production launch integrations command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Live environment execution command", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Credential activation command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByRole("link", { name: /Roadmap/i }).waitFor({ timeout: 15000 });
 
     await page.screenshot({

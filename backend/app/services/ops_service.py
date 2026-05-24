@@ -1852,6 +1852,264 @@ def live_environment_report(db: Session) -> dict:
     }
 
 
+def credential_activation_report(db: Session) -> dict:
+    readiness = readiness_report(db)
+    production_launch = production_launch_report(db)
+    live_environment = live_environment_report(db)
+    payment_status = payment_provider_status()
+    campaign_statuses = [campaign_provider_status(channel) for channel in ["whatsapp", "sms", "email"]]
+    social_statuses = [social_provider_status(platform) for platform in ["facebook", "instagram"]]
+    ads_status = ad_provider_status()
+
+    payment_live_ready = (
+        payment_status.get("provider") != "manual"
+        and payment_status.get("checkout_configured")
+        and payment_status.get("webhook_configured")
+    )
+    payment_missing = [
+        *payment_status.get("missing_checkout_settings", []),
+        *payment_status.get("missing_webhook_settings", []),
+    ]
+    if payment_status.get("provider") == "manual":
+        payment_missing.append("PAYMENT_PROVIDER=cashfree or razorpay")
+
+    campaign_providers = [
+        {
+            "key": f"campaign_{status['channel']}",
+            "label": f"{status['channel'].title()} sender",
+            "provider": status.get("provider", "unknown"),
+            "status": "pass" if status.get("configured") else "warn",
+            "channel": status["channel"],
+            "configured": bool(status.get("configured")),
+            "missing_settings": status.get("missing_settings", []),
+            "proof": "verify-messaging-readiness.cjs",
+            "detail": f"{status['channel'].title()} sending must use the live provider token and compliance-approved sender/template.",
+        }
+        for status in campaign_statuses
+    ]
+    social_providers = [
+        {
+            "key": f"social_{status['platform']}",
+            "label": f"{status['platform'].title()} publishing",
+            "provider": status.get("provider", "unknown"),
+            "status": "pass" if status.get("configured") else "warn",
+            "channel": status["platform"],
+            "configured": bool(status.get("configured")),
+            "missing_settings": status.get("missing_settings", []),
+            "proof": "verify-social-publishing-readiness.cjs",
+            "detail": f"{status['platform'].title()} must have live Meta credentials before public auto-posting.",
+        }
+        for status in social_statuses
+    ]
+    provider_matrix = [
+        {
+            "key": "payment_checkout",
+            "label": "Payment checkout",
+            "provider": payment_status.get("provider", "manual"),
+            "status": "pass" if payment_live_ready else "warn",
+            "channel": "payment",
+            "configured": payment_live_ready,
+            "missing_settings": sorted(set(payment_missing)),
+            "proof": "verify-payment-production-pass.cjs",
+            "detail": "Live gateway checkout and webhook credentials must be configured before paid orders.",
+        },
+        *campaign_providers,
+        *social_providers,
+        {
+            "key": "meta_ads",
+            "label": "Meta Ads sync",
+            "provider": ads_status.get("provider", "meta-ads"),
+            "status": "pass" if ads_status.get("configured") else "warn",
+            "channel": "ads",
+            "configured": bool(ads_status.get("configured")),
+            "missing_settings": ads_status.get("missing_settings", []),
+            "proof": "verify-ad-provider-sync.cjs",
+            "detail": "Meta Ads account and token must be configured before live ad sync or launch.",
+        },
+    ]
+
+    activation_lanes = [
+        {
+            "key": "payment_gateway",
+            "title": "Payment Gateway Activation",
+            "status": provider_matrix[0]["status"],
+            "owner": "Admin / payment provider",
+            "detail": "Activate Cashfree or Razorpay live checkout, webhook signature handling and settlement ownership.",
+            "providers": [provider_matrix[0]],
+        },
+        {
+            "key": "messaging_channels",
+            "title": "Messaging Channel Activation",
+            "status": _rollup_status(campaign_providers),
+            "owner": "Marketing / provider accounts",
+            "detail": "Activate WhatsApp, SMS and email providers with compliant templates and test-send evidence.",
+            "providers": campaign_providers,
+        },
+        {
+            "key": "social_publishing",
+            "title": "Social Publishing Activation",
+            "status": _rollup_status(social_providers),
+            "owner": "Marketing / Meta business",
+            "detail": "Activate Facebook and Instagram publishing credentials before automated launch offers.",
+            "providers": social_providers,
+        },
+        {
+            "key": "ad_campaign_sync",
+            "title": "Ad Campaign Sync Activation",
+            "status": provider_matrix[-1]["status"],
+            "owner": "Marketing / Meta Ads",
+            "detail": "Activate Meta Ads credentials, external campaign IDs and paused launch sync controls.",
+            "providers": [provider_matrix[-1]],
+        },
+    ]
+
+    smoke_plan = [
+        {
+            "key": "low_value_checkout",
+            "label": "Run low-value payment checkout",
+            "status": provider_matrix[0]["status"],
+            "owner": "Admin / finance",
+            "proof": "verify-payment-production-pass.cjs",
+            "detail": "Create a low-value paid order and confirm provider order ID, payment ID and receipt state.",
+        },
+        {
+            "key": "payment_webhook",
+            "label": "Run payment webhook proof",
+            "status": "pass" if payment_live_ready else "warn",
+            "owner": "Engineering / finance",
+            "proof": payment_status.get("webhook_endpoint", "/api/v1/restaurant/orders/payments/webhook/{provider}"),
+            "detail": "Send or receive a signed gateway webhook and prove the order payment state updates safely.",
+        },
+        {
+            "key": "campaign_send",
+            "label": "Run campaign test sends",
+            "status": _rollup_status(campaign_providers),
+            "owner": "Marketing",
+            "proof": "verify-messaging-readiness.cjs",
+            "detail": "Send controlled WhatsApp/SMS/email smoke messages to owner-approved test contacts only.",
+        },
+        {
+            "key": "social_post",
+            "label": "Run social publish smoke",
+            "status": _rollup_status(social_providers),
+            "owner": "Marketing",
+            "proof": "verify-social-publishing-readiness.cjs",
+            "detail": "Publish or dry-run a launch offer post and confirm provider delivery/audit state.",
+        },
+        {
+            "key": "ad_sync",
+            "label": "Run ad sync smoke",
+            "status": provider_matrix[-1]["status"],
+            "owner": "Marketing / ads",
+            "proof": "verify-ad-provider-sync.cjs",
+            "detail": "Sync a paused campaign or external campaign ID and confirm guardrails prevent accidental live spend.",
+        },
+    ]
+
+    blocker_details = [
+        *[
+            f"{provider['label']}: {', '.join(provider['missing_settings'])}"
+            for provider in provider_matrix
+            if provider.get("missing_settings")
+        ],
+        *[
+            blocker.get("detail")
+            for blocker in production_launch.get("blockers", [])
+            if blocker.get("detail")
+        ][:4],
+        *[
+            blocker.get("detail")
+            for blocker in live_environment.get("blockers", [])
+            if blocker.get("detail")
+        ][:4],
+    ]
+    blockers = [
+        {
+            "key": f"credential_blocker_{index + 1}",
+            "label": "Credential activation blocker",
+            "status": "warn",
+            "detail": detail,
+        }
+        for index, detail in enumerate(dict.fromkeys(filter(None, blocker_details)))
+    ][:14]
+
+    evidence = [
+        {
+            "key": "credential_activation",
+            "label": "Credential activation command",
+            "status": "pass",
+            "proof": "verify-credential-activation-command.cjs",
+            "artifact": "visible-credential-activation-command.png",
+            "detail": "Provider readiness, smoke sequence, blockers and go/no-go are visible in Production Ops.",
+        },
+        {
+            "key": "payment_proof",
+            "label": "Payment production proof",
+            "status": provider_matrix[0]["status"],
+            "proof": "verify-payment-production-pass.cjs",
+            "artifact": "visible-payment-production-pass.png",
+            "detail": "Gateway setup, webhook readiness and settlement visibility are represented.",
+        },
+        {
+            "key": "messaging_proof",
+            "label": "Messaging readiness proof",
+            "status": _rollup_status(campaign_providers),
+            "proof": "verify-messaging-readiness.cjs",
+            "artifact": "visible-messaging-readiness.png",
+            "detail": "WhatsApp, SMS and email provider setup and safe test-send controls are represented.",
+        },
+        {
+            "key": "social_ads_proof",
+            "label": "Social and ads proof",
+            "status": _rollup_status([*social_providers, provider_matrix[-1]]),
+            "proof": "verify-social-publishing-readiness.cjs + verify-ad-provider-sync.cjs",
+            "artifact": "visible-ad-provider-sync.png",
+            "detail": "Social token readiness, delivery audit and Meta Ads sync controls are represented.",
+        },
+    ]
+
+    status = _rollup_status([*activation_lanes, *smoke_plan])
+    decision = "hold" if blockers else ("ready" if status == "pass" else "conditional")
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": status,
+        "score": _readiness_score([*activation_lanes, *smoke_plan]),
+        "decision": decision,
+        "summary": {
+            "providers_total": len(provider_matrix),
+            "providers_ready": sum(1 for provider in provider_matrix if provider["status"] == "pass"),
+            "smoke_steps": len(smoke_plan),
+            "smoke_ready": sum(1 for step in smoke_plan if step["status"] == "pass"),
+            "missing_settings": sum(len(provider.get("missing_settings", [])) for provider in provider_matrix),
+            "blockers": len(blockers),
+            "live_environment_score": live_environment.get("score", 0),
+            "readiness_score": readiness.get("readiness_score", 0),
+        },
+        "activation_lanes": activation_lanes,
+        "provider_matrix": provider_matrix,
+        "smoke_plan": smoke_plan,
+        "evidence": evidence,
+        "blockers": blockers,
+        "go_no_go": {
+            "title": "Credential activation go/no-go",
+            "status": decision,
+            "detail": "Run live provider smoke only after gateway, messaging, social and ad credentials are present in the live secret store with rollback owners assigned.",
+            "required_signoffs": [
+                "Finance confirms low-value payment and webhook proof owner.",
+                "Marketing confirms test recipients, templates, social pages and Meta Ads spend guardrails.",
+                "Engineering confirms secrets are live-host only, masked, and rollback-ready.",
+            ],
+        },
+        "next_actions": [
+            "Enter live gateway credentials and run one low-value checkout plus webhook proof.",
+            "Enter WhatsApp/SMS/email credentials and run owner-approved test sends only.",
+            "Enter Facebook, Instagram and Meta Ads credentials, then smoke publish/sync with spend guardrails.",
+            "Record provider IDs, external IDs, receipts and blockers before opening public promotional traffic.",
+        ],
+    }
+
+
 def _production_database_plan(*, environment: str, backup_freshness: dict) -> dict:
     backend = database_backend()
     current_path = sqlite_database_path()

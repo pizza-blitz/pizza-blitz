@@ -474,8 +474,77 @@ type LiveEnvironmentReport = {
   next_actions: string[];
 };
 
+type CredentialActivationProvider = {
+  key: string;
+  label: string;
+  provider: string;
+  status: CheckStatus;
+  channel: string;
+  configured: boolean;
+  missing_settings: string[];
+  proof: string;
+  detail: string;
+};
+
+type CredentialActivationLane = {
+  key: "payment_gateway" | "messaging_channels" | "social_publishing" | "ad_campaign_sync";
+  title: string;
+  status: CheckStatus;
+  owner: string;
+  detail: string;
+  providers: CredentialActivationProvider[];
+};
+
+type CredentialActivationSmokeStep = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  owner: string;
+  proof: string;
+  detail: string;
+};
+
+type CredentialActivationEvidence = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  proof: string;
+  artifact: string;
+  detail: string;
+};
+
+type CredentialActivationReport = {
+  generated_at: string;
+  status: CheckStatus;
+  score: number;
+  decision: ReleaseDecision;
+  summary: {
+    providers_total: number;
+    providers_ready: number;
+    smoke_steps: number;
+    smoke_ready: number;
+    missing_settings: number;
+    blockers: number;
+    live_environment_score: number;
+    readiness_score: number;
+  };
+  activation_lanes: CredentialActivationLane[];
+  provider_matrix: CredentialActivationProvider[];
+  smoke_plan: CredentialActivationSmokeStep[];
+  evidence: CredentialActivationEvidence[];
+  blockers: ProductionDatabaseStep[];
+  go_no_go: {
+    title: string;
+    status: ReleaseDecision;
+    detail: string;
+    required_signoffs: string[];
+  };
+  next_actions: string[];
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [credentialActivation, setCredentialActivation] = useState<CredentialActivationReport | null>(null);
   const [liveEnvironment, setLiveEnvironment] = useState<LiveEnvironmentReport | null>(null);
   const [productionLaunch, setProductionLaunch] = useState<ProductionLaunchReport | null>(null);
   const [betaDelivery, setBetaDelivery] = useState<BetaDeliveryReport | null>(null);
@@ -497,6 +566,7 @@ export default function ProductionOpsPage() {
     setLoading(true);
     const [
       readinessResponse,
+      credentialActivationResponse,
       liveEnvironmentResponse,
       productionLaunchResponse,
       betaDeliveryResponse,
@@ -506,6 +576,7 @@ export default function ProductionOpsPage() {
       backupResponse,
     ] = await Promise.all([
       fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/credential-activation`),
       fetchWithAuth(`${OPS_API}/live-environment`),
       fetchWithAuth(`${OPS_API}/production-launch`),
       fetchWithAuth(`${OPS_API}/beta-delivery`),
@@ -516,6 +587,9 @@ export default function ProductionOpsPage() {
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
+    }
+    if (credentialActivationResponse.ok) {
+      setCredentialActivation(await credentialActivationResponse.json());
     }
     if (liveEnvironmentResponse.ok) {
       setLiveEnvironment(await liveEnvironmentResponse.json());
@@ -627,6 +701,8 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {credentialActivation ? <CredentialActivationCommand report={credentialActivation} /> : null}
 
       {liveEnvironment ? <LiveEnvironmentExecutionCommand report={liveEnvironment} /> : null}
 
@@ -979,6 +1055,202 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
     <div className="min-w-24 rounded-xl border border-white/5 bg-black/25 px-4 py-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function CredentialActivationCommand({ report }: { report: CredentialActivationReport }) {
+  const blockers = report.blockers.slice(0, 6);
+  const laneTestId = (key: CredentialActivationLane["key"]) => {
+    if (key === "payment_gateway") return "payment-gateway-activation";
+    if (key === "messaging_channels") return "messaging-activation";
+    if (key === "social_publishing") return "social-publishing-activation";
+    return "ad-sync-activation";
+  };
+
+  return (
+    <section
+      data-testid="credential-activation-command"
+      className="mb-8 rounded-xl border border-lime-500/20 bg-[#10150f] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-lime-300">Credential Activation</p>
+          <h2 className="mt-2 text-2xl font-black">Credential Activation Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Real gateway, messaging, social and ad credentials with low-value payment, webhook, send, publish and sync smoke.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(report.status)}`}>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {report.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${releaseDecisionClass(report.decision)}`}>
+            {report.decision}
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+            {report.score}% ready
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <DataQualityMetric icon={KeyRound} label="Providers" value={`${report.summary.providers_ready}/${report.summary.providers_total}`} />
+        <DataQualityMetric icon={ListChecks} label="Smoke" value={`${report.summary.smoke_ready}/${report.summary.smoke_steps}`} />
+        <DataQualityMetric icon={FileText} label="Missing" value={`${report.summary.missing_settings}`} />
+        <DataQualityMetric icon={AlertTriangle} label="Blockers" value={`${report.summary.blockers}`} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-4">
+        {report.activation_lanes.map((lane) => {
+          const LaneIcon =
+            lane.key === "payment_gateway"
+              ? CreditCard
+              : lane.key === "messaging_channels"
+                ? Users
+                : lane.key === "social_publishing"
+                  ? LinkIcon
+                  : Rocket;
+
+          return (
+            <div key={lane.key} data-testid={laneTestId(lane.key)} className="rounded-xl border border-white/5 bg-black/25 p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime-500/10 text-lime-300">
+                  <LaneIcon className="h-5 w-5" />
+                </div>
+                <StatusBadge status={lane.status} />
+              </div>
+              <p className="text-lg font-black text-white">{lane.title}</p>
+              <p className="mt-1 text-xs font-black uppercase tracking-widest text-lime-100/70">{lane.owner}</p>
+              <p className="mt-3 text-sm leading-6 text-gray-500">{lane.detail}</p>
+              <div className="mt-4 space-y-3">
+                {lane.providers.map((provider) => (
+                  <CredentialProviderCard key={provider.key} provider={provider} compact />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="credential-smoke-plan" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-lime-300" />
+            <h3 className="font-black">Provider Smoke Plan</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.smoke_plan.map((step) => (
+              <div key={step.key} className="rounded-xl border border-white/5 bg-[#111113] p-4">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-black text-white">{step.label}</p>
+                  <StatusBadge status={step.status} />
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{step.owner}</p>
+                <p className="mt-2 text-sm leading-6 text-gray-400">{step.detail}</p>
+                <p className="mt-3 break-words text-[11px] font-black leading-4 text-lime-100">{step.proof}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="credential-go-no-go" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-lime-300" />
+            <h3 className="font-black">Credential Go/No-Go</h3>
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <SummaryPill label="Live Env" value={`${report.summary.live_environment_score}%`} />
+            <SummaryPill label="Ops" value={`${report.summary.readiness_score}%`} />
+          </div>
+          <div className={`rounded-xl border border-white/5 p-4 ${releaseDecisionClass(report.go_no_go.status)}`}>
+            <p className="text-sm font-black uppercase tracking-widest">{report.go_no_go.title}</p>
+            <p className="mt-2 text-sm font-semibold leading-6">{report.go_no_go.detail}</p>
+          </div>
+          <div className="mt-4 space-y-2">
+            {report.go_no_go.required_signoffs.map((signoff) => (
+              <p key={signoff} className="rounded-lg bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-gray-200">
+                {signoff}
+              </p>
+            ))}
+          </div>
+          <div className="mt-4 space-y-3">
+            {report.evidence.map((item) => (
+              <div key={item.key} className="rounded-lg border border-white/5 bg-black/25 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm font-black text-white">{item.label}</p>
+                  <StatusBadge status={item.status} />
+                </div>
+                <p className="break-words text-[11px] font-black leading-4 text-lime-100">{item.proof}</p>
+                <p className="mt-2 break-words text-xs font-bold leading-5 text-gray-500">{item.artifact}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div data-testid="provider-readiness-matrix" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-lime-300" />
+            <h3 className="font-black">Provider Readiness Matrix</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.provider_matrix.map((provider) => (
+              <CredentialProviderCard key={provider.key} provider={provider} />
+            ))}
+          </div>
+        </div>
+
+        <div data-testid="credential-activation-blockers" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-lime-300" />
+            <h3 className="font-black">Credential Blockers</h3>
+          </div>
+          <div className="space-y-3">
+            {blockers.map((blocker) => (
+              <ReadinessStep key={blocker.key} step={blocker} />
+            ))}
+            {!blockers.length ? (
+              <div className="rounded-xl border border-green-500/10 bg-green-500/5 p-4 text-sm font-semibold text-green-100">
+                No credential blockers are currently reported.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="credential-activation-next-actions"
+        className="mt-6 grid grid-cols-1 gap-3 rounded-xl border border-lime-500/10 bg-lime-500/5 p-4 md:grid-cols-2"
+      >
+        {report.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-lime-50/90">
+            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-lime-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CredentialProviderCard({ provider, compact = false }: { provider: CredentialActivationProvider; compact?: boolean }) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#111113] p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-black text-white">{provider.label}</p>
+        <StatusBadge status={provider.status} />
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{provider.provider}</p>
+      <p className={`mt-2 text-sm leading-6 text-gray-400 ${compact ? "line-clamp-3" : ""}`}>{provider.detail}</p>
+      <p className="mt-3 break-words text-[11px] font-black leading-4 text-lime-100">{provider.proof}</p>
+      {provider.missing_settings.length ? (
+        <p className="mt-2 break-words text-xs font-semibold leading-5 text-yellow-100/80">
+          Missing: {provider.missing_settings.join(", ")}
+        </p>
+      ) : null}
     </div>
   );
 }

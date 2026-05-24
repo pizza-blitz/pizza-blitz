@@ -127,6 +127,13 @@ async function screenshotProductionOps() {
 
     const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByTestId("credential-activation-command").waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Credential Activation Command" }).waitFor({ timeout: 15000 });
+    await page.getByTestId("payment-gateway-activation").waitFor({ timeout: 15000 });
+    await page.getByTestId("messaging-activation").waitFor({ timeout: 15000 });
+    await page.getByTestId("social-publishing-activation").waitFor({ timeout: 15000 });
+    await page.getByTestId("ad-sync-activation").waitFor({ timeout: 15000 });
+    await page.getByTestId("credential-smoke-plan").waitFor({ timeout: 15000 });
     await page.getByTestId("live-environment-execution-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Live Environment Execution Command" }).waitFor({ timeout: 15000 });
     await page.getByTestId("credential-cutover-phase").waitFor({ timeout: 15000 });
@@ -282,6 +289,17 @@ async function main() {
   assert(
     liveEnvironment.data.cutover_windows.some((window) => window.key === "rollback"),
     "Live environment report did not include rollback window."
+  );
+
+  const credentialActivation = await adminJson("/api/v1/restaurant/ops/credential-activation", cookie);
+  assert(credentialActivation.response.ok, `Credential activation report failed: ${JSON.stringify(credentialActivation.data)}`);
+  assert(
+    credentialActivation.data.activation_lanes.some((lane) => lane.key === "payment_gateway"),
+    "Credential activation report did not include payment gateway lane."
+  );
+  assert(
+    credentialActivation.data.smoke_plan.some((step) => step.key === "payment_webhook"),
+    "Credential activation report did not include payment webhook smoke."
   );
 
   await screenshotProductionOps();
