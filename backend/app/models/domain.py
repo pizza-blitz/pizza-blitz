@@ -201,6 +201,7 @@ class AdCampaign(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     launches = relationship("AdCampaignLaunch", back_populates="campaign")
+    actions = relationship("AdCampaignAction", back_populates="campaign")
 
 class AdCampaignLaunch(Base):
     __tablename__ = "ad_campaign_launches"
@@ -214,6 +215,19 @@ class AdCampaignLaunch(Base):
     response_payload = Column(JSON, nullable=True)
     attempted_at = Column(DateTime, default=datetime.utcnow, index=True)
     campaign = relationship("AdCampaign", back_populates="launches")
+
+class AdCampaignAction(Base):
+    __tablename__ = "ad_campaign_actions"
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("ad_campaigns.id"), index=True, nullable=False)
+    action = Column(String(40), index=True, nullable=False)
+    previous_status = Column(String(40), nullable=True)
+    next_status = Column(String(40), nullable=True)
+    note = Column(String, nullable=True)
+    actor = Column(String(120), nullable=True)
+    response_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    campaign = relationship("AdCampaign", back_populates="actions")
 
 class BackupRun(Base):
     __tablename__ = "backup_runs"

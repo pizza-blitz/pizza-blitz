@@ -80,12 +80,12 @@ async function main() {
     const response = await page.goto(`${baseURL}/roadmap`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Roadmap page returned HTTP ${response?.status() || "no response"}.`);
 
-    await page.getByText("Roadmap Command Board", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "Roadmap Command Board" }).waitFor({ timeout: 15000 });
     await page.getByText("Value Already Built", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Remaining Production Work", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByText("Ad campaign operational controls", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByRole("link", { name: /Roadmap/i }).waitFor({ timeout: 15000 });
 
     await page.screenshot({

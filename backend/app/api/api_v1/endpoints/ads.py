@@ -7,7 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
-from app.models.domain import AdCampaign, AdCampaignLaunch
+from app.models.domain import AdCampaign, AdCampaignAction, AdCampaignLaunch
 from app.services.ad_campaign_service import ad_provider_status, launch_meta_campaign
 
 router = APIRouter()
@@ -45,6 +45,17 @@ class AdLaunchRequest(BaseModel):
     dry_run: bool = False
     force_relaunch: bool = False
     mark_launched: bool = True
+
+
+class AdCampaignActionRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class AdCampaignDuplicateRequest(BaseModel):
+    name: Optional[str] = None
+    status: str = "ready"
+    reset_metrics: bool = True
+    note: Optional[str] = None
 
 
 def _parse_optional_date(value: Optional[str]) -> Optional[date]:
@@ -133,6 +144,20 @@ def _launch_dict(launch: AdCampaignLaunch) -> dict:
     }
 
 
+def _action_dict(action: AdCampaignAction) -> dict:
+    return {
+        "id": action.id,
+        "campaign_id": action.campaign_id,
+        "action": action.action,
+        "previous_status": action.previous_status,
+        "next_status": action.next_status,
+        "note": action.note,
+        "actor": action.actor,
+        "response_payload": action.response_payload or {},
+        "created_at": action.created_at.isoformat() if action.created_at else None,
+    }
+
+
 def _launch_counts(launches: list[AdCampaignLaunch]) -> dict:
     return {
         "attempted_count": len(launches),
@@ -141,6 +166,44 @@ def _launch_counts(launches: list[AdCampaignLaunch]) -> dict:
         "failed_count": sum(1 for launch in launches if launch.status == "failed"),
         "skipped_count": sum(1 for launch in launches if launch.status == "skipped"),
     }
+
+
+def _action_counts(actions: list[AdCampaignAction]) -> dict:
+    return {
+        "action_count": len(actions),
+        "pause_count": sum(1 for action in actions if action.action == "pause"),
+        "resume_count": sum(1 for action in actions if action.action == "resume"),
+        "complete_count": sum(1 for action in actions if action.action == "complete"),
+        "duplicate_count": sum(1 for action in actions if action.action == "duplicate"),
+    }
+
+
+def _record_ad_action(
+    db: Session,
+    *,
+    campaign: AdCampaign,
+    action: str,
+    previous_status: Optional[str],
+    next_status: Optional[str],
+    note: Optional[str],
+    actor: Optional[str],
+    response_payload: Optional[dict] = None,
+) -> AdCampaignAction:
+    row = AdCampaignAction(
+        campaign_id=campaign.id,
+        action=action,
+        previous_status=previous_status,
+        next_status=next_status,
+        note=(note or "").strip() or None,
+        actor=actor,
+        response_payload=response_payload or {},
+    )
+    db.add(row)
+    return row
+
+
+def _actor_from_session(session: dict) -> str:
+    return str(session.get("display_name") or session.get("subject") or session.get("role") or "portal")
 
 
 def _inclusive_days(start: date, end: date) -> int:
@@ -434,6 +497,206 @@ def update_ad_campaign_metrics(
     db.commit()
     db.refresh(campaign)
     return _ad_campaign_dict(campaign)
+
+
+@router.get("/campaigns/{campaign_id}/actions")
+def ad_campaign_actions(
+    campaign_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+    actions = (
+        db.query(AdCampaignAction)
+        .filter(AdCampaignAction.campaign_id == campaign.id)
+        .order_by(AdCampaignAction.created_at.desc(), AdCampaignAction.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "campaign": _ad_campaign_dict(campaign),
+        **_action_counts(actions),
+        "actions": [_action_dict(action) for action in actions],
+    }
+
+
+@router.post("/campaigns/{campaign_id}/pause")
+def pause_ad_campaign(
+    campaign_id: int,
+    payload: AdCampaignActionRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+    if campaign.status == "paused":
+        raise HTTPException(status_code=409, detail="Campaign is already paused.")
+    if campaign.status in {"completed", "failed"}:
+        raise HTTPException(status_code=409, detail=f"Campaign cannot be paused from {campaign.status}.")
+
+    previous_status = campaign.status
+    campaign.status = "paused"
+    campaign.updated_at = datetime.utcnow()
+    action = _record_ad_action(
+        db,
+        campaign=campaign,
+        action="pause",
+        previous_status=previous_status,
+        next_status=campaign.status,
+        note=payload.note,
+        actor=_actor_from_session(session),
+        response_payload={"source": "portal"},
+    )
+    db.commit()
+    db.refresh(campaign)
+    db.refresh(action)
+    return {"campaign": _ad_campaign_dict(campaign), "action": _action_dict(action)}
+
+
+@router.post("/campaigns/{campaign_id}/resume")
+def resume_ad_campaign(
+    campaign_id: int,
+    payload: AdCampaignActionRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+    if campaign.status != "paused":
+        raise HTTPException(status_code=409, detail="Only paused campaigns can be resumed.")
+
+    previous_status = campaign.status
+    next_status = "launched" if campaign.external_campaign_id else "ready"
+    campaign.status = next_status
+    campaign.updated_at = datetime.utcnow()
+    action = _record_ad_action(
+        db,
+        campaign=campaign,
+        action="resume",
+        previous_status=previous_status,
+        next_status=campaign.status,
+        note=payload.note,
+        actor=_actor_from_session(session),
+        response_payload={"source": "portal", "external_campaign_id": campaign.external_campaign_id},
+    )
+    db.commit()
+    db.refresh(campaign)
+    db.refresh(action)
+    return {"campaign": _ad_campaign_dict(campaign), "action": _action_dict(action)}
+
+
+@router.post("/campaigns/{campaign_id}/complete")
+def complete_ad_campaign(
+    campaign_id: int,
+    payload: AdCampaignActionRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+    if campaign.status == "completed":
+        raise HTTPException(status_code=409, detail="Campaign is already completed.")
+
+    previous_status = campaign.status
+    campaign.status = "completed"
+    campaign.updated_at = datetime.utcnow()
+    action = _record_ad_action(
+        db,
+        campaign=campaign,
+        action="complete",
+        previous_status=previous_status,
+        next_status=campaign.status,
+        note=payload.note,
+        actor=_actor_from_session(session),
+        response_payload={"source": "portal", "budget_health": _campaign_budget_health(campaign)},
+    )
+    db.commit()
+    db.refresh(campaign)
+    db.refresh(action)
+    return {"campaign": _ad_campaign_dict(campaign), "action": _action_dict(action)}
+
+
+@router.post("/campaigns/{campaign_id}/duplicate")
+def duplicate_ad_campaign(
+    campaign_id: int,
+    payload: AdCampaignDuplicateRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    campaign = db.get(AdCampaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Ad campaign not found")
+    duplicate_status = _normalize_status(payload.status)
+    if duplicate_status in {"launched", "completed", "failed"}:
+        raise HTTPException(status_code=422, detail="Duplicate status must be draft, planned, ready, or paused.")
+
+    clone = AdCampaign(
+        name=(payload.name or f"{campaign.name} Copy").strip(),
+        objective=campaign.objective,
+        platforms=list(campaign.platforms or []),
+        audience=campaign.audience,
+        location=campaign.location,
+        creative_message=campaign.creative_message,
+        link_url=campaign.link_url,
+        image_url=campaign.image_url,
+        daily_budget=campaign.daily_budget,
+        lifetime_budget=campaign.lifetime_budget,
+        start_date=campaign.start_date,
+        end_date=campaign.end_date,
+        status=duplicate_status,
+        impressions=0 if payload.reset_metrics else campaign.impressions,
+        clicks=0 if payload.reset_metrics else campaign.clicks,
+        conversions=0 if payload.reset_metrics else campaign.conversions,
+        spend=0 if payload.reset_metrics else campaign.spend,
+        revenue=0 if payload.reset_metrics else campaign.revenue,
+    )
+    db.add(clone)
+    db.flush()
+    source_action = _record_ad_action(
+        db,
+        campaign=campaign,
+        action="duplicate",
+        previous_status=campaign.status,
+        next_status=campaign.status,
+        note=payload.note,
+        actor=_actor_from_session(session),
+        response_payload={
+            "source": "portal",
+            "duplicate_campaign_id": clone.id,
+            "reset_metrics": payload.reset_metrics,
+        },
+    )
+    clone_action = _record_ad_action(
+        db,
+        campaign=clone,
+        action="created_from_duplicate",
+        previous_status=None,
+        next_status=clone.status,
+        note=f"Duplicated from campaign #{campaign.id}",
+        actor=_actor_from_session(session),
+        response_payload={
+            "source_campaign_id": campaign.id,
+            "source_campaign_name": campaign.name,
+            "reset_metrics": payload.reset_metrics,
+        },
+    )
+    db.commit()
+    db.refresh(campaign)
+    db.refresh(clone)
+    db.refresh(source_action)
+    db.refresh(clone_action)
+    return {
+        "campaign": _ad_campaign_dict(campaign),
+        "duplicate": _ad_campaign_dict(clone),
+        "action": _action_dict(source_action),
+        "duplicate_action": _action_dict(clone_action),
+    }
 
 
 @router.get("/campaigns/{campaign_id}/budget-health")

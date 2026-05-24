@@ -89,6 +89,11 @@ const completedValue: RoadmapItem[] = [
     value: "Ad campaigns show spend pace, expected spend, remaining budget, ROAS signal and next actions.",
   },
   {
+    title: "Ad operational controls",
+    status: "done",
+    value: "Ads can now be paused, resumed, completed, duplicated and audited through action history.",
+  },
+  {
     title: "Payment, delivery, roles and production proofs",
     status: "done",
     value: "E2E proof files exist for payment readiness, delivery zones, role gates and production operations.",
@@ -117,9 +122,9 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Complete combos, add-ons, size pricing, topping rules and kitchen/POS behavior.",
   },
   {
-    title: "Real provider sending",
+    title: "Real provider sending and sync",
     status: "planned",
-    value: "Use live WhatsApp, SMS, email, social and ad provider tokens with compliance-aware sending.",
+    value: "Use live WhatsApp, SMS, email, social and ad provider tokens with compliance-aware sending and provider-state sync.",
   },
   {
     title: "Deployment, backups and environment security",
@@ -216,28 +221,17 @@ const june20Push: DailyPlan[] = [
   },
   {
     date: "24 May 2026",
-    focus: "Roadmap and command tracking",
-    status: "active",
+    focus: "Roadmap and ad operations",
+    status: "done",
     planned: [
       "Create a visible roadmap page",
       "Show 30/60/90 day direction",
-      "List daily plan up to 20 June",
+      "Complete ad pause, resume, complete, duplicate and action history controls",
     ],
-    output: "This roadmap page becomes the daily progress reference inside the portal.",
+    output: "Roadmap command board and ad operational controls were completed with build and browser proofs.",
   },
   {
     date: "25 May 2026",
-    focus: "Ad operational actions",
-    status: "planned",
-    planned: [
-      "Pause, resume and complete campaigns",
-      "Duplicate winning ad campaigns",
-      "Show ad action history",
-    ],
-    output: "Ad campaign management becomes closer to a daily operator tool.",
-  },
-  {
-    date: "26 May 2026",
     focus: "Payment gateway production pass",
     status: "planned",
     planned: [
@@ -248,7 +242,7 @@ const june20Push: DailyPlan[] = [
     output: "Real payment readiness moves from proof to controlled production setup.",
   },
   {
-    date: "27 May 2026",
+    date: "26 May 2026",
     focus: "Customer web checkout",
     status: "planned",
     planned: [
@@ -259,7 +253,7 @@ const june20Push: DailyPlan[] = [
     output: "Customer ordering becomes easier to demo and test end to end.",
   },
   {
-    date: "28 May 2026",
+    date: "27 May 2026",
     focus: "Delivery charges and zones",
     status: "planned",
     planned: [
@@ -270,7 +264,7 @@ const june20Push: DailyPlan[] = [
     output: "Orders can calculate delivery economics more realistically.",
   },
   {
-    date: "29 May 2026",
+    date: "28 May 2026",
     focus: "Address validation and delivery assignment",
     status: "planned",
     planned: [
@@ -281,7 +275,7 @@ const june20Push: DailyPlan[] = [
     output: "Delivery operations become usable by staff, not just stored as order text.",
   },
   {
-    date: "30 May 2026",
+    date: "29 May 2026",
     focus: "Product customization depth",
     status: "planned",
     planned: [
@@ -290,6 +284,17 @@ const june20Push: DailyPlan[] = [
       "Kitchen-safe order line display",
     ],
     output: "Pizza ordering gets closer to Domino's-style customization.",
+  },
+  {
+    date: "30 May 2026",
+    focus: "Order flow polish",
+    status: "planned",
+    planned: [
+      "Clean order status transitions",
+      "Polish receipts",
+      "Improve staff order ergonomics",
+    ],
+    output: "Counter and customer order flows become smoother for beta demos.",
   },
   {
     date: "31 May 2026",
@@ -694,7 +699,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Ad campaign operational controls: pause, resume, complete, duplicate winning campaigns and record action history."
+          text="Payment gateway production pass: provider configuration checks, webhook verification, and order payment-state wiring."
         />
       </section>
     </div>

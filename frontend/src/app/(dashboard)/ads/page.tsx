@@ -5,7 +5,11 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  Copy,
+  History,
   Link as LinkIcon,
+  Pause,
+  Play,
   Plus,
   RefreshCw,
   Send,
@@ -84,6 +88,27 @@ type LaunchHistory = {
   failed_count: number;
   skipped_count: number;
   launches: AdLaunch[];
+};
+
+type AdAction = {
+  id: number;
+  campaign_id: number;
+  action: "pause" | "resume" | "complete" | "duplicate" | "created_from_duplicate" | string;
+  previous_status?: CampaignStatus | null;
+  next_status?: CampaignStatus | null;
+  note?: string | null;
+  actor?: string | null;
+  response_payload?: Record<string, unknown>;
+  created_at?: string | null;
+};
+
+type ActionHistory = {
+  action_count: number;
+  pause_count: number;
+  resume_count: number;
+  complete_count: number;
+  duplicate_count: number;
+  actions: AdAction[];
 };
 
 type ReadinessCampaign = {
@@ -193,6 +218,7 @@ export default function AdsManagerPage() {
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<LaunchHistory | null>(null);
+  const [actionHistory, setActionHistory] = useState<ActionHistory | null>(null);
   const [budgetHealth, setBudgetHealth] = useState<BudgetHealth | null>(null);
   const [campaignForm, setCampaignForm] = useState(emptyCampaign);
   const [metricsForm, setMetricsForm] = useState<MetricsForm>({
@@ -206,11 +232,16 @@ export default function AdsManagerPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [launching, setLaunching] = useState<"dry_run" | "launch" | null>(null);
+  const [actioning, setActioning] = useState<"pause" | "resume" | "complete" | "duplicate" | null>(null);
 
   const selectedCampaign = useMemo(
     () => campaigns.find((campaign) => campaign.id === selectedId) || null,
     [campaigns, selectedId]
   );
+  const canPause =
+    !!selectedCampaign && !["paused", "completed", "failed"].includes(selectedCampaign.status);
+  const canResume = selectedCampaign?.status === "paused";
+  const canComplete = !!selectedCampaign && selectedCampaign.status !== "completed";
   const budgetProgressWidth = `${Math.min(100, Math.max(0, budgetHealth?.spend_percent || 0))}%`;
   const elapsedProgressWidth = `${Math.min(100, Math.max(0, budgetHealth?.elapsed_percent || 0))}%`;
 
@@ -263,9 +294,14 @@ export default function AdsManagerPage() {
       }
       setSelectedId(nextSelectedId);
       if (nextSelectedId) {
-        await Promise.all([fetchLaunches(nextSelectedId), fetchBudgetHealth(nextSelectedId)]);
+        await Promise.all([
+          fetchLaunches(nextSelectedId),
+          fetchBudgetHealth(nextSelectedId),
+          fetchActions(nextSelectedId),
+        ]);
       } else {
         setHistory(null);
+        setActionHistory(null);
         setBudgetHealth(null);
       }
     }
@@ -279,6 +315,15 @@ export default function AdsManagerPage() {
       return;
     }
     setHistory(await response.json());
+  };
+
+  const fetchActions = async (campaignId: number) => {
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${campaignId}/actions`);
+    if (!response.ok) {
+      setActionHistory(null);
+      return;
+    }
+    setActionHistory(await response.json());
   };
 
   const fetchBudgetHealth = async (campaignId: number) => {
@@ -295,6 +340,7 @@ export default function AdsManagerPage() {
     setSelectedId(campaignId);
     setSelectedCampaignParam(campaignId);
     fetchLaunches(campaignId);
+    fetchActions(campaignId);
     fetchBudgetHealth(campaignId);
   };
 
@@ -375,6 +421,56 @@ export default function AdsManagerPage() {
     await fetchAds();
     await fetchLaunches(selectedCampaign.id);
     setLaunching(null);
+  };
+
+  const runCampaignAction = async (action: "pause" | "resume" | "complete") => {
+    if (!selectedCampaign) return;
+    setActioning(action);
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${selectedCampaign.id}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: `${actionLabel(action)} from Ads command board.` }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || `Campaign ${action} failed.`);
+      setActioning(null);
+      return;
+    }
+    setMessage(`${data.campaign.name} marked ${data.campaign.status}.`);
+    await fetchAds(selectedCampaign.id);
+    await fetchActions(selectedCampaign.id);
+    await fetchBudgetHealth(selectedCampaign.id);
+    setActioning(null);
+  };
+
+  const duplicateCampaign = async () => {
+    if (!selectedCampaign) return;
+    setActioning("duplicate");
+    const response = await fetchWithAuth(`${ADS_API}/campaigns/${selectedCampaign.id}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: `${selectedCampaign.name} Copy`,
+        status: "ready",
+        reset_metrics: true,
+        note: "Duplicated from Ads command board.",
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Campaign duplicate failed.");
+      setActioning(null);
+      return;
+    }
+    setMessage(`Duplicated ${selectedCampaign.name} into ${data.duplicate.name}.`);
+    await fetchAds(data.duplicate.id);
+    await Promise.all([
+      fetchActions(data.duplicate.id),
+      fetchLaunches(data.duplicate.id),
+      fetchBudgetHealth(data.duplicate.id),
+    ]);
+    setActioning(null);
   };
 
   return (
@@ -587,6 +683,60 @@ export default function AdsManagerPage() {
                   <Detail label="ROAS" value={`${selectedCampaign.roas}x`} />
                 </div>
 
+                <div
+                  data-testid="ad-ops-actions"
+                  className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5"
+                >
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-gray-500">Operations</p>
+                      <h3 className="mt-1 text-lg font-black">Campaign Controls</h3>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(selectedCampaign.status)}`}>
+                      {selectedCampaign.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <button
+                      data-testid="pause-ad-campaign"
+                      onClick={() => runCampaignAction("pause")}
+                      disabled={!canPause || actioning !== null}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-3 text-sm font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Pause className="h-4 w-4" /> Pause
+                    </button>
+                    <button
+                      data-testid="resume-ad-campaign"
+                      onClick={() => runCampaignAction("resume")}
+                      disabled={!canResume || actioning !== null}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-3 text-sm font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Play className="h-4 w-4" /> Resume
+                    </button>
+                    <button
+                      data-testid="complete-ad-campaign"
+                      onClick={() => runCampaignAction("complete")}
+                      disabled={!canComplete || actioning !== null}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/10 px-4 py-3 text-sm font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Complete
+                    </button>
+                    <button
+                      data-testid="duplicate-ad-campaign"
+                      onClick={duplicateCampaign}
+                      disabled={actioning !== null}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-3 text-sm font-bold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Copy className="h-4 w-4" /> Duplicate
+                    </button>
+                  </div>
+                  {actioning && (
+                    <p className="mt-3 text-xs font-bold uppercase tracking-widest text-orange-300">
+                      Running {actionLabel(actioning)}...
+                    </p>
+                  )}
+                </div>
+
                 {budgetHealth && (
                   <div
                     data-testid="ad-budget-command"
@@ -720,6 +870,50 @@ export default function AdsManagerPage() {
                     No launch attempts yet.
                   </div>
                 )}
+
+                <div
+                  data-testid="ad-action-history"
+                  className="mt-6 rounded-xl border border-white/5 bg-black/25 p-5"
+                >
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2 font-black">
+                      <History className="h-4 w-4 text-orange-400" /> Action History
+                    </h3>
+                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                      {actionHistory?.action_count || 0} actions
+                    </span>
+                  </div>
+                  {actionHistory?.actions.length ? (
+                    <div className="space-y-2">
+                      {actionHistory.actions.slice(0, 8).map((action) => (
+                        <div
+                          key={action.id}
+                          className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-sm md:grid-cols-12"
+                        >
+                          <div className="md:col-span-3">
+                            <p className="font-bold capitalize text-white">{action.action.replaceAll("_", " ")}</p>
+                            <p className="text-xs text-gray-500">{action.actor || "Portal"}</p>
+                          </div>
+                          <div className="md:col-span-3">
+                            <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass((action.next_status || "draft") as CampaignStatus)}`}>
+                              {action.previous_status || "new"} to {action.next_status || "same"}
+                            </span>
+                          </div>
+                          <div className="text-gray-500 md:col-span-3">
+                            {action.created_at ? new Date(action.created_at).toLocaleString() : "Not recorded"}
+                          </div>
+                          <div className="text-gray-400 md:col-span-3">
+                            {action.note || "No note"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-gray-500">
+                      No campaign actions yet.
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <div className="rounded-xl border border-dashed border-white/10 p-12 text-center text-gray-500">
@@ -837,6 +1031,13 @@ function launchStatusClass(status: AdLaunch["status"]) {
   if (status === "failed") return "bg-red-500/15 text-red-300";
   if (status === "skipped") return "bg-yellow-500/15 text-yellow-300";
   return "bg-white/10 text-gray-300";
+}
+
+function actionLabel(action: "pause" | "resume" | "complete" | "duplicate") {
+  if (action === "pause") return "Pause";
+  if (action === "resume") return "Resume";
+  if (action === "complete") return "Complete";
+  return "Duplicate";
 }
 
 function pacingStatusLabel(status: BudgetHealth["pacing_status"]) {
