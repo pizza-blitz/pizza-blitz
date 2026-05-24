@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "97%",
-    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer, counter and delivery order proof now visible",
+    value: "98%",
+    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer/counter/delivery proof and dashboard polish now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "85%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks and customer/counter/delivery handoff proof are now tracked",
+    value: "86%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, delivery handoff and visual polish proof are now tracked",
   },
   {
     label: "Target Date",
@@ -213,6 +213,11 @@ const completedValue: RoadmapItem[] = [
     title: "Delivery order E2E",
     status: "done",
     value: "Delivery orders now prove charge, zone, rider assignment, dispatch, delivered close, payment state and customer tracking.",
+  },
+  {
+    title: "Dashboard visual polish",
+    status: "done",
+    value: "Mobile navigation now has active state, dashboard cards are denser on mobile, currency formatting is consistent and chart empty states are explicit.",
   },
 ];
 
@@ -604,18 +609,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "14 Jun 2026",
     focus: "Visual polish review",
-    status: "active",
+    status: "done",
     planned: [
       "Mobile and desktop screenshots",
       "Text overflow cleanup",
       "Navigation and empty-state polish",
     ],
-    output: "Portal becomes more professional and presentable.",
+    output: "Dashboard mobile nav, metric density, currency formatting and chart empty states were tightened with mobile and desktop screenshots.",
   },
   {
     date: "15 Jun 2026",
     focus: "Operational dashboards",
-    status: "planned",
+    status: "active",
     planned: [
       "Today command board",
       "Kitchen and delivery state",
@@ -683,8 +688,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "19",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "20",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -694,12 +699,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Deployment pipeline is mapped and delivery order E2E is now proof-backed.",
+    note: "Dashboard polish and delivery order E2E are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Visual Polish",
-    note: "Mobile/desktop screenshots, text overflow cleanup and navigation polish are now the active track.",
+    value: "Operational Dashboards",
+    note: "Today command board, kitchen/delivery state and owner alerts are now the active track.",
   },
 ];
 
@@ -831,6 +836,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-visual-audit-desktop.png",
   },
   {
+    area: "Dashboard visual polish",
+    proof: "verify-dashboard-visual-polish.cjs",
+    status: "passed",
+    value: "Mobile active navigation, two-column dashboard cards, desktop shell behavior and visual screenshots stay proof-backed.",
+    artifact: "visible-dashboard-visual-polish-mobile.png",
+  },
+  {
     area: "Roadmap command board",
     proof: "verify-roadmap-command-board.cjs",
     status: "passed",
@@ -842,7 +854,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "19 / 19",
+    value: "20 / 20",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -857,8 +869,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Visual Polish",
-    note: "The next work slice should tighten mobile/desktop screenshots, overflow cleanup and navigation polish.",
+    value: "Operational Dashboards",
+    note: "The next work slice should improve today command board visibility, kitchen/delivery state and owner alerts.",
   },
 ];
 
@@ -910,8 +922,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Visual polish handoff",
+    status: "done",
+    value: "Mobile and desktop screenshots, active mobile navigation, dashboard density and empty states are now proof-backed.",
+  },
+  {
+    title: "Operational dashboards handoff",
     status: "active",
-    value: "Next slice should tighten mobile and desktop screenshots, text overflow cleanup, navigation polish and empty states.",
+    value: "Next slice should improve today command board visibility, kitchen and delivery state and owner alerts.",
   },
 ];
 
@@ -1261,7 +1278,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Visual polish review: mobile and desktop screenshots, text overflow cleanup, navigation polish and empty states."
+          text="Operational dashboards: tighten today command board visibility, kitchen and delivery state and owner alerts."
         />
       </section>
     </div>

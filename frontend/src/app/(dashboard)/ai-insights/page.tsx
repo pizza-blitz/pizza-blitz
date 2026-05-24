@@ -124,7 +124,7 @@ export default function AIInsights() {
                 </div>
                 <div className="bg-white/5 p-6 rounded-[2rem] border border-white/10 backdrop-blur-sm">
                    <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-1">Potential Monthly Yield</p>
-                   <p className="font-black text-4xl text-green-400 tracking-tighter">₹4,500+</p>
+                   <p className="font-black text-4xl text-green-400 tracking-tighter">Rs 4,500+</p>
                 </div>
                 <button className="w-full py-5 bg-orange-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-orange-900/50 hover:bg-orange-500 transition-all active:scale-95">
                    Optimize Model

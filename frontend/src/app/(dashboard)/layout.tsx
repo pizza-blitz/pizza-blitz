@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
-import Sidebar, { portalNavItemsForRole } from "@/components/layout/Sidebar";
+import Sidebar from "@/components/layout/Sidebar";
+import MobilePortalNav from "@/components/layout/MobilePortalNav";
 import {
   ADMIN_COOKIE,
   STAFF_COOKIE,
@@ -31,7 +32,6 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const role = await currentPortalRole();
-  const navItems = portalNavItemsForRole(role);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gray-50 text-gray-900 md:flex-row">
@@ -48,21 +48,7 @@ export default async function DashboardLayout({
             Logout
           </Link>
         </div>
-        <nav className="flex gap-2 overflow-x-auto px-3 pb-3">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className="inline-flex shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700"
-              >
-                <Icon className="h-4 w-4" />
-                {item.name}
-              </Link>
-            );
-          })}
-        </nav>
+        <MobilePortalNav role={role} />
       </header>
       <Sidebar role={role} />
       <main className="min-w-0 flex-1 overflow-y-auto p-4 md:p-8">

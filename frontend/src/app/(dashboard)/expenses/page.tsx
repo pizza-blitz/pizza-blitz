@@ -66,7 +66,9 @@ export default function ExpenseTracker() {
   });
 
   useEffect(() => {
-    fetchExpenseData();
+    const controller = new AbortController();
+    fetchExpenseData(controller.signal);
+    return () => controller.abort();
   }, []);
 
   const categoryById = useMemo(() => {
@@ -100,16 +102,17 @@ export default function ExpenseTracker() {
     [detailedExpenses]
   );
 
-  const fetchExpenseData = async () => {
+  const fetchExpenseData = async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
       const [statsRes, trendRes, expenseRes, categoryRes] = await Promise.all([
-        fetch(getApiUrl("/api/v1/restaurant/stats/dashboard-stats?period=30days")).then((r) => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/stats/insights/profit-trend?months=6")).then((r) => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/expenses/expenses")).then((r) => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/expenses/categories")).then((r) => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/stats/dashboard-stats?period=30days"), { signal }).then((r) => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/stats/insights/profit-trend?months=6"), { signal }).then((r) => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/expenses/expenses"), { signal }).then((r) => r.json()),
+        fetch(getApiUrl("/api/v1/restaurant/expenses/categories"), { signal }).then((r) => r.json()),
       ]);
 
+      if (signal?.aborted) return;
       setExpenseStats(statsRes.metrics);
       setTrends(trendRes.trend || []);
       setDetailedExpenses(expenseRes || []);
@@ -118,10 +121,13 @@ export default function ExpenseTracker() {
         setForm((current) => ({ ...current, category_id: String(categoryRes[0].id) }));
       }
     } catch (error) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch expense data", error);
       setMessage("Could not load expense data.");
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
     }
   };
 
