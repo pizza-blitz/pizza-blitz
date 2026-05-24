@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -402,6 +402,178 @@ def readiness_report(db: Session) -> dict:
         "failed_checks": failed,
         "warning_checks": warnings,
         "checks": checks,
+    }
+
+
+def data_quality_report(db: Session) -> dict:
+    customers = db.query(Customer).all()
+    daily_rows = db.query(DailySales).order_by(DailySales.date.desc()).all()
+    promotions = db.query(Promotion).order_by(Promotion.created_at.desc(), Promotion.id.desc()).all()
+    orders_total = db.query(func.count(RestaurantOrder.id)).scalar() or 0
+    orders_missing_phone = (
+        db.query(func.count(RestaurantOrder.id))
+        .filter((RestaurantOrder.customer_phone.is_(None)) | (RestaurantOrder.customer_phone == ""))
+        .scalar()
+        or 0
+    )
+    duplicate_phone_count = (
+        db.query(Customer.phone)
+        .group_by(Customer.phone)
+        .having(func.count(Customer.id) > 1)
+        .count()
+    )
+    total_customers = len(customers)
+    opted_in = sum(1 for customer in customers if customer.opt_in_marketing)
+    with_phone = sum(1 for customer in customers if (customer.phone or "").strip())
+    with_email = sum(1 for customer in customers if (customer.email or "").strip())
+    reachable = sum(
+        1
+        for customer in customers
+        if customer.opt_in_marketing and ((customer.phone or "").strip() or (customer.email or "").strip())
+    )
+    missing_email = max(total_customers - with_email, 0)
+    no_order_profile_count = sum(1 for customer in customers if not customer.last_order_at)
+    latest_sale = daily_rows[0].date if daily_rows else None
+    latest_campaign = promotions[0] if promotions else None
+    backup_freshness = _backup_freshness(db)
+    latest_backup = db.query(BackupRun).order_by(BackupRun.created_at.desc(), BackupRun.id.desc()).first()
+
+    customer_status = "pass" if duplicate_phone_count == 0 and with_phone == total_customers else "warn"
+    reach_status = "pass" if total_customers and reachable / total_customers >= 0.8 else "warn" if reachable else "fail"
+    report_status = "pass" if daily_rows else "warn"
+    backup_status = backup_freshness.get("status", "warn")
+    import_status = "warn"
+    checks = [
+        {
+            "key": "customer_identity",
+            "label": "Customer identity quality",
+            "status": customer_status,
+            "detail": f"{duplicate_phone_count} duplicate phone group(s), {with_phone}/{total_customers} profiles have phone numbers.",
+        },
+        {
+            "key": "customer_reachability",
+            "label": "Customer import/export reachability",
+            "status": reach_status,
+            "detail": f"{reachable}/{total_customers} customers are marketing-reachable; {missing_email} profiles still need email capture.",
+        },
+        {
+            "key": "report_exports",
+            "label": "Report export coverage",
+            "status": report_status,
+            "detail": f"{len(daily_rows)} daily sales row(s) are available for CSV export.",
+        },
+        {
+            "key": "backup_restore",
+            "label": "Backup/restore proof",
+            "status": backup_status,
+            "detail": backup_freshness.get("detail") or "Backup status is not available.",
+        },
+        {
+            "key": "import_controls",
+            "label": "Import controls",
+            "status": import_status,
+            "detail": "Sheets and PDF import endpoints exist; customer CSV import still needs a dry-run validator before live bulk uploads.",
+        },
+    ]
+    score = _readiness_score(checks)
+    next_actions = [
+        "Run customer CSV export before any bulk cleanup.",
+        "Run sales/report CSV export and attach it to the daily manager review.",
+        "Create or verify a fresh backup, then rehearse restore before importing production data.",
+        "Add a customer CSV import dry-run validator before accepting bulk uploads.",
+    ]
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "score": score,
+        "status": _rollup_status(checks),
+        "summary": {
+            "total_customers": total_customers,
+            "reachable_customers": reachable,
+            "opted_in_customers": opted_in,
+            "email_ready_customers": with_email,
+            "missing_email_customers": missing_email,
+            "duplicate_phone_groups": duplicate_phone_count,
+            "no_order_profile_count": no_order_profile_count,
+            "orders_total": orders_total,
+            "orders_missing_phone": orders_missing_phone,
+            "daily_sales_rows": len(daily_rows),
+            "latest_sales_date": latest_sale.isoformat() if isinstance(latest_sale, date) else None,
+            "campaign_export_count": len(promotions),
+        },
+        "checks": checks,
+        "exports": [
+            {
+                "key": "customers",
+                "label": "Customer CSV export",
+                "status": "pass",
+                "endpoint": "/api/v1/restaurant/customers/export.csv",
+                "detail": f"{total_customers} customer profile(s) export with consent and contact fields.",
+            },
+            {
+                "key": "sales",
+                "label": "Sales report CSV export",
+                "status": report_status,
+                "endpoint": "/api/v1/restaurant/sales/export/csv",
+                "detail": f"{len(daily_rows)} sales day(s) export with sale, expense and profit columns.",
+            },
+            {
+                "key": "campaign_performance",
+                "label": "Campaign performance CSV export",
+                "status": "pass" if latest_campaign else "warn",
+                "endpoint": (
+                    f"/api/v1/restaurant/promotions/performance/{latest_campaign.id}/export.csv"
+                    if latest_campaign
+                    else None
+                ),
+                "detail": (
+                    f"Latest campaign export is ready for {latest_campaign.name}."
+                    if latest_campaign
+                    else "Create a campaign before campaign performance CSV export can be proved."
+                ),
+            },
+            {
+                "key": "backup_history",
+                "label": "Backup history API",
+                "status": backup_status,
+                "endpoint": "/api/v1/restaurant/ops/backups",
+                "detail": backup_freshness.get("detail") or "Backup history is available to admins.",
+            },
+        ],
+        "imports": [
+            {
+                "key": "google_sheets",
+                "label": "Google Sheets import",
+                "status": "warn",
+                "endpoint": "/api/v1/restaurant/import/sheets",
+                "detail": "Endpoint exists, but production import should run through dry-run review and source locking.",
+            },
+            {
+                "key": "pdf_import",
+                "label": "PDF sales import",
+                "status": "warn",
+                "endpoint": "/api/v1/restaurant/import/pdf",
+                "detail": "Endpoint exists for historical statements; verify extracted totals before merge.",
+            },
+            {
+                "key": "customer_csv_import",
+                "label": "Customer CSV import dry-run",
+                "status": "warn",
+                "endpoint": None,
+                "detail": "Customer CSV export is ready; bulk customer import still needs validator, duplicate preview and rollback plan.",
+            },
+        ],
+        "backup_restore": {
+            "latest_status": latest_backup.status if latest_backup else "none",
+            "latest_backup_at": latest_backup.created_at.isoformat() if latest_backup and latest_backup.created_at else None,
+            "latest_size_bytes": latest_backup.size_bytes if latest_backup else 0,
+            "freshness": backup_freshness,
+            "restore_rehearsal": {
+                "status": "warn",
+                "detail": "Restore a backup into a clean database and run login, customer export, sales export and order smoke proof.",
+            },
+        },
+        "next_actions": next_actions,
     }
 
 
@@ -1564,6 +1736,15 @@ def _readiness_score(items: list[dict]) -> int:
     weights = {"pass": 1.0, "warn": 0.5, "fail": 0.0}
     score = sum(weights.get(item["status"], 0) for item in items) / len(items)
     return round(score * 100)
+
+
+def _rollup_status(items: list[dict]) -> str:
+    statuses = {item.get("status") for item in items}
+    if "fail" in statuses:
+        return "fail"
+    if "warn" in statuses:
+        return "warn"
+    return "pass"
 
 
 def _backup_dir() -> Path:

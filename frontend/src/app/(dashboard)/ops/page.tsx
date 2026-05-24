@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  BarChart3,
   CheckCircle2,
   CreditCard,
   Database,
+  Download,
+  FileText,
   HardDrive,
   KeyRound,
   Link as LinkIcon,
@@ -13,6 +16,8 @@ import {
   RefreshCw,
   Rocket,
   ShieldCheck,
+  Upload,
+  Users,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
@@ -185,8 +190,55 @@ type BackupRun = {
   created_at?: string | null;
 };
 
+type DataQualityResource = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  endpoint?: string | null;
+  detail: string;
+};
+
+type DataQualityReport = {
+  generated_at: string;
+  score: number;
+  status: CheckStatus;
+  summary: {
+    total_customers: number;
+    reachable_customers: number;
+    opted_in_customers: number;
+    email_ready_customers: number;
+    missing_email_customers: number;
+    duplicate_phone_groups: number;
+    no_order_profile_count: number;
+    orders_total: number;
+    orders_missing_phone: number;
+    daily_sales_rows: number;
+    latest_sales_date?: string | null;
+    campaign_export_count: number;
+  };
+  checks: ProductionDatabaseStep[];
+  exports: DataQualityResource[];
+  imports: DataQualityResource[];
+  backup_restore: {
+    latest_status: string;
+    latest_backup_at?: string | null;
+    latest_size_bytes: number;
+    freshness: {
+      status: CheckStatus;
+      latest_backup_at?: string | null;
+      detail: string;
+    };
+    restore_rehearsal: {
+      status: CheckStatus;
+      detail: string;
+    };
+  };
+  next_actions: string[];
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [dataQuality, setDataQuality] = useState<DataQualityReport | null>(null);
   const [backups, setBackups] = useState<BackupRun[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -200,12 +252,16 @@ export default function ProductionOpsPage() {
 
   const fetchOps = async () => {
     setLoading(true);
-    const [readinessResponse, backupResponse] = await Promise.all([
+    const [readinessResponse, dataQualityResponse, backupResponse] = await Promise.all([
       fetchWithAuth(`${OPS_API}/readiness`),
+      fetchWithAuth(`${OPS_API}/data-quality`),
       fetchWithAuth(`${OPS_API}/backups`),
     ]);
     if (readinessResponse.ok) {
       setReadiness(await readinessResponse.json());
+    }
+    if (dataQualityResponse.ok) {
+      setDataQuality(await dataQualityResponse.json());
     }
     if (backupResponse.ok) {
       const data = await backupResponse.json();
@@ -299,6 +355,8 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {dataQuality ? <DataQualityCommand report={dataQuality} /> : null}
 
       {readiness?.production_database_plan ? (
         <ProductionDatabaseCommand plan={readiness.production_database_plan} />
@@ -496,7 +554,7 @@ export default function ProductionOpsPage() {
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="xl:col-span-7">
-          <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
+          <div id="backup-history" className="rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-lg font-black">Readiness Checks</h2>
               <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${overallClass(readiness?.overall)}`}>
@@ -639,6 +697,235 @@ function SummaryPill({ label, value }: { label: string; value: string }) {
     <div className="min-w-24 rounded-xl border border-white/5 bg-black/25 px-4 py-3">
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function DataQualityCommand({ report }: { report: DataQualityReport }) {
+  const customerExport = report.exports.find((item) => item.key === "customers");
+  const salesExport = report.exports.find((item) => item.key === "sales");
+  const campaignExport = report.exports.find((item) => item.key === "campaign_performance");
+
+  return (
+    <section
+      data-testid="data-quality-export-command"
+      className="mb-8 rounded-xl border border-cyan-500/20 bg-[#101417] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-300">Data Quality And Import/Export</p>
+          <h2 className="mt-2 text-2xl font-black">Data Quality and Export Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Customer cleanup, report exports and backup/restore proof before any production import or bulk data movement.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(report.status)}`}>
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {report.status}
+          </span>
+          <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+            {report.score}% ready
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <DataQualityMetric icon={Users} label="Customers" value={`${report.summary.total_customers}`} />
+        <DataQualityMetric icon={CheckCircle2} label="Reachable" value={`${report.summary.reachable_customers}`} />
+        <DataQualityMetric icon={FileText} label="Sales Rows" value={`${report.summary.daily_sales_rows}`} />
+        <DataQualityMetric icon={HardDrive} label="Backup" value={report.backup_restore.latest_status} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <DataQualityPanel
+          testId="customer-import-export-checks"
+          icon={Users}
+          title="Customer Import/Export Checks"
+          status={report.checks.find((item) => item.key === "customer_reachability")?.status || "warn"}
+          metrics={[
+            { label: "Email Ready", value: `${report.summary.email_ready_customers}` },
+            { label: "Email Gaps", value: `${report.summary.missing_email_customers}` },
+            { label: "Duplicates", value: `${report.summary.duplicate_phone_groups}` },
+          ]}
+          detail={`${report.summary.no_order_profile_count} profile(s) have no order history yet; ${report.summary.orders_missing_phone} order(s) are missing phone handoff.`}
+          primaryHref={apiHref(customerExport?.endpoint)}
+          primaryLabel="Download customers"
+        />
+        <DataQualityPanel
+          testId="report-export-checks"
+          icon={BarChart3}
+          title="Report Export Checks"
+          status={report.checks.find((item) => item.key === "report_exports")?.status || "warn"}
+          metrics={[
+            { label: "Sales Rows", value: `${report.summary.daily_sales_rows}` },
+            { label: "Campaigns", value: `${report.summary.campaign_export_count}` },
+            { label: "Latest Sale", value: report.summary.latest_sales_date || "none" },
+          ]}
+          detail={salesExport?.detail || "Sales report export readiness is loading."}
+          primaryHref={apiHref(salesExport?.endpoint)}
+          primaryLabel="Download sales"
+          secondaryHref={apiHref(campaignExport?.endpoint)}
+          secondaryLabel="Campaign CSV"
+        />
+        <DataQualityPanel
+          testId="backup-restore-proof-checks"
+          icon={HardDrive}
+          title="Backup/Restore Proof"
+          status={report.backup_restore.freshness.status}
+          metrics={[
+            { label: "Latest", value: report.backup_restore.latest_status },
+            { label: "Size", value: formatBytes(report.backup_restore.latest_size_bytes) },
+            { label: "Restore", value: report.backup_restore.restore_rehearsal.status },
+          ]}
+          detail={report.backup_restore.restore_rehearsal.detail}
+          primaryHref="#backup-history"
+          primaryLabel="Open backups"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+          <div className="mb-4 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-cyan-300" />
+            <h3 className="font-black">Quality Checks</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {report.checks.map((check) => (
+              <ReadinessStep key={check.key} step={check} />
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Upload className="h-5 w-5 text-cyan-300" />
+            <h3 className="font-black">Import Readiness</h3>
+          </div>
+          <div className="space-y-3">
+            {report.imports.map((item) => (
+              <DataQualityResourceRow key={item.key} item={item} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-testid="data-quality-next-actions"
+        className="mt-6 grid grid-cols-1 gap-3 rounded-xl border border-cyan-500/10 bg-cyan-500/5 p-4 md:grid-cols-2"
+      >
+        {report.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-cyan-50/90">
+            <AlertTriangle className="mt-1 h-4 w-4 shrink-0 text-cyan-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DataQualityMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-black/25 p-4">
+      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-300">
+        <Icon className="h-4 w-4" />
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className="mt-2 break-words text-xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function DataQualityPanel({
+  testId,
+  icon: Icon,
+  title,
+  status,
+  metrics,
+  detail,
+  primaryHref,
+  primaryLabel,
+  secondaryHref,
+  secondaryLabel,
+}: {
+  testId: string;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  status: CheckStatus;
+  metrics: { label: string; value: string }[];
+  detail: string;
+  primaryHref?: string | null;
+  primaryLabel: string;
+  secondaryHref?: string | null;
+  secondaryLabel?: string;
+}) {
+  return (
+    <div data-testid={testId} className="rounded-xl border border-white/5 bg-black/25 p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="break-words text-lg font-black text-white">{title}</h3>
+            <p className="mt-1 text-xs font-black uppercase tracking-widest text-gray-600">Readiness lane</p>
+          </div>
+        </div>
+        <StatusBadge status={status} />
+      </div>
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        {metrics.map((metric) => (
+          <div key={`${title}-${metric.label}`} className="rounded-lg border border-white/5 bg-white/[0.03] p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">{metric.label}</p>
+            <p className="mt-1 break-words text-sm font-black text-gray-200">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+      <p className="min-h-16 text-sm font-semibold leading-6 text-gray-500">{detail}</p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        {primaryHref ? (
+          <a
+            href={primaryHref}
+            className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {primaryLabel}
+          </a>
+        ) : null}
+        {secondaryHref && secondaryLabel ? (
+          <a
+            href={secondaryHref}
+            className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-gray-200 hover:bg-white/10"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {secondaryLabel}
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DataQualityResourceRow({ item }: { item: DataQualityResource }) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#111113] p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-black text-white">{item.label}</p>
+        <StatusBadge status={item.status} />
+      </div>
+      <p className="text-sm leading-6 text-gray-400">{item.detail}</p>
+      {item.endpoint ? (
+        <p className="mt-2 break-all text-xs font-semibold text-gray-600">{item.endpoint}</p>
+      ) : null}
     </div>
   );
 }
@@ -952,6 +1239,10 @@ function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function apiHref(endpoint?: string | null) {
+  return endpoint ? getApiUrl(endpoint) : null;
 }
 
 function Metric({

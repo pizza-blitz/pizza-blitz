@@ -1,7 +1,10 @@
+import csv
+import io
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -323,18 +326,11 @@ def apply_customer_segment(query, segment: str):
     return query
 
 
-@router.get("/")
-def list_customers(
-    q: Optional[str] = None,
-    segment: str = Query("all"),
-    db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
-):
+def filtered_customer_query(db: Session, segment: str = "all", q: Optional[str] = None):
     if segment not in VALID_CUSTOMER_SEGMENTS:
         raise HTTPException(status_code=422, detail="Unsupported customer segment.")
 
-    query = db.query(Customer)
-    query = apply_customer_segment(query, segment)
+    query = apply_customer_segment(db.query(Customer), segment)
     if q:
         search = f"%{q.strip()}%"
         query = query.filter(
@@ -345,7 +341,17 @@ def list_customers(
                 Customer.notes.ilike(search),
             )
         )
+    return query
 
+
+@router.get("/")
+def list_customers(
+    q: Optional[str] = None,
+    segment: str = Query("all"),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    query = filtered_customer_query(db, segment=segment, q=q)
     customers = query.order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc()).limit(200).all()
     return [serialize_customer(customer) for customer in customers]
 
@@ -453,6 +459,58 @@ def customer_segment_report(
         "largest_cleanup_segment": largest_gap,
         "segments": rows,
     }
+
+
+@router.get("/export.csv")
+def export_customers_csv(
+    q: Optional[str] = None,
+    segment: str = Query("all"),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    customers = (
+        filtered_customer_query(db, segment=segment, q=q)
+        .order_by(Customer.last_order_at.desc().nullslast(), Customer.id.desc())
+        .all()
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "name",
+            "phone",
+            "email",
+            "marketing_opt_in",
+            "total_orders",
+            "total_spend",
+            "first_seen_at",
+            "last_order_at",
+            "notes",
+        ]
+    )
+    for customer in customers:
+        writer.writerow(
+            [
+                customer.id,
+                customer.name or "",
+                customer.phone or "",
+                customer.email or "",
+                "yes" if customer.opt_in_marketing else "no",
+                customer.total_orders or 0,
+                round(float(customer.total_spend or 0), 2),
+                customer.first_seen_at.isoformat() if customer.first_seen_at else "",
+                customer.last_order_at.isoformat() if customer.last_order_at else "",
+                customer.notes or "",
+            ]
+        )
+
+    suffix = segment if segment != "all" else "all"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=customers_{suffix}_export.csv"},
+    )
 
 
 @router.get("/retention")

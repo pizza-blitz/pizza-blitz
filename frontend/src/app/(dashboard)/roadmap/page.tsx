@@ -229,6 +229,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Promotions now show one live-readiness board for campaign sender, social posting and Meta ads handoff from existing provider APIs.",
   },
+  {
+    title: "Data quality and export command",
+    status: "done",
+    value: "Production Ops now shows customer export, report export, import readiness and backup/restore checks in one command board.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -261,6 +266,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Marketing live-readiness command",
     status: "done",
     value: "The promotions page now combines campaign sender, social posting and ad launch readiness into one visible decision board.",
+  },
+  {
+    title: "Data quality and export command",
+    status: "done",
+    value: "Customer CSV export, report export checks, import readiness and backup/restore proof are now visible in Production Ops.",
   },
   {
     title: "Reporting comparison depth",
@@ -657,18 +667,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "17 Jun 2026",
     focus: "Data quality and import/export",
-    status: "active",
+    status: "done",
     planned: [
       "Customer import/export checks",
       "Report exports",
       "Backup/restore proof",
     ],
-    output: "Business data can be moved and audited more safely.",
+    output: "Customer CSV export, report exports, import readiness and backup/restore proof are now visible in Production Ops.",
   },
   {
     date: "18 Jun 2026",
     focus: "Launch candidate hardening",
-    status: "planned",
+    status: "active",
     planned: [
       "Fix E2E failures",
       "Review production blockers",
@@ -703,8 +713,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "22",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "23",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -714,12 +724,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Marketing live-readiness, operational command board, dashboard polish and delivery order E2E are now proof-backed.",
+    note: "Data quality export, marketing live-readiness, operational command board and dashboard polish are now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Data Quality",
-    note: "Customer import/export checks, report exports and backup/restore proof are now the active track.",
+    value: "Launch Candidate",
+    note: "Fix E2E failures, review production blockers and stabilize critical routes are now the active track.",
   },
 ];
 
@@ -851,6 +861,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-production-ops-readiness.png",
   },
   {
+    area: "Data quality export command",
+    proof: "verify-data-quality-export-command.cjs",
+    status: "passed",
+    value: "Customer CSV export, sales export, import readiness and backup/restore proof stay visible in Production Ops.",
+    artifact: "visible-data-quality-export-command.png",
+  },
+  {
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
@@ -883,7 +900,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "22 / 22",
+    value: "23 / 23",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -898,8 +915,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Data Quality",
-    note: "The next work slice should review customer import/export checks, report exports and backup/restore proof.",
+    value: "Launch Candidate",
+    note: "The next work slice should fix E2E failures, review production blockers and stabilize critical routes.",
   },
 ];
 
@@ -966,8 +983,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Data quality handoff",
+    status: "done",
+    value: "Customer CSV export, report exports, import readiness and backup/restore proof are now visible in Production Ops.",
+  },
+  {
+    title: "Launch candidate hardening handoff",
     status: "active",
-    value: "Next slice should review customer import/export checks, report exports and backup/restore proof.",
+    value: "Next slice should fix E2E failures, review production blockers and stabilize critical routes.",
   },
 ];
 
@@ -1317,7 +1339,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Data quality and import/export: customer import/export checks, report exports and backup/restore proof."
+          text="Launch candidate hardening: fix E2E failures, review production blockers and stabilize critical routes."
         />
       </section>
     </div>

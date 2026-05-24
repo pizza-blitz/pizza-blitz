@@ -98,7 +98,8 @@ async function main() {
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Data quality and import/export:", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-data-quality-export-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Launch candidate hardening:", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Route / View Audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
@@ -106,6 +107,7 @@ async function main() {
     await page.getByText("Authentication and role hardening", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Customer account lifecycle", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Marketing live-readiness command", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Data quality and export command", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByRole("link", { name: /Roadmap/i }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
