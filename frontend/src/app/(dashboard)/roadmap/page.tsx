@@ -37,8 +37,8 @@ type DailyPlan = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "74%",
-    note: "Internal beta with clearer delivery economics",
+    value: "76%",
+    note: "Internal beta with delivery assignment readiness now visible",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +47,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "53%",
-    note: "Delivery fees, minimums and ETA checks are now visible",
+    value: "55%",
+    note: "Address review, dispatch assignment and payment blocks are now surfaced",
   },
   {
     label: "Target Date",
@@ -109,6 +109,11 @@ const completedValue: RoadmapItem[] = [
     value: "Delivery rules now show fee range, minimum-order protection, ETA promise, live queue exposure and customer minimum-gap messaging.",
   },
   {
+    title: "Address validation and delivery assignment",
+    status: "done",
+    value: "Staff now see address score, review warnings, dispatch next action, payment blocks and rider assignment state in the live operations board.",
+  },
+  {
     title: "Payment, delivery, roles and production proofs",
     status: "done",
     value: "E2E proof files exist for payment readiness, delivery zones, role gates and production operations.",
@@ -127,9 +132,9 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Move beyond local/admin defaults into safer account lifecycle, roles, password reset and audit controls.",
   },
   {
-    title: "Delivery operations depth",
+    title: "Delivery live tracking and assignment refinement",
     status: "planned",
-    value: "Add delivery charges, zone pricing, address validation, assignment and live order tracking handoff.",
+    value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
   },
   {
     title: "Product customization depth",
@@ -281,18 +286,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "28 May 2026",
     focus: "Address validation and delivery assignment",
-    status: "active",
+    status: "done",
     planned: [
       "Validate customer address fields",
       "Assign delivery work from admin",
       "Show delivery queue status",
     ],
-    output: "Delivery operations become usable by staff, not just stored as order text.",
+    output: "Delivery queue intelligence, address review, next action and assignment readiness were completed.",
   },
   {
     date: "29 May 2026",
     focus: "Product customization depth",
-    status: "planned",
+    status: "active",
     planned: [
       "Size and topping pricing rules",
       "Add-ons and combo pricing",
@@ -714,7 +719,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Payment gateway production pass: provider configuration checks, webhook verification, and order payment-state wiring."
+          text="Product customization depth: sizes, toppings, add-ons, combos and kitchen-safe customized order display."
         />
       </section>
     </div>

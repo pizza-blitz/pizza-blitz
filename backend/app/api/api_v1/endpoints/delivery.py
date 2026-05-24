@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_roles
 from app.models.domain import DeliveryAssignment, DeliveryZone, RestaurantOrder
 from app.services.delivery_service import (
+    delivery_address_validation,
     delivery_quote,
+    match_delivery_zone,
     seed_default_delivery_zones,
     serialize_delivery_zone,
 )
@@ -108,6 +110,102 @@ def note_value(notes: Optional[str], label: str) -> Optional[str]:
             value = text[len(prefix):].strip()
             return value or None
     return None
+
+
+def is_payment_due(order: RestaurantOrder) -> bool:
+    return (
+        (order.payment_method or "").lower() == "prepaid"
+        and (order.payment_status or "").lower() != "paid"
+    )
+
+
+def delivery_zone_for_order(
+    db: Session,
+    order: RestaurantOrder,
+    address: Optional[str],
+) -> Optional[DeliveryZone]:
+    if order.delivery_assignment and order.delivery_assignment.zone:
+        return order.delivery_assignment.zone
+
+    zone_name = note_value(order.notes, "Delivery Zone")
+    if zone_name:
+        zone = db.query(DeliveryZone).filter(DeliveryZone.name == zone_name).first()
+        if zone:
+            return zone
+
+    if address:
+        return match_delivery_zone(db, address)
+    return None
+
+
+def address_validation_for_order(
+    db: Session,
+    order: RestaurantOrder,
+    address: Optional[str],
+) -> dict:
+    if not address:
+        return {
+            "quality": "weak",
+            "score": 0,
+            "matched_keyword": None,
+            "warnings": ["Add a customer delivery address before assigning a rider."],
+            "requires_review": True,
+        }
+
+    zone = delivery_zone_for_order(db, order, address)
+    return delivery_address_validation(
+        address,
+        zone,
+        zone_id=order.delivery_assignment.zone_id if order.delivery_assignment else None,
+    )
+
+
+def delivery_next_action(
+    order: RestaurantOrder,
+    validation: dict,
+    assignment: Optional[dict],
+) -> str:
+    if validation.get("requires_review"):
+        return "Call the customer to confirm address details before dispatch."
+    if is_payment_due(order):
+        return "Confirm prepaid payment before closing this delivery."
+    if not assignment or not assignment.get("assigned_to"):
+        return "Assign a delivery partner."
+    return assignment.get("next_action") or "Keep delivery status updated."
+
+
+def serialize_delivery_queue_order(db: Session, order: RestaurantOrder) -> dict:
+    address = note_value(order.notes, "Address")
+    validation = address_validation_for_order(db, order, address)
+    assignment = (
+        serialize_delivery_assignment(order.delivery_assignment)
+        if order.delivery_assignment
+        else None
+    )
+    assignment_status = assignment["status"] if assignment else "unassigned"
+    assigned_to = assignment["assigned_to"] if assignment else None
+    payment_due = is_payment_due(order)
+    return {
+        "id": order.id,
+        "customer_name": order.customer_name,
+        "customer_phone": order.customer_phone,
+        "total_amount": round(float(order.total_amount or 0), 2),
+        "payment_status": order.payment_status,
+        "payment_due": payment_due,
+        "payment_blocked": payment_due,
+        "order_status": order.status,
+        "delivery_address": address,
+        "delivery_zone": note_value(order.notes, "Delivery Zone"),
+        "delivery_fee": note_value(order.notes, "Delivery Fee"),
+        "eta_window": note_value(order.notes, "ETA"),
+        "notes": order.notes,
+        "assignment": assignment,
+        "assignment_status": assignment_status,
+        "assigned_to": assigned_to,
+        "address_validation": validation,
+        "requires_address_review": bool(validation.get("requires_review")),
+        "next_action": delivery_next_action(order, validation, assignment),
+    }
 
 
 @router.get("/zones")
@@ -293,29 +391,29 @@ def delivery_queue(
         .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
         .all()
     )
+    queue_orders = [serialize_delivery_queue_order(db, order) for order in orders]
+    summary = {
+        "open_delivery_count": len(queue_orders),
+        "unassigned_count": sum(
+            1
+            for order in queue_orders
+            if order["assignment_status"] == "unassigned" or not order["assigned_to"]
+        ),
+        "assigned_count": sum(1 for order in queue_orders if order["assignment_status"] == "assigned"),
+        "out_for_delivery_count": sum(
+            1 for order in queue_orders if order["assignment_status"] == "out_for_delivery"
+        ),
+        "delivered_count": sum(1 for order in queue_orders if order["assignment_status"] == "delivered"),
+        "failed_count": sum(1 for order in queue_orders if order["assignment_status"] == "failed"),
+        "address_review_count": sum(
+            1 for order in queue_orders if order["requires_address_review"]
+        ),
+        "payment_due_count": sum(1 for order in queue_orders if order["payment_due"]),
+    }
     return {
-        "count": len(orders),
-        "orders": [
-            {
-                "id": order.id,
-                "customer_name": order.customer_name,
-                "customer_phone": order.customer_phone,
-                "total_amount": order.total_amount,
-                "payment_status": order.payment_status,
-                "order_status": order.status,
-                "delivery_address": note_value(order.notes, "Address"),
-                "delivery_zone": note_value(order.notes, "Delivery Zone"),
-                "delivery_fee": note_value(order.notes, "Delivery Fee"),
-                "eta_window": note_value(order.notes, "ETA"),
-                "notes": order.notes,
-                "assignment": (
-                    serialize_delivery_assignment(order.delivery_assignment)
-                    if order.delivery_assignment
-                    else None
-                ),
-            }
-            for order in orders
-        ],
+        "count": len(queue_orders),
+        "summary": summary,
+        "orders": queue_orders,
     }
 
 

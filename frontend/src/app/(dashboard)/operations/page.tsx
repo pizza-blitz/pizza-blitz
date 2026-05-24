@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Check,
   CheckCircle2,
   Clock3,
@@ -34,6 +35,14 @@ type OrderItem = {
   }[];
 };
 
+type AddressValidation = {
+  quality: string;
+  score: number;
+  matched_keyword?: string | null;
+  warnings?: string[];
+  requires_review?: boolean;
+};
+
 type Order = {
   id: number;
   order_type: string;
@@ -49,8 +58,12 @@ type Order = {
     assigned_at?: string | null;
     out_for_delivery_at?: string | null;
     delivered_at?: string | null;
+    next_action?: string | null;
   } | null;
   eta_window?: string | null;
+  address_validation?: AddressValidation | null;
+  requires_address_review?: boolean;
+  delivery_next_action?: string | null;
   payment_due?: boolean;
   table_number?: string | null;
   customer_name?: string | null;
@@ -70,12 +83,24 @@ type Order = {
   closed_at?: string | null;
 };
 
+type DeliveryQueueSummary = {
+  open_delivery_count: number;
+  unassigned_count: number;
+  assigned_count: number;
+  out_for_delivery_count: number;
+  delivered_count: number;
+  failed_count: number;
+  address_review_count: number;
+  payment_due_count: number;
+};
+
 const filters = [
   { id: "active", label: "Active" },
   { id: "open", label: "New" },
   { id: "preparing", label: "Preparing" },
   { id: "ready", label: "Ready" },
   { id: "delivery", label: "Delivery" },
+  { id: "address_review", label: "Address Review" },
   { id: "payment_due", label: "Payment Due" },
   { id: "closed", label: "Closed" },
 ];
@@ -125,6 +150,7 @@ export default function OperationsPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [deliveryQueueSummary, setDeliveryQueueSummary] = useState<DeliveryQueueSummary | null>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
 
@@ -136,6 +162,9 @@ export default function OperationsPage() {
   );
   const deliveryOrders = activeOrders.filter(
     (order) => (order.fulfillment_type || order.order_type) === "delivery"
+  );
+  const addressReviewOrders = deliveryOrders.filter(
+    (order) => order.requires_address_review || order.address_validation?.requires_review
   );
 
   const stats = useMemo(() => {
@@ -149,8 +178,15 @@ export default function OperationsPage() {
     const unassignedDelivery = deliveryOrders.filter(
       (order) => !order.delivery_assignment?.assigned_to
     ).length;
-    return { ready, preparing, fresh, activeValue, unassignedDelivery };
-  }, [activeOrders, deliveryOrders]);
+    return {
+      ready,
+      preparing,
+      fresh,
+      activeValue,
+      unassignedDelivery,
+      addressReview: addressReviewOrders.length,
+    };
+  }, [activeOrders, addressReviewOrders.length, deliveryOrders]);
 
   const deliveryStats = useMemo(() => {
     const statusCounts = deliveryOrders.reduce(
@@ -166,17 +202,25 @@ export default function OperationsPage() {
       { unassigned: 0, assigned: 0, out: 0, delivered: 0, failed: 0 }
     );
     return {
-      total: deliveryOrders.length,
+      total: deliveryQueueSummary?.open_delivery_count ?? deliveryOrders.length,
+      addressReview: deliveryQueueSummary?.address_review_count ?? addressReviewOrders.length,
+      paymentDue: deliveryQueueSummary?.payment_due_count ?? paymentDueOrders.length,
       ...statusCounts,
+      unassigned: deliveryQueueSummary?.unassigned_count ?? statusCounts.unassigned,
+      assigned: deliveryQueueSummary?.assigned_count ?? statusCounts.assigned,
+      out: deliveryQueueSummary?.out_for_delivery_count ?? statusCounts.out,
+      delivered: deliveryQueueSummary?.delivered_count ?? statusCounts.delivered,
+      failed: deliveryQueueSummary?.failed_count ?? statusCounts.failed,
     };
-  }, [deliveryOrders]);
+  }, [addressReviewOrders.length, deliveryOrders, deliveryQueueSummary, paymentDueOrders.length]);
 
   const visibleOrders = useMemo(() => {
     if (filter === "active") return activeOrders;
     if (filter === "delivery") return deliveryOrders;
+    if (filter === "address_review") return addressReviewOrders;
     if (filter === "payment_due") return paymentDueOrders;
     return orders.filter((order) => order.status === filter);
-  }, [activeOrders, deliveryOrders, filter, orders, paymentDueOrders]);
+  }, [activeOrders, addressReviewOrders, deliveryOrders, filter, orders, paymentDueOrders]);
 
   useEffect(() => {
     fetchOrders();
@@ -185,13 +229,43 @@ export default function OperationsPage() {
   const fetchOrders = async (options?: { preserveMessage?: boolean }) => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${ORDERS_API}/today`, {
-        cache: "no-store",
-        credentials: "include",
-      });
+      const [response, queueResponse] = await Promise.all([
+        fetch(`${ORDERS_API}/today`, {
+          cache: "no-store",
+          credentials: "include",
+        }),
+        fetch(`${DELIVERY_API}/queue`, {
+          cache: "no-store",
+          credentials: "include",
+        }),
+      ]);
       const data = await response.json();
+      const queueData = await queueResponse.json();
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
-      setOrders(data.orders || []);
+      if (!queueResponse.ok) throw new Error(queueData.detail || "Could not load delivery queue.");
+
+      const queueById = new Map<number, any>(
+        (queueData.orders || []).map((order: any) => [order.id, order])
+      );
+      setDeliveryQueueSummary(queueData.summary || null);
+      setOrders(
+        (data.orders || []).map((order: Order) => {
+          const queueOrder = queueById.get(order.id);
+          if (!queueOrder) return order;
+          return {
+            ...order,
+            delivery_address: queueOrder.delivery_address ?? order.delivery_address,
+            delivery_zone: queueOrder.delivery_zone ?? order.delivery_zone,
+            delivery_fee: Number(queueOrder.delivery_fee ?? order.delivery_fee ?? 0),
+            delivery_assignment: queueOrder.assignment ?? order.delivery_assignment,
+            eta_window: queueOrder.eta_window ?? order.eta_window,
+            address_validation: queueOrder.address_validation ?? null,
+            requires_address_review: Boolean(queueOrder.requires_address_review),
+            delivery_next_action: queueOrder.next_action,
+            payment_due: Boolean(queueOrder.payment_due ?? order.payment_due),
+          };
+        })
+      );
       if (!options?.preserveMessage) setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load orders.");
@@ -362,7 +436,7 @@ export default function OperationsPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-500">New</p>
           <div className="mt-2 flex items-end justify-between">
@@ -389,6 +463,13 @@ export default function OperationsPage() {
           <div className="mt-2 flex items-end justify-between">
             <span className="text-2xl font-black text-gray-950">{stats.unassignedDelivery}</span>
             <Truck className="h-5 w-5 text-red-600" />
+          </div>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">Address Review</p>
+          <div className="mt-2 flex items-end justify-between">
+            <span className="text-2xl font-black text-gray-950">{stats.addressReview}</span>
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -438,14 +519,16 @@ export default function OperationsPage() {
             Show Delivery Queue
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           {[
             ["Open Deliveries", deliveryStats.total, "text-gray-950"],
             ["Unassigned", deliveryStats.unassigned, "text-red-700"],
+            ["Address Review", deliveryStats.addressReview, "text-amber-700"],
             ["Assigned", deliveryStats.assigned, "text-sky-700"],
             ["Out", deliveryStats.out, "text-orange-700"],
             ["Delivered", deliveryStats.delivered, "text-emerald-700"],
             ["Failed", deliveryStats.failed, "text-rose-700"],
+            ["Payment Due", deliveryStats.paymentDue, "text-violet-700"],
           ].map(([label, value, tone]) => (
             <div
               key={label}
@@ -479,6 +562,10 @@ export default function OperationsPage() {
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {deliveryOrders.map((order) => {
               const assignment = order.delivery_assignment;
+              const addressValidation = order.address_validation;
+              const addressWarnings = addressValidation?.warnings || [];
+              const needsAddressReview =
+                order.requires_address_review || addressValidation?.requires_review;
               return (
                 <article
                   key={`delivery-${order.id}`}
@@ -493,10 +580,39 @@ export default function OperationsPage() {
                       <p className="mt-1 text-xs font-bold text-gray-500">
                         {order.delivery_zone || "Zone pending"} | Fee {money(order.delivery_fee || 0)} | {order.eta_window}
                       </p>
+                      {addressValidation && (
+                        <p className="mt-1 text-xs font-black text-slate-600">
+                          Address score {addressValidation.score}/100 | {addressValidation.quality}
+                          {addressValidation.matched_keyword
+                            ? ` | Matched ${addressValidation.matched_keyword}`
+                            : ""}
+                        </p>
+                      )}
                     </div>
                     <span className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-black text-red-700">
                       {assignment?.status?.replaceAll("_", " ") || "unassigned"}
                     </span>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {needsAddressReview && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div>
+                            <p className="font-black uppercase">Address Review Required</p>
+                            {addressWarnings.slice(0, 2).map((warning) => (
+                              <p key={warning} className="mt-1 leading-5">
+                                {warning}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+                      <span className="font-black text-slate-900">Next action:</span>{" "}
+                      {order.delivery_next_action || assignment?.notes || "Assign a delivery partner."}
+                    </div>
                   </div>
                   <div className="mt-4 grid gap-2 md:grid-cols-2">
                     <input
@@ -634,6 +750,12 @@ export default function OperationsPage() {
                     <p className="mt-2 flex items-center gap-1 truncate text-xs font-semibold text-gray-500">
                       <MapPin className="h-3.5 w-3.5 text-red-600" />
                       {order.delivery_address}
+                    </p>
+                  )}
+                  {(order.requires_address_review || order.address_validation?.requires_review) && (
+                    <p className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-black text-amber-700">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Address review required
                     </p>
                   )}
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-gray-500">
