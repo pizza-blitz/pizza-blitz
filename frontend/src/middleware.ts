@@ -64,6 +64,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/account", request.url));
   }
 
+  if (pathname.startsWith("/receipt/") && request.nextUrl.searchParams.get("phone")) {
+    return NextResponse.next();
+  }
+
   if (isPathIn(pathname, adminOnlyRoutePrefixes)) {
     if (adminSession) {
       return NextResponse.next();

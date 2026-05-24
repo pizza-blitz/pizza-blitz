@@ -1425,6 +1425,19 @@ def track_order(order_id: int, phone: str, db: Session = Depends(get_db)):
     return serialize_order_tracking(order)
 
 
+@router.get("/customer-receipt/{order_id}")
+def customer_receipt_order(order_id: int, phone: str, db: Session = Depends(get_db)):
+    normalized_phone = phone.strip()
+    if not normalized_phone:
+        raise HTTPException(status_code=422, detail="Phone number is required.")
+
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order or (order.customer_phone or "").strip() != normalized_phone:
+        raise HTTPException(status_code=404, detail="Order not found for this phone number.")
+
+    return serialize_order(order)
+
+
 @router.get("/{order_id}")
 def get_order(order_id: int, db: Session = Depends(get_db)):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()

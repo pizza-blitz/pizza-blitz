@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -78,7 +78,10 @@ function optionSummary(option: NonNullable<OrderItem["selected_options"]>[number
 
 export default function ReceiptPage() {
   const params = useParams<{ orderId: string }>();
+  const searchParams = useSearchParams();
   const orderId = params.orderId;
+  const customerPhone = searchParams.get("phone") || "";
+  const isCustomerReceipt = Boolean(customerPhone);
   const [order, setOrder] = useState<Order | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [message, setMessage] = useState("");
@@ -95,13 +98,16 @@ export default function ReceiptPage() {
 
   useEffect(() => {
     fetchOrder();
-  }, [orderId]);
+  }, [orderId, customerPhone]);
 
   const fetchOrder = async () => {
     setIsLoading(true);
     setMessage("");
     try {
-      const response = await fetch(`${ORDERS_API}/${orderId}`, { cache: "no-store" });
+      const receiptEndpoint = isCustomerReceipt
+        ? `${ORDERS_API}/customer-receipt/${orderId}?phone=${encodeURIComponent(customerPhone)}`
+        : `${ORDERS_API}/${orderId}`;
+      const response = await fetch(receiptEndpoint, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not load receipt.");
       setOrder(data);
@@ -138,32 +144,53 @@ export default function ReceiptPage() {
       <div className="mx-auto max-w-3xl">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="flex gap-2">
-            <Link
-              href="/operations"
-              className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
-            >
-              <ArrowLeft className="h-4 w-4" /> Operations
-            </Link>
-            <Link
-              href="/orders"
-              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
-            >
-              POS
-            </Link>
+            {isCustomerReceipt ? (
+              <>
+                <Link
+                  href={`/track?order=${orderId}&phone=${encodeURIComponent(customerPhone)}`}
+                  className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Track Order
+                </Link>
+                <Link
+                  href="/order"
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
+                >
+                  Order Food
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/operations"
+                  className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Operations
+                </Link>
+                <Link
+                  href="/orders"
+                  className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
+                >
+                  POS
+                </Link>
+              </>
+            )}
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={generateInvoice}
-              disabled={!order || isGeneratingInvoice}
-              className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700 disabled:opacity-50"
-            >
-              {isGeneratingInvoice ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <FileText className="h-4 w-4" />
-              )}
-              Invoice
-            </button>
+            {!isCustomerReceipt && (
+              <button
+                onClick={generateInvoice}
+                disabled={!order || isGeneratingInvoice}
+                className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700 disabled:opacity-50"
+              >
+                {isGeneratingInvoice ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                Invoice
+              </button>
+            )}
             <button
               onClick={() => window.print()}
               disabled={!order}

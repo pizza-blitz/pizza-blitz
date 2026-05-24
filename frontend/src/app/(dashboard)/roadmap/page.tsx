@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "94%",
-    note: "Internal beta with provider sync, owner reporting, DB path, secrets and deployment command now visible",
+    value: "95%",
+    note: "Internal beta with provider sync, owner reporting, DB path, deployment and full customer order proof now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "82%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates and rollback checks are now tracked",
+    value: "83%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks and customer handoff proof are now tracked",
   },
   {
     label: "Target Date",
@@ -198,6 +198,11 @@ const completedValue: RoadmapItem[] = [
     title: "Deployment pipeline",
     status: "done",
     value: "Production Ops now shows build gate, release steps, rollback/log inspection, production smoke and deployment blockers.",
+  },
+  {
+    title: "Full customer order E2E",
+    status: "done",
+    value: "Customer order journey now proves menu, customization, checkout, receipt link, tracking link and backend order handoff.",
   },
 ];
 
@@ -556,18 +561,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "11 Jun 2026",
     focus: "Full customer order E2E",
-    status: "active",
+    status: "done",
     planned: [
       "Browse product catalog",
       "Customize item",
       "Checkout and receipt",
     ],
-    output: "Customer web order flow is proved in the browser.",
+    output: "Customer menu, customization, delivery checkout, real receipt link, tracking page and backend order details were proved end to end.",
   },
   {
     date: "12 Jun 2026",
     focus: "Counter order E2E",
-    status: "planned",
+    status: "active",
     planned: [
       "Staff creates order",
       "Bill/receipt generated",
@@ -668,8 +673,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "16",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "17",
+    note: "Checkout, customer E2E, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -679,12 +684,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Deployment pipeline is mapped and full customer order E2E is now active.",
+    note: "Deployment pipeline is mapped and full customer order E2E is now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Customer E2E",
-    note: "Catalog, customization, checkout, receipt and customer order handoff are now the active track.",
+    value: "Counter E2E",
+    note: "Staff order creation, bill/receipt, kitchen handoff and payment state are now the active track.",
   },
 ];
 
@@ -695,6 +700,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Catalog, cart, coupons, pickup/delivery checks and receipt handoff stay testable.",
     artifact: "visible-customer-web-checkout.png",
+  },
+  {
+    area: "Full customer order E2E",
+    proof: "verify-full-customer-order-e2e.cjs",
+    status: "passed",
+    value: "Catalog, customization, delivery checkout, receipt route, tracking route and backend handoff stay connected.",
+    artifact: "visible-full-customer-order-e2e.png",
   },
   {
     area: "Order flow polish",
@@ -806,7 +818,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "16 / 16",
+    value: "17 / 17",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -821,8 +833,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Customer E2E",
-    note: "The next work slice should prove catalog, customization, checkout, receipt and customer order handoff.",
+    value: "Counter E2E",
+    note: "The next work slice should prove staff order creation, bill/receipt, kitchen handoff and payment state.",
   },
 ];
 
@@ -859,8 +871,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Customer order E2E handoff",
+    status: "done",
+    value: "Customer catalog, customization, checkout, receipt, tracking and backend handoff are now proved from the browser.",
+  },
+  {
+    title: "Counter order E2E handoff",
     status: "active",
-    value: "Next slice should prove customer catalog, customization, checkout, receipt and order handoff from browser to backend.",
+    value: "Next slice should prove staff order creation, bill/receipt, kitchen handoff and payment state from the counter workflow.",
   },
 ];
 
@@ -1210,7 +1227,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Full customer order E2E: prove catalog, customization, checkout, receipt and customer order handoff."
+          text="Counter order E2E: prove staff creates order, bill/receipt, kitchen handoff and payment state update."
         />
       </section>
     </div>

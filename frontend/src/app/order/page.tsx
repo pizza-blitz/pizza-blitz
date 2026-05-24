@@ -569,6 +569,10 @@ export default function PublicOrderPage() {
       }),
     [menu, search, category]
   );
+  const menuWithCustomizationCount = useMemo(
+    () => menu.filter((item) => (item.customization_groups || []).length > 0).length,
+    [menu]
+  );
   const highlightedPromotions = useMemo(
     () => prioritizePromotions(activePromotions, coupon?.promotion.code || queuedCouponCode, 4),
     [activePromotions, coupon?.promotion.code, queuedCouponCode]
@@ -581,7 +585,44 @@ export default function PublicOrderPage() {
     orderId && customerPhone.trim()
       ? `/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`
       : "/account";
-  const receiptHref = trackingHref;
+  const receiptHref =
+    orderId && customerPhone.trim()
+      ? `/receipt/${orderId}?phone=${encodeURIComponent(customerPhone.trim())}`
+      : orderId
+        ? `/receipt/${orderId}`
+        : "/account";
+  const customerOrderJourney = [
+    {
+      label: "Catalog",
+      detail: menu.length
+        ? `${filteredMenu.length} visible / ${menu.length} available`
+        : "Loading menu",
+      complete: menu.length > 0,
+    },
+    {
+      label: "Build",
+      detail: menuWithCustomizationCount
+        ? `${menuWithCustomizationCount} items with options`
+        : "Base menu ready",
+      complete: menuWithCustomizationCount > 0,
+    },
+    {
+      label: "Checkout",
+      detail: `${checkoutSteps.filter((step) => step.complete).length}/${checkoutSteps.length} ready`,
+      complete: Boolean(orderId) || canSubmitOrder,
+    },
+    {
+      label: "Receipt",
+      detail: orderId ? `Receipt #${orderId} ready` : "Ready after order",
+      complete: Boolean(orderId),
+    },
+    {
+      label: "Tracking",
+      detail: orderId ? "Live link ready" : "Ready after order",
+      complete: Boolean(orderId && customerPhone.trim()),
+    },
+  ];
+  const customerOrderJourneyComplete = customerOrderJourney.filter((step) => step.complete).length;
 
   useEffect(() => {
     if (orderType !== "delivery") {
@@ -1038,6 +1079,45 @@ export default function PublicOrderPage() {
               alt="Pizza fresh from the oven"
               className="h-64 w-full object-cover md:col-span-5 md:h-full"
             />
+          </div>
+
+          <div
+            data-testid="customer-order-e2e-command"
+            className="mb-6 rounded-lg border border-slate-200 bg-white p-4"
+          >
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                  Order Journey
+                </p>
+                <h3 className="text-lg font-black">Menu to receipt and tracking</h3>
+              </div>
+              <span className="w-fit rounded-md bg-slate-950 px-3 py-1.5 text-xs font-black text-white">
+                {customerOrderJourneyComplete}/{customerOrderJourney.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-5">
+              {customerOrderJourney.map((step) => (
+                <div
+                  key={step.label}
+                  className={`rounded-md border px-3 py-2 ${
+                    step.complete
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {step.complete ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-slate-400" />
+                    )}
+                    <p className="text-sm font-black">{step.label}</p>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold">{step.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
           {activePromotions.length > 0 && (
