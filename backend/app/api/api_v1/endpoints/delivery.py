@@ -75,6 +75,29 @@ def serialize_delivery_assignment(assignment: DeliveryAssignment) -> dict:
     }
 
 
+def delivery_economics_next_actions(
+    *,
+    active_zones: list[DeliveryZone],
+    inactive_count: int,
+    unassigned_count: int,
+    payment_due_count: int,
+) -> list[str]:
+    actions: list[str] = []
+    if not active_zones:
+        actions.append("Activate at least one delivery zone before accepting delivery orders.")
+    if inactive_count:
+        actions.append(f"Review {inactive_count} inactive zone(s) before campaign pushes.")
+    if active_zones and not any(float(zone.minimum_order_amount or 0) > 0 for zone in active_zones):
+        actions.append("Add a minimum order to far zones so delivery fees do not erase margin.")
+    if unassigned_count:
+        actions.append(f"Assign riders to {unassigned_count} active delivery order(s).")
+    if payment_due_count:
+        actions.append(f"Confirm payment before closing {payment_due_count} prepaid delivery order(s).")
+    if not actions:
+        actions.append("Run one customer delivery checkout proof after any fee or ETA change.")
+    return actions
+
+
 def note_value(notes: Optional[str], label: str) -> Optional[str]:
     if not notes:
         return None
@@ -96,6 +119,97 @@ def list_delivery_zones(db: Session = Depends(get_db)):
         .all()
     )
     return [serialize_delivery_zone(zone) for zone in zones]
+
+
+@router.get("/economics")
+def delivery_economics(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    ensure_delivery_zones(db)
+    zones = (
+        db.query(DeliveryZone)
+        .order_by(DeliveryZone.delivery_fee.asc(), DeliveryZone.id.asc())
+        .all()
+    )
+    active_zones = [zone for zone in zones if zone.is_active]
+    inactive_count = len(zones) - len(active_zones)
+    active_fees = [float(zone.delivery_fee or 0) for zone in active_zones]
+    active_eta_max = [int(zone.eta_max_minutes or 0) for zone in active_zones]
+    minimum_order_zones = [
+        zone for zone in active_zones if float(zone.minimum_order_amount or 0) > 0
+    ]
+    keyword_count = sum(len(zone.keywords or []) for zone in active_zones)
+
+    orders = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.order_type == "delivery")
+        .filter(RestaurantOrder.status != "closed")
+        .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
+        .all()
+    )
+    unassigned_count = sum(
+        1
+        for order in orders
+        if not order.delivery_assignment or not order.delivery_assignment.assigned_to
+    )
+    payment_due_count = sum(
+        1
+        for order in orders
+        if (order.payment_method or "").lower() == "prepaid"
+        and (order.payment_status or "").lower() != "paid"
+    )
+    open_delivery_value = round(
+        sum(float(order.total_amount or 0) for order in orders),
+        2,
+    )
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "active_zone_count": len(active_zones),
+            "inactive_zone_count": inactive_count,
+            "lowest_fee": round(min(active_fees), 2) if active_fees else 0,
+            "highest_fee": round(max(active_fees), 2) if active_fees else 0,
+            "average_fee": round(sum(active_fees) / len(active_fees), 2) if active_fees else 0,
+            "longest_eta_minutes": max(active_eta_max) if active_eta_max else 0,
+            "minimum_order_zone_count": len(minimum_order_zones),
+            "coverage_keyword_count": keyword_count,
+            "open_delivery_count": len(orders),
+            "open_delivery_value": open_delivery_value,
+            "unassigned_count": unassigned_count,
+            "payment_due_count": payment_due_count,
+        },
+        "zones": [serialize_delivery_zone(zone) for zone in zones],
+        "queue_preview": [
+            {
+                "id": order.id,
+                "customer_name": order.customer_name,
+                "delivery_zone": note_value(order.notes, "Delivery Zone"),
+                "delivery_fee": note_value(order.notes, "Delivery Fee"),
+                "eta_window": note_value(order.notes, "ETA"),
+                "total_amount": round(float(order.total_amount or 0), 2),
+                "payment_status": order.payment_status,
+                "assignment_status": (
+                    order.delivery_assignment.status
+                    if order.delivery_assignment
+                    else "unassigned"
+                ),
+                "assigned_to": (
+                    order.delivery_assignment.assigned_to
+                    if order.delivery_assignment
+                    else None
+                ),
+            }
+            for order in orders[:8]
+        ],
+        "next_actions": delivery_economics_next_actions(
+            active_zones=active_zones,
+            inactive_count=inactive_count,
+            unassigned_count=unassigned_count,
+            payment_due_count=payment_due_count,
+        ),
+    }
 
 
 @router.patch("/zones/{zone_id}")

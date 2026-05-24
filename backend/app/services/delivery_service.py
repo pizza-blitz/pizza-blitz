@@ -42,15 +42,17 @@ def seed_default_delivery_zones(db: Session) -> None:
 
 
 def serialize_delivery_zone(zone: DeliveryZone) -> dict:
+    minimum = round(float(zone.minimum_order_amount or 0), 2)
     return {
         "id": zone.id,
         "name": zone.name,
         "keywords": zone.keywords or [],
         "delivery_fee": round(float(zone.delivery_fee or 0), 2),
-        "minimum_order_amount": round(float(zone.minimum_order_amount or 0), 2),
+        "minimum_order_amount": minimum,
         "eta_min_minutes": zone.eta_min_minutes,
         "eta_max_minutes": zone.eta_max_minutes,
         "eta_window": eta_window(zone),
+        "pricing_rule": f"Minimum Rs {round(minimum)}" if minimum else "No minimum",
         "is_active": zone.is_active,
     }
 
@@ -181,12 +183,14 @@ def delivery_quote(
             "charge_breakdown": {
                 "subtotal": round(float(subtotal or 0), 2),
                 "minimum_order_amount": 0,
+                "minimum_gap": 0,
                 "delivery_fee": 0,
                 "total_with_delivery": round(float(subtotal or 0), 2),
             },
         }
 
     minimum = float(zone.minimum_order_amount or 0)
+    minimum_gap = round(max(minimum - float(subtotal or 0), 0), 2)
     if float(subtotal or 0) < minimum:
         return {
             "is_deliverable": False,
@@ -199,6 +203,7 @@ def delivery_quote(
             "charge_breakdown": {
                 "subtotal": round(float(subtotal or 0), 2),
                 "minimum_order_amount": round(minimum, 2),
+                "minimum_gap": minimum_gap,
                 "delivery_fee": round(float(zone.delivery_fee or 0), 2),
                 "total_with_delivery": round(float(subtotal or 0) + float(zone.delivery_fee or 0), 2),
             },
@@ -215,6 +220,7 @@ def delivery_quote(
         "charge_breakdown": {
             "subtotal": round(float(subtotal or 0), 2),
             "minimum_order_amount": round(minimum, 2),
+            "minimum_gap": 0,
             "delivery_fee": round(float(zone.delivery_fee or 0), 2),
             "total_with_delivery": round(float(subtotal or 0) + float(zone.delivery_fee or 0), 2),
         },

@@ -37,8 +37,8 @@ type DailyPlan = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "72%",
-    note: "Internal beta with stronger customer checkout",
+    value: "74%",
+    note: "Internal beta with clearer delivery economics",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +47,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "50%",
-    note: "Payment and checkout proofs are now connected",
+    value: "53%",
+    note: "Delivery fees, minimums and ETA checks are now visible",
   },
   {
     label: "Target Date",
@@ -102,6 +102,11 @@ const completedValue: RoadmapItem[] = [
     title: "Customer web checkout pass",
     status: "done",
     value: "Customer order page now shows checkout progress, stricter contact and delivery checks, coupon proof and pickup/delivery/payment readiness.",
+  },
+  {
+    title: "Delivery charges and zone economics",
+    status: "done",
+    value: "Delivery rules now show fee range, minimum-order protection, ETA promise, live queue exposure and customer minimum-gap messaging.",
   },
   {
     title: "Payment, delivery, roles and production proofs",
@@ -265,18 +270,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "27 May 2026",
     focus: "Delivery charges and zones",
-    status: "active",
+    status: "done",
     planned: [
       "Add zone-based delivery charges",
       "Add minimum order rules",
       "Surface delivery promise time",
     ],
-    output: "Orders can calculate delivery economics more realistically.",
+    output: "Delivery economics command, minimum-order gap messaging and customer/admin proof were completed.",
   },
   {
     date: "28 May 2026",
     focus: "Address validation and delivery assignment",
-    status: "planned",
+    status: "active",
     planned: [
       "Validate customer address fields",
       "Assign delivery work from admin",

@@ -116,6 +116,7 @@ type DeliveryQuote = {
   charge_breakdown?: {
     subtotal: number;
     minimum_order_amount: number;
+    minimum_gap?: number;
     delivery_fee: number;
     total_with_delivery: number;
   };
@@ -498,6 +499,10 @@ export default function PublicOrderPage() {
     orderType === "delivery" && deliveryQuote?.is_deliverable
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
+  const deliveryMinimumGap = Math.max(
+    Number(deliveryQuote?.charge_breakdown?.minimum_gap || 0),
+    0
+  );
   const total = coupon
     ? roundMoney(coupon.total + deliveryFee)
     : roundMoney(taxableSubtotal + tax + deliveryFee);
@@ -526,7 +531,9 @@ export default function PublicOrderPage() {
         : deliveryQuote?.is_deliverable
           ? `${deliveryQuote.zone?.name || selectedDeliveryZone?.name || "Delivery"} - Rs ${deliveryFee}, ${eta}`
           : address.trim()
-            ? deliveryQuote?.reason || "Address needs review"
+            ? `${deliveryQuote?.reason || "Address needs review"}${
+                deliveryMinimumGap ? ` Add Rs ${Math.round(deliveryMinimumGap)} more.` : ""
+              }`
             : "Enter address for delivery fee";
   const checkoutSteps = [
     {
@@ -1535,7 +1542,7 @@ export default function PublicOrderPage() {
                   >
                     {deliveryZones.map((zone) => (
                       <option key={zone.id} value={zone.id}>
-                        {zone.name} | Rs {zone.delivery_fee} | {zone.eta_window}
+                        {zone.name} | Rs {zone.delivery_fee} | Min Rs {Math.round(zone.minimum_order_amount || 0)} | {zone.eta_window}
                       </option>
                     ))}
                   </select>
@@ -1550,7 +1557,9 @@ export default function PublicOrderPage() {
                       ? "Checking delivery"
                       : deliveryQuote?.is_deliverable
                       ? `Delivery ${deliveryQuote.zone?.name || ""}: Rs ${deliveryFee}, ETA ${eta}`
-                      : deliveryQuote?.reason || "Delivery fee appears after address and zone."}
+                      : `${deliveryQuote?.reason || "Delivery fee appears after address and zone."}${
+                          deliveryMinimumGap ? ` Add Rs ${Math.round(deliveryMinimumGap)} more.` : ""
+                        }`}
                   </div>
                   {deliveryQuote?.address_validation && (
                     <div className="grid grid-cols-3 gap-2 text-xs">

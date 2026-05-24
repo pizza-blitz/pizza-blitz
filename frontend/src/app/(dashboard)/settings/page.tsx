@@ -24,6 +24,7 @@ import { getApiUrl } from '@/lib/api';
 
 const DELIVERY_ZONES_API = getApiUrl('/api/v1/restaurant/delivery/zones');
 const DELIVERY_QUOTE_API = getApiUrl('/api/v1/restaurant/delivery/quote');
+const DELIVERY_ECONOMICS_API = getApiUrl('/api/v1/restaurant/delivery/economics');
 const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
 const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
@@ -64,6 +65,7 @@ type DeliveryZone = {
   eta_min_minutes: number;
   eta_max_minutes: number;
   eta_window: string;
+  pricing_rule?: string;
   is_active: boolean;
 };
 
@@ -84,9 +86,41 @@ type DeliveryQuote = {
   charge_breakdown?: {
     subtotal: number;
     minimum_order_amount: number;
+    minimum_gap?: number;
     delivery_fee: number;
     total_with_delivery: number;
   };
+};
+
+type DeliveryEconomics = {
+  generated_at: string;
+  summary: {
+    active_zone_count: number;
+    inactive_zone_count: number;
+    lowest_fee: number;
+    highest_fee: number;
+    average_fee: number;
+    longest_eta_minutes: number;
+    minimum_order_zone_count: number;
+    coverage_keyword_count: number;
+    open_delivery_count: number;
+    open_delivery_value: number;
+    unassigned_count: number;
+    payment_due_count: number;
+  };
+  zones: DeliveryZone[];
+  queue_preview: {
+    id: number;
+    customer_name?: string | null;
+    delivery_zone?: string | null;
+    delivery_fee?: string | null;
+    eta_window?: string | null;
+    total_amount: number;
+    payment_status: string;
+    assignment_status: string;
+    assigned_to?: string | null;
+  }[];
+  next_actions: string[];
 };
 
 type PaymentProviderStatus = {
@@ -187,6 +221,7 @@ export default function Settings() {
   const [webhookResult, setWebhookResult] = useState<PaymentWebhookResult | null>(null);
   const [isSendingWebhook, setIsSendingWebhook] = useState(false);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [deliveryEconomics, setDeliveryEconomics] = useState<DeliveryEconomics | null>(null);
   const [deliveryDrafts, setDeliveryDrafts] = useState<Record<number, DeliveryZone>>({});
   const [isDeliveryLoading, setIsDeliveryLoading] = useState(true);
   const [savingZoneId, setSavingZoneId] = useState<number | null>(null);
@@ -247,6 +282,22 @@ export default function Settings() {
     }
   };
 
+  const loadDeliveryEconomics = async () => {
+    try {
+      const response = await fetch(DELIVERY_ECONOMICS_API, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Delivery economics API failed.");
+      }
+      const data: DeliveryEconomics = await response.json();
+      setDeliveryEconomics(data);
+    } catch {
+      setDeliveryEconomics(null);
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
     fetch("/api/security-overview", { cache: "no-store" })
@@ -292,6 +343,7 @@ export default function Settings() {
           setIsDeliveryLoading(false);
         }
       });
+    loadDeliveryEconomics();
 
     loadPaymentReadiness();
 
@@ -317,6 +369,7 @@ export default function Settings() {
   const paymentProductionSummary = paymentProduction?.summary;
   const awaitingSettlement = paymentProduction?.queues.awaiting_settlement || [];
   const recentPaidSettlements = paymentProduction?.queues.recent_paid || [];
+  const deliveryEconomicsSummary = deliveryEconomics?.summary;
 
   const updateDeliveryDraft = (zoneId: number, updates: Partial<DeliveryZone>) => {
     setDeliveryDrafts((current) => ({
@@ -362,6 +415,7 @@ export default function Settings() {
         [zoneId]: { ...data, keywords: [...(data.keywords || [])] },
       }));
       setDeliveryMessage(`${data.name} delivery rules saved.`);
+      await loadDeliveryEconomics();
     } catch {
       setDeliveryMessage("Delivery zone API is not available right now.");
     } finally {
@@ -1028,7 +1082,10 @@ export default function Settings() {
                     }, {})
                   );
                 })
-                .finally(() => setIsDeliveryLoading(false));
+                .finally(() => {
+                  setIsDeliveryLoading(false);
+                  void loadDeliveryEconomics();
+                });
             }}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-red-200 hover:bg-red-50"
           >
@@ -1060,6 +1117,112 @@ export default function Settings() {
         {deliveryMessage && (
           <div className="mt-5 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
             {deliveryMessage}
+          </div>
+        )}
+
+        {deliveryEconomicsSummary && (
+          <div className="mt-5 rounded-lg border border-red-100 bg-red-50 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="font-black text-gray-900">Delivery Economics Command</p>
+                <p className="text-sm text-red-900">
+                  Zone fees, minimum order rules, ETA promise, and live delivery queue risk.
+                </p>
+              </div>
+              <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase text-red-700">
+                {deliveryEconomicsSummary.active_zone_count} active zones
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Fee Range</p>
+                <p className="mt-2 text-2xl font-black text-gray-900">
+                  Rs {deliveryEconomicsSummary.lowest_fee}-{deliveryEconomicsSummary.highest_fee}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Avg Rs {deliveryEconomicsSummary.average_fee}
+                </p>
+              </div>
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Minimum Rules</p>
+                <p className="mt-2 text-2xl font-black text-gray-900">
+                  {deliveryEconomicsSummary.minimum_order_zone_count}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Zones protect delivery margin
+                </p>
+              </div>
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <p className="text-xs font-black uppercase text-gray-500">ETA Promise</p>
+                <p className="mt-2 text-2xl font-black text-gray-900">
+                  {deliveryEconomicsSummary.longest_eta_minutes} min
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  Longest active delivery window
+                </p>
+              </div>
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <p className="text-xs font-black uppercase text-gray-500">Open Delivery</p>
+                <p className="mt-2 text-2xl font-black text-gray-900">
+                  {deliveryEconomicsSummary.open_delivery_count}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">
+                  {formatMoney(deliveryEconomicsSummary.open_delivery_value)} in queue
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <p className="font-black text-gray-900">Zone Rule Summary</p>
+                <div className="mt-3 space-y-2">
+                  {(deliveryEconomics?.zones || []).slice(0, 5).map((zone) => (
+                    <div key={`economics-${zone.id}`} className="rounded-md bg-gray-50 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-black text-gray-900">{zone.name}</p>
+                        <span
+                          className={`rounded-md px-2 py-1 text-xs font-black ${
+                            zone.is_active
+                              ? "bg-green-100 text-green-700"
+                              : "bg-slate-200 text-slate-600"
+                          }`}
+                        >
+                          {zone.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        Rs {zone.delivery_fee} - {zone.pricing_rule || "No minimum"} - {zone.eta_window}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-red-100 bg-white p-4">
+                <p className="font-black text-gray-900">Delivery Next Actions</p>
+                <div className="mt-3 space-y-2">
+                  {(deliveryEconomics?.next_actions || []).map((action) => (
+                    <div key={action} className="flex gap-2 rounded-md bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" />
+                      <span>{action}</span>
+                    </div>
+                  ))}
+                </div>
+                {!!deliveryEconomics?.queue_preview?.length && (
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    <p className="text-sm font-black text-gray-900">Live Queue Preview</p>
+                    <div className="mt-2 space-y-2">
+                      {deliveryEconomics.queue_preview.slice(0, 3).map((order) => (
+                        <div key={`delivery-preview-${order.id}`} className="rounded-md bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                          Order #{order.id} - {order.delivery_zone || "Zone pending"} - {order.assignment_status}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1245,7 +1408,11 @@ export default function Settings() {
             >
               {deliveryQuote.is_deliverable
                 ? `${deliveryQuote.zone?.name || "Delivery"} is available: Rs ${deliveryQuote.delivery_fee}, ETA ${deliveryQuote.eta_window}.`
-                : deliveryQuote.reason || "This address is not deliverable."}
+                : `${deliveryQuote.reason || "This address is not deliverable."}${
+                    deliveryQuote.charge_breakdown?.minimum_gap
+                      ? ` Add Rs ${Math.round(deliveryQuote.charge_breakdown.minimum_gap)} more to unlock this zone.`
+                      : ""
+                  }`}
             </div>
           )}
 
