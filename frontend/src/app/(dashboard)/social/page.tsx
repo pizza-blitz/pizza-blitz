@@ -39,6 +39,28 @@ type ProviderStatus = {
   configured: boolean;
   unsupported: boolean;
   missing_settings: string[];
+  readiness_label?: string;
+  credential_checks?: ProviderCredentialCheck[];
+  content_requirements?: ContentRequirement[];
+  graph_version?: string;
+  safe_publish?: {
+    dry_run_available: boolean;
+    live_publish_blocked: boolean;
+    retry_supported: boolean;
+  };
+  next_action?: string;
+};
+
+type ProviderCredentialCheck = {
+  key: string;
+  label: string;
+  configured: boolean;
+};
+
+type ContentRequirement = {
+  label: string;
+  status: string;
+  detail: string;
 };
 
 type SocialDelivery = {
@@ -49,6 +71,9 @@ type SocialDelivery = {
   external_id?: string | null;
   error?: string | null;
   dry_run: boolean;
+  issue_reason?: "asset" | "provider" | "needs_review" | "none";
+  retryable?: boolean;
+  recovery_action?: string;
   attempted_at?: string | null;
 };
 
@@ -58,6 +83,11 @@ type DeliveryHistory = {
   dry_run_count: number;
   failed_count: number;
   skipped_count: number;
+  retryable_count: number;
+  provider_issue_count?: number;
+  asset_issue_count?: number;
+  needs_review_count?: number;
+  latest_attempted_at?: string | null;
   deliveries: SocialDelivery[];
 };
 
@@ -78,6 +108,40 @@ type AutoPublishStatus = {
   blocked_count: number;
   provider_status: Record<PlatformKey, ProviderStatus>;
   due_posts: AutoPublishPost[];
+};
+
+type SocialReadiness = {
+  generated_at: string;
+  providers: Record<PlatformKey, ProviderStatus>;
+  schedule: AutoPublishStatus;
+  audit: {
+    attempted_count: number;
+    published_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    retryable_count: number;
+    provider_issue_count: number;
+    asset_issue_count: number;
+    needs_review_count: number;
+    latest_attempted_at?: string | null;
+  };
+  checklist: string[];
+  next_action: string;
+};
+
+type SocialRetryResult = {
+  post: SocialPost;
+  dry_run: boolean;
+  status_filter: string;
+  source_count: number;
+  skipped_source_count: number;
+  retried_platform_count: number;
+  attempted_count: number;
+  dry_run_count: number;
+  failed_count: number;
+  skipped_count: number;
+  retryable_count: number;
 };
 
 type SocialForm = {
@@ -109,6 +173,7 @@ export default function SocialPublishingPage() {
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [providerStatus, setProviderStatus] = useState<Record<PlatformKey, ProviderStatus> | null>(null);
   const [autoPublishStatus, setAutoPublishStatus] = useState<AutoPublishStatus | null>(null);
+  const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<DeliveryHistory | null>(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -117,6 +182,7 @@ export default function SocialPublishingPage() {
   const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState<"dry_run" | "publish" | null>(null);
   const [autoPublishing, setAutoPublishing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.id === selectedId) || null,
@@ -135,16 +201,20 @@ export default function SocialPublishingPage() {
 
   const fetchSocial = async (preferredPostId?: number | null) => {
     setLoading(true);
-    const [statusResponse, postsResponse, autoResponse] = await Promise.all([
+    const [statusResponse, postsResponse, autoResponse, readinessResponse] = await Promise.all([
       fetch(`${SOCIAL_API}/provider-status`, { credentials: "include" }),
       fetch(`${SOCIAL_API}/posts`, { credentials: "include" }),
       fetch(`${SOCIAL_API}/auto-publish/status`, { credentials: "include" }),
+      fetch(`${SOCIAL_API}/readiness`, { credentials: "include" }),
     ]);
     if (statusResponse.ok) {
       setProviderStatus(await statusResponse.json());
     }
     if (autoResponse.ok) {
       setAutoPublishStatus(await autoResponse.json());
+    }
+    if (readinessResponse.ok) {
+      setSocialReadiness(await readinessResponse.json());
     }
     if (postsResponse.ok) {
       const data: SocialPost[] = await postsResponse.json();
@@ -275,6 +345,30 @@ export default function SocialPublishingPage() {
     setPublishing(null);
   };
 
+  const retryDeliveryIssues = async () => {
+    if (!selectedPost) return;
+    setRetrying(true);
+    const response = await fetch(`${SOCIAL_API}/posts/${selectedPost.id}/deliveries/retry`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: true, status: "needs_attention", limit: 20 }),
+    });
+    const data: SocialRetryResult | { detail?: string } = await response.json();
+    if (!response.ok) {
+      setMessage("detail" in data && data.detail ? data.detail : "Social delivery retry failed.");
+      setRetrying(false);
+      return;
+    }
+    const retryData = data as SocialRetryResult;
+    setMessage(
+      `Retry dry-run checked ${retryData.retried_platform_count} platform${retryData.retried_platform_count === 1 ? "" : "s"} from ${retryData.source_count} delivery issue${retryData.source_count === 1 ? "" : "s"}.`
+    );
+    await fetchSocial(selectedPost.id);
+    await fetchDeliveries(selectedPost.id);
+    setRetrying(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -326,6 +420,107 @@ export default function SocialPublishingPage() {
           icon={Image}
         />
       </div>
+
+      <section
+        data-testid="social-readiness-command"
+        className="mb-8 rounded-xl border border-orange-500/10 bg-[#1a1a1c] p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">
+              Social Publishing Readiness
+            </p>
+            <h2 className="mt-1 text-xl font-black">Token setup, schedule blockers and delivery retry audit</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              Meta tokens stay hidden, but the readiness checks show what is configured, which scheduled posts are blocked and which deliveries can be retried.
+            </p>
+          </div>
+          <span className="rounded-full bg-sky-500/10 px-4 py-2 text-xs font-black uppercase text-sky-200">
+            Graph {socialReadiness?.providers.facebook.graph_version || providerStatus?.facebook?.graph_version || "checking"}
+          </span>
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {(["facebook", "instagram"] as PlatformKey[]).map((platform) => (
+            <SocialProviderCard
+              key={`readiness-${platform}`}
+              platform={platform}
+              status={socialReadiness?.providers?.[platform] || providerStatus?.[platform]}
+            />
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-7">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-400">Schedule / Retry Queue</p>
+                <h3 className="mt-1 text-lg font-black">Due posts and operational blockers</h3>
+              </div>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-300">
+                Every {socialReadiness?.schedule.interval_minutes || autoPublishStatus?.interval_minutes || 5} min
+              </span>
+            </div>
+            <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <AutoMetric label="Due" value={socialReadiness?.schedule.due_count || 0} icon={Clock} />
+              <AutoMetric label="Eligible" value={socialReadiness?.schedule.eligible_count || 0} icon={CheckCircle2} />
+              <AutoMetric label="Blocked" value={socialReadiness?.schedule.blocked_count || 0} icon={AlertTriangle} />
+              <AutoMetric label="Retryable" value={socialReadiness?.audit.retryable_count || 0} icon={RefreshCw} />
+            </div>
+            <div className="space-y-2">
+              {(socialReadiness?.schedule.due_posts || autoPublishStatus?.due_posts || []).slice(0, 3).map((post) => (
+                <div key={`readiness-due-${post.id}`} className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-3 text-sm md:grid-cols-12">
+                  <div className="md:col-span-4">
+                    <p className="font-black text-white">{post.title}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {post.scheduled_at ? new Date(post.scheduled_at).toLocaleString() : "No schedule"}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${post.eligible ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"}`}>
+                      {post.eligible ? "eligible" : "blocked"}
+                    </span>
+                  </div>
+                  <p className="text-gray-400 md:col-span-6">
+                    {post.eligible ? post.platforms.map((platform) => platformLabels[platform]).join(", ") : post.blockers.join(", ")}
+                  </p>
+                </div>
+              ))}
+              {!(socialReadiness?.schedule.due_posts || autoPublishStatus?.due_posts || []).length && (
+                <div className="rounded-lg border border-dashed border-white/10 p-5 text-center text-sm font-semibold text-gray-500">
+                  No scheduled posts are due right now.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-400">Delivery Audit</p>
+                <h3 className="mt-1 text-lg font-black">Provider and asset issues</h3>
+              </div>
+              <AlertTriangle className="h-5 w-5 text-orange-300" />
+            </div>
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              <AutoMetric label="Attempts" value={socialReadiness?.audit.attempted_count || 0} icon={Send} />
+              <AutoMetric label="Dry Runs" value={socialReadiness?.audit.dry_run_count || 0} icon={CheckCircle2} />
+              <AutoMetric label="Provider" value={socialReadiness?.audit.provider_issue_count || 0} icon={Share2} />
+              <AutoMetric label="Assets" value={socialReadiness?.audit.asset_issue_count || 0} icon={Image} />
+            </div>
+            <div className="space-y-2">
+              {(socialReadiness?.checklist || ["Token setup is loading.", "Schedule queue is loading.", "Retry audit is loading."]).map((item) => (
+                <div key={item} className="rounded-lg border border-white/5 bg-white/[0.03] p-3 text-sm font-semibold leading-6 text-gray-400">
+                  {item}
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-xs font-bold leading-5 text-orange-200">
+              {socialReadiness?.next_action || "Refresh social readiness before publishing."}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border border-white/5 bg-[#1a1a1c] p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
@@ -474,6 +669,15 @@ export default function SocialPublishingPage() {
                     >
                       <Send className="h-4 w-4" /> Publish
                     </button>
+                    <button
+                      data-testid="retry-social-delivery-issues"
+                      onClick={retryDeliveryIssues}
+                      disabled={retrying || !(history?.retryable_count || 0)}
+                      title={history?.retryable_count ? "Retry failed or skipped social delivery issues in dry-run mode" : "No retryable delivery issues"}
+                      className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 font-bold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${retrying ? "animate-spin" : ""}`} /> Retry Issues
+                    </button>
                   </div>
                 </div>
 
@@ -482,6 +686,14 @@ export default function SocialPublishingPage() {
                   <Detail label="Platforms" value={`${selectedPost.platforms.length}`} />
                   <Detail label="Published" value={`${history?.published_count || 0}`} />
                   <Detail label="Failed" value={`${history?.failed_count || 0}`} />
+                </div>
+
+                <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+                  <AutoMetric label="Attempts" value={history?.attempted_count || 0} icon={Send} />
+                  <AutoMetric label="Dry Runs" value={history?.dry_run_count || 0} icon={CheckCircle2} />
+                  <AutoMetric label="Retryable" value={history?.retryable_count || 0} icon={RefreshCw} />
+                  <AutoMetric label="Provider" value={history?.provider_issue_count || 0} icon={Share2} />
+                  <AutoMetric label="Assets" value={history?.asset_issue_count || 0} icon={Image} />
                 </div>
 
                 <div className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5">
@@ -521,7 +733,10 @@ export default function SocialPublishingPage() {
                             {delivery.attempted_at ? new Date(delivery.attempted_at).toLocaleString() : "Not attempted"}
                           </div>
                           <div className="break-all text-gray-400 md:col-span-4">
-                            {delivery.external_id || delivery.error || "Ready"}
+                            <p>{delivery.external_id || delivery.error || "Ready"}</p>
+                            <p className="mt-1 text-xs leading-5 text-gray-600">
+                              {delivery.recovery_action || "No recovery action needed."}
+                            </p>
                           </div>
                         </div>
                       ))}
@@ -652,9 +867,11 @@ function SocialProviderCard({
 }) {
   const Icon = platform === "instagram" ? Image : Share2;
   const ready = Boolean(status?.configured);
+  const credentialChecks = status?.credential_checks || [];
+  const contentRequirements = status?.content_requirements || [];
 
   return (
-    <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+    <div data-testid={`social-provider-${platform}`} className="rounded-xl border border-white/5 bg-black/25 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
@@ -676,7 +893,7 @@ function SocialProviderCard({
             ready ? "bg-green-500/10 text-green-300" : "bg-yellow-500/10 text-yellow-300"
           }`}
         >
-          {ready ? "Ready" : "Setup"}
+          {status?.readiness_label || (ready ? "Provider ready" : "Setup needed")}
         </span>
       </div>
 
@@ -696,6 +913,36 @@ function SocialProviderCard({
           {platform === "instagram" ? " Instagram also requires an image URL on each post." : ""}
         </p>
       </div>
+
+      <div className="mt-4 space-y-2">
+        {credentialChecks.map((check) => (
+          <div key={`${platform}-${check.key}`} className="flex items-center justify-between gap-3 text-xs font-semibold">
+            <span className="text-gray-500">{check.label}</span>
+            <span className={check.configured ? "text-green-300" : "text-yellow-300"}>
+              {check.configured ? "ready" : "missing"}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.03] p-3">
+        <p className="text-xs font-black uppercase tracking-widest text-gray-500">Content Requirements</p>
+        <div className="mt-3 space-y-2">
+          {(contentRequirements.length ? contentRequirements : [{ label: "Provider content checks", status: "loading", detail: "Refresh readiness to load platform requirements." }]).map((requirement) => (
+            <div key={`${platform}-${requirement.label}`}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-white">{requirement.label}</p>
+                <span className="text-xs font-black uppercase text-sky-300">{requirement.status}</span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-gray-500">{requirement.detail}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-4 text-xs font-semibold leading-5 text-gray-500">
+        {status?.next_action || "Refresh readiness before publishing."}
+      </p>
     </div>
   );
 }

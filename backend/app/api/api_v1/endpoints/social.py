@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
+from app.core.config import settings
 from app.models.domain import SocialPost, SocialPostDelivery
 from app.services.social_autopublish_service import (
     publish_due_social_posts,
@@ -38,6 +39,12 @@ class SocialPublishRequest(BaseModel):
 
 class SocialAutoPublishRequest(BaseModel):
     limit: int = Field(20, ge=1, le=100)
+
+
+class SocialDeliveryRetryRequest(BaseModel):
+    limit: int = Field(20, ge=1, le=100)
+    dry_run: bool = True
+    status: str = "needs_attention"
 
 
 def _parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -94,6 +101,9 @@ def _delivery_dict(delivery: SocialPostDelivery) -> dict:
         "external_id": delivery.external_id,
         "error": delivery.error,
         "dry_run": delivery.dry_run,
+        "issue_reason": _delivery_issue_reason(delivery),
+        "retryable": delivery.status in {"failed", "skipped"},
+        "recovery_action": _delivery_recovery_action(delivery),
         "attempted_at": delivery.attempted_at.isoformat() if delivery.attempted_at else None,
     }
 
@@ -105,7 +115,181 @@ def _delivery_counts(deliveries: list[SocialPostDelivery]) -> dict:
         "dry_run_count": sum(1 for delivery in deliveries if delivery.status == "dry_run"),
         "failed_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
         "skipped_count": sum(1 for delivery in deliveries if delivery.status == "skipped"),
+        "retryable_count": sum(1 for delivery in deliveries if delivery.status in {"failed", "skipped"}),
     }
+
+
+def _delivery_issue_reason(delivery: SocialPostDelivery) -> str:
+    error = (delivery.error or "").lower()
+    if "image_url" in error or "image" in error:
+        return "asset"
+    if "provider" in error or "configured" in error or delivery.status == "failed":
+        return "provider"
+    if delivery.status == "skipped":
+        return "needs_review"
+    return "none"
+
+
+def _delivery_recovery_action(delivery: SocialPostDelivery) -> str:
+    if delivery.status == "published":
+        return "Published by provider."
+    if delivery.status == "dry_run":
+        return "Dry run passed; publish after provider setup and content review."
+    reason = _delivery_issue_reason(delivery)
+    if reason == "asset":
+        return "Attach a public image URL before retrying Instagram publishing."
+    if reason == "provider":
+        return "Check Meta token, page or business account setup, then retry."
+    if delivery.status == "skipped":
+        return "Review the skipped delivery and retry when blockers are cleared."
+    return "Monitor this pending delivery."
+
+
+def _delivery_audit_counts(deliveries: list[SocialPostDelivery]) -> dict:
+    return {
+        "provider_issue_count": sum(1 for delivery in deliveries if _delivery_issue_reason(delivery) == "provider"),
+        "asset_issue_count": sum(1 for delivery in deliveries if _delivery_issue_reason(delivery) == "asset"),
+        "needs_review_count": sum(1 for delivery in deliveries if _delivery_issue_reason(delivery) == "needs_review"),
+    }
+
+
+def _provider_credential_checks(platform: str, status: dict) -> list[dict]:
+    credential_map = {
+        "facebook": [
+            ("SOCIAL_PUBLISH_ENABLED=true", "Global social publish switch"),
+            ("FACEBOOK_PAGE_ID", "Facebook page ID"),
+            ("FACEBOOK_PAGE_ACCESS_TOKEN", "Facebook page access token"),
+        ],
+        "instagram": [
+            ("SOCIAL_PUBLISH_ENABLED=true", "Global social publish switch"),
+            ("INSTAGRAM_BUSINESS_ACCOUNT_ID", "Instagram business account ID"),
+            ("INSTAGRAM_ACCESS_TOKEN", "Instagram access token"),
+        ],
+    }
+    missing = set(status.get("missing_settings") or [])
+    return [
+        {
+            "key": key,
+            "label": label,
+            "configured": key not in missing and not status.get("unsupported"),
+        }
+        for key, label in credential_map.get(platform, [])
+    ]
+
+
+def _platform_content_requirements(platform: str) -> list[dict]:
+    if platform == "instagram":
+        return [
+            {
+                "label": "Public image URL",
+                "status": "required",
+                "detail": "Instagram publishing requires a reachable image_url on every post.",
+            },
+            {
+                "label": "Caption review",
+                "status": "required",
+                "detail": "Caption text should be reviewed before live provider posting.",
+            },
+        ]
+    return [
+        {
+            "label": "Message or image creative",
+            "status": "required",
+            "detail": "Facebook can publish a feed link/message or a photo caption.",
+        },
+        {
+            "label": "Page ownership",
+            "status": "required",
+            "detail": "The configured page token must belong to the Pizza Blitz page.",
+        },
+    ]
+
+
+def _social_provider_readiness(platform: str) -> dict:
+    status = social_provider_status(platform)
+    missing = status.get("missing_settings") or []
+    return {
+        **status,
+        "readiness_label": "Provider ready" if status.get("configured") else "Setup needed",
+        "credential_checks": _provider_credential_checks(platform, status),
+        "content_requirements": _platform_content_requirements(platform),
+        "graph_version": settings.META_GRAPH_VERSION,
+        "safe_publish": {
+            "dry_run_available": True,
+            "live_publish_blocked": not status.get("configured"),
+            "retry_supported": True,
+        },
+        "next_action": (
+            "Run dry-run proof, then publish due posts when content is approved."
+            if status.get("configured")
+            else f"Configure {', '.join(missing) if missing else 'supported Meta provider settings'}."
+        ),
+    }
+
+
+def _publish_delivery_for_platform(post: SocialPost, platform: str, *, dry_run: bool) -> SocialPostDelivery:
+    provider_status = social_provider_status(platform)
+    delivery_kwargs = {
+        "social_post_id": post.id,
+        "platform": platform,
+        "attempted_at": datetime.utcnow(),
+    }
+
+    if platform == "instagram" and not post.image_url:
+        return SocialPostDelivery(
+            **delivery_kwargs,
+            provider=provider_status["provider"],
+            status="skipped",
+            error="Instagram publishing requires an image_url.",
+            dry_run=dry_run,
+            response_payload={"provider_status": provider_status},
+        )
+    if dry_run:
+        return SocialPostDelivery(
+            **delivery_kwargs,
+            provider=provider_status["provider"],
+            status="dry_run",
+            dry_run=True,
+            response_payload={"provider_status": provider_status},
+        )
+
+    result = publish_social_post(
+        platform=platform,
+        message=post.message,
+        link_url=post.link_url,
+        image_url=post.image_url,
+    )
+    return SocialPostDelivery(
+        **delivery_kwargs,
+        provider=result.provider,
+        status=result.status,
+        external_id=result.external_id,
+        error=result.error,
+        dry_run=False,
+        response_payload=result.response_payload,
+    )
+
+
+def _retry_candidates(
+    db: Session,
+    post: SocialPost,
+    *,
+    status_filter: str,
+    limit: int,
+) -> list[SocialPostDelivery]:
+    normalized = (status_filter or "needs_attention").strip().lower()
+    query = db.query(SocialPostDelivery).filter(SocialPostDelivery.social_post_id == post.id)
+    if normalized == "needs_attention":
+        query = query.filter(SocialPostDelivery.status.in_(["failed", "skipped"]))
+    elif normalized in {"failed", "skipped", "pending", "dry_run"}:
+        query = query.filter(SocialPostDelivery.status == normalized)
+    elif normalized != "all":
+        raise HTTPException(status_code=422, detail="Unsupported social delivery retry status filter.")
+    return (
+        query.order_by(SocialPostDelivery.attempted_at.desc(), SocialPostDelivery.id.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @router.get("/provider-status")
@@ -113,8 +297,50 @@ def social_provider_statuses(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     return {
-        platform: social_provider_status(platform)
+        platform: _social_provider_readiness(platform)
         for platform in sorted(VALID_SOCIAL_PLATFORMS)
+    }
+
+
+@router.get("/readiness")
+def social_publishing_readiness(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    providers = {
+        platform: _social_provider_readiness(platform)
+        for platform in sorted(VALID_SOCIAL_PLATFORMS)
+    }
+    queue = social_auto_publish_status(db, limit=limit)
+    recent_deliveries = (
+        db.query(SocialPostDelivery)
+        .order_by(SocialPostDelivery.attempted_at.desc(), SocialPostDelivery.id.desc())
+        .limit(50)
+        .all()
+    )
+    all_ready = all(status["configured"] for status in providers.values())
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "providers": providers,
+        "schedule": queue,
+        "audit": {
+            **_delivery_counts(recent_deliveries),
+            **_delivery_audit_counts(recent_deliveries),
+            "latest_attempted_at": recent_deliveries[0].attempted_at.isoformat()
+            if recent_deliveries and recent_deliveries[0].attempted_at
+            else None,
+        },
+        "checklist": [
+            "Meta tokens are checked without exposing token values.",
+            "Scheduled posts remain blocked until platform credentials and Instagram assets are ready.",
+            "Failed or skipped delivery attempts can be retried through the social post audit lane.",
+        ],
+        "next_action": (
+            "Run due posts or retry failed deliveries after dry-run proof."
+            if all_ready
+            else "Finish Meta token setup, then run dry-run proof before live publishing."
+        ),
     }
 
 
@@ -192,6 +418,10 @@ def social_post_deliveries(
     return {
         "post": _social_post_dict(post),
         **_delivery_counts(deliveries),
+        **_delivery_audit_counts(deliveries),
+        "latest_attempted_at": deliveries[0].attempted_at.isoformat()
+        if deliveries and deliveries[0].attempted_at
+        else None,
         "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
     }
 
@@ -213,46 +443,7 @@ def publish_post(
     deliveries: list[SocialPostDelivery] = []
 
     for platform in platforms:
-        provider_status = social_provider_status(platform)
-        delivery_kwargs = {
-            "social_post_id": post.id,
-            "platform": platform,
-            "attempted_at": datetime.utcnow(),
-        }
-
-        if platform == "instagram" and not post.image_url:
-            delivery = SocialPostDelivery(
-                **delivery_kwargs,
-                provider=provider_status["provider"],
-                status="skipped",
-                error="Instagram publishing requires an image_url.",
-                dry_run=payload.dry_run,
-                response_payload={"provider_status": provider_status},
-            )
-        elif payload.dry_run:
-            delivery = SocialPostDelivery(
-                **delivery_kwargs,
-                provider=provider_status["provider"],
-                status="dry_run",
-                dry_run=True,
-                response_payload={"provider_status": provider_status},
-            )
-        else:
-            result = publish_social_post(
-                platform=platform,
-                message=post.message,
-                link_url=post.link_url,
-                image_url=post.image_url,
-            )
-            delivery = SocialPostDelivery(
-                **delivery_kwargs,
-                provider=result.provider,
-                status=result.status,
-                external_id=result.external_id,
-                error=result.error,
-                dry_run=False,
-                response_payload=result.response_payload,
-            )
+        delivery = _publish_delivery_for_platform(post, platform, dry_run=payload.dry_run)
         db.add(delivery)
         deliveries.append(delivery)
 
@@ -273,5 +464,59 @@ def publish_post(
         },
         "dry_run": payload.dry_run,
         **_delivery_counts(deliveries),
+        "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
+    }
+
+
+@router.post("/posts/{post_id}/deliveries/retry")
+def retry_social_post_deliveries(
+    post_id: int,
+    payload: SocialDeliveryRetryRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    post = db.get(SocialPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Social post not found")
+
+    source_deliveries = _retry_candidates(
+        db,
+        post,
+        status_filter=payload.status,
+        limit=payload.limit,
+    )
+    retried_platforms: set[str] = set()
+    deliveries: list[SocialPostDelivery] = []
+    skipped_source_count = 0
+
+    for source in source_deliveries:
+        platform = source.platform
+        if platform in retried_platforms:
+            skipped_source_count += 1
+            continue
+        retried_platforms.add(platform)
+        delivery = _publish_delivery_for_platform(post, platform, dry_run=payload.dry_run)
+        db.add(delivery)
+        deliveries.append(delivery)
+
+    if not payload.dry_run and deliveries:
+        if any(delivery.status == "published" for delivery in deliveries):
+            post.status = "published"
+        elif any(delivery.status == "failed" for delivery in deliveries):
+            post.status = "failed"
+
+    db.commit()
+    for delivery in deliveries:
+        db.refresh(delivery)
+
+    return {
+        "post": _social_post_dict(post),
+        "dry_run": payload.dry_run,
+        "status_filter": payload.status,
+        "source_count": len(source_deliveries),
+        "skipped_source_count": skipped_source_count,
+        "retried_platform_count": len(deliveries),
+        **_delivery_counts(deliveries),
+        **_delivery_audit_counts(deliveries),
         "deliveries": [_delivery_dict(delivery) for delivery in deliveries],
     }

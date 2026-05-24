@@ -53,18 +53,18 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "87%",
-    note: "Internal beta with messaging provider readiness now visible",
+    value: "88%",
+    note: "Internal beta with messaging and social provider readiness now visible",
   },
   {
     label: "Marketing Engine",
-    value: "88%",
-    note: "Campaigns, consent, queues, ROI, provider readiness, social and ads are largely working",
+    value: "90%",
+    note: "Campaigns, consent, queues, ROI, messaging, social readiness and ads are largely working",
   },
   {
     label: "Production Readiness",
-    value: "70%",
-    note: "Customer profile, provider readiness and safe dry-run controls are now tracked",
+    value: "71%",
+    note: "Provider readiness, schedule blockers and retry audits are now tracked",
   },
   {
     label: "Target Date",
@@ -164,6 +164,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Promotions now show channel credential checks, template compliance states, dry-run-only safe test sends and masked readiness receipts.",
   },
+  {
+    title: "Social publishing readiness",
+    status: "done",
+    value: "Social now shows hidden-token readiness, scheduled post blockers, delivery issue audit and retry dry-run controls.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -184,8 +189,13 @@ const immediateRemaining: RoadmapItem[] = [
   },
   {
     title: "Social publishing readiness",
+    status: "done",
+    value: "Token setup visibility, schedule blockers, retry controls and social delivery audit are visible in the social command board.",
+  },
+  {
+    title: "Ad provider sync",
     status: "active",
-    value: "Turn social post shells into an operational publish-readiness flow with token visibility, schedule/retry state and delivery audit.",
+    value: "Connect Meta ad launch readiness to provider controls, external campaign IDs, pause/resume guardrails and launch audit.",
   },
   {
     title: "Delivery live tracking and assignment refinement",
@@ -414,18 +424,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "4 Jun 2026",
     focus: "Social publishing readiness",
-    status: "active",
+    status: "done",
     planned: [
       "Live token setup visibility",
       "Schedule and retry posting",
       "Delivery audit improvements",
     ],
-    output: "Social publishing becomes operationally trustworthy.",
+    output: "Social token readiness, schedule blockers, retry dry-run controls and delivery audit proof were completed.",
   },
   {
     date: "5 Jun 2026",
     focus: "Ad provider sync",
-    status: "planned",
+    status: "active",
     planned: [
       "Provider launch controls",
       "External campaign id handling",
@@ -603,8 +613,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "9",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, production ops, visual audit and roadmap.",
+    value: "10",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -665,6 +675,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "WhatsApp, SMS and email provider setup, template compliance and safe test-send receipts are visible.",
     artifact: "visible-messaging-readiness.png",
+  },
+  {
+    area: "Social readiness",
+    proof: "verify-social-publishing-readiness.cjs",
+    status: "passed",
+    value: "Meta token readiness, schedule blockers, retry dry-run controls and delivery recovery actions are visible.",
+    artifact: "visible-social-publishing-readiness.png",
   },
   {
     area: "Production operations",
@@ -926,7 +943,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Social publishing readiness: live token setup visibility, schedule/retry posting and delivery audit improvements."
+          text="Ad provider sync: provider launch controls, external campaign ID handling and pause/resume guardrails."
         />
       </section>
     </div>
