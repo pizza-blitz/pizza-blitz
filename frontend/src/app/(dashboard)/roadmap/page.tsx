@@ -37,8 +37,8 @@ type DailyPlan = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "68%",
-    note: "Internal beta with many proved workflows",
+    value: "70%",
+    note: "Internal beta with stronger payment operations",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +47,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "42%",
-    note: "Needs live credentials, hardened deployment and monitoring",
+    value: "48%",
+    note: "Payment settlement command view is now in place",
   },
   {
     label: "Target Date",
@@ -94,6 +94,11 @@ const completedValue: RoadmapItem[] = [
     value: "Ads can now be paused, resumed, completed, duplicated and audited through action history.",
   },
   {
+    title: "Payment production command pass",
+    status: "done",
+    value: "Settings now shows gateway readiness, provider setup, unsettled prepaid orders, recent settlements and manual webhook proof.",
+  },
+  {
     title: "Payment, delivery, roles and production proofs",
     status: "done",
     value: "E2E proof files exist for payment readiness, delivery zones, role gates and production operations.",
@@ -102,9 +107,9 @@ const completedValue: RoadmapItem[] = [
 
 const immediateRemaining: RoadmapItem[] = [
   {
-    title: "Live payment gateway and webhook settlement",
+    title: "Live gateway credentials and bank settlement activation",
     status: "planned",
-    value: "Connect real provider credentials, order payment states and production webhook verification.",
+    value: "Add real Cashfree or Razorpay credentials, run live low-value checkout and compare provider payout reports.",
   },
   {
     title: "Authentication maturity",
@@ -233,18 +238,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "25 May 2026",
     focus: "Payment gateway production pass",
-    status: "planned",
+    status: "done",
     planned: [
       "Finalize provider configuration checks",
       "Harden webhook verification",
       "Connect payment state to order status",
     ],
-    output: "Real payment readiness moves from proof to controlled production setup.",
+    output: "Payment production control, settlement queue, provider config guard and manual webhook proof were completed.",
   },
   {
     date: "26 May 2026",
     focus: "Customer web checkout",
-    status: "planned",
+    status: "active",
     planned: [
       "Improve cart and checkout steps",
       "Apply coupons cleanly",

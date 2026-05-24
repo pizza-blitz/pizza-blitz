@@ -28,6 +28,7 @@ from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
     normalize_payment_webhook,
+    payment_provider_status,
     verify_razorpay_checkout_signature,
 )
 
@@ -47,6 +48,7 @@ DEFAULT_TABLES = [
 ]
 
 ORDER_USAGE_NOTE_PREFIX = "Auto usage from order"
+PAYMENT_PROVIDER_ORDER = ("manual", "cashfree", "razorpay")
 
 
 class OrderItem(BaseModel):
@@ -423,6 +425,54 @@ def apply_order_payment(
     db.commit()
     db.refresh(order)
     return serialize_order(order), True
+
+
+def serialize_payment_queue_order(order: RestaurantOrder) -> dict:
+    metadata = order_metadata(order)
+    return {
+        "id": order.id,
+        "customer_name": order.customer_name,
+        "customer_phone": order.customer_phone,
+        "order_type": order.order_type,
+        "fulfillment_type": metadata["fulfillment_type"],
+        "source": metadata["source"],
+        "total_amount": round(float(order.total_amount or 0), 2),
+        "payment_status": order.payment_status,
+        "payment_method": order.payment_method,
+        "payment_provider": order.payment_provider,
+        "payment_session_id": order.payment_session_id,
+        "payment_reference": order.payment_reference,
+        "payment_confirmed_at": (
+            order.payment_confirmed_at.isoformat()
+            if order.payment_confirmed_at
+            else None
+        ),
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+    }
+
+
+def payment_production_next_actions(
+    *,
+    active_provider: dict,
+    awaiting_settlement_count: int,
+) -> list[str]:
+    actions: list[str] = []
+    provider = active_provider["provider"]
+    if provider == "manual":
+        actions.append("Select Cashfree or Razorpay before public prepaid checkout.")
+    if not active_provider["checkout_configured"]:
+        missing = ", ".join(active_provider["missing_checkout_settings"])
+        actions.append(f"Add checkout settings for {provider}: {missing}.")
+    if not active_provider["webhook_configured"]:
+        missing = ", ".join(active_provider["missing_webhook_settings"])
+        actions.append(f"Add webhook secret for {provider}: {missing}.")
+    if awaiting_settlement_count:
+        actions.append(
+            f"Settle {awaiting_settlement_count} prepaid order(s) through a verified webhook or admin proof."
+        )
+    if not actions:
+        actions.append("Run a low-value live checkout and compare the provider payout report.")
+    return actions
 
 
 def normalize_coupon_code(value: Optional[str]) -> Optional[str]:
@@ -891,6 +941,11 @@ def create_order_payment_session(
             status_code=502,
             detail=session.get("message") or "Payment provider failed.",
         )
+    if session.get("status") == "configuration_required":
+        raise HTTPException(
+            status_code=409,
+            detail=session.get("message") or "Payment provider credentials are not configured.",
+        )
 
     order.payment_method = "prepaid"
     order.payment_status = "awaiting_payment"
@@ -902,6 +957,100 @@ def create_order_payment_session(
     return {
         "order": serialize_order(order),
         "payment_session": session,
+    }
+
+
+@router.get("/payments/production-readiness")
+def payment_production_readiness(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    providers = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
+    active_provider = payment_provider_status()
+
+    awaiting_query = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.payment_method == "prepaid")
+        .filter(RestaurantOrder.payment_status != "paid")
+    )
+    awaiting_settlement_count = awaiting_query.count()
+    awaiting_settlement = (
+        awaiting_query
+        .order_by(RestaurantOrder.created_at.desc(), RestaurantOrder.id.desc())
+        .limit(8)
+        .all()
+    )
+
+    paid_today_query = db.query(RestaurantOrder).filter(
+        RestaurantOrder.date == date.today(),
+        RestaurantOrder.payment_status == "paid",
+    )
+    paid_today_orders = paid_today_query.all()
+    recent_paid = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.payment_status == "paid")
+        .order_by(RestaurantOrder.payment_confirmed_at.desc(), RestaurantOrder.id.desc())
+        .limit(8)
+        .all()
+    )
+
+    awaiting_settlement_total = round(
+        sum(float(order.total_amount or 0) for order in awaiting_query.all()),
+        2,
+    )
+    paid_today_total = round(
+        sum(float(order.total_amount or 0) for order in paid_today_orders),
+        2,
+    )
+    provider_ready_count = sum(
+        1
+        for provider in providers
+        if provider["checkout_configured"] and provider["webhook_configured"]
+    )
+    webhook_ready_count = sum(1 for provider in providers if provider["webhook_configured"])
+    gateway_ready = (
+        active_provider["checkout_configured"]
+        and active_provider["webhook_configured"]
+    )
+    live_gateway_ready = gateway_ready and active_provider["provider"] != "manual"
+    settlement_clear = awaiting_settlement_count == 0
+    if live_gateway_ready and settlement_clear:
+        production_status = "live_ready"
+    elif gateway_ready:
+        production_status = "controlled_manual" if active_provider["provider"] == "manual" else "settlement_watch"
+    else:
+        production_status = "configuration_needed"
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "active_provider": active_provider,
+        "providers": providers,
+        "summary": {
+            "gateway_ready": gateway_ready,
+            "live_gateway_ready": live_gateway_ready,
+            "settlement_clear": settlement_clear,
+            "awaiting_settlement_count": awaiting_settlement_count,
+            "awaiting_settlement_total": awaiting_settlement_total,
+            "paid_today_count": len(paid_today_orders),
+            "paid_today_total": paid_today_total,
+            "provider_ready_count": provider_ready_count,
+            "webhook_ready_count": webhook_ready_count,
+            "production_status": production_status,
+        },
+        "queues": {
+            "awaiting_settlement": [
+                serialize_payment_queue_order(order)
+                for order in awaiting_settlement
+            ],
+            "recent_paid": [
+                serialize_payment_queue_order(order)
+                for order in recent_paid
+            ],
+        },
+        "next_actions": payment_production_next_actions(
+            active_provider=active_provider,
+            awaiting_settlement_count=awaiting_settlement_count,
+        ),
     }
 
 
