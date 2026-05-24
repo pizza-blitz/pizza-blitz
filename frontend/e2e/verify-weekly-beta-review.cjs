@@ -90,7 +90,7 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("15 / 15", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("16 / 16", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
@@ -99,7 +99,8 @@ async function main() {
     await page.getByText("verify-weekly-beta-review.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-production-database-path.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-environment-secrets-security.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Deployment pipeline: verify build", {
+    await page.getByText("verify-deployment-pipeline.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Full customer order E2E: prove catalog", {
       exact: false,
     }).waitFor({ timeout: 15000 });
 

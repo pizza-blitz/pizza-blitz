@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "93%",
-    note: "Internal beta with provider sync, owner reporting, DB path and secrets command now visible",
+    value: "94%",
+    note: "Internal beta with provider sync, owner reporting, DB path, secrets and deployment command now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "80%",
-    note: "Provider readiness, DB path, masked secrets, env blockers and rotation drill are now tracked",
+    value: "82%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates and rollback checks are now tracked",
   },
   {
     label: "Target Date",
@@ -194,6 +194,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops now shows required env coverage, secret masking, credential checks, rotation drill and security blockers.",
   },
+  {
+    title: "Deployment pipeline",
+    status: "done",
+    value: "Production Ops now shows build gate, release steps, rollback/log inspection, production smoke and deployment blockers.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -243,6 +248,11 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Required env vars, masked sensitive values, auth/session secrets, CORS and rotation recovery checks are now visible.",
   },
   {
+    title: "Deployment pipeline",
+    status: "done",
+    value: "Build gate, release checklist, rollback/log inspection and production smoke path are now visible in Production Ops.",
+  },
+  {
     title: "Delivery live tracking and assignment refinement",
     status: "planned",
     value: "Add customer-facing tracking, rider capacity, delivery exceptions and more granular dispatch history.",
@@ -255,7 +265,7 @@ const immediateRemaining: RoadmapItem[] = [
   {
     title: "Deployment, backups and environment security",
     status: "active",
-    value: "Secret security is mapped; deployment checklist, rollback logs, production env values and restore proof remain active.",
+    value: "Pipeline is mapped; live host credentials, real deployment, log access and restore proof still need production proof.",
   },
 ];
 
@@ -278,7 +288,7 @@ const timeline: TimelinePhase[] = [
       {
         title: "Production readiness pass",
         status: "active",
-        value: "Database and secrets paths are defined; deployment checks, rollback logs, monitoring and restore proof remain.",
+        value: "Database, secrets and deployment pipeline are defined; live deploy, monitoring and restore proof remain.",
       },
       {
         title: "Browser proof suite",
@@ -535,18 +545,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "10 Jun 2026",
     focus: "Deployment pipeline",
-    status: "active",
+    status: "done",
     planned: [
       "Build verification",
       "Deployment checklist",
       "Rollback and log inspection steps",
     ],
-    output: "Release process becomes repeatable.",
+    output: "Build gate, release steps, rollback/log inspection, production smoke path and browser/API proof were completed.",
   },
   {
     date: "11 Jun 2026",
     focus: "Full customer order E2E",
-    status: "planned",
+    status: "active",
     planned: [
       "Browse product catalog",
       "Customize item",
@@ -658,8 +668,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "15",
-    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, production ops, visual audit and roadmap.",
+    value: "16",
+    note: "Checkout, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -669,12 +679,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Environment and secrets security is mapped and deployment pipeline is now active.",
+    note: "Deployment pipeline is mapped and full customer order E2E is now active.",
   },
   {
     label: "Next Risk",
-    value: "Deploy",
-    note: "Build verification, deployment checklist, rollback logs and production smoke proof are now the active track.",
+    value: "Customer E2E",
+    note: "Catalog, customization, checkout, receipt and customer order handoff are now the active track.",
   },
 ];
 
@@ -764,6 +774,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-environment-secrets-security.png",
   },
   {
+    area: "Deployment pipeline",
+    proof: "verify-deployment-pipeline.cjs",
+    status: "passed",
+    value: "Build gate, release steps, rollback/log inspection and production smoke path are visible.",
+    artifact: "visible-deployment-pipeline.png",
+  },
+  {
     area: "Production operations",
     proof: "verify-production-ops-readiness.cjs",
     status: "passed",
@@ -789,7 +806,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "15 / 15",
+    value: "16 / 16",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -804,8 +821,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Deploy",
-    note: "The next work slice should prove build, deployment checklist, rollback logs and production smoke path.",
+    value: "Customer E2E",
+    note: "The next work slice should prove catalog, customization, checkout, receipt and customer order handoff.",
   },
 ];
 
@@ -837,8 +854,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Deployment pipeline handoff",
+    status: "done",
+    value: "Production Ops now exposes build gate, release steps, rollback/log inspection and production smoke readiness.",
+  },
+  {
+    title: "Customer order E2E handoff",
     status: "active",
-    value: "Next slice should prove build, deployment checklist, rollback/log inspection and production smoke readiness.",
+    value: "Next slice should prove customer catalog, customization, checkout, receipt and order handoff from browser to backend.",
   },
 ];
 
@@ -861,7 +883,7 @@ const betaBlockers: RoadmapItem[] = [
   {
     title: "Deployment and secret security",
     status: "active",
-    value: "Secret security is mapped; deployment logs, rollback path, monitoring and production smoke proof remain active.",
+    value: "Pipeline is mapped; live host credentials, real deploy, log access, monitoring and restore proof remain production blockers.",
   },
   {
     title: "Customer-facing delivery tracking",
@@ -1188,7 +1210,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Deployment pipeline: verify build, deployment checklist, rollback/log inspection and production smoke readiness."
+          text="Full customer order E2E: prove catalog, customization, checkout, receipt and customer order handoff."
         />
       </section>
     </div>

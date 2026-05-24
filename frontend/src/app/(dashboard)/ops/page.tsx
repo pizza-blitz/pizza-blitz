@@ -78,6 +78,17 @@ type EnvironmentSecurityPlan = {
   blockers: string[];
 };
 
+type DeploymentPipelinePlan = {
+  summary: string;
+  status: CheckStatus;
+  readiness_metrics: ModuleMetric[];
+  build_gate: ProductionDatabaseStep[];
+  release_steps: ProductionDatabaseStep[];
+  rollback_checks: ProductionDatabaseStep[];
+  production_smoke: ProductionDatabaseStep[];
+  blockers: string[];
+};
+
 type LaunchModule = {
   key: string;
   title: string;
@@ -136,6 +147,7 @@ type Readiness = {
   readiness_score: number;
   production_database_plan?: ProductionDatabasePlan;
   environment_security_plan?: EnvironmentSecurityPlan;
+  deployment_pipeline_plan?: DeploymentPipelinePlan;
   launch_blockers: GoLiveItem[];
   setup_actions: GoLiveItem[];
   go_live_sections: GoLiveSection[];
@@ -294,6 +306,10 @@ export default function ProductionOpsPage() {
 
       {readiness?.environment_security_plan ? (
         <EnvironmentSecurityCommand plan={readiness.environment_security_plan} />
+      ) : null}
+
+      {readiness?.deployment_pipeline_plan ? (
+        <DeploymentPipelineCommand plan={readiness.deployment_pipeline_plan} />
       ) : null}
 
       {readiness?.module_readiness?.length ? (
@@ -755,6 +771,59 @@ function EnvironmentSecurityCommand({ plan }: { plan: EnvironmentSecurityPlan })
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-300" />
             <h3 className="font-black text-yellow-100">Security Blockers</h3>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {plan.blockers.map((blocker) => (
+              <p key={blocker} className="rounded-lg bg-black/25 px-3 py-2 text-sm font-bold leading-6 text-yellow-50">
+                {blocker}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DeploymentPipelineCommand({ plan }: { plan: DeploymentPipelinePlan }) {
+  return (
+    <section
+      data-testid="deployment-pipeline-command"
+      className="mb-8 rounded-xl border border-emerald-500/20 bg-[#111113] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-300">Deployment Pipeline</p>
+          <h2 className="mt-2 text-2xl font-black">Deployment Pipeline Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{plan.summary}</p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(plan.status)}`}>
+          <Rocket className="h-3.5 w-3.5" />
+          {plan.status}
+        </span>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {plan.readiness_metrics.map((metric) => (
+          <div key={metric.label} className="rounded-xl border border-white/5 bg-black/25 p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{metric.label}</p>
+            <p className="mt-2 break-words text-xl font-black text-white">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <CommandStepGroup icon={CheckCircle2} title="Build Gate" steps={plan.build_gate} />
+        <CommandStepGroup icon={Rocket} title="Release Steps" steps={plan.release_steps} />
+        <CommandStepGroup icon={RefreshCw} title="Rollback And Logs" steps={plan.rollback_checks} />
+        <CommandStepGroup icon={ShieldCheck} title="Production Smoke" steps={plan.production_smoke} />
+      </div>
+
+      {plan.blockers.length ? (
+        <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-yellow-300" />
+            <h3 className="font-black text-yellow-100">Deployment Blockers</h3>
           </div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {plan.blockers.map((blocker) => (

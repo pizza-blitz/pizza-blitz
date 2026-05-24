@@ -384,6 +384,14 @@ def readiness_report(db: Session) -> dict:
             environment_manifest=environment_manifest,
             environment_summary=environment_summary,
         ),
+        "deployment_pipeline_plan": _deployment_pipeline_plan(
+            environment=environment,
+            checks=checks,
+            environment_summary=environment_summary,
+            readiness_score=_readiness_score(go_live_items),
+            module_readiness=module_readiness,
+            backup_freshness=backup_freshness,
+        ),
         "readiness_score": _readiness_score(go_live_items),
         "launch_blockers": launch_blockers,
         "setup_actions": setup_actions,
@@ -623,6 +631,155 @@ def _environment_security_plan(
                 "label": "Rollback access rehearsal",
                 "status": "warn",
                 "detail": "Confirm who can access deployment logs, rollback controls and restore credentials during the first beta week.",
+            },
+        ],
+        "blockers": blockers,
+    }
+
+
+def _deployment_pipeline_plan(
+    *,
+    environment: str,
+    checks: list[dict],
+    environment_summary: dict,
+    readiness_score: int,
+    module_readiness: list[dict],
+    backup_freshness: dict,
+) -> dict:
+    check_by_key = {check["key"]: check for check in checks}
+    modules_ready = sum(1 for module in module_readiness if module["status"] == "pass")
+    modules_total = len(module_readiness)
+    required_ready = (
+        environment_summary["required_total"] > 0
+        and environment_summary["required_configured"] == environment_summary["required_total"]
+    )
+    production_mode_ready = environment == "production"
+    database_ready = check_by_key["database_persistence"]["status"] == "pass"
+    backup_ready = backup_freshness.get("status") == "pass"
+    status = "pass" if production_mode_ready and required_ready and database_ready and backup_ready else "warn"
+
+    blockers = []
+    if not production_mode_ready:
+        blockers.append("ENVIRONMENT must be production before a public deploy is promoted.")
+    if not required_ready:
+        blockers.append("Required deployment environment variables are not fully configured.")
+    if not database_ready:
+        blockers.append(check_by_key["database_persistence"]["detail"])
+    if not backup_ready:
+        blockers.append(backup_freshness.get("detail") or "A backup or managed snapshot proof is still required.")
+    blockers.append("Rollback/log inspection must be rehearsed before the June 20 beta checkpoint.")
+
+    return {
+        "summary": "Deployment needs a repeatable build gate, host secret check, migration/backup proof, production smoke run, log inspection and rollback owner.",
+        "status": status,
+        "readiness_metrics": [
+            {"label": "Build Gate", "value": "next build"},
+            {"label": "Required Env", "value": f"{environment_summary['required_configured']}/{environment_summary['required_total']}"},
+            {"label": "Modules Ready", "value": f"{modules_ready}/{modules_total}"},
+            {"label": "Go-Live Score", "value": f"{readiness_score}%"},
+        ],
+        "build_gate": [
+            {
+                "key": "frontend_build",
+                "label": "Frontend production build",
+                "status": "pass",
+                "detail": "Run npm run build before every deploy and block promotion if the optimized Next.js build fails.",
+            },
+            {
+                "key": "backend_import",
+                "label": "Backend import and health check",
+                "status": "pass",
+                "detail": "Start the API and verify /health before browser proof runs or deployment promotion.",
+            },
+            {
+                "key": "browser_suite",
+                "label": "Browser proof suite",
+                "status": "pass",
+                "detail": "Run critical Playwright proofs for ops, roadmap, checkout, delivery, reporting and visual route health.",
+            },
+            {
+                "key": "artifact_review",
+                "label": "Artifact review",
+                "status": "warn",
+                "detail": "Review screenshots for /ops and /roadmap after deployment so blank screens or layout regressions are caught.",
+            },
+        ],
+        "release_steps": [
+            {
+                "key": "secrets_pull",
+                "label": "Pull deployment secrets",
+                "status": "warn" if not required_ready else "pass",
+                "detail": "Confirm deployment host secrets match the readiness manifest without exposing values in logs.",
+            },
+            {
+                "key": "database_migration",
+                "label": "Run database migrations",
+                "status": "warn" if not database_ready else "pass",
+                "detail": "Run Alembic migrations against the production database before routing live traffic.",
+            },
+            {
+                "key": "backup_snapshot",
+                "label": "Create pre-deploy backup",
+                "status": backup_freshness.get("status", "warn"),
+                "detail": backup_freshness.get("detail") or "Create a backup or managed snapshot before deploy.",
+            },
+            {
+                "key": "promote_release",
+                "label": "Promote release",
+                "status": "warn",
+                "detail": "Promote only after build, migration, backup and smoke gates are green.",
+            },
+        ],
+        "rollback_checks": [
+            {
+                "key": "log_inspection",
+                "label": "Log inspection",
+                "status": "warn",
+                "detail": "Inspect frontend and backend logs immediately after deploy for auth, API, payment and database errors.",
+            },
+            {
+                "key": "rollback_owner",
+                "label": "Rollback owner",
+                "status": "warn",
+                "detail": "Assign one person who can roll back deployment and restore access during the first beta week.",
+            },
+            {
+                "key": "restore_link",
+                "label": "Restore path link",
+                "status": "warn",
+                "detail": "Keep the latest backup or managed snapshot reference beside the rollback checklist.",
+            },
+            {
+                "key": "incident_note",
+                "label": "Incident note",
+                "status": "warn",
+                "detail": "Record deploy time, commit, smoke proof result, rollback decision and owner notes.",
+            },
+        ],
+        "production_smoke": [
+            {
+                "key": "admin_login",
+                "label": "Admin login smoke",
+                "status": "warn",
+                "detail": "Confirm admin login and Production Ops readiness load against the deployed URL.",
+            },
+            {
+                "key": "customer_order",
+                "label": "Customer order smoke",
+                "status": "warn",
+                "detail": "Place one pickup and one delivery test order through the customer website.",
+            },
+            {
+                "key": "staff_order",
+                "label": "Counter POS smoke",
+                "status": "warn",
+                "detail": "Create a counter order, generate receipt and verify kitchen/order status updates.",
+            },
+            {
+                "key": "reporting_smoke",
+                "label": "Owner reporting smoke",
+                "status": "warn",
+                "detail": "Open reports and confirm comparison cards, channel signals and product movers render.",
             },
         ],
         "blockers": blockers,
