@@ -90,7 +90,7 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("17 / 17", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("18 / 18", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
@@ -101,7 +101,8 @@ async function main() {
     await page.getByText("verify-environment-secrets-security.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-deployment-pipeline.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-full-customer-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Counter order E2E handoff", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-counter-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Delivery order E2E handoff", { exact: true }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-weekly-beta-review.png"),

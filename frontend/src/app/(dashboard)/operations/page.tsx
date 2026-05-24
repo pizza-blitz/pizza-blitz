@@ -560,7 +560,7 @@ export default function OperationsPage() {
         </div>
       )}
 
-      <section className="space-y-3">
+      <section data-testid="operations-order-flow-watch" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-black text-gray-950">Order Flow Watch</h2>
@@ -849,6 +849,7 @@ export default function OperationsPage() {
               return (
                 <div
                   key={order.id}
+                  data-testid={`operations-order-row-${order.id}`}
                   className="grid grid-cols-[1fr_140px_150px_230px] gap-4 border-b border-gray-100 px-4 py-4 last:border-b-0"
                 >
                 <div className="min-w-0">

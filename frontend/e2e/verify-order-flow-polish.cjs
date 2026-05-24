@@ -126,7 +126,7 @@ async function placeCustomerOrder() {
 
     const receiptHref = await page.getByRole("link", { name: /View receipt/i }).getAttribute("href");
     assert(
-      receiptHref === `/track?order=${orderId}&phone=${encodeURIComponent(phone)}`,
+      receiptHref === `/receipt/${orderId}?phone=${encodeURIComponent(phone)}`,
       `Receipt handoff link was ${receiptHref}.`
     );
     await page.screenshot({
@@ -135,9 +135,8 @@ async function placeCustomerOrder() {
     });
 
     await page.getByRole("link", { name: /View receipt/i }).click();
-    await page.getByRole("heading", { name: "Track Order" }).waitFor({ timeout: 10000 });
-    await page.getByText(`Order #${orderId}`, { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText("Order Details", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByRole("heading", { name: "Customer Receipt" }).waitFor({ timeout: 10000 });
+    await page.getByText(`PB-ORDER-${orderId}`, { exact: false }).waitFor({ timeout: 10000 });
     watch.assertClean("customer order receipt handoff");
   } finally {
     await browser.close();

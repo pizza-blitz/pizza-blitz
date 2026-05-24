@@ -53,8 +53,8 @@ type StabilizationProof = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "95%",
-    note: "Internal beta with provider sync, owner reporting, DB path, deployment and full customer order proof now visible",
+    value: "96%",
+    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer order and counter order proof now visible",
   },
   {
     label: "Marketing Engine",
@@ -63,8 +63,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "83%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks and customer handoff proof are now tracked",
+    value: "84%",
+    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, customer handoff and counter handoff proof are now tracked",
   },
   {
     label: "Target Date",
@@ -203,6 +203,11 @@ const completedValue: RoadmapItem[] = [
     title: "Full customer order E2E",
     status: "done",
     value: "Customer order journey now proves menu, customization, checkout, receipt link, tracking link and backend order handoff.",
+  },
+  {
+    title: "Counter order E2E",
+    status: "done",
+    value: "Staff POS now proves customized order creation, bill/receipt, kitchen status handoff, close action and paid payment state.",
   },
 ];
 
@@ -572,18 +577,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "12 Jun 2026",
     focus: "Counter order E2E",
-    status: "active",
+    status: "done",
     planned: [
       "Staff creates order",
       "Bill/receipt generated",
       "Kitchen and payment state update",
     ],
-    output: "In-store staff order workflow is proved end to end.",
+    output: "Staff POS order creation, bill/receipt, kitchen ready state, close action and paid payment state were proved end to end.",
   },
   {
     date: "13 Jun 2026",
     focus: "Delivery order E2E",
-    status: "planned",
+    status: "active",
     planned: [
       "Delivery charge applied",
       "Assignment and status update",
@@ -673,8 +678,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "17",
-    note: "Checkout, customer E2E, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "18",
+    note: "Checkout, customer E2E, counter E2E, order flow, customization, delivery, payment, messaging, social, ad sync, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -684,12 +689,12 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Deployment pipeline is mapped and full customer order E2E is now proof-backed.",
+    note: "Deployment pipeline is mapped and counter order E2E is now proof-backed.",
   },
   {
     label: "Next Risk",
-    value: "Counter E2E",
-    note: "Staff order creation, bill/receipt, kitchen handoff and payment state are now the active track.",
+    value: "Delivery E2E",
+    note: "Delivery charge, assignment, status update and customer tracking proof are now the active track.",
   },
 ];
 
@@ -707,6 +712,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Catalog, customization, delivery checkout, receipt route, tracking route and backend handoff stay connected.",
     artifact: "visible-full-customer-order-e2e.png",
+  },
+  {
+    area: "Counter order E2E",
+    proof: "verify-counter-order-e2e.cjs",
+    status: "passed",
+    value: "Staff POS creation, bill route, kitchen status, close action and paid payment state stay connected.",
+    artifact: "visible-counter-order-e2e.png",
   },
   {
     area: "Order flow polish",
@@ -818,7 +830,7 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "17 / 17",
+    value: "18 / 18",
     note: "Critical browser and API proofs now have named artifacts on the roadmap.",
   },
   {
@@ -833,8 +845,8 @@ const betaReviewMetrics: StabilizationMetric[] = [
   },
   {
     label: "Next Handoff",
-    value: "Counter E2E",
-    note: "The next work slice should prove staff order creation, bill/receipt, kitchen handoff and payment state.",
+    value: "Delivery E2E",
+    note: "The next work slice should prove delivery charge, assignment, status update and customer tracking.",
   },
 ];
 
@@ -876,8 +888,13 @@ const betaReviewOutcomes: RoadmapItem[] = [
   },
   {
     title: "Counter order E2E handoff",
+    status: "done",
+    value: "Staff order creation, bill/receipt, kitchen handoff and payment state are now proved from the counter workflow.",
+  },
+  {
+    title: "Delivery order E2E handoff",
     status: "active",
-    value: "Next slice should prove staff order creation, bill/receipt, kitchen handoff and payment state from the counter workflow.",
+    value: "Next slice should prove delivery charge, rider assignment, status update and customer tracking from order to delivery.",
   },
 ];
 
@@ -1227,7 +1244,7 @@ export default function RoadmapPage() {
         <BottomPanel
           icon={ListChecks}
           title="Current Next Step"
-          text="Counter order E2E: prove staff creates order, bill/receipt, kitchen handoff and payment state update."
+          text="Delivery order E2E: prove delivery charge, rider assignment, status update and customer tracking proof."
         />
       </section>
     </div>

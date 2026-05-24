@@ -266,6 +266,42 @@ export default function OrdersPage() {
   const closedTotal = orders
     .filter((order) => order.status === "closed")
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+  const menuWithCustomizationCount = menuItems.filter(
+    (item) => (item.customization_groups || []).length > 0
+  ).length;
+  const paidOrderCount = orders.filter((order) => order.payment_status === "paid").length;
+  const counterProofSteps = [
+    {
+      label: "POS",
+      detail: `${tables.length} tables / ${menuItems.length} menu items`,
+      complete: tables.length > 0 && menuItems.length > 0,
+    },
+    {
+      label: "Build",
+      detail: `${menuWithCustomizationCount} customizable items`,
+      complete: menuWithCustomizationCount > 0,
+    },
+    {
+      label: "Bill",
+      detail: openOrders.length ? `${openOrders.length} open order(s)` : "Ready after order",
+      complete: openOrders.length > 0,
+    },
+    {
+      label: "Kitchen",
+      detail: openOrders.some((order) => order.status === "ready")
+        ? "Ready handoff visible"
+        : openOrders.some((order) => order.status === "preparing")
+          ? "Prep handoff visible"
+          : "Awaiting order",
+      complete: openOrders.some((order) => ["preparing", "ready"].includes(order.status)),
+    },
+    {
+      label: "Payment",
+      detail: paidOrderCount ? `${paidOrderCount} paid today` : "Close order to settle",
+      complete: paidOrderCount > 0,
+    },
+  ];
+  const counterProofComplete = counterProofSteps.filter((step) => step.complete).length;
 
   useEffect(() => {
     fetchData();
@@ -614,6 +650,7 @@ export default function OrdersPage() {
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
           <button
+            data-testid="counter-new-takeaway"
             onClick={() => openOrderModal()}
             className="bg-white text-black px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-500 hover:text-white transition-all shadow-lg active:scale-95"
           >
@@ -629,10 +666,54 @@ export default function OrdersPage() {
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-orange-500/20 bg-orange-500/10 px-5 py-3 text-sm text-orange-100">
+        <div
+          data-testid="counter-pos-message"
+          className="mb-6 rounded-xl border border-orange-500/20 bg-orange-500/10 px-5 py-3 text-sm text-orange-100"
+        >
           {message}
         </div>
       )}
+
+      <section
+        data-testid="counter-order-e2e-command"
+        className="mb-6 rounded-xl border border-white/5 bg-[#1a1a1c] p-5"
+      >
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Counter Order E2E
+            </p>
+            <h2 className="text-lg font-black text-white">
+              Staff order to bill, kitchen and payment
+            </h2>
+          </div>
+          <span className="w-fit rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black">
+            {counterProofComplete}/{counterProofSteps.length}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
+          {counterProofSteps.map((step) => (
+            <div
+              key={step.label}
+              className={`rounded-lg border px-3 py-2 ${
+                step.complete
+                  ? "border-green-500/20 bg-green-500/10 text-green-200"
+                  : "border-white/10 bg-black/25 text-gray-400"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {step.complete ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-300" />
+                ) : (
+                  <Clock className="h-4 w-4 text-gray-500" />
+                )}
+                <p className="text-sm font-black">{step.label}</p>
+              </div>
+              <p className="mt-1 text-xs font-semibold">{step.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         <section className="xl:col-span-8">
@@ -790,7 +871,11 @@ export default function OrdersPage() {
             </div>
             <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
               {orders.map((order) => (
-                <div key={order.id} className="rounded-xl border border-white/5 bg-black/25 p-4">
+                <div
+                  key={order.id}
+                  data-testid={`counter-order-card-${order.id}`}
+                  className="rounded-xl border border-white/5 bg-black/25 p-4"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-black">Order #{order.id}</p>
@@ -854,6 +939,7 @@ export default function OrdersPage() {
                   )}
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <Link
+                      data-testid={`counter-bill-${order.id}`}
                       href={`/receipt/${order.id}`}
                       className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
                     >
@@ -866,6 +952,7 @@ export default function OrdersPage() {
                       <FileText className="h-4 w-4" /> Invoice
                     </button>
                     <button
+                      data-testid={`counter-close-${order.id}`}
                       onClick={() => closeOrder(order)}
                       disabled={order.status === "closed"}
                       className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40"
@@ -1018,7 +1105,11 @@ export default function OrdersPage() {
                 const unitPrice = configuredPriceForItem(item);
                 const selectedOptions = selectedOptionsForItem(item);
                 return (
-                  <div key={item.id} className="bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all">
+                  <div
+                    key={item.id}
+                    data-testid={`counter-menu-item-${item.id}`}
+                    className="bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all"
+                  >
                     <div className="flex justify-between items-start gap-4">
                       <div>
                         <p className="font-bold">{item.name}</p>
@@ -1035,6 +1126,7 @@ export default function OrdersPage() {
                         )}
                       </div>
                       <input
+                        data-testid={`counter-item-quantity-${item.id}`}
                         type="number"
                         min="0"
                         value={item.quantity || 0}
@@ -1065,6 +1157,7 @@ export default function OrdersPage() {
                                   return (
                                     <button
                                       key={option.id}
+                                      data-testid={`counter-option-${item.id}-${option.id}`}
                                       type="button"
                                       onClick={() => updateCustomization(item.id, group, option)}
                                       className={`rounded-md border px-3 py-2 text-xs font-black ${
@@ -1105,6 +1198,7 @@ export default function OrdersPage() {
             </div>
 
             <button
+              data-testid="counter-send-order"
               onClick={createOrder}
               disabled={saving}
               className="mt-5 w-full bg-orange-500 p-4 rounded-xl font-bold text-lg hover:bg-orange-600 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
