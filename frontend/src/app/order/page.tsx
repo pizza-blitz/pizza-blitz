@@ -508,6 +508,48 @@ export default function PublicOrderPage() {
     orderType === "pickup"
       ? "20-25 min"
       : deliveryQuote?.eta_window || selectedDeliveryZone?.eta_window || "35-45 min";
+  const phoneDigits = customerPhone.replace(/\D/g, "");
+  const contactReady = customerName.trim().length >= 2 && phoneDigits.length >= 10;
+  const fulfillmentReady =
+    orderType === "pickup" ||
+    (Boolean(address.trim()) &&
+      Boolean(selectedDeliveryZoneId) &&
+      Boolean(deliveryQuote?.is_deliverable) &&
+      !isQuotingDelivery);
+  const paymentReady = paymentMethod === "cash" || paymentMethod === "prepaid";
+  const canSubmitOrder = Boolean(cart.length) && contactReady && fulfillmentReady && paymentReady && !isSubmitting;
+  const fulfillmentStatus =
+    orderType === "pickup"
+      ? "Pickup promise ready"
+      : isQuotingDelivery
+        ? "Checking delivery fee"
+        : deliveryQuote?.is_deliverable
+          ? `${deliveryQuote.zone?.name || selectedDeliveryZone?.name || "Delivery"} - Rs ${deliveryFee}, ${eta}`
+          : address.trim()
+            ? deliveryQuote?.reason || "Address needs review"
+            : "Enter address for delivery fee";
+  const checkoutSteps = [
+    {
+      label: "Cart",
+      detail: cart.length ? `${cart.length} item${cart.length === 1 ? "" : "s"}` : "Add menu items",
+      complete: cart.length > 0,
+    },
+    {
+      label: "Contact",
+      detail: contactReady ? "Name and phone ready" : "Name and 10 digit phone",
+      complete: contactReady,
+    },
+    {
+      label: "Fulfillment",
+      detail: fulfillmentStatus,
+      complete: fulfillmentReady,
+    },
+    {
+      label: "Payment",
+      detail: paymentMethod === "prepaid" ? "Prepaid session after order" : "Cash on pickup/delivery",
+      complete: paymentReady,
+    },
+  ];
 
   const filteredMenu = useMemo(
     () =>
@@ -706,6 +748,10 @@ export default function PublicOrderPage() {
       setMessage("Add at least one item.");
       return;
     }
+    if (!contactReady) {
+      setMessage("Enter a customer name and a valid 10 digit phone number.");
+      return;
+    }
     if (orderType === "delivery" && !address.trim()) {
       setMessage("Delivery address is required.");
       return;
@@ -714,7 +760,11 @@ export default function PublicOrderPage() {
       setMessage("Choose a delivery zone.");
       return;
     }
-    if (orderType === "delivery" && deliveryQuote && !deliveryQuote.is_deliverable) {
+    if (orderType === "delivery" && (isQuotingDelivery || !deliveryQuote)) {
+      setMessage("Wait for the delivery fee and ETA before placing the order.");
+      return;
+    }
+    if (orderType === "delivery" && !deliveryQuote.is_deliverable) {
       setMessage(deliveryQuote.reason || "This address is outside the delivery area.");
       return;
     }
@@ -1167,7 +1217,7 @@ export default function PublicOrderPage() {
             {orderId && (
               <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4" /> Order #{orderId} confirmed
+                  <CheckCircle2 className="h-4 w-4" /> Order #{orderId} {pendingPayment ? "created" : "confirmed"}
                 </div>
                 <Link
                   href={trackingHref}
@@ -1177,6 +1227,44 @@ export default function PublicOrderPage() {
                 </Link>
               </div>
             )}
+
+            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                    Checkout Progress
+                  </p>
+                  <p className="text-sm font-semibold text-slate-600">
+                    Cart, contact, fulfillment and payment must be ready before placing the order.
+                  </p>
+                </div>
+                <span className="rounded-md bg-white px-2.5 py-1 text-xs font-black text-slate-700">
+                  {checkoutSteps.filter((step) => step.complete).length}/{checkoutSteps.length}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {checkoutSteps.map((step) => (
+                  <div
+                    key={step.label}
+                    className={`rounded-md border px-3 py-2 ${
+                      step.complete
+                        ? "border-emerald-200 bg-white text-emerald-800"
+                        : "border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {step.complete ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <Clock className="h-4 w-4 text-slate-400" />
+                      )}
+                      <p className="text-sm font-black">{step.label}</p>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold">{step.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {pendingPayment && (
               <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
@@ -1237,13 +1325,46 @@ export default function PublicOrderPage() {
               <SegmentButton
                 active={orderType === "pickup"}
                 label="Pickup"
-                onClick={() => setOrderType("pickup")}
+                onClick={() => {
+                  setOrderType("pickup");
+                  setMessage("");
+                }}
               />
               <SegmentButton
                 active={orderType === "delivery"}
                 label="Delivery"
-                onClick={() => setOrderType("delivery")}
+                onClick={() => {
+                  setOrderType("delivery");
+                  setMessage("");
+                }}
               />
+            </div>
+
+            <div className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div
+                className={`rounded-md border p-3 ${
+                  orderType === "pickup"
+                    ? "border-red-200 bg-red-50"
+                    : "border-slate-200 bg-slate-50"
+                }`}
+              >
+                <p className="text-sm font-black text-slate-900">Pickup</p>
+                <p className="mt-1 text-xs font-semibold text-slate-600">
+                  Ready around 20-25 min. Pay online or at counter.
+                </p>
+              </div>
+              <div
+                className={`rounded-md border p-3 ${
+                  orderType === "delivery"
+                    ? "border-red-200 bg-red-50"
+                    : "border-slate-200 bg-slate-50"
+                }`}
+              >
+                <p className="text-sm font-black text-slate-900">Delivery</p>
+                <p className="mt-1 text-xs font-semibold text-slate-600">
+                  Fee and ETA are checked from address and zone before order.
+                </p>
+              </div>
             </div>
 
             <div className="mb-5 space-y-3">
@@ -1464,16 +1585,27 @@ export default function PublicOrderPage() {
                 <SegmentButton
                   active={paymentMethod === "prepaid"}
                   label="Prepaid"
-                  onClick={() => setPaymentMethod("prepaid")}
+                  onClick={() => {
+                    setPaymentMethod("prepaid");
+                    setMessage("");
+                  }}
                 />
                 <SegmentButton
                   active={paymentMethod === "cash"}
                   label="Cash"
-                  onClick={() => setPaymentMethod("cash")}
+                  onClick={() => {
+                    setPaymentMethod("cash");
+                    setMessage("");
+                  }}
                 />
               </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                {paymentMethod === "prepaid"
+                  ? "Prepaid creates a payment session first; manual mode can be confirmed immediately for controlled testing."
+                  : "Cash keeps the order open for counter or delivery collection."}
+              </div>
               <button
-                disabled={isSubmitting || !cart.length}
+                disabled={!canSubmitOrder}
                 className="flex w-full items-center justify-center gap-2 rounded-md bg-red-700 px-5 py-4 font-black text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 <CreditCard className="h-5 w-5" />

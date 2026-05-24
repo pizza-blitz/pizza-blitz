@@ -37,8 +37,8 @@ type DailyPlan = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "70%",
-    note: "Internal beta with stronger payment operations",
+    value: "72%",
+    note: "Internal beta with stronger customer checkout",
   },
   {
     label: "Marketing Engine",
@@ -47,8 +47,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "48%",
-    note: "Payment settlement command view is now in place",
+    value: "50%",
+    note: "Payment and checkout proofs are now connected",
   },
   {
     label: "Target Date",
@@ -97,6 +97,11 @@ const completedValue: RoadmapItem[] = [
     title: "Payment production command pass",
     status: "done",
     value: "Settings now shows gateway readiness, provider setup, unsettled prepaid orders, recent settlements and manual webhook proof.",
+  },
+  {
+    title: "Customer web checkout pass",
+    status: "done",
+    value: "Customer order page now shows checkout progress, stricter contact and delivery checks, coupon proof and pickup/delivery/payment readiness.",
   },
   {
     title: "Payment, delivery, roles and production proofs",
@@ -249,18 +254,18 @@ const june20Push: DailyPlan[] = [
   {
     date: "26 May 2026",
     focus: "Customer web checkout",
-    status: "active",
+    status: "done",
     planned: [
       "Improve cart and checkout steps",
       "Apply coupons cleanly",
       "Show pickup and delivery options",
     ],
-    output: "Customer ordering becomes easier to demo and test end to end.",
+    output: "Customer checkout progress, coupon handoff, delivery quote guard and browser proof were completed.",
   },
   {
     date: "27 May 2026",
     focus: "Delivery charges and zones",
-    status: "planned",
+    status: "active",
     planned: [
       "Add zone-based delivery charges",
       "Add minimum order rules",
