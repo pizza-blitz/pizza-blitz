@@ -416,7 +416,6 @@ class SheetsService:
         }
 
     def _import_public_gviz_tabs(self, db: Session, sheet_url: str, mode: str) -> Dict[str, Any] | None:
-        gids = self.discover_public_gids(sheet_url)
         combined = {
             "rows_found": 0,
             "rows_imported": 0,
@@ -429,20 +428,18 @@ class SheetsService:
             "date_end": None,
         }
 
-        for gid in gids[:80]:
-            rows = self.fetch_public_gviz_rows(sheet_url, gid)
-            if len(rows) < 2:
-                continue
+        selected_months = self._select_public_gviz_month_candidates(sheet_url, mode)
+        for candidate in selected_months:
             result = self.import_rows(
                 db,
-                rows,
-                source_label=f"public Google Sheet gid {gid}",
+                candidate["rows"],
+                source_label=f"public Google Sheet gid {candidate['gid']} month {candidate['month']}",
                 mode=mode,
                 tab_name=None,
             )
             if result["rows_imported"] == 0:
                 continue
-            combined["tabs_processed"].append(gid)
+            combined["tabs_processed"].append(f"{candidate['gid']}:{candidate['month']}")
             for key in ("rows_found", "rows_imported", "rows_created", "rows_updated", "rows_skipped"):
                 combined[key] += int(result.get(key) or 0)
             combined["skip_reasons"] = (combined["skip_reasons"] + result.get("skip_reasons", [])[:3])[:12]
@@ -464,6 +461,80 @@ class SheetsService:
             "source": "public_gviz_tabs",
             "status": "success",
         }
+
+    def _select_public_gviz_month_candidates(self, sheet_url: str, mode: str) -> List[Dict[str, Any]]:
+        gids = self.discover_public_gids(sheet_url)
+        current = datetime.utcnow().date()
+        month_candidates: Dict[str, List[Dict[str, Any]]] = {}
+
+        for gid in gids[:80]:
+            rows = self.fetch_public_gviz_rows(sheet_url, gid)
+            if len(rows) < 2:
+                continue
+
+            mapping, start_index = self._column_map(rows)
+            grouped: Dict[str, Dict[str, Any]] = {}
+            header_rows = rows[:start_index]
+
+            for row in rows[start_index:]:
+                if not any(str(cell or "").strip() for cell in row):
+                    continue
+                try:
+                    parsed_date = self.parse_sheet_date(self._cell(row, mapping.get("date")), None).date()
+                except ValueError:
+                    continue
+
+                if parsed_date > current:
+                    continue
+                if mode == "current" and (parsed_date.year != current.year or parsed_date.month != current.month):
+                    continue
+
+                sale = self._money(self._cell(row, mapping.get("sale")))
+                cash = self._money(self._cell(row, mapping.get("cash")))
+                expense = self._money(self._cell(row, mapping.get("expense")))
+                if sale == 0 and cash > 0:
+                    sale = cash
+                if cash == 0 and sale > 0:
+                    cash = sale
+                if sale == 0 and cash == 0 and expense == 0:
+                    continue
+
+                month_key = f"{parsed_date.year:04d}-{parsed_date.month:02d}"
+                grouped.setdefault(
+                    month_key,
+                    {
+                        "gid": gid,
+                        "month": month_key,
+                        "rows": list(header_rows),
+                        "total_sale": Decimal("0"),
+                        "total_cash": Decimal("0"),
+                        "total_expense": Decimal("0"),
+                        "dated_rows": 0,
+                    },
+                )
+                grouped[month_key]["rows"].append(row)
+                grouped[month_key]["total_sale"] += sale
+                grouped[month_key]["total_cash"] += cash
+                grouped[month_key]["total_expense"] += expense
+                grouped[month_key]["dated_rows"] += 1
+
+            for month_key, candidate in grouped.items():
+                month_candidates.setdefault(month_key, []).append(candidate)
+
+        selected: List[Dict[str, Any]] = []
+        for month_key in sorted(month_candidates):
+            selected.append(
+                max(
+                    month_candidates[month_key],
+                    key=lambda candidate: (
+                        candidate["total_sale"],
+                        candidate["dated_rows"],
+                        candidate["total_cash"],
+                    ),
+                )
+            )
+
+        return selected
 
     def process_and_import(self, db: Session, sheet_url: str, mode: str = "all") -> Dict[str, Any]:
         if mode == "all":
