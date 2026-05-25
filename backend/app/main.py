@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from app.core.config import settings
 from app.api.api_v1.api import api_router
 from app.db.base import Base
@@ -53,9 +54,13 @@ DEFAULT_EXPENSE_CATEGORIES = [
     "Delivery",
 ]
 
+POSTGRES_BOOTSTRAP_LOCK_ID = 20260525
 
-def seed_baseline_data() -> None:
-    db = SessionLocal()
+
+def seed_baseline_data(db=None) -> None:
+    owns_session = db is None
+    if db is None:
+        db = SessionLocal()
     try:
         existing_tables = {row.table_number for row in db.query(DiningTable).all()}
         for table_number, capacity in DEFAULT_TABLES:
@@ -79,14 +84,36 @@ def seed_baseline_data() -> None:
 
         seed_default_delivery_zones(db)
         seed_default_customizations(db)
-        db.commit()
+        if owns_session:
+            db.commit()
+        else:
+            db.flush()
     finally:
-        db.close()
+        if owns_session:
+            db.close()
+
+
+def bootstrap_database() -> None:
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as connection:
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": POSTGRES_BOOTSTRAP_LOCK_ID},
+            )
+            Base.metadata.create_all(bind=connection)
+            db = SessionLocal(bind=connection)
+            try:
+                seed_baseline_data(db)
+            finally:
+                db.close()
+        return
+
+    Base.metadata.create_all(bind=engine)
+    seed_baseline_data()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    seed_baseline_data()
+    bootstrap_database()
     start_scheduler()
     yield
 
