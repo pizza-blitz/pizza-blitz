@@ -8,10 +8,12 @@ import {
   FileText,
   Globe2,
   MapPin,
+  Minus,
   Plus,
   Printer,
   ReceiptText,
   RefreshCw,
+  Search,
   Send,
   ShoppingBag,
   Truck,
@@ -179,6 +181,8 @@ export default function OrdersPage() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
+  const [menuSearch, setMenuSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
 
   const defaultDraftForItem = (item: MenuItem) => {
     const draft: Record<number, number[]> = {};
@@ -243,6 +247,19 @@ export default function OrdersPage() {
         selected_options: selectedOptions,
       };
     }) as SelectedMenuItem[];
+  const menuCategories = [
+    "All",
+    ...Array.from(new Set(menuItems.map((item) => item.category).filter(Boolean))).sort(),
+  ];
+  const filteredMenuItems = menuItems.filter((item) => {
+    const matchesCategory = activeCategory === "All" || item.category === activeCategory;
+    const query = menuSearch.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      item.name.toLowerCase().includes(query) ||
+      item.category.toLowerCase().includes(query);
+    return matchesCategory && matchesSearch;
+  });
   const subtotal = selectedItems.reduce(
     (sum, item) => sum + Number(item.unit_price || 0) * Number(item.quantity || 0),
     0
@@ -266,42 +283,6 @@ export default function OrdersPage() {
   const closedTotal = orders
     .filter((order) => order.status === "closed")
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
-  const menuWithCustomizationCount = menuItems.filter(
-    (item) => (item.customization_groups || []).length > 0
-  ).length;
-  const paidOrderCount = orders.filter((order) => order.payment_status === "paid").length;
-  const counterProofSteps = [
-    {
-      label: "POS",
-      detail: `${tables.length} tables / ${menuItems.length} menu items`,
-      complete: tables.length > 0 && menuItems.length > 0,
-    },
-    {
-      label: "Build",
-      detail: `${menuWithCustomizationCount} customizable items`,
-      complete: menuWithCustomizationCount > 0,
-    },
-    {
-      label: "Bill",
-      detail: openOrders.length ? `${openOrders.length} open order(s)` : "Ready after order",
-      complete: openOrders.length > 0,
-    },
-    {
-      label: "Kitchen",
-      detail: openOrders.some((order) => order.status === "ready")
-        ? "Ready handoff visible"
-        : openOrders.some((order) => order.status === "preparing")
-          ? "Prep handoff visible"
-          : "Awaiting order",
-      complete: openOrders.some((order) => ["preparing", "ready"].includes(order.status)),
-    },
-    {
-      label: "Payment",
-      detail: paidOrderCount ? `${paidOrderCount} paid today` : "Close order to settle",
-      complete: paidOrderCount > 0,
-    },
-  ];
-  const counterProofComplete = counterProofSteps.filter((step) => step.complete).length;
 
   useEffect(() => {
     fetchData();
@@ -339,6 +320,8 @@ export default function OrdersPage() {
   const resetOrderForm = () => {
     setFormData(emptyCustomer);
     setDeliveryQuote(null);
+    setMenuSearch("");
+    setActiveCategory("All");
     setMenuItems((current) =>
       current.map((item) => ({
         ...item,
@@ -676,42 +659,31 @@ export default function OrdersPage() {
 
       <section
         data-testid="counter-order-e2e-command"
-        className="mb-6 rounded-xl border border-white/5 bg-[#1a1a1c] p-5"
+        className="mb-6 rounded-xl border border-white/5 bg-[#1a1a1c] p-4"
       >
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
-              Counter Order E2E
+              Counter Ready
             </p>
             <h2 className="text-lg font-black text-white">
-              Staff order to bill, kitchen and payment
+              Take order, print bill, send to kitchen
             </h2>
           </div>
-          <span className="w-fit rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black">
-            {counterProofComplete}/{counterProofSteps.length}
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-          {counterProofSteps.map((step) => (
-            <div
-              key={step.label}
-              className={`rounded-lg border px-3 py-2 ${
-                step.complete
-                  ? "border-green-500/20 bg-green-500/10 text-green-200"
-                  : "border-white/10 bg-black/25 text-gray-400"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {step.complete ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-300" />
-                ) : (
-                  <Clock className="h-4 w-4 text-gray-500" />
-                )}
-                <p className="text-sm font-black">{step.label}</p>
-              </div>
-              <p className="mt-1 text-xs font-semibold">{step.detail}</p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg bg-black/30 px-4 py-2">
+              <p className="text-lg font-black">{openOrders.length}</p>
+              <p className="text-[10px] font-bold uppercase text-gray-500">Open</p>
             </div>
-          ))}
+            <div className="rounded-lg bg-black/30 px-4 py-2">
+              <p className="text-lg font-black">{deliveryOrders.length}</p>
+              <p className="text-[10px] font-bold uppercase text-gray-500">Delivery</p>
+            </div>
+            <div className="rounded-lg bg-black/30 px-4 py-2">
+              <p className="text-lg font-black">Rs {Math.round(closedTotal).toLocaleString()}</p>
+              <p className="text-[10px] font-bold uppercase text-gray-500">Closed</p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1100,15 +1072,48 @@ export default function OrdersPage() {
               </div>
             )}
 
+            <div className="mb-4 space-y-3">
+              <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-3">
+                <Search className="h-4 w-4 text-gray-500" />
+                <input
+                  value={menuSearch}
+                  onChange={(event) => setMenuSearch(event.target.value)}
+                  placeholder="Search pizza, sides, drinks"
+                  className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-gray-600"
+                />
+              </label>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {menuCategories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveCategory(category)}
+                    className={`shrink-0 rounded-full border px-4 py-2 text-xs font-black ${
+                      activeCategory === category
+                        ? "border-orange-400 bg-orange-500 text-white"
+                        : "border-white/10 bg-black/25 text-gray-300"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {menuItems.map((item) => {
+              {filteredMenuItems.map((item) => {
                 const unitPrice = configuredPriceForItem(item);
                 const selectedOptions = selectedOptionsForItem(item);
+                const quantity = Number(item.quantity || 0);
                 return (
                   <div
                     key={item.id}
                     data-testid={`counter-menu-item-${item.id}`}
-                    className="bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-all"
+                    className={`rounded-xl border p-4 transition-all ${
+                      quantity > 0
+                        ? "border-orange-400/40 bg-orange-500/10"
+                        : "border-white/5 bg-white/5 hover:border-white/10"
+                    }`}
                   >
                     <div className="flex justify-between items-start gap-4">
                       <div>
@@ -1125,17 +1130,35 @@ export default function OrdersPage() {
                           </p>
                         )}
                       </div>
-                      <input
-                        data-testid={`counter-item-quantity-${item.id}`}
-                        type="number"
-                        min="0"
-                        value={item.quantity || 0}
-                        onChange={(e) => updateQuantity(item.id, parseInt(e.target.value, 10) || 0)}
-                        className="w-20 bg-black/40 border border-white/10 p-2 rounded-xl text-center font-bold"
-                      />
+                      <div className="flex shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-black/40 p-1">
+                        <button
+                          type="button"
+                          aria-label={`Remove ${item.name}`}
+                          onClick={() => updateQuantity(item.id, quantity - 1)}
+                          className="grid h-9 w-9 place-items-center rounded-lg bg-white/5 text-gray-200 hover:bg-white/10"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <input
+                          data-testid={`counter-item-quantity-${item.id}`}
+                          type="number"
+                          min="0"
+                          value={quantity}
+                          onChange={(e) => updateQuantity(item.id, parseInt(e.target.value, 10) || 0)}
+                          className="h-9 w-12 bg-transparent text-center font-black outline-none"
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Add ${item.name}`}
+                          onClick={() => updateQuantity(item.id, quantity + 1)}
+                          className="grid h-9 w-9 place-items-center rounded-lg bg-orange-500 text-white hover:bg-orange-600"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
 
-                    {!!(item.customization_groups || []).length && (
+                    {quantity > 0 && !!(item.customization_groups || []).length && (
                       <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
                         {item.customization_groups?.map((group) => {
                           const selectedIds = new Set((draftForItem(item)[group.id] || []));
@@ -1180,6 +1203,11 @@ export default function OrdersPage() {
                   </div>
                 );
               })}
+              {!filteredMenuItems.length && (
+                <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
+                  No menu item found.
+                </div>
+              )}
             </div>
 
             <div className="mt-6 rounded-xl bg-black/30 border border-white/10 p-4 space-y-2 text-sm">

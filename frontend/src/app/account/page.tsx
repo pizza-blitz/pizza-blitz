@@ -255,6 +255,7 @@ export default function CustomerAccountPage() {
             </Link>
             <Link
               href="/logout?role=customer"
+              prefetch={false}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
             >
               Sign Out

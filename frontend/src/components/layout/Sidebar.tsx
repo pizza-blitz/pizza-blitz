@@ -72,7 +72,11 @@ export default function Sidebar({ role = "admin" }: { role?: SessionRole }) {
         })}
       </nav>
       <div className="border-t p-3">
-        <Link href="/logout" className="flex w-full items-center justify-center rounded-md bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100">
+        <Link
+          href="/logout"
+          prefetch={false}
+          className="flex w-full items-center justify-center rounded-md bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100"
+        >
           Logout
         </Link>
       </div>

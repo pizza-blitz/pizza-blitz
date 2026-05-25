@@ -43,6 +43,7 @@ export default async function DashboardLayout({
           </div>
           <Link
             href="/logout"
+            prefetch={false}
             className="rounded-md bg-red-50 px-3 py-2 text-sm font-bold text-red-600"
           >
             Logout

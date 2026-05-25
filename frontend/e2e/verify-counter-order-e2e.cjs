@@ -181,8 +181,8 @@ async function main() {
     await page.getByRole("heading", { name: "Takeaway Order" }).waitFor({ timeout: 15000 });
     await page.getByPlaceholder("Customer name").fill("Counter E2E Proof");
     await page.getByPlaceholder("Customer phone").fill(phone);
-    await page.getByTestId(`counter-option-${counterItem.itemId}-${counterItem.optionId}`).click();
     await page.getByTestId(`counter-item-quantity-${counterItem.itemId}`).fill("1");
+    await page.getByTestId(`counter-option-${counterItem.itemId}-${counterItem.optionId}`).click();
     await page.getByText(counterItem.optionName, { exact: false }).first().waitFor({ timeout: 10000 });
     await page.getByTestId("counter-send-order").click();
     await page.getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
