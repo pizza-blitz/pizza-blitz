@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 from datetime import datetime, timedelta
 from hmac import compare_digest
 from typing import Optional
@@ -19,11 +20,19 @@ class AuthError(ValueError):
     pass
 
 
+def _is_cloud_runtime() -> bool:
+    return settings.ENVIRONMENT.lower() not in {"development", "local", "test"} or os.getenv("VERCEL") == "1"
+
+
 def _expires_at(minutes: int) -> datetime:
     return datetime.utcnow() + timedelta(minutes=minutes)
 
 
 def verify_admin_credentials(admin_id: str, password: str) -> bool:
+    if _is_cloud_runtime() and not (
+        os.getenv("PIZZA_BLITZ_ADMIN_ID") and os.getenv("PIZZA_BLITZ_ADMIN_PASSWORD")
+    ):
+        return False
     expected_id = settings.PIZZA_BLITZ_ADMIN_ID or settings.RESTAURANT_ADMIN_ID or "admin"
     expected_password = (
         settings.PIZZA_BLITZ_ADMIN_PASSWORD
@@ -37,6 +46,10 @@ def verify_admin_credentials(admin_id: str, password: str) -> bool:
 
 
 def verify_staff_credentials(staff_id: str, password: str) -> bool:
+    if _is_cloud_runtime() and not (
+        os.getenv("PIZZA_BLITZ_STAFF_ID") and os.getenv("PIZZA_BLITZ_STAFF_PASSWORD")
+    ):
+        return False
     expected_id = settings.PIZZA_BLITZ_STAFF_ID or "staff"
     expected_password = settings.PIZZA_BLITZ_STAFF_PASSWORD or ""
     return compare_digest(staff_id.strip(), expected_id) and compare_digest(

@@ -8,20 +8,30 @@ import {
 
 type PortalLoginRole = "admin" | "staff";
 
+function isCloudRuntime() {
+  return process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+}
+
 function credentialsForRole(role: PortalLoginRole) {
   if (role === "staff") {
+    const configuredId = process.env.PIZZA_BLITZ_STAFF_ID;
+    const configuredPassword = process.env.PIZZA_BLITZ_STAFF_PASSWORD;
     return {
-      id: process.env.PIZZA_BLITZ_STAFF_ID || "staff",
-      password: process.env.PIZZA_BLITZ_STAFF_PASSWORD || "staff123",
+      id: configuredId || "staff",
+      password: configuredPassword || "staff123",
+      isConfigured: Boolean(configuredId && configuredPassword),
       displayName: "Counter Staff",
       subjectPrefix: "staff",
       cookie: STAFF_COOKIE,
       clearCookie: ADMIN_COOKIE,
     };
   }
+  const configuredId = process.env.PIZZA_BLITZ_ADMIN_ID;
+  const configuredPassword = process.env.PIZZA_BLITZ_ADMIN_PASSWORD;
   return {
-    id: process.env.PIZZA_BLITZ_ADMIN_ID || "admin",
-    password: process.env.PIZZA_BLITZ_ADMIN_PASSWORD || "admin123",
+    id: configuredId || "admin",
+    password: configuredPassword || "admin123",
+    isConfigured: Boolean(configuredId && configuredPassword),
     displayName: "Restaurant Admin",
     subjectPrefix: "admin",
     cookie: ADMIN_COOKIE,
@@ -35,6 +45,13 @@ export async function POST(request: Request) {
   const credentials = credentialsForRole(role);
   const id = String(payload.id || "").trim();
   const password = String(payload.password || "");
+
+  if (isCloudRuntime() && !credentials.isConfigured) {
+    return NextResponse.json(
+      { detail: `Production ${role} credentials are not configured yet.` },
+      { status: 503 }
+    );
+  }
 
   if (id !== credentials.id || password !== credentials.password) {
     return NextResponse.json(

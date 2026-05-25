@@ -18,6 +18,7 @@ __pycache__/
 !.env.example
 !*.env.example
 env_vars.yaml
+.vercel/
 
 # Local databases and logs
 *.sqlite
