@@ -24,6 +24,8 @@ async function main() {
 
   try {
     await page.goto(`${baseURL}/login`, { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
+    await page.waitForTimeout(1000);
     await page.getByPlaceholder("Enter admin ID").fill(adminId);
     await page.getByPlaceholder("Enter password").fill(adminPassword);
     await page.getByRole("button", { name: /Sign In to Portal/i }).click();
@@ -39,9 +41,15 @@ async function main() {
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("counter-new-takeaway").click();
     await page.getByPlaceholder("Search pizza, sides, drinks").waitFor({ timeout: 15000 });
+    await page.getByText("Current Bill", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /^cash$/i }).waitFor({ timeout: 15000 });
     assert(
       await page.getByPlaceholder("Search pizza, sides, drinks").isVisible(),
       "Simplified POS search was not visible."
+    );
+    assert(
+      await page.getByText("Current Bill", { exact: true }).isVisible(),
+      "POS bill rail was not visible."
     );
     assert(logoutPrefetches.length === 0, `Logout route was prefetched:\n${logoutPrefetches.join("\n")}`);
 

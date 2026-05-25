@@ -273,6 +273,11 @@ export default function OrdersPage() {
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
   const total = taxableSubtotal + tax + deliveryFee;
+  const selectedItemCount = selectedItems.reduce(
+    (sum, item) => sum + Number(item.quantity || 0),
+    0
+  );
+  const quickPaymentMethods = ["cash", "upi", "card", "mixed"];
   const openOrders = orders.filter((order) => order.status !== "closed");
   const deliveryOrders = openOrders.filter(
     (order) => (order.fulfillment_type || order.order_type) === "delivery"
@@ -946,7 +951,7 @@ export default function OrdersPage() {
 
       {showOrderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl h-full bg-[#1a1a1c] border-l border-white/10 p-8 flex flex-col shadow-2xl">
+          <div className="w-full max-w-6xl h-full bg-[#1a1a1c] border-l border-white/10 p-6 flex flex-col shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold flex items-center gap-2 text-orange-400">
                 <ShoppingBag className="w-6 h-6" />
@@ -972,16 +977,13 @@ export default function OrdersPage() {
                 onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
                 className="bg-black/30 border border-white/10 p-3 rounded-xl outline-none focus:border-orange-500"
               />
-              <select
-                value={formData.payment_method}
-                onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+              <input
+                type="text"
+                placeholder="Order note"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 className="bg-black/30 border border-white/10 p-3 rounded-xl outline-none focus:border-orange-500"
-              >
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="card">Card</option>
-                <option value="mixed">Mixed</option>
-              </select>
+              />
               <input
                 type="number"
                 min="0"
@@ -1072,6 +1074,8 @@ export default function OrdersPage() {
               </div>
             )}
 
+            <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1.45fr)_360px]">
+              <section className="flex min-h-0 flex-col">
             <div className="mb-4 space-y-3">
               <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-3">
                 <Search className="h-4 w-4 text-gray-500" />
@@ -1209,6 +1213,79 @@ export default function OrdersPage() {
                 </div>
               )}
             </div>
+              </section>
+
+              <aside className="flex min-h-0 flex-col rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                      Current Bill
+                    </p>
+                    <h3 className="text-lg font-black text-white">
+                      {selectedItemCount} item{selectedItemCount === 1 ? "" : "s"}
+                    </h3>
+                  </div>
+                  <span className="rounded-lg bg-orange-500 px-3 py-2 text-sm font-black text-white">
+                    Rs {Math.round(total).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="mb-4 max-h-52 space-y-2 overflow-y-auto pr-1">
+                  {selectedItems.map((item) => (
+                    <div
+                      key={`cart-${item.id}`}
+                      className="rounded-lg border border-white/10 bg-black/25 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-black">{item.quantity}x {item.name}</p>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
+                            Rs {Math.round(item.unit_price).toLocaleString()} each
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateQuantity(item.id, 0)}
+                          className="rounded-md border border-white/10 px-2 py-1 text-[10px] font-black text-gray-300 hover:border-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      {!!item.selected_options.length && (
+                        <p className="mt-2 text-xs font-semibold leading-5 text-orange-100/80">
+                          {item.selected_options.map(optionSummary).join(" | ")}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  {!selectedItems.length && (
+                    <div className="rounded-lg border border-dashed border-white/10 p-5 text-center text-sm font-semibold text-gray-500">
+                      Tap plus on menu items to build the bill.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mb-4">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-500">
+                    Payment
+                  </p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {quickPaymentMethods.map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, payment_method: method })}
+                        className={`rounded-lg border px-2 py-2 text-xs font-black uppercase ${
+                          formData.payment_method === method
+                            ? "border-orange-400 bg-orange-500 text-white"
+                            : "border-white/10 bg-black/25 text-gray-300"
+                        }`}
+                      >
+                        {method}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
             <div className="mt-6 rounded-xl bg-black/30 border border-white/10 p-4 space-y-2 text-sm">
               <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>Rs {Math.round(subtotal).toLocaleString()}</span></div>
@@ -1234,6 +1311,8 @@ export default function OrdersPage() {
               <Printer className="w-5 h-5" />
               {saving ? "Sending..." : isDeliveryOrder ? "Send Delivery to Kitchen" : "Send to Kitchen"}
             </button>
+              </aside>
+            </div>
           </div>
         </div>
       )}
