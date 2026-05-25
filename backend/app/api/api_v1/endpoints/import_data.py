@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
-from app.api.deps import get_db
+from pydantic import BaseModel
+
+from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales
 from app.services.sheets_service import SheetsService
 from app.services.gemini_service import bytes_part, generate_text, parse_json_response
@@ -8,12 +10,37 @@ from datetime import datetime
 
 router = APIRouter()
 
+
+class SheetImportRequest(BaseModel):
+    sheet_url: str
+    mode: str = "all"
+
+
 @router.post("/sheets")
-def import_from_sheets(sheet_url: str, db: Session = Depends(get_db)):
+def import_from_sheets(
+    payload: SheetImportRequest | None = Body(default=None),
+    sheet_url: str | None = Query(default=None),
+    mode: str = Query(default="all"),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
     try:
+        target_url = (payload.sheet_url if payload else sheet_url) or ""
+        import_mode = (payload.mode if payload else mode) or "all"
+        if not target_url.strip():
+            raise HTTPException(status_code=422, detail="Google Sheet URL is required.")
+        if import_mode not in {"all", "current"}:
+            raise HTTPException(status_code=422, detail="Import mode must be 'all' or 'current'.")
         service = SheetsService()
-        result = service.process_and_import(db, sheet_url)
+        result = service.process_and_import(db, target_url.strip(), import_mode)
+        if result.get("status") == "error":
+            raise HTTPException(status_code=422, detail=result.get("message") or "No rows were imported.")
         return {"status": "success", "data": result}
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

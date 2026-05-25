@@ -28,6 +28,7 @@ const DELIVERY_ECONOMICS_API = getApiUrl('/api/v1/restaurant/delivery/economics'
 const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
 const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
+const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
 
 type RoleAccess = {
   role: string;
@@ -216,6 +217,19 @@ type PaymentWebhookResult = {
   };
 };
 
+type SheetSyncResult = {
+  rows_found: number;
+  rows_imported: number;
+  rows_created: number;
+  rows_updated: number;
+  rows_skipped: number;
+  months_processed: number;
+  date_start?: string | null;
+  date_end?: string | null;
+  source?: string;
+  skip_reasons?: string[];
+};
+
 const formatMoney = (value?: number | null) =>
   `Rs ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
@@ -253,7 +267,8 @@ export default function Settings() {
   const [sheetUrl, setSheetUrl] = useState("");
   const [importMode, setImportMode] = useState("all"); // "all" or "current"
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{rows: number, months: number} | null>(null);
+  const [syncResult, setSyncResult] = useState<SheetSyncResult | null>(null);
+  const [syncMessage, setSyncMessage] = useState("");
 
   // Missing State for Admin Credentials
   const [adminId, setAdminId] = useState("admin");
@@ -534,28 +549,34 @@ export default function Settings() {
   };
 
   const handleSync = async () => {
-    if (!sheetUrl) { alert("Please enter your Google Sheet URL first."); return; }
+    if (!sheetUrl) {
+      setSyncMessage("Please enter your Google Sheet URL first.");
+      return;
+    }
     setIsSyncing(true);
     setSyncResult(null);
+    setSyncMessage("");
     
     try {
-      // In production, this would be:
-      // const response = await fetch('/api/v1/restaurant/sync/sync-sheets', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ url: sheetUrl, mode: importMode })
-      // });
-      // const data = await response.json();
-      
-      // Simulating the 2.5 year import progress
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      setSyncResult({ rows: 847, months: 28 });
-      setIsSyncing(false);
-      alert("Import Successful! Imported 847 rows across 28 months.");
+      const response = await fetch(SHEETS_IMPORT_API, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sheet_url: sheetUrl, mode: importMode }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setSyncMessage(data.detail || "Google Sheets import failed.");
+        return;
+      }
+      setSyncResult(data.data);
+      setSyncMessage(
+        `Imported ${data.data.rows_imported} sales rows into the portal.`
+      );
     } catch (error) {
+      setSyncMessage("Google Sheets import API is not available right now.");
+    } finally {
       setIsSyncing(false);
-      alert("Error during sync. Please check API logs.");
     }
   };
 
@@ -1553,7 +1574,7 @@ export default function Settings() {
           </div>
           <div>
             <h3 className="font-bold text-gray-900">Google Sheets Data Sync</h3>
-            <p className="text-sm text-gray-500">Import historical data (2024-2026) from your spreadsheet.</p>
+            <p className="text-sm text-gray-500">Import daily sales rows from your spreadsheet into Supabase.</p>
           </div>
         </div>
         <div className="space-y-4">
@@ -1578,7 +1599,7 @@ export default function Settings() {
                 onChange={() => setImportMode("all")}
                 className="w-4 h-4 text-orange-600 focus:ring-orange-500"
               />
-              <span className="ml-2 text-sm text-gray-700 font-medium">Import All Tabs (2024-2026)</span>
+              <span className="ml-2 text-sm text-gray-700 font-medium">Import Accessible Rows</span>
             </label>
             <label className="flex items-center cursor-pointer">
               <input 
@@ -1594,7 +1615,7 @@ export default function Settings() {
           </div>
 
           <div className="text-xs text-gray-500 bg-orange-50 p-3 rounded-lg border border-orange-100 italic">
-            <strong>Note:</strong> System maps columns automatically: <code className="bg-white px-1 rounded border">A:Date</code>, <code className="bg-white px-1 rounded border">B:Cash</code>, <code className="bg-white px-1 rounded border">C:Expense</code>, <code className="bg-white px-1 rounded border">D:Sale</code>.
+            <strong>Note:</strong> The importer maps headers automatically, and also supports <code className="bg-white px-1 rounded border">A:Date</code>, <code className="bg-white px-1 rounded border">B:Cash</code>, <code className="bg-white px-1 rounded border">C:Expense</code>, <code className="bg-white px-1 rounded border">D:Sale</code>.
           </div>
 
           <div className="pt-2">
@@ -1611,7 +1632,7 @@ export default function Settings() {
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Import All Data
+                  Import Sales Data
                 </>
               )}
             </button>
@@ -1619,19 +1640,38 @@ export default function Settings() {
             {isSyncing && (
               <div className="mt-4 space-y-2">
                 <div className="flex justify-between text-xs font-medium text-gray-600">
-                  <span>Processing tabs...</span>
-                  <span>75%</span>
+                  <span>Processing spreadsheet...</span>
+                  <span>Live import</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div className="bg-orange-500 h-2 rounded-full animate-pulse" style={{width: '75%'}}></div>
+                  <div className="bg-orange-500 h-2 rounded-full animate-pulse" style={{width: '100%'}}></div>
                 </div>
               </div>
             )}
 
+            {syncMessage && !syncResult && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-amber-800 text-sm font-semibold">
+                {syncMessage}
+              </div>
+            )}
+
             {syncResult && (
-              <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg flex items-center text-green-700 text-sm font-medium animate-in zoom-in-95 duration-200">
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Successfully imported {syncResult.rows} days across {syncResult.months} monthly tabs.
+              <div className="mt-4 p-3 bg-green-50 border border-green-100 rounded-lg text-green-700 text-sm font-medium animate-in zoom-in-95 duration-200">
+                <div className="flex items-center">
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Successfully imported {syncResult.rows_imported} days across {syncResult.months_processed} source{syncResult.months_processed === 1 ? "" : "s"}.
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs font-bold text-green-800 md:grid-cols-4">
+                  <span>Created: {syncResult.rows_created}</span>
+                  <span>Updated: {syncResult.rows_updated}</span>
+                  <span>Skipped: {syncResult.rows_skipped}</span>
+                  <span>{syncResult.date_start || "No date"} - {syncResult.date_end || "No date"}</span>
+                </div>
+                {!!syncResult.skip_reasons?.length && (
+                  <div className="mt-2 rounded-md bg-white/70 p-2 text-xs font-semibold text-green-900">
+                    {syncResult.skip_reasons.slice(0, 3).join(" ")}
+                  </div>
+                )}
               </div>
             )}
           </div>
