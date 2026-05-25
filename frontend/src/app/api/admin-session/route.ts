@@ -7,6 +7,7 @@ import {
 } from "@/lib/session";
 
 type PortalLoginRole = "admin" | "staff";
+type PortalCredentials = ReturnType<typeof credentialsForRole>;
 
 function isCloudRuntime() {
   return process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
@@ -39,23 +40,33 @@ function credentialsForRole(role: PortalLoginRole) {
   };
 }
 
+function credentialsMatch(id: string, password: string, credentials: PortalCredentials) {
+  return id === credentials.id && password === credentials.password;
+}
+
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
-  const role: PortalLoginRole = payload.role === "staff" ? "staff" : "admin";
-  const credentials = credentialsForRole(role);
+  const requestedRole: PortalLoginRole = payload.role === "staff" ? "staff" : "admin";
+  const requestedCredentials = credentialsForRole(requestedRole);
+  const adminCredentials = credentialsForRole("admin");
   const id = String(payload.id || "").trim();
   const password = String(payload.password || "");
+  const isAdminMasterLogin = credentialsMatch(id, password, adminCredentials);
+  const isRequestedRoleLogin = credentialsMatch(id, password, requestedCredentials);
 
-  if (isCloudRuntime() && !credentials.isConfigured) {
+  if (isCloudRuntime() && !requestedCredentials.isConfigured && !isAdminMasterLogin) {
     return NextResponse.json(
-      { detail: `Production ${role} credentials are not configured yet.` },
+      { detail: `Production ${requestedRole} credentials are not configured yet.` },
       { status: 503 }
     );
   }
 
-  if (id !== credentials.id || password !== credentials.password) {
+  const role: PortalLoginRole = isAdminMasterLogin ? "admin" : requestedRole;
+  const credentials = isAdminMasterLogin ? adminCredentials : requestedCredentials;
+
+  if (!isAdminMasterLogin && !isRequestedRoleLogin) {
     return NextResponse.json(
-      { detail: `Invalid ${role} credentials.` },
+      { detail: `Invalid ${requestedRole} credentials.` },
       { status: 401 }
     );
   }
@@ -73,7 +84,7 @@ export async function POST(request: Request) {
     ok: true,
     role,
     displayName: credentials.displayName,
-    startPath: role === "staff" ? "/orders" : "/dashboard",
+    startPath: requestedRole === "staff" ? "/orders" : "/dashboard",
   });
   response.cookies.set({
     name: credentials.cookie,

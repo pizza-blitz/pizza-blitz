@@ -64,6 +64,27 @@ async function portalLogin(role) {
   return cookie;
 }
 
+async function portalLoginWithCredentials({ id, password, role, expectedRole, expectedStartPath }) {
+  const response = await fetch(`${baseURL}/api/admin-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, password, role }),
+  });
+  const data = await response.json();
+  assert(response.ok, `Master portal login failed: ${JSON.stringify(data)}`);
+  assert(data.role === expectedRole, `Expected ${expectedRole} role, received ${data.role}.`);
+  assert(
+    data.startPath === expectedStartPath,
+    `Expected ${expectedStartPath} start path, received ${data.startPath}.`
+  );
+  const cookie = cookieHeaderFromSetCookie(response.headers.get("set-cookie"));
+  assert(
+    cookie.includes(`pb_${expectedRole}_session=`),
+    `Master login did not return a ${expectedRole} session cookie.`
+  );
+  return cookie;
+}
+
 async function customerLogin() {
   const phone = `94${Date.now().toString().slice(-8)}`;
   const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/`, {
@@ -243,6 +264,13 @@ async function main() {
 
   const adminCookie = await portalLogin("admin");
   const staffCookie = await portalLogin("staff");
+  const masterCounterCookie = await portalLoginWithCredentials({
+    id: adminId,
+    password: adminPassword,
+    role: "staff",
+    expectedRole: "admin",
+    expectedStartPath: "/orders",
+  });
   const customerCookie = await customerLogin();
 
   await assertFrontendStatus("/api/security-overview", 403, staffCookie, "staff security overview");
@@ -274,9 +302,30 @@ async function main() {
     "Admin readiness did not include all payment providers."
   );
 
+  await assertStatus(
+    "/api/v1/restaurant/ops/readiness",
+    200,
+    masterCounterCookie,
+    "master counter login keeps admin access"
+  );
   await assertStatus("/api/v1/restaurant/ops/readiness", 403, staffCookie, "staff ops readiness");
   await assertStatus("/api/v1/restaurant/orders/today", 200, staffCookie, "staff today's orders");
   await assertStatus("/api/v1/restaurant/orders/today", 403, customerCookie, "customer today's orders");
+
+  const masterStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: adminId, password: adminPassword }),
+  });
+  const masterStaffJwt = await masterStaffJwtResponse.json();
+  assert(
+    masterStaffJwtResponse.ok,
+    `Master credentials through staff JWT login failed: ${JSON.stringify(masterStaffJwt)}`
+  );
+  assert(
+    masterStaffJwt.role === "admin" && masterStaffJwt.access_token,
+    "Master credentials through staff JWT login did not return an admin token."
+  );
 
   const staffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
     method: "POST",

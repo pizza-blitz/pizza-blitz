@@ -48,6 +48,14 @@ def admin_login(payload: AdminLoginRequest):
 
 @router.post("/staff/login")
 def staff_login(payload: StaffLoginRequest):
+    if verify_admin_credentials(payload.id, payload.password):
+        return create_access_token(
+            subject=f"admin:{settings.PIZZA_BLITZ_ADMIN_ID}",
+            role="admin",
+            display_name=settings.PIZZA_BLITZ_ADMIN_NAME,
+            expires_minutes=settings.AUTH_TOKEN_EXPIRE_MINUTES,
+        )
+
     if not verify_staff_credentials(payload.id, payload.password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
