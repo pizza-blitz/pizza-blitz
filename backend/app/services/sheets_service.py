@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import re
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -36,13 +37,20 @@ class SheetsService:
         gid = self.extract_gid(sheet_url)
         return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
 
-    def fetch_public_csv_rows(self, sheet_url: str) -> List[List[str]]:
-        csv_url = sheet_url if "export?format=csv" in sheet_url else self.public_csv_export_url(sheet_url)
+    def public_gviz_url(self, sheet_url: str, gid: str) -> str:
+        sheet_id = self.extract_sheet_id(sheet_url)
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:json&gid={gid}"
+
+    def public_edit_url(self, sheet_url: str) -> str:
+        sheet_id = self.extract_sheet_id(sheet_url)
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit?usp=sharing"
+
+    def _fetch_public_text(self, url: str, accept: str = "text/plain,*/*") -> str:
         request = Request(
-            csv_url,
+            url,
             headers={
                 "User-Agent": "PizzaBlitzImporter/1.0",
-                "Accept": "text/csv,text/plain,*/*",
+                "Accept": accept,
             },
         )
         try:
@@ -57,7 +65,11 @@ class SheetsService:
         except URLError as exc:
             raise RuntimeError(f"Could not reach Google Sheets: {exc.reason}") from exc
 
-        text = raw.decode("utf-8-sig", errors="replace")
+        return raw.decode("utf-8-sig", errors="replace")
+
+    def fetch_public_csv_rows(self, sheet_url: str) -> List[List[str]]:
+        csv_url = sheet_url if "export?format=csv" in sheet_url else self.public_csv_export_url(sheet_url)
+        text = self._fetch_public_text(csv_url, accept="text/csv,text/plain,*/*")
         first_chunk = text[:800].lower()
         if "<!doctype html" in first_chunk or "sign in to your google account" in first_chunk:
             raise PermissionError(
@@ -65,6 +77,62 @@ class SheetsService:
             )
 
         return list(csv.reader(io.StringIO(text)))
+
+    def discover_public_gids(self, sheet_url: str) -> List[str]:
+        html = self._fetch_public_text(self.public_edit_url(sheet_url), accept="text/html,*/*")
+        first_chunk = html[:800].lower()
+        if "sign in to your google account" in first_chunk:
+            raise PermissionError(
+                "This Google Sheet is private right now. Share it as 'Anyone with the link: Viewer' or publish the tab, then retry."
+            )
+
+        candidates = {self.extract_gid(sheet_url), "0"}
+        patterns = [
+            r'\\?"(\d{5,12})\\?",0,\d+,0,\d+',
+            r'gid=(\d{5,12})',
+        ]
+        for pattern in patterns:
+            candidates.update(re.findall(pattern, html))
+
+        return sorted(candidates, key=lambda value: (value != self.extract_gid(sheet_url), value))
+
+    def fetch_public_gviz_rows(self, sheet_url: str, gid: str) -> List[List[Any]]:
+        text = self._fetch_public_text(self.public_gviz_url(sheet_url, gid), accept="text/plain,*/*")
+        marker = "google.visualization.Query.setResponse("
+        if marker not in text:
+            return []
+        payload = text.split(marker, 1)[1].strip()
+        if payload.endswith(");"):
+            payload = payload[:-2]
+        elif payload.endswith(")"):
+            payload = payload[:-1]
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            return []
+        if parsed.get("status") != "ok":
+            return []
+
+        table = parsed.get("table") or {}
+        headers = [
+            (column.get("label") or column.get("id") or "").strip()
+            for column in table.get("cols", [])
+        ]
+        if not headers:
+            return []
+
+        rows: List[List[Any]] = [headers]
+        for row in table.get("rows", []):
+            cells = []
+            for cell in row.get("c", []) or []:
+                if not cell:
+                    cells.append("")
+                    continue
+                value = cell.get("v")
+                formatted = cell.get("f")
+                cells.append(value if value is not None else formatted or "")
+            rows.append(cells)
+        return rows
 
     def fetch_all_sheet_tabs(self, sheet_url: str) -> List[str]:
         sheet_id = self.extract_sheet_id(sheet_url)
@@ -101,6 +169,11 @@ class SheetsService:
             serial = float(raw)
             if serial > 25000:
                 return datetime(1899, 12, 30) + timedelta(days=int(serial))
+
+        google_date = re.fullmatch(r"Date\((\d{4}),(\d{1,2}),(\d{1,2})\)", raw)
+        if google_date:
+            year, zero_based_month, day = (int(part) for part in google_date.groups())
+            return datetime(year, zero_based_month + 1, day)
 
         cleaned = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", raw, flags=re.IGNORECASE)
         cleaned = cleaned.replace(",", " ").replace("\\", "/")
@@ -170,7 +243,7 @@ class SheetsService:
     def _column_map(self, rows: List[List[Any]]) -> tuple[Dict[str, int], int]:
         aliases = {
             "date": {"date", "day", "businessdate", "saledate", "dt"},
-            "cash": {"cash", "cashcollected", "cashcollection", "cashinhand", "collection"},
+            "cash": {"cash", "todaycash", "cashcollected", "cashcollection", "cashinhand", "cashonhand", "collection"},
             "expense": {"expense", "expenses", "totalexpense", "totalexpenses", "cost", "totalcost"},
             "sale": {"sale", "sales", "totalsale", "totalsales", "revenue", "grosssale", "netsale", "amount"},
             "payment_method": {"payment", "paymentmethod", "method", "mode"},
@@ -241,6 +314,12 @@ class SheetsService:
                 skipped += 1
                 if len(skip_reasons) < 8:
                     skip_reasons.append(f"Row {display_index}: {exc}")
+                continue
+
+            if parsed_date > current:
+                skipped += 1
+                if len(skip_reasons) < 8:
+                    skip_reasons.append(f"Row {display_index}: future date {parsed_date.isoformat()} skipped.")
                 continue
 
             if mode == "current" and (parsed_date.year != current.year or parsed_date.month != current.month):
@@ -319,7 +398,7 @@ class SheetsService:
             combined["tabs_processed"].append(tab)
             for key in ("rows_found", "rows_imported", "rows_created", "rows_updated", "rows_skipped"):
                 combined[key] += int(result.get(key) or 0)
-            combined["skip_reasons"].extend(result.get("skip_reasons", [])[:3])
+            combined["skip_reasons"] = (combined["skip_reasons"] + result.get("skip_reasons", [])[:3])[:12]
             if result.get("date_start"):
                 combined["date_start"] = min(
                     [date for date in [combined["date_start"], result["date_start"]] if date]
@@ -336,12 +415,67 @@ class SheetsService:
             "status": "success",
         }
 
+    def _import_public_gviz_tabs(self, db: Session, sheet_url: str, mode: str) -> Dict[str, Any] | None:
+        gids = self.discover_public_gids(sheet_url)
+        combined = {
+            "rows_found": 0,
+            "rows_imported": 0,
+            "rows_created": 0,
+            "rows_updated": 0,
+            "rows_skipped": 0,
+            "skip_reasons": [],
+            "tabs_processed": [],
+            "date_start": None,
+            "date_end": None,
+        }
+
+        for gid in gids[:80]:
+            rows = self.fetch_public_gviz_rows(sheet_url, gid)
+            if len(rows) < 2:
+                continue
+            result = self.import_rows(
+                db,
+                rows,
+                source_label=f"public Google Sheet gid {gid}",
+                mode=mode,
+                tab_name=None,
+            )
+            if result["rows_imported"] == 0:
+                continue
+            combined["tabs_processed"].append(gid)
+            for key in ("rows_found", "rows_imported", "rows_created", "rows_updated", "rows_skipped"):
+                combined[key] += int(result.get(key) or 0)
+            combined["skip_reasons"] = (combined["skip_reasons"] + result.get("skip_reasons", [])[:3])[:12]
+            if result.get("date_start"):
+                combined["date_start"] = min(
+                    [date for date in [combined["date_start"], result["date_start"]] if date]
+                )
+            if result.get("date_end"):
+                combined["date_end"] = max(
+                    [date for date in [combined["date_end"], result["date_end"]] if date]
+                )
+
+        if not combined["tabs_processed"]:
+            return None
+
+        return {
+            **combined,
+            "months_processed": len(combined["tabs_processed"]),
+            "source": "public_gviz_tabs",
+            "status": "success",
+        }
+
     def process_and_import(self, db: Session, sheet_url: str, mode: str = "all") -> Dict[str, Any]:
         if mode == "all":
             credential_result = self._import_with_google_credentials(db, sheet_url, mode)
             if credential_result and credential_result["rows_imported"] > 0:
                 self._log_sync(db, sheet_url, credential_result["rows_imported"], "success")
                 return credential_result
+
+            public_gviz_result = self._import_public_gviz_tabs(db, sheet_url, mode)
+            if public_gviz_result and public_gviz_result["rows_imported"] > 0:
+                self._log_sync(db, sheet_url, public_gviz_result["rows_imported"], "success")
+                return public_gviz_result
 
         rows = self.fetch_public_csv_rows(sheet_url)
         result = self.import_rows(
