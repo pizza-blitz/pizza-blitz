@@ -41,7 +41,7 @@ def admin_login(payload: AdminLoginRequest):
     return create_access_token(
         subject=f"admin:{settings.PIZZA_BLITZ_ADMIN_ID}",
         role="admin",
-        display_name="Restaurant Admin",
+        display_name=settings.PIZZA_BLITZ_ADMIN_NAME,
         expires_minutes=settings.AUTH_TOKEN_EXPIRE_MINUTES,
     )
 

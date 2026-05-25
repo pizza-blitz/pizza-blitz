@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")
     PIZZA_BLITZ_ADMIN_ID: str = os.getenv("PIZZA_BLITZ_ADMIN_ID", RESTAURANT_ADMIN_ID)
+    PIZZA_BLITZ_ADMIN_NAME: str = os.getenv("PIZZA_BLITZ_ADMIN_NAME", "Restaurant Admin")
     PIZZA_BLITZ_ADMIN_PASSWORD: str = os.getenv(
         "PIZZA_BLITZ_ADMIN_PASSWORD",
         RESTAURANT_ADMIN_PASSWORD,

@@ -32,7 +32,7 @@ function credentialsForRole(role: PortalLoginRole) {
     id: configuredId || "admin",
     password: configuredPassword || "admin123",
     isConfigured: Boolean(configuredId && configuredPassword),
-    displayName: "Restaurant Admin",
+    displayName: process.env.PIZZA_BLITZ_ADMIN_NAME || "Restaurant Admin",
     subjectPrefix: "admin",
     cookie: ADMIN_COOKIE,
     clearCookie: STAFF_COOKIE,
