@@ -6,7 +6,10 @@ from app.services.sheets_service import SheetsService
 class SheetsServicePublicGvizSelectionTest(unittest.TestCase):
     def test_selects_highest_dated_month_candidate_and_ignores_summary_rows(self):
         service = SheetsService()
-        service.discover_public_gids = lambda _sheet_url: ["low", "high"]  # type: ignore[method-assign]
+        service.discover_public_tabs = lambda _sheet_url: [  # type: ignore[method-assign]
+            {"order": 0, "gid": "low", "title": ""},
+            {"order": 1, "gid": "high", "title": ""},
+        ]
 
         rows_by_gid = {
             "low": [
@@ -31,6 +34,25 @@ class SheetsServicePublicGvizSelectionTest(unittest.TestCase):
         self.assertEqual(selected[0]["month"], "2024-01")
         self.assertEqual(selected[0]["dated_rows"], 2)
         self.assertEqual(float(selected[0]["total_sale"]), 550.0)
+
+    def test_uses_tab_title_month_when_sheet_dates_are_copied_from_another_year(self):
+        service = SheetsService()
+        service.discover_public_tabs = lambda _sheet_url: [  # type: ignore[method-assign]
+            {"order": 0, "gid": "sept-2023", "title": "Sept 2023"},
+        ]
+        service.fetch_public_gviz_rows = lambda _sheet_url, _gid: [  # type: ignore[method-assign]
+            ["Date", "Cash", "Expense", "Sale"],
+            ["Date(2025,8,24)", 500, 100, 700],
+            ["Date(2025,8,25)", 600, 150, 800],
+        ]
+
+        selected = service._select_public_gviz_month_candidates("https://example.test/sheet", "all")
+
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]["month"], "2023-09")
+        self.assertEqual(selected[0]["rows"][1][0], "2023-09-24")
+        self.assertEqual(selected[0]["rows"][2][0], "2023-09-25")
+        self.assertEqual(float(selected[0]["total_sale"]), 1500.0)
 
 
 if __name__ == "__main__":

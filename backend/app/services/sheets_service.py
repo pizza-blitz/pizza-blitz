@@ -96,6 +96,29 @@ class SheetsService:
 
         return sorted(candidates, key=lambda value: (value != self.extract_gid(sheet_url), value))
 
+    def discover_public_tabs(self, sheet_url: str) -> List[Dict[str, Any]]:
+        html = self._fetch_public_text(self.public_edit_url(sheet_url), accept="text/html,*/*")
+        first_chunk = html[:800].lower()
+        if "sign in to your google account" in first_chunk:
+            raise PermissionError(
+                "This Google Sheet is private right now. Share it as 'Anyone with the link: Viewer' or publish the tab, then retry."
+            )
+
+        tab_pattern = re.compile(
+            r'\[21350203,"\[(\d+),0,\\"(\d+)\\",\[\{\\"1\\":\[\[0,0,\\"([^\\"]+)\\"'
+        )
+        tabs = [
+            {"order": int(match.group(1)), "gid": match.group(2), "title": match.group(3)}
+            for match in tab_pattern.finditer(html)
+        ]
+        if tabs:
+            return sorted(tabs, key=lambda tab: tab["order"])
+
+        return [
+            {"order": index, "gid": gid, "title": ""}
+            for index, gid in enumerate(self.discover_public_gids(sheet_url))
+        ]
+
     def fetch_public_gviz_rows(self, sheet_url: str, gid: str) -> List[List[Any]]:
         text = self._fetch_public_text(self.public_gviz_url(sheet_url, gid), accept="text/plain,*/*")
         marker = "google.visualization.Query.setResponse("
@@ -221,6 +244,41 @@ class SheetsService:
             return None
         year = match.group(0)
         return int(year) if len(year) == 4 else 2000 + int(year)
+
+    def _month_from_tab_title(self, tab_name: str | None) -> tuple[int, int] | None:
+        if not tab_name:
+            return None
+        match = re.search(
+            r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\D*(20\d{2})",
+            tab_name,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        month_names = {
+            "jan": 1,
+            "feb": 2,
+            "mar": 3,
+            "apr": 4,
+            "may": 5,
+            "jun": 6,
+            "jul": 7,
+            "aug": 8,
+            "sep": 9,
+            "oct": 10,
+            "nov": 11,
+            "dec": 12,
+        }
+        return int(match.group(2)), month_names[match.group(1)[:3].lower()]
+
+    def _day_from_date_cell(self, value: Any, tab_name: str | None = None) -> int | None:
+        try:
+            return self.parse_sheet_date(value, tab_name).day
+        except ValueError:
+            match = re.search(r"\b(\d{1,2})\b", str(value or ""))
+            if not match:
+                return None
+            return int(match.group(1))
 
     def _money(self, value: Any) -> Decimal:
         raw = str(value or "").strip()
@@ -463,11 +521,14 @@ class SheetsService:
         }
 
     def _select_public_gviz_month_candidates(self, sheet_url: str, mode: str) -> List[Dict[str, Any]]:
-        gids = self.discover_public_gids(sheet_url)
+        tabs = self.discover_public_tabs(sheet_url)
         current = datetime.utcnow().date()
         month_candidates: Dict[str, List[Dict[str, Any]]] = {}
 
-        for gid in gids[:80]:
+        for tab in tabs[:80]:
+            gid = tab["gid"]
+            tab_title = tab.get("title") or None
+            tab_month = self._month_from_tab_title(tab_title)
             rows = self.fetch_public_gviz_rows(sheet_url, gid)
             if len(rows) < 2:
                 continue
@@ -479,8 +540,22 @@ class SheetsService:
             for row in rows[start_index:]:
                 if not any(str(cell or "").strip() for cell in row):
                     continue
+
+                normalized_row = list(row)
                 try:
-                    parsed_date = self.parse_sheet_date(self._cell(row, mapping.get("date")), None).date()
+                    if tab_month:
+                        year, month = tab_month
+                        day = self._day_from_date_cell(self._cell(row, mapping.get("date")), tab_title)
+                        if not day:
+                            continue
+                        parsed_date = datetime(year, month, day).date()
+                        date_column = mapping.get("date")
+                        if date_column is not None:
+                            if date_column >= len(normalized_row):
+                                normalized_row.extend([""] * (date_column - len(normalized_row) + 1))
+                            normalized_row[date_column] = parsed_date.isoformat()
+                    else:
+                        parsed_date = self.parse_sheet_date(self._cell(row, mapping.get("date")), tab_title).date()
                 except ValueError:
                     continue
 
@@ -512,7 +587,7 @@ class SheetsService:
                         "dated_rows": 0,
                     },
                 )
-                grouped[month_key]["rows"].append(row)
+                grouped[month_key]["rows"].append(normalized_row)
                 grouped[month_key]["total_sale"] += sale
                 grouped[month_key]["total_cash"] += cash
                 grouped[month_key]["total_expense"] += expense
