@@ -39,6 +39,9 @@ async function main() {
     }
 
     await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("kitchen-command-strip").waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Ready To Bill/i }).waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Auto (On|Off)/i }).waitFor({ timeout: 15000 });
     for (const lane of ["open", "preparing", "ready", "closed"]) {
       await page.getByTestId(`kitchen-lane-${lane}`).waitFor({ timeout: 15000 });
     }

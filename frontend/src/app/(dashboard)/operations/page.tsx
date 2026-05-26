@@ -183,6 +183,31 @@ function itemSummary(item: OrderItem) {
     : `${item.quantity}x ${item.name}`;
 }
 
+function isDeliveryOrder(order: Order) {
+  return (order.fulfillment_type || order.order_type) === "delivery";
+}
+
+function isPrepaidPaymentDue(order: Order) {
+  return (
+    (order.payment_method || "").toLowerCase() === "prepaid" &&
+    order.payment_status !== "paid"
+  );
+}
+
+function closeBlockers(order: Order) {
+  const blockers: string[] = [];
+  if (isPrepaidPaymentDue(order)) blockers.push("payment due");
+  if (isDeliveryOrder(order)) {
+    if (order.requires_address_review || order.address_validation?.requires_review) {
+      blockers.push("address review");
+    }
+    if (order.delivery_assignment?.status !== "delivered") {
+      blockers.push(order.delivery_assignment?.assigned_to ? "delivery pending" : "rider missing");
+    }
+  }
+  return blockers;
+}
+
 function flowStepClass(isComplete: boolean, isCurrent: boolean) {
   if (isComplete) return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (isCurrent) return "border-orange-200 bg-orange-50 text-orange-700";
@@ -195,6 +220,8 @@ export default function OperationsPage() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [deliveryQueueSummary, setDeliveryQueueSummary] = useState<DeliveryQueueSummary | null>(null);
   const [orderFlow, setOrderFlow] = useState<OrderFlowReadiness | null>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
@@ -207,7 +234,7 @@ export default function OperationsPage() {
       order.payment_status !== "paid"
   );
   const deliveryOrders = activeOrders.filter(
-    (order) => (order.fulfillment_type || order.order_type) === "delivery"
+    (order) => isDeliveryOrder(order)
   );
   const addressReviewOrders = deliveryOrders.filter(
     (order) => order.requires_address_review || order.address_validation?.requires_review
@@ -300,13 +327,24 @@ export default function OperationsPage() {
     ],
     [activeOrders, orders]
   );
+  const kitchenFocus = useMemo(() => {
+    const readyOrders = activeOrders.filter((order) => order.status === "ready");
+    return {
+      active: activeOrders.length,
+      readyToBill: readyOrders.filter((order) => closeBlockers(order).length === 0).length,
+      blocked: activeOrders.filter((order) => closeBlockers(order).length > 0).length,
+      deliveryHandoff: deliveryOrders.filter(
+        (order) => order.status === "ready" && order.delivery_assignment?.status !== "delivered"
+      ).length,
+    };
+  }, [activeOrders, deliveryOrders]);
 
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  const fetchOrders = async (options?: { preserveMessage?: boolean }) => {
-    setIsLoading(true);
+  const fetchOrders = async (options?: { preserveMessage?: boolean; silent?: boolean }) => {
+    if (!options?.silent) setIsLoading(true);
     try {
       const [response, queueResponse, flowResponse] = await Promise.all([
         fetch(`${ORDERS_API}/today`, {
@@ -334,6 +372,9 @@ export default function OperationsPage() {
       );
       setDeliveryQueueSummary(queueData.summary || null);
       setOrderFlow(flowData || null);
+      setLastRefreshedAt(
+        new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
+      );
       setOrders(
         (data.orders || []).map((order: Order) => {
           const queueOrder = queueById.get(order.id);
@@ -356,9 +397,19 @@ export default function OperationsPage() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load orders.");
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    const timer = window.setInterval(() => {
+      if (!busyAction) {
+        void fetchOrders({ preserveMessage: true, silent: true });
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, busyAction]);
 
   const updateStatus = async (order: Order, status: "open" | "preparing" | "ready") => {
     setBusyAction(`${order.id}-${status}`);
@@ -400,11 +451,9 @@ export default function OperationsPage() {
   };
 
   const closeOrder = async (order: Order) => {
-    if (
-      (order.payment_method || "").toLowerCase() === "prepaid" &&
-      order.payment_status !== "paid"
-    ) {
-      setMessage(`Order #${order.id} is still awaiting prepaid payment.`);
+    const blockers = closeBlockers(order);
+    if (blockers.length) {
+      setMessage(`Order #${order.id} cannot close yet: ${blockers.join(", ")}.`);
       return;
     }
 
@@ -597,17 +646,65 @@ export default function OperationsPage() {
               Simple lane view for cooking, ready handoff, and closing orders.
             </p>
           </div>
-          <div className="flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
-            {["active", "ready", "closed"].map((lane) => (
-              <button
-                key={lane}
-                onClick={() => setFilter(lane)}
-                className="rounded-md px-3 py-2 text-xs font-black uppercase text-gray-600 hover:bg-gray-100"
-              >
-                {lane}
-              </button>
-            ))}
+          <div className="text-right text-xs font-bold uppercase tracking-wide text-gray-500">
+            <p>{autoRefresh ? "Auto refresh on" : "Auto refresh off"}</p>
+            <p className="mt-1 text-gray-400">
+              {lastRefreshedAt ? `Updated ${lastRefreshedAt}` : "Loading live queue"}
+            </p>
           </div>
+        </div>
+
+        <div
+          data-testid="kitchen-command-strip"
+          className="grid gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm md:grid-cols-3 xl:grid-cols-6"
+        >
+          <button
+            onClick={() => setFilter("active")}
+            className="flex h-12 items-center justify-between rounded-md bg-gray-950 px-3 text-sm font-black text-white"
+          >
+            <span>Active</span>
+            <span>{kitchenFocus.active}</span>
+          </button>
+          <button
+            onClick={() => setFilter("ready")}
+            className="flex h-12 items-center justify-between rounded-md bg-emerald-50 px-3 text-sm font-black text-emerald-700 hover:bg-emerald-100"
+          >
+            <span>Ready To Bill</span>
+            <span>{kitchenFocus.readyToBill}</span>
+          </button>
+          <button
+            onClick={() => setFilter("payment_due")}
+            className="flex h-12 items-center justify-between rounded-md bg-amber-50 px-3 text-sm font-black text-amber-700 hover:bg-amber-100"
+          >
+            <span>Blocked</span>
+            <span>{kitchenFocus.blocked}</span>
+          </button>
+          <button
+            onClick={() => setFilter("delivery")}
+            className="flex h-12 items-center justify-between rounded-md bg-red-50 px-3 text-sm font-black text-red-700 hover:bg-red-100"
+          >
+            <span>Handoff</span>
+            <span>{kitchenFocus.deliveryHandoff}</span>
+          </button>
+          <button
+            onClick={() => fetchOrders()}
+            disabled={isLoading}
+            className="flex h-12 items-center justify-center gap-2 rounded-md border border-gray-200 px-3 text-sm font-black text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+          <button
+            onClick={() => setAutoRefresh((current) => !current)}
+            className={`flex h-12 items-center justify-center gap-2 rounded-md px-3 text-sm font-black ${
+              autoRefresh
+                ? "bg-sky-50 text-sky-700 hover:bg-sky-100"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            <TimerReset className="h-4 w-4" />
+            Auto {autoRefresh ? "On" : "Off"}
+          </button>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-4">
@@ -627,9 +724,11 @@ export default function OperationsPage() {
               </div>
               <div className="space-y-3">
                 {lane.orders.map((order) => {
-                  const isPrepaidDue =
-                    (order.payment_method || "").toLowerCase() === "prepaid" &&
-                    order.payment_status !== "paid";
+                  const blockers = closeBlockers(order);
+                  const deliveryOrder = isDeliveryOrder(order);
+                  const deliveryStatus =
+                    order.delivery_assignment?.status?.replaceAll("_", " ") || "unassigned";
+                  const hiddenItemCount = Math.max(order.items.length - 4, 0);
                   return (
                     <article
                       key={`${lane.key}-${order.id}`}
@@ -657,13 +756,39 @@ export default function OperationsPage() {
                             {itemSummary(item)}
                           </p>
                         ))}
+                        {hiddenItemCount > 0 && (
+                          <p className="text-xs font-black text-gray-500">
+                            +{hiddenItemCount} more item{hiddenItemCount === 1 ? "" : "s"}
+                          </p>
+                        )}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-black text-gray-700">
+                          {money(order.total_amount)}
+                        </span>
+                        <span className={`rounded-md border px-2 py-1 text-xs font-black ${paymentClass(order.payment_status)}`}>
+                          {order.payment_status.replaceAll("_", " ")}
+                        </span>
+                        {deliveryOrder && (
+                          <span className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-black text-red-700">
+                            {deliveryStatus}
+                          </span>
+                        )}
+                        {blockers.map((blocker) => (
+                          <span
+                            key={`${order.id}-${blocker}`}
+                            className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-black text-amber-800"
+                          >
+                            {blocker}
+                          </span>
+                        ))}
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         {order.status === "open" && (
                           <button
                             onClick={() => updateStatus(order, "preparing")}
                             disabled={busyAction === `${order.id}-preparing`}
-                            className="col-span-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
+                            className="col-span-2 h-12 rounded-md bg-sky-600 px-3 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
                           >
                             Start Prep
                           </button>
@@ -672,32 +797,45 @@ export default function OperationsPage() {
                           <button
                             onClick={() => updateStatus(order, "ready")}
                             disabled={busyAction === `${order.id}-ready`}
-                            className="col-span-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50"
+                            className="col-span-2 h-12 rounded-md bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50"
                           >
                             Mark Ready
                           </button>
                         )}
                         {order.status === "ready" && (
                           <>
+                            {deliveryOrder && deliveryStatus !== "delivered" && (
+                              <button
+                                onClick={() => setFilter("delivery")}
+                                className="col-span-2 h-11 rounded-md bg-red-600 px-3 text-sm font-black text-white hover:bg-red-700"
+                              >
+                                Delivery Handoff
+                              </button>
+                            )}
                             <Link
                               href={`/receipt/${order.id}`}
-                              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-center text-sm font-black text-gray-700 hover:bg-gray-50"
+                              className="flex h-11 items-center justify-center rounded-md border border-gray-200 bg-white px-3 text-center text-sm font-black text-gray-700 hover:bg-gray-50"
                             >
                               Bill
                             </Link>
                             <button
                               onClick={() => closeOrder(order)}
-                              disabled={isPrepaidDue || busyAction === `${order.id}-close`}
-                              className="rounded-md bg-gray-950 px-3 py-2 text-sm font-black text-white hover:bg-gray-800 disabled:bg-gray-300"
+                              disabled={blockers.length > 0 || busyAction === `${order.id}-close`}
+                              className="h-11 rounded-md bg-gray-950 px-3 text-sm font-black text-white hover:bg-gray-800 disabled:bg-gray-300"
                             >
                               Close
                             </button>
+                            {blockers.length > 0 && (
+                              <p className="col-span-2 text-xs font-bold leading-5 text-amber-800">
+                                Close blocked until {blockers.join(", ")} is complete.
+                              </p>
+                            )}
                           </>
                         )}
                         {order.status === "closed" && (
                           <Link
                             href={`/receipt/${order.id}`}
-                            className="col-span-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-center text-sm font-black text-gray-700 hover:bg-gray-50"
+                            className="col-span-2 flex h-11 items-center justify-center rounded-md border border-gray-200 bg-white px-3 text-center text-sm font-black text-gray-700 hover:bg-gray-50"
                           >
                             Receipt
                           </Link>
