@@ -880,7 +880,7 @@ export default function PublicOrderPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          return_url: `${window.location.origin}/account`,
+          return_url: `${window.location.origin}/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`,
         }),
       });
       const sessionData = await sessionResponse.json();

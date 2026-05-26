@@ -49,6 +49,9 @@ type TrackedOrder = {
   total_amount: number;
   payment_status: string;
   payment_method?: string | null;
+  payment_provider?: string | null;
+  payment_reference?: string | null;
+  payment_confirmed_at?: string | null;
   status: string;
   eta_window: string;
   next_action: string;
@@ -62,6 +65,8 @@ export default function TrackOrderPage() {
   const [order, setOrder] = useState<TrackedOrder | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -80,6 +85,9 @@ export default function TrackOrderPage() {
   }, [order?.created_at]);
   const isDeliveryOrder = (order?.fulfillment_type || order?.order_type || "").toLowerCase() === "delivery";
   const deliveryStatus = order?.delivery_assignment?.status?.replaceAll("_", " ") || "unassigned";
+  const isPaymentPending =
+    (order?.payment_method || "").toLowerCase() === "prepaid" &&
+    (order?.payment_status || "").toLowerCase() !== "paid";
 
   const lookupOrder = async (nextOrderId = orderId, nextPhone = phone) => {
     const trimmedOrderId = nextOrderId.trim();
@@ -104,11 +112,46 @@ export default function TrackOrderPage() {
       return;
     }
     setOrder(data);
+    if ((data.payment_method || "").toLowerCase() === "prepaid" && data.payment_status !== "paid") {
+      setPaymentReference(data.payment_reference || `TRACK-${data.id}`);
+    }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     lookupOrder();
+  };
+
+  const confirmTrackedPayment = async () => {
+    if (!order) return;
+    if (!phone.trim()) {
+      setMessage("Phone number is required to confirm this payment.");
+      return;
+    }
+
+    setIsConfirmingPayment(true);
+    setMessage("");
+    const response = await fetch(`${TRACK_API}/${order.id}/payment-confirmation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: phone.trim(),
+        payment_provider: "manual",
+        payment_reference: paymentReference.trim(),
+        paid_amount: order.total_amount,
+      }),
+    });
+    const data = await response.json();
+    setIsConfirmingPayment(false);
+
+    if (!response.ok) {
+      setMessage(data.detail || "Payment could not be confirmed.");
+      return;
+    }
+
+    setOrder(data);
+    setPaymentReference(data.payment_reference || "");
+    setMessage(`Payment confirmed for order #${data.id}.`);
   };
 
   return (
@@ -222,6 +265,55 @@ export default function TrackOrderPage() {
                   </div>
                 ))}
               </div>
+
+              {isPaymentPending && (
+                <div
+                  data-testid="track-payment-rescue"
+                  className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4"
+                >
+                  <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-amber-700">
+                        Payment Pending
+                      </p>
+                      <h4 className="mt-1 text-lg font-black text-amber-950">
+                        Confirm prepaid payment
+                      </h4>
+                    </div>
+                    <CreditCard className="h-5 w-5 text-amber-700" />
+                  </div>
+                  <p className="text-sm font-semibold leading-6 text-amber-900">
+                    If payment is already completed, enter the UPI, gateway, or staff reference so the order can move ahead.
+                  </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
+                    <input
+                      value={paymentReference}
+                      onChange={(event) => setPaymentReference(event.target.value)}
+                      className="rounded-md border border-amber-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-amber-600"
+                      placeholder="Payment reference"
+                    />
+                    <button
+                      type="button"
+                      onClick={confirmTrackedPayment}
+                      disabled={isConfirmingPayment}
+                      className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-600 px-4 py-3 text-sm font-black text-white hover:bg-amber-700 disabled:bg-slate-300"
+                    >
+                      {isConfirmingPayment ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                      {isConfirmingPayment ? "Confirming" : "Confirm Payment"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {order.payment_confirmed_at && (
+                <div
+                  data-testid="track-payment-confirmed"
+                  className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900"
+                >
+                  Payment confirmed via {(order.payment_provider || "manual").toUpperCase()}.
+                  {order.payment_reference ? ` Reference: ${order.payment_reference}.` : ""}
+                </div>
+              )}
 
               {isDeliveryOrder && (
                 <div

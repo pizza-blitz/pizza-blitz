@@ -83,6 +83,13 @@ class PaymentConfirmation(BaseModel):
     paid_amount: Optional[float] = None
 
 
+class TrackedPaymentConfirmation(BaseModel):
+    phone: str
+    payment_provider: str = "manual"
+    payment_reference: Optional[str] = None
+    paid_amount: Optional[float] = None
+
+
 class PaymentSessionRequest(BaseModel):
     provider: Optional[str] = None
     return_url: Optional[str] = None
@@ -1472,6 +1479,38 @@ def track_order(order_id: int, phone: str, db: Session = Depends(get_db)):
     if not order or (order.customer_phone or "").strip() != normalized_phone:
         raise HTTPException(status_code=404, detail="Order not found for this phone number.")
 
+    return serialize_order_tracking(order)
+
+
+@router.post("/track/{order_id}/payment-confirmation")
+def confirm_tracked_order_payment(
+    order_id: int,
+    payload: TrackedPaymentConfirmation,
+    db: Session = Depends(get_db),
+):
+    normalized_phone = payload.phone.strip()
+    if not normalized_phone:
+        raise HTTPException(status_code=422, detail="Phone number is required.")
+
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order or (order.customer_phone or "").strip() != normalized_phone:
+        raise HTTPException(status_code=404, detail="Order not found for this phone number.")
+    if (order.payment_method or "").lower() != "prepaid":
+        raise HTTPException(status_code=409, detail="This order does not require prepaid confirmation.")
+
+    reference = (
+        payload.payment_reference.strip()
+        if payload.payment_reference and payload.payment_reference.strip()
+        else f"TRACK-{order.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    )
+    provider = (payload.payment_provider or "manual").strip().lower() or "manual"
+    apply_order_payment(
+        db,
+        order,
+        provider=provider,
+        reference=reference,
+        paid_amount=payload.paid_amount,
+    )
     return serialize_order_tracking(order)
 
 
