@@ -122,13 +122,7 @@ def sales_reconciliation(
       row for row in month_rows
       if row["status"] != "complete"
     ]
-    repair_queue.sort(
-      key=lambda row: (
-        0 if row["repair_priority"] == "high" else 1,
-        -(int(row["missing_days"]) + int(row["zero_sale_days"])),
-        row["month"],
-      )
-    )
+    repair_queue.sort(key=lambda row: row["month"])
     def compact_month(row: dict) -> dict:
       compact = dict(row)
       if detail == "summary":
