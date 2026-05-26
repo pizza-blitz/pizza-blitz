@@ -50,26 +50,95 @@ type StabilizationProof = {
   artifact: string;
 };
 
+type DeliveryPhase = {
+  phase: string;
+  title: string;
+  status: Status;
+  target: string;
+  goal: string;
+  shipTogether: string[];
+  proof: string;
+};
+
 const progressCards = [
   {
     label: "Overall Product",
-    value: "99%",
-    note: "Internal beta with provider sync, owner reporting, DB path, deployment, customer/counter/delivery proof, dashboard polish and ops command visibility now visible",
+    value: "64%",
+    note: "Internal portal, POS, kitchen and delivery flow are live; data accuracy, real providers, customer ordering depth and production hardening remain the main gap.",
   },
   {
-    label: "Marketing Engine",
-    value: "94%",
-    note: "Campaigns, consent, queues, ROI, messaging, social readiness, ads, provider sync and live-readiness command visibility are largely working",
+    label: "Order Operations",
+    value: "72%",
+    note: "Counter, kitchen and delivery handoff are usable; customer website checkout, KOT/printing, delivery tracking and edge cases need deeper completion.",
   },
   {
     label: "Production Readiness",
-    value: "88%",
-    note: "Provider readiness, DB path, masked secrets, deployment gates, rollback checks, delivery handoff, visual polish, ops command and marketing live-readiness proof are now tracked",
+    value: "46%",
+    note: "Vercel production deploy is working; full Supabase migration proof, backups, RLS, monitoring, gateway webhooks and secrets audit remain active work.",
   },
   {
-    label: "Target Date",
-    value: "20 Jun",
-    note: "28-day push from 24 May 2026",
+    label: "Execution Mode",
+    value: "4 Phases",
+    note: "All 12 pending gaps are grouped into four larger batches so each build moves a complete business area, not a tiny isolated patch.",
+  },
+];
+
+const deliveryPhases: DeliveryPhase[] = [
+  {
+    phase: "Phase 1",
+    title: "Data, Reporting And Access Foundation",
+    status: "active",
+    target: "Now",
+    goal: "Make owner numbers trustworthy and lock the portal behind correct roles before deeper automation.",
+    shipTogether: [
+      "Upload and reconcile 2023-2026 month-wise sales from Google Sheets",
+      "Advanced sales comparisons: same day, week, month and year",
+      "Proper admin, counter, kitchen, delivery and customer roles",
+      "Production database, backups, environment security and E2E gates",
+    ],
+    proof: "Sales totals match source sheet, role navigation works, build passes and browser E2E covers protected paths.",
+  },
+  {
+    phase: "Phase 2",
+    title: "Ordering Engine",
+    status: "planned",
+    target: "Next",
+    goal: "Make website, counter, kitchen and delivery behave like one order system.",
+    shipTogether: [
+      "Customer website ordering: catalog, cart, checkout, pickup/delivery, ETA and tracking",
+      "Counter POS final polish: fast touch workflow, KOT, receipt printing and mixed payments",
+      "Kitchen display system: alerts, prep timers, KOT view and auto-refresh hardening",
+      "Delivery zones, charges, address validation, rider assignment and live tracking",
+    ],
+    proof: "One order can move from website or counter to kitchen, delivery/pickup, bill, receipt and closed state.",
+  },
+  {
+    phase: "Phase 3",
+    title: "Revenue And Payment Completion",
+    status: "planned",
+    target: "After Phase 2",
+    goal: "Make every menu, coupon and payment rule correct enough for real customer money.",
+    shipTogether: [
+      "Real UPI/card payment gateway and webhook integration",
+      "Refund, failed payment and settlement reconciliation",
+      "Product customization: sizes, toppings, add-ons, combos and admin pricing controls",
+      "Coupons, flash sales, prepaid checks and checkout discount proof",
+    ],
+    proof: "Low-value live payment succeeds, webhook updates order, receipt matches settlement and customized pricing is correct.",
+  },
+  {
+    phase: "Phase 4",
+    title: "Growth, Marketing And Launch Ops",
+    status: "planned",
+    target: "Final launch batch",
+    goal: "Turn the portal into a growth system with real sending, social posting, ads and launch operations.",
+    shipTogether: [
+      "Customer contact repository and consent-safe segments",
+      "Real WhatsApp, SMS and email campaign sending",
+      "Social media auto-posting and scheduled post audit",
+      "Ad campaign management, budget tracking, monitoring, visual polish and full E2E coverage",
+    ],
+    proof: "Owner can launch an approved offer, send/post/sync it through real providers and see delivery plus sales impact.",
   },
 ];
 
@@ -1253,6 +1322,57 @@ export default function RoadmapPage() {
             <p className="mt-2 text-sm leading-5 text-slate-500">{card.note}</p>
           </div>
         ))}
+      </section>
+
+      <section data-testid="twelve-gap-delivery-program" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Rocket className="h-5 w-5 text-orange-600" />
+              <h2 className="text-xl font-black text-slate-950">12 Gap Delivery Program</h2>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+              The remaining work is now grouped into four larger delivery phases. Each phase should ship as a coherent
+              business slice with build, deploy and browser evidence.
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black uppercase text-orange-700">
+            <Target className="h-3.5 w-3.5" />
+            Batch Execution
+          </span>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-4">
+          {deliveryPhases.map((phase) => {
+            const Icon = statusIcon(phase.status);
+            return (
+              <article key={phase.phase} className="rounded-lg border border-slate-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-wide text-orange-600">{phase.phase}</p>
+                    <h3 className="mt-1 text-lg font-black text-slate-950">{phase.title}</h3>
+                  </div>
+                  <span className={`inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1 text-xs font-black uppercase ${statusClass(phase.status)}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                    {statusLabel(phase.status)}
+                  </span>
+                </div>
+                <p className="mt-3 text-xs font-black uppercase tracking-wide text-slate-400">{phase.target}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{phase.goal}</p>
+                <div className="mt-4 space-y-2">
+                  {phase.shipTogether.map((item) => (
+                    <p key={item} className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold leading-5 text-slate-700">
+                      {item}
+                    </p>
+                  ))}
+                </div>
+                <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold leading-5 text-emerald-800">
+                  <span className="font-black uppercase">Proof: </span>
+                  {phase.proof}
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

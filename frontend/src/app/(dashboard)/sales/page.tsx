@@ -1,12 +1,13 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, Calendar, Filter, Download, ArrowUpRight, ArrowDownRight, Loader2, Award } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, DollarSign, TrendingUp, Calendar, Filter, Download, ArrowUpRight, ArrowDownRight, Loader2, Award } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getApiUrl } from '@/lib/api';
 
 export default function SalesHistory() {
   const [salesData, setSalesData] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
+  const [reconciliation, setReconciliation] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   // New Month/Year Filter State
@@ -20,12 +21,23 @@ export default function SalesHistory() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [salesRes, statsRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/sales/')).then(r => r.json()),
-        fetch(getApiUrl('/api/v1/restaurant/stats/dashboard-stats?period=30days')).then(r => r.json())
+      const fetchJson = async (endpoint: string) => {
+        const response = await fetch(getApiUrl(endpoint), {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.detail || `Request failed: ${endpoint}`);
+        return payload;
+      };
+      const [salesRes, statsRes, reconciliationRes] = await Promise.all([
+        fetchJson('/api/v1/restaurant/sales/'),
+        fetchJson('/api/v1/restaurant/stats/dashboard-stats?period=30days'),
+        fetchJson('/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000')
       ]);
       setSalesData(Array.isArray(salesRes) ? salesRes : []);
       setSummary(statsRes.metrics);
+      setReconciliation(reconciliationRes);
     } catch (error) {
       console.error("Failed to fetch sales history", error);
     } finally {
@@ -50,6 +62,10 @@ export default function SalesHistory() {
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
   ];
+  const selectedMonthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}`;
+  const selectedMonthReconciliation = reconciliation?.months?.find((row: any) => row.month === selectedMonthKey);
+  const money = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
+  const reconciliationGap = reconciliation ? Number(reconciliation.gap_to_expected || 0) : 3000000;
 
   return (
     <div className="space-y-6">
@@ -85,6 +101,81 @@ export default function SalesHistory() {
           </button>
         </div>
       </div>
+
+      <section data-testid="sales-reconciliation-board" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-600">Phase 1 Data Accuracy</p>
+            <h2 className="mt-1 text-xl font-black text-gray-950">Google Sheet Sales Reconciliation</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">
+              This board checks whether imported sales are complete enough to trust owner reports. The expected
+              historical minimum is set to Rs 30,00,000 until the source sheet is fully reconciled.
+            </p>
+          </div>
+          <span className={`inline-flex w-fit items-center gap-2 rounded-md border px-3 py-2 text-xs font-black uppercase ${
+            reconciliationGap > 0
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          }`}>
+            {reconciliationGap > 0 ? (
+              <AlertTriangle className="h-4 w-4" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            {reconciliationGap > 0 ? "Needs Import" : "Reconciled"}
+          </span>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-5">
+          {[
+            ["Imported Total", money(reconciliation?.imported_total || 0)],
+            ["Expected Minimum", money(reconciliation?.expected_min_total || 3000000)],
+            ["Gap", money(reconciliation?.gap_to_expected || 0)],
+            ["Months Imported", reconciliation?.months_imported || 0],
+            ["Rows", reconciliation?.record_count || 0],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+              <p className="text-xs font-black uppercase tracking-wide text-gray-400">{label}</p>
+              <p className="mt-2 text-xl font-black text-gray-950">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-lg border border-gray-100 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-gray-400">
+              Selected Month Check
+            </p>
+            {selectedMonthReconciliation ? (
+              <div className="mt-3 space-y-2 text-sm font-semibold text-gray-600">
+                <p className="font-black text-gray-950">{months[selectedMonth]} {selectedYear}</p>
+                <p>{money(selectedMonthReconciliation.total_sale)} imported sales</p>
+                <p>{selectedMonthReconciliation.days_with_sales}/{selectedMonthReconciliation.expected_days} days imported</p>
+                <p className={selectedMonthReconciliation.missing_days ? "text-amber-700" : "text-emerald-700"}>
+                  {selectedMonthReconciliation.missing_days
+                    ? `${selectedMonthReconciliation.missing_days} days need review`
+                    : "Month coverage complete"}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm font-semibold text-amber-700">
+                No imported sales found for {months[selectedMonth]} {selectedYear}.
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border border-gray-100 p-4">
+            <p className="text-xs font-black uppercase tracking-wide text-gray-400">
+              Next Upload Action
+            </p>
+            <p className="mt-3 text-sm font-semibold leading-6 text-gray-600">
+              {reconciliation?.next_action || "Import the public Google Sheet, then re-run month-wise reconciliation."}
+            </p>
+            <p className="mt-3 text-xs font-bold text-gray-400">
+              Last sheet sync: {reconciliation?.last_sheet_sync?.last_synced_at || "No sync recorded yet"}
+            </p>
+          </div>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[

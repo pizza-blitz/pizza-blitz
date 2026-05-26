@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
-from app.models.domain import DailySales, WasteLog
+from app.models.domain import DailySales, GoogleSheetSync, WasteLog
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
+import calendar
 import io
 import csv
 from fastapi.responses import StreamingResponse
@@ -17,6 +18,89 @@ def list_sales(db: Session = Depends(get_db)):
     """List all daily sales records sorted by date descending."""
     sales = db.query(DailySales).order_by(DailySales.date.desc()).all()
     return sales
+
+@router.get("/reconciliation")
+def sales_reconciliation(
+    expected_min_total: float = Query(default=3000000, ge=0),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Month-wise import health so source-sheet gaps are visible before reports are trusted."""
+    today = date.today()
+    parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
+    parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else today
+
+    query = db.query(DailySales).order_by(DailySales.date.asc())
+    if parsed_start:
+      query = query.filter(DailySales.date >= parsed_start)
+    if parsed_end:
+      query = query.filter(DailySales.date <= parsed_end)
+
+    rows = query.all()
+    month_map: dict[str, dict] = {}
+    for row in rows:
+      if not row.date:
+        continue
+      month_key = row.date.strftime("%Y-%m")
+      month = month_map.setdefault(
+        month_key,
+        {
+          "month": month_key,
+          "total_sale": 0.0,
+          "total_expense": 0.0,
+          "profit": 0.0,
+          "days_with_sales": 0,
+          "first_date": row.date.isoformat(),
+          "last_date": row.date.isoformat(),
+        },
+      )
+      month["total_sale"] += float(row.total_sale or 0)
+      month["total_expense"] += float(row.total_expense or 0)
+      month["profit"] += float(row.profit or 0)
+      month["days_with_sales"] += 1
+      month["first_date"] = min(month["first_date"], row.date.isoformat())
+      month["last_date"] = max(month["last_date"], row.date.isoformat())
+
+    month_rows = []
+    for month_key in sorted(month_map):
+      year, month_number = (int(part) for part in month_key.split("-"))
+      month_start = date(year, month_number, 1)
+      month_end = date(year, month_number, calendar.monthrange(year, month_number)[1])
+      if parsed_start:
+        month_start = max(month_start, parsed_start)
+      if parsed_end:
+        month_end = min(month_end, parsed_end)
+      expected_days = max((month_end - month_start).days + 1, 0)
+      row = month_map[month_key]
+      row["expected_days"] = expected_days
+      row["missing_days"] = max(expected_days - int(row["days_with_sales"]), 0)
+      row["coverage_percent"] = round(
+        (int(row["days_with_sales"]) / expected_days) * 100,
+        1,
+      ) if expected_days else 0
+      row["status"] = "complete" if row["missing_days"] == 0 else "needs_review"
+      month_rows.append(row)
+
+    imported_total = sum(float(row.total_sale or 0) for row in rows)
+    last_sync = db.query(GoogleSheetSync).order_by(GoogleSheetSync.id.desc()).first()
+    return {
+      "expected_min_total": expected_min_total,
+      "imported_total": round(imported_total, 2),
+      "gap_to_expected": round(max(expected_min_total - imported_total, 0), 2),
+      "coverage_percent": round((imported_total / expected_min_total) * 100, 1) if expected_min_total else 100,
+      "record_count": len(rows),
+      "months_imported": len(month_rows),
+      "date_start": rows[0].date.isoformat() if rows else None,
+      "date_end": rows[-1].date.isoformat() if rows else None,
+      "last_sheet_sync": {
+        "status": last_sync.sync_status,
+        "rows_imported": last_sync.rows_imported,
+        "last_synced_at": last_sync.last_synced_at.isoformat() if last_sync.last_synced_at else None,
+      } if last_sync else None,
+      "months": month_rows,
+      "next_action": "Import remaining Google Sheet months sequentially and re-run reconciliation until gap is zero.",
+    }
 
 class DailyEntryRequest(BaseModel):
     date: date

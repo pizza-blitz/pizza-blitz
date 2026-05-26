@@ -38,6 +38,22 @@ async function main() {
       assert(!page.url().includes("/login"), `${path} redirected back to login.`);
     }
 
+    await page.goto(`${baseURL}/roadmap`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("twelve-gap-delivery-program").waitFor({ timeout: 15000 });
+
+    await page.goto(`${baseURL}/sales`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("sales-reconciliation-board").waitFor({ timeout: 15000 });
+    const reconciliationResponse = await page.request.get(
+      `${baseURL}/server/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000`,
+      { timeout: 70000 }
+    );
+    assert(reconciliationResponse.ok(), `Sales reconciliation API returned ${reconciliationResponse.status()}.`);
+    const reconciliation = await reconciliationResponse.json();
+    assert(
+      typeof reconciliation.imported_total === "number",
+      "Sales reconciliation API did not return imported_total."
+    );
+
     await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("kitchen-command-strip").waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /Ready To Bill/i }).waitFor({ timeout: 15000 });
