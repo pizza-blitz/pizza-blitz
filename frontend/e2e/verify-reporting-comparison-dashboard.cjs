@@ -217,7 +217,11 @@ async function assertReportsPage(page, watch) {
 
   await page.getByText("Order Channel Comparison", { exact: false }).waitFor({ timeout: 15000 });
   await page.getByTestId("owner-comparison-dashboard").waitFor({ timeout: 15000 });
+  await page.getByTestId("reporting-action-board").waitFor({ timeout: 15000 });
   await page.getByText("Owner Comparison Command", { exact: false }).waitFor({ timeout: 15000 });
+  await page.getByText("What Needs Attention Next", { exact: true }).waitFor({ timeout: 10000 });
+  await page.getByText("Daily Recovery Queue", { exact: true }).waitFor({ timeout: 10000 });
+  await page.getByText("Owner Moves", { exact: true }).waitFor({ timeout: 10000 });
   await page.getByText("Same Weekday Last Week", { exact: true }).waitFor({ timeout: 10000 });
   await page.getByText("Same Month Last Year", { exact: false }).waitFor({ timeout: 10000 });
   await page.getByText("Product Movers", { exact: true }).waitFor({ timeout: 10000 });

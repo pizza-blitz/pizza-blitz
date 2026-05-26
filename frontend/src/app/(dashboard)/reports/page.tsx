@@ -225,6 +225,67 @@ export default function Reports() {
   const categoryMoverRows = ownerComparison?.category_movers || [];
   const ownerChannelRows = ownerComparison?.channel_mix || [];
   const ownerActionRows = ownerComparison?.owner_actions || [];
+  const revenueCard = comparison?.summary_cards?.find((card: any) => card.key === "revenue");
+  const profitCard = comparison?.summary_cards?.find((card: any) => card.key === "profit");
+  const currentRevenue = Number(comparison?.current?.revenue || 0);
+  const previousRevenueGap = Math.max(Number(comparison?.previous?.revenue || 0) - currentRevenue, 0);
+  const lastYearRevenueGap = Math.max(Number(comparison?.last_year?.revenue || 0) - currentRevenue, 0);
+  const revenueRecoveryGap = Math.max(previousRevenueGap, lastYearRevenueGap);
+  const revenueGapLabel = lastYearRevenueGap >= previousRevenueGap ? "same period last year" : "previous period";
+  const bestWeekday = weekdayRows[0] || null;
+  const softWeekday = weekdayRows.length ? weekdayRows[weekdayRows.length - 1] : null;
+  const protectedMomentumCount = varianceRows.filter(
+    (row: any) => Number(row.previousChange || 0) >= 0 && Number(row.yoyChange || 0) >= 0
+  ).length;
+  const varianceActionRows = varianceRows
+    .map((row: any) => {
+      const currentSale = Number(row.current_sale || 0);
+      const previousGap = Math.max(Number(row.previous_sale || 0) - currentSale, 0);
+      const yoyGap = Math.max(Number(row.last_year_sale || 0) - currentSale, 0);
+      const gap = Math.max(previousGap, yoyGap);
+      return {
+        ...row,
+        currentSale,
+        gap,
+        gapLabel: yoyGap >= previousGap ? "same day last year" : "previous period",
+        momentum: Number(row.previousChange || 0) >= 0 && Number(row.yoyChange || 0) >= 0,
+      };
+    })
+    .sort((a: any, b: any) => Number(b.gap || 0) - Number(a.gap || 0) || Number(b.currentSale || 0) - Number(a.currentSale || 0));
+  const reportingActionCards = [
+    {
+      label: "Revenue Recovery",
+      value: revenueRecoveryGap > 0 ? formatMoney(revenueRecoveryGap) : "Ahead",
+      detail:
+        revenueRecoveryGap > 0
+          ? `Largest gap vs ${revenueGapLabel}; YoY is ${formatPercent(Number(revenueCard?.yoy_change_percent || 0))}.`
+          : "Revenue is beating comparison baselines in this window.",
+      icon: Target,
+      tone: revenueRecoveryGap > 0 ? "amber" : "green",
+    },
+    {
+      label: "Best Weekday",
+      value: bestWeekday?.weekday || "No data",
+      detail: bestWeekday ? `${formatMoney(Number(bestWeekday.current_sale || 0))} captured in this period.` : "Awaiting sales entries.",
+      icon: TrendingUp,
+      tone: "green",
+    },
+    {
+      label: "Soft Weekday",
+      value: softWeekday?.weekday || "No data",
+      detail: softWeekday ? `${formatMoney(Number(softWeekday.current_sale || 0))} needs the next local push.` : "No low day identified yet.",
+      icon: AlertTriangle,
+      tone: "red",
+    },
+    {
+      label: "Profit Direction",
+      value: formatPercent(Number(profitCard?.yoy_change_percent || 0)),
+      detail: `Previous-period movement is ${formatPercent(Number(profitCard?.previous_change_percent || 0))}.`,
+      icon: Number(profitCard?.yoy_change_percent || 0) >= 0 ? ArrowUpRight : ArrowDownRight,
+      tone: Number(profitCard?.yoy_change_percent || 0) >= 0 ? "green" : "red",
+    },
+  ];
+  const reportingMoveRows = Array.from(new Set<string>([...ownerActionRows, ...(comparison?.risk_flags || [])])).slice(0, 5);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -526,6 +587,86 @@ export default function Reports() {
                 </div>
               </aside>
             </div>
+          )}
+
+          {comparison && (
+            <section data-testid="reporting-action-board" className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Reporting Action Board</p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">What Needs Attention Next</h2>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-500">
+                  {protectedMomentumCount}/7 recent days protected
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
+                {reportingActionCards.map((card) => (
+                  <ReportingActionMetric key={card.label} {...card} />
+                ))}
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Daily Recovery Queue</p>
+                      <h3 className="mt-1 text-lg font-black text-gray-950">Focus days from the latest variance data</h3>
+                    </div>
+                    <Target className="h-5 w-5 text-orange-600" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    {varianceActionRows.slice(0, 4).map((row: any) => {
+                      const hasGap = Number(row.gap || 0) > 0;
+                      const label = hasGap ? `Recover ${formatMoney(Number(row.gap || 0))}` : row.momentum ? "Protect momentum" : "Build baseline";
+                      return (
+                        <div key={`action-${row.date}`} className="rounded-lg border border-gray-200 bg-white p-4">
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-black text-gray-950">{row.label}</p>
+                              <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.weekday}</p>
+                            </div>
+                            <span className={`rounded-md px-2 py-1 text-[10px] font-black uppercase ${hasGap ? "bg-amber-50 text-amber-700" : "bg-green-50 text-green-700"}`}>
+                              {hasGap ? "Gap" : "Hold"}
+                            </span>
+                          </div>
+                          <p className="text-sm font-black text-gray-950">{label}</p>
+                          <p className="mt-2 text-xs font-bold leading-5 text-gray-500">
+                            {hasGap
+                              ? `Behind ${row.gapLabel}; current sale is ${formatMoney(Number(row.currentSale || 0))}.`
+                              : `Current sale is ${formatMoney(Number(row.currentSale || 0))}; keep the winning pattern active.`}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-700">Owner Moves</p>
+                      <h3 className="mt-1 text-lg font-black text-gray-950">Use these before the next campaign</h3>
+                    </div>
+                    <Megaphone className="h-5 w-5 text-orange-700" />
+                  </div>
+                  <div className="space-y-2">
+                    {reportingMoveRows.length ? (
+                      reportingMoveRows.map((move: string) => (
+                        <p key={`reporting-move-${move}`} className="rounded-md bg-white px-3 py-2 text-sm font-bold leading-5 text-orange-950">
+                          {move}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="rounded-md bg-white px-3 py-4 text-center text-sm font-bold text-orange-700">
+                        No reporting action is required for the selected period.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
           )}
 
           {orderChannels && (
@@ -1380,6 +1521,41 @@ function MarketingMetric({
       </div>
       <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-black text-gray-950">{value}</p>
+    </div>
+  );
+}
+
+function ReportingActionMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  detail: string;
+  tone: string;
+}) {
+  const toneMap: Record<string, { container: string; icon: string }> = {
+    green: { container: "border-green-200 bg-green-50", icon: "bg-white text-green-700" },
+    amber: { container: "border-amber-200 bg-amber-50", icon: "bg-white text-amber-700" },
+    red: { container: "border-red-200 bg-red-50", icon: "bg-white text-red-700" },
+    orange: { container: "border-orange-200 bg-orange-50", icon: "bg-white text-orange-700" },
+  };
+  const classes = toneMap[tone] || toneMap.orange;
+
+  return (
+    <div className={`rounded-lg border p-4 ${classes.container}`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-md ${classes.icon}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+      <p className="text-2xl font-black text-gray-950">{value}</p>
+      <p className="mt-2 text-xs font-bold leading-5 text-gray-600">{detail}</p>
     </div>
   );
 }
