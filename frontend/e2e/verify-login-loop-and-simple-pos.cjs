@@ -45,6 +45,9 @@ async function main() {
     for (const lane of ["open", "preparing", "ready", "closed"]) {
       await page.getByTestId(`kitchen-lane-${lane}`).waitFor({ timeout: 15000 });
     }
+    await page.getByTestId("delivery-dispatch-board").waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Needs Rider/i }).waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Ready Dispatch/i }).waitFor({ timeout: 15000 });
 
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("counter-new-takeaway").click();

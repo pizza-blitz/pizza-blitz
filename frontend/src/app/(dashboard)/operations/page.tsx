@@ -168,6 +168,14 @@ function paymentClass(status: string) {
   return "bg-zinc-100 text-zinc-700 border-zinc-200";
 }
 
+function deliveryStatusClass(status?: string | null) {
+  if (status === "delivered") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "out_for_delivery") return "border-orange-200 bg-orange-50 text-orange-700";
+  if (status === "assigned") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "failed") return "border-rose-200 bg-rose-50 text-rose-700";
+  return "border-red-200 bg-red-50 text-red-700";
+}
+
 function optionSummary(option: NonNullable<OrderItem["selected_options"]>[number]) {
   const delta = Number(option.price_delta || 0);
   const suffix = delta > 0 ? ` +Rs ${delta}` : "";
@@ -290,6 +298,26 @@ export default function OperationsPage() {
       failed: deliveryQueueSummary?.failed_count ?? statusCounts.failed,
     };
   }, [addressReviewOrders.length, deliveryOrders, deliveryQueueSummary, paymentDueOrders.length]);
+  const deliveryActionCounts = useMemo(
+    () => ({
+      needsRider: deliveryOrders.filter((order) => !order.delivery_assignment?.assigned_to).length,
+      readyToDispatch: deliveryOrders.filter(
+        (order) =>
+          order.delivery_assignment?.assigned_to &&
+          (order.delivery_assignment?.status || "unassigned") === "assigned"
+      ).length,
+      outForDelivery: deliveryOrders.filter(
+        (order) => order.delivery_assignment?.status === "out_for_delivery"
+      ).length,
+      blocked: deliveryOrders.filter(
+        (order) =>
+          isPrepaidPaymentDue(order) ||
+          order.requires_address_review ||
+          order.address_validation?.requires_review
+      ).length,
+    }),
+    [deliveryOrders]
+  );
 
   const visibleOrders = useMemo(() => {
     if (filter === "active") return activeOrders;
@@ -909,21 +937,38 @@ export default function OperationsPage() {
         </div>
       </section>
 
-      <section className="space-y-3">
+      <section data-testid="delivery-dispatch-board" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-black text-gray-950">Delivery Dispatch Board</h2>
             <p className="text-sm text-gray-500">
-              Rider assignment health for active delivery orders.
+              Fast rider handoff for delivery orders that need assignment, dispatch, or close.
             </p>
           </div>
           <button
             onClick={() => setFilter("delivery")}
-            className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-black text-red-700 hover:bg-red-100"
+            className="inline-flex h-11 items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 text-sm font-black text-red-700 hover:bg-red-100"
           >
             <Truck className="h-4 w-4" />
             Show Delivery Queue
           </button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-4">
+          {[
+            ["Needs Rider", deliveryActionCounts.needsRider, "bg-red-50 text-red-700"],
+            ["Ready Dispatch", deliveryActionCounts.readyToDispatch, "bg-sky-50 text-sky-700"],
+            ["Out For Delivery", deliveryActionCounts.outForDelivery, "bg-orange-50 text-orange-700"],
+            ["Blocked", deliveryActionCounts.blocked, "bg-amber-50 text-amber-700"],
+          ].map(([label, value, tone]) => (
+            <button
+              key={label}
+              onClick={() => setFilter(label === "Blocked" ? "address_review" : "delivery")}
+              className={`flex h-14 items-center justify-between rounded-lg px-4 text-sm font-black ${tone}`}
+            >
+              <span>{label}</span>
+              <span className="text-xl">{value}</span>
+            </button>
+          ))}
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           {[
@@ -955,51 +1000,71 @@ export default function OperationsPage() {
       </section>
 
       {deliveryOrders.length > 0 && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-gray-950">Delivery Assignment</h2>
+              <h2 className="text-lg font-black text-gray-950">Rider Handoff</h2>
               <p className="text-sm text-gray-500">
-                Active delivery orders with rider handoff status.
+                Assign, dispatch, confirm delivery, or mark a failed delivery from one compact card.
               </p>
             </div>
-            <Truck className="h-5 w-5 text-red-600" />
+            <span className="rounded-md bg-red-50 px-3 py-2 text-xs font-black uppercase text-red-700">
+              {deliveryOrders.length} active
+            </span>
           </div>
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <div data-testid="delivery-handoff-board" className="grid grid-cols-1 gap-3 xl:grid-cols-3">
             {deliveryOrders.map((order) => {
               const assignment = order.delivery_assignment;
+              const assignmentStatus = assignment?.status || "unassigned";
+              const assignmentLabel = assignmentStatus.replaceAll("_", " ");
               const addressValidation = order.address_validation;
               const addressWarnings = addressValidation?.warnings || [];
               const needsAddressReview =
                 order.requires_address_review || addressValidation?.requires_review;
+              const paymentDue = isPrepaidPaymentDue(order);
+              const riderValue = assignmentDrafts[order.id] ?? assignment?.assigned_to ?? "";
+              const noteValue = assignmentNoteDrafts[order.id] ?? assignment?.notes ?? "";
+              const canAssign = Boolean(riderValue.trim());
+              const canDispatch = Boolean(riderValue.trim()) && !needsAddressReview;
+              const canDeliver = Boolean(riderValue.trim()) && !needsAddressReview && !paymentDue;
+              const canFail = Boolean(noteValue.trim());
               return (
                 <article
                   key={`delivery-${order.id}`}
-                  className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                  data-testid={`delivery-handoff-order-${order.id}`}
+                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-black text-gray-950">Order #{order.id}</p>
-                      <p className="mt-1 max-w-md text-sm font-semibold text-gray-600">
-                        {order.delivery_address || "Address pending"}
+                      <p className="text-base font-black text-gray-950">Order #{order.id}</p>
+                      <p className="mt-1 text-xs font-bold uppercase text-gray-500">
+                        {order.customer_name || "Customer"} {order.customer_phone ? `| ${order.customer_phone}` : ""}
                       </p>
-                      <p className="mt-1 text-xs font-bold text-gray-500">
-                        {order.delivery_zone || "Zone pending"} | Fee {money(order.delivery_fee || 0)} | {order.eta_window}
-                      </p>
-                      {addressValidation && (
-                        <p className="mt-1 text-xs font-black text-slate-600">
-                          Address score {addressValidation.score}/100 | {addressValidation.quality}
-                          {addressValidation.matched_keyword
-                            ? ` | Matched ${addressValidation.matched_keyword}`
-                            : ""}
-                        </p>
-                      )}
                     </div>
-                    <span className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-black text-red-700">
-                      {assignment?.status?.replaceAll("_", " ") || "unassigned"}
+                    <span className={`rounded-md border px-2 py-1 text-xs font-black ${deliveryStatusClass(assignmentStatus)}`}>
+                      {assignmentLabel}
                     </span>
                   </div>
-                  <div className="mt-3 grid gap-2">
+
+                  <div className="mt-3 rounded-md bg-slate-50 p-3">
+                    <p className="line-clamp-2 text-sm font-semibold text-gray-700">
+                      {order.items
+                        .slice(0, 3)
+                        .map((item) => itemSummary(item))
+                        .join(" | ")}
+                    </p>
+                    <p className="mt-2 text-xs font-bold text-gray-500">
+                      {order.delivery_zone || "Zone pending"} | Fee {money(order.delivery_fee || 0)} | {order.eta_window || "ETA pending"} | {money(order.total_amount)}
+                    </p>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <p className="text-sm font-semibold text-gray-600">
+                      <MapPin className="mr-1 inline h-3.5 w-3.5 text-red-600" />
+                      <span className="align-middle">
+                        {order.delivery_address || "Address pending"}
+                      </span>
+                    </p>
                     {needsAddressReview && (
                       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                         <div className="flex items-start gap-2">
@@ -1015,14 +1080,16 @@ export default function OperationsPage() {
                         </div>
                       </div>
                     )}
-                    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
-                      <span className="font-black text-slate-900">Next action:</span>{" "}
-                      {order.delivery_next_action || assignment?.notes || "Assign a delivery partner."}
-                    </div>
+                    {paymentDue && (
+                      <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-800">
+                        Confirm prepaid payment before closing this delivery.
+                      </div>
+                    )}
                   </div>
-                  <div className="mt-4 grid gap-2 md:grid-cols-2">
+
+                  <div className="mt-4 grid gap-2">
                     <input
-                      value={assignmentDrafts[order.id] ?? assignment?.assigned_to ?? ""}
+                      value={riderValue}
                       onChange={(event) =>
                         setAssignmentDrafts((current) => ({
                           ...current,
@@ -1030,10 +1097,10 @@ export default function OperationsPage() {
                         }))
                       }
                       placeholder="Delivery partner"
-                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-red-600"
+                      className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-red-600"
                     />
                     <input
-                      value={assignmentNoteDrafts[order.id] ?? assignment?.notes ?? ""}
+                      value={noteValue}
                       onChange={(event) =>
                         setAssignmentNoteDrafts((current) => ({
                           ...current,
@@ -1041,39 +1108,54 @@ export default function OperationsPage() {
                         }))
                       }
                       placeholder="Handoff note or failure reason"
-                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-red-600"
+                      className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-red-600"
                     />
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+
+                  <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                    <span className="font-black text-slate-900">Next:</span>{" "}
+                    {order.delivery_next_action || assignment?.notes || "Add rider, assign, then dispatch."}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       onClick={() => updateDeliveryAssignment(order, "assigned")}
-                      disabled={busyAction === `${order.id}-delivery-assigned`}
-                      className="rounded-md bg-slate-950 px-3 py-2 text-sm font-black text-white hover:bg-red-700 disabled:bg-slate-300"
+                      disabled={!canAssign || busyAction === `${order.id}-delivery-assigned`}
+                      className="h-11 rounded-md bg-slate-950 px-3 text-sm font-black text-white hover:bg-red-700 disabled:bg-slate-300"
                     >
                       Assign
                     </button>
                     <button
                       onClick={() => updateDeliveryAssignment(order, "out_for_delivery")}
-                      disabled={busyAction === `${order.id}-delivery-out_for_delivery`}
-                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:border-red-600"
+                      disabled={!canDispatch || busyAction === `${order.id}-delivery-out_for_delivery`}
+                      className="h-11 rounded-md border border-sky-200 bg-sky-50 px-3 text-sm font-black text-sky-700 hover:bg-sky-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       Dispatch
                     </button>
                     <button
                       onClick={() => updateDeliveryAssignment(order, "delivered")}
-                      disabled={busyAction === `${order.id}-delivery-delivered`}
-                      className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-700 hover:bg-emerald-100"
+                      disabled={!canDeliver || busyAction === `${order.id}-delivery-delivered`}
+                      className="h-11 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-black text-emerald-700 hover:bg-emerald-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       Delivered & Close
                     </button>
                     <button
                       onClick={() => updateDeliveryAssignment(order, "failed")}
-                      disabled={busyAction === `${order.id}-delivery-failed`}
-                      className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-black text-rose-700 hover:bg-rose-100"
+                      disabled={!canFail || busyAction === `${order.id}-delivery-failed`}
+                      className="h-11 rounded-md border border-rose-200 bg-rose-50 px-3 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       Failed
                     </button>
                   </div>
+                  {(!riderValue.trim() || needsAddressReview || paymentDue) && (
+                    <p className="mt-2 text-xs font-bold leading-5 text-amber-800">
+                      {!riderValue.trim()
+                        ? "Add rider before dispatch. "
+                        : ""}
+                      {needsAddressReview ? "Review address before dispatch. " : ""}
+                      {paymentDue ? "Confirm payment before delivered-close." : ""}
+                    </p>
+                  )}
                 </article>
               );
             })}
@@ -1105,10 +1187,8 @@ export default function OperationsPage() {
 
           {!isLoading &&
             visibleOrders.map((order) => {
-              const isPrepaidDue =
-                (order.payment_method || "").toLowerCase() === "prepaid" &&
-                order.payment_status !== "paid";
-              const canClose = order.status !== "closed" && !isPrepaidDue;
+              const blockers = closeBlockers(order);
+              const canClose = order.status !== "closed" && blockers.length === 0;
               const flow = orderFlowById.get(order.id);
               const flowSteps = [
                 {
@@ -1274,7 +1354,7 @@ export default function OperationsPage() {
                     )}
                   </button>
                   <button
-                    title={isPrepaidDue ? "Payment pending" : "Close order"}
+                    title={blockers.length ? `Blocked: ${blockers.join(", ")}` : "Close order"}
                     aria-label={`Close order ${order.id}`}
                     onClick={() => closeOrder(order)}
                     disabled={!canClose}
