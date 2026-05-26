@@ -80,6 +80,16 @@ type DeliveryZone = {
   is_active: boolean;
 };
 
+type DeliveryZoneDraft = {
+  name: string;
+  keywords: string;
+  delivery_fee: number;
+  minimum_order_amount: number;
+  eta_min_minutes: number;
+  eta_max_minutes: number;
+  is_active: boolean;
+};
+
 type DeliveryQuote = {
   is_deliverable: boolean;
   reason?: string | null;
@@ -233,6 +243,16 @@ type SheetSyncResult = {
 const formatMoney = (value?: number | null) =>
   `Rs ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 
+const emptyDeliveryZoneDraft: DeliveryZoneDraft = {
+  name: "",
+  keywords: "",
+  delivery_fee: 49,
+  minimum_order_amount: 0,
+  eta_min_minutes: 35,
+  eta_max_minutes: 50,
+  is_active: true,
+};
+
 export default function Settings() {
   const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
   const [isSecurityLoading, setIsSecurityLoading] = useState(true);
@@ -250,6 +270,9 @@ export default function Settings() {
   const [isDeliveryLoading, setIsDeliveryLoading] = useState(true);
   const [savingZoneId, setSavingZoneId] = useState<number | null>(null);
   const [deliveryMessage, setDeliveryMessage] = useState("");
+  const [newDeliveryZone, setNewDeliveryZone] = useState<DeliveryZoneDraft>(emptyDeliveryZoneDraft);
+  const [isCreatingDeliveryZone, setIsCreatingDeliveryZone] = useState(false);
+  const [archivingZoneId, setArchivingZoneId] = useState<number | null>(null);
   const [quoteAddress, setQuoteAddress] = useState("Civil Lines market, near main road");
   const [quoteSubtotal, setQuoteSubtotal] = useState(249);
   const [quoteZoneId, setQuoteZoneId] = useState<number | null>(null);
@@ -323,6 +346,37 @@ export default function Settings() {
     }
   };
 
+  const loadDeliveryZones = async () => {
+    setIsDeliveryLoading(true);
+    try {
+      const response = await fetch(DELIVERY_ZONES_API, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Delivery zones API failed.");
+      }
+      const data: DeliveryZone[] = await response.json();
+      setDeliveryZones(data);
+      setDeliveryDrafts(
+        data.reduce<Record<number, DeliveryZone>>((drafts, zone) => {
+          drafts[zone.id] = { ...zone, keywords: [...(zone.keywords || [])] };
+          return drafts;
+        }, {})
+      );
+      setQuoteZoneId((current) => {
+        if (current && data.some((zone) => zone.id === current)) return current;
+        return data.find((zone) => zone.is_active)?.id || data[0]?.id || null;
+      });
+    } catch {
+      setDeliveryZones([]);
+      setDeliveryDrafts({});
+    } finally {
+      setIsDeliveryLoading(false);
+      await loadDeliveryEconomics();
+    }
+  };
+
   useEffect(() => {
     let isMounted = true;
     fetch("/api/security-overview", { cache: "no-store", credentials: "include" })
@@ -348,32 +402,9 @@ export default function Settings() {
         }
       });
 
-    fetch(DELIVERY_ZONES_API, { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data: DeliveryZone[]) => {
-        if (isMounted) {
-          setDeliveryZones(data);
-          setDeliveryDrafts(
-            data.reduce<Record<number, DeliveryZone>>((drafts, zone) => {
-              drafts[zone.id] = { ...zone, keywords: [...(zone.keywords || [])] };
-              return drafts;
-            }, {})
-          );
-          setQuoteZoneId(data.find((zone) => zone.is_active)?.id || data[0]?.id || null);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setDeliveryZones([]);
-          setDeliveryDrafts({});
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsDeliveryLoading(false);
-        }
-      });
-    loadDeliveryEconomics();
+    if (isMounted) {
+      void loadDeliveryZones();
+    }
 
     loadPaymentReadiness();
 
@@ -409,6 +440,57 @@ export default function Settings() {
         ...updates,
       },
     }));
+  };
+
+  const updateNewDeliveryZone = (updates: Partial<DeliveryZoneDraft>) => {
+    setNewDeliveryZone((current) => ({
+      ...current,
+      ...updates,
+    }));
+  };
+
+  const keywordListFromText = (value: string) =>
+    value
+      .split(",")
+      .map((keyword) => keyword.trim())
+      .filter(Boolean);
+
+  const createDeliveryZone = async () => {
+    if (!newDeliveryZone.name.trim()) {
+      setDeliveryMessage("Enter a delivery zone name before adding it.");
+      return;
+    }
+
+    setIsCreatingDeliveryZone(true);
+    setDeliveryMessage("");
+    try {
+      const response = await fetch(DELIVERY_ZONES_API, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newDeliveryZone.name.trim(),
+          keywords: keywordListFromText(newDeliveryZone.keywords),
+          delivery_fee: Number(newDeliveryZone.delivery_fee || 0),
+          minimum_order_amount: Number(newDeliveryZone.minimum_order_amount || 0),
+          eta_min_minutes: Number(newDeliveryZone.eta_min_minutes || 1),
+          eta_max_minutes: Number(newDeliveryZone.eta_max_minutes || 1),
+          is_active: newDeliveryZone.is_active,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setDeliveryMessage(data.detail || "Could not add delivery zone.");
+        return;
+      }
+      setNewDeliveryZone(emptyDeliveryZoneDraft);
+      setDeliveryMessage(`${data.name} delivery zone added.`);
+      await loadDeliveryZones();
+    } catch {
+      setDeliveryMessage("Delivery zone API is not available right now.");
+    } finally {
+      setIsCreatingDeliveryZone(false);
+    }
   };
 
   const saveDeliveryZone = async (zoneId: number) => {
@@ -450,6 +532,33 @@ export default function Settings() {
       setDeliveryMessage("Delivery zone API is not available right now.");
     } finally {
       setSavingZoneId(null);
+    }
+  };
+
+  const archiveDeliveryZone = async (zone: DeliveryZone) => {
+    setArchivingZoneId(zone.id);
+    setDeliveryMessage("");
+    try {
+      const response = await fetch(`${DELIVERY_ZONES_API}/${zone.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setDeliveryMessage(data.detail || "Could not archive delivery zone.");
+        return;
+      }
+      const zoneName = data.zone?.name || zone.name;
+      setDeliveryMessage(
+        data.status === "deleted"
+          ? `${zoneName} delivery zone removed.`
+          : `${zoneName} delivery zone archived because it has delivery history.`
+      );
+      await loadDeliveryZones();
+    } catch {
+      setDeliveryMessage("Delivery zone API is not available right now.");
+    } finally {
+      setArchivingZoneId(null);
     }
   };
 
@@ -1179,24 +1288,7 @@ export default function Settings() {
             </div>
           </div>
           <button
-            onClick={() => {
-              setIsDeliveryLoading(true);
-              fetch(DELIVERY_ZONES_API, { cache: "no-store" })
-                .then((response) => response.json())
-                .then((data: DeliveryZone[]) => {
-                  setDeliveryZones(data);
-                  setDeliveryDrafts(
-                    data.reduce<Record<number, DeliveryZone>>((drafts, zone) => {
-                      drafts[zone.id] = { ...zone, keywords: [...(zone.keywords || [])] };
-                      return drafts;
-                    }, {})
-                  );
-                })
-                .finally(() => {
-                  setIsDeliveryLoading(false);
-                  void loadDeliveryEconomics();
-                });
-            }}
+            onClick={loadDeliveryZones}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-red-200 hover:bg-red-50"
           >
             <RefreshCw className="h-4 w-4" /> Refresh Zones
@@ -1336,6 +1428,95 @@ export default function Settings() {
           </div>
         )}
 
+        <div data-testid="delivery-zone-create-panel" className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-red-700">New Zone</p>
+              <p className="mt-1 text-sm font-semibold text-gray-600">
+                Add a delivery area with fee, minimum order, ETA, and matching keywords.
+              </p>
+            </div>
+            <label className="inline-flex items-center gap-2 text-xs font-black text-gray-600">
+              <input
+                type="checkbox"
+                checked={newDeliveryZone.is_active}
+                onChange={(event) =>
+                  updateNewDeliveryZone({ is_active: event.target.checked })
+                }
+                className="h-4 w-4 rounded border-gray-300 text-red-600"
+              />
+              Active
+            </label>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[1.2fr_0.55fr_0.55fr_0.45fr_0.45fr]">
+            <input
+              value={newDeliveryZone.name}
+              onChange={(event) => updateNewDeliveryZone({ name: event.target.value })}
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+              placeholder="Zone name"
+            />
+            <input
+              type="number"
+              min="0"
+              value={newDeliveryZone.delivery_fee}
+              onChange={(event) =>
+                updateNewDeliveryZone({ delivery_fee: Number(event.target.value) || 0 })
+              }
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+              placeholder="Fee"
+            />
+            <input
+              type="number"
+              min="0"
+              value={newDeliveryZone.minimum_order_amount}
+              onChange={(event) =>
+                updateNewDeliveryZone({ minimum_order_amount: Number(event.target.value) || 0 })
+              }
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+              placeholder="Minimum"
+            />
+            <input
+              type="number"
+              min="1"
+              value={newDeliveryZone.eta_min_minutes}
+              onChange={(event) =>
+                updateNewDeliveryZone({ eta_min_minutes: Number(event.target.value) || 1 })
+              }
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+              placeholder="ETA min"
+            />
+            <input
+              type="number"
+              min="1"
+              value={newDeliveryZone.eta_max_minutes}
+              onChange={(event) =>
+                updateNewDeliveryZone({ eta_max_minutes: Number(event.target.value) || 1 })
+              }
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-black text-gray-900 outline-none focus:border-red-500"
+              placeholder="ETA max"
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto]">
+            <input
+              value={newDeliveryZone.keywords}
+              onChange={(event) =>
+                updateNewDeliveryZone({ keywords: event.target.value })
+              }
+              className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-semibold text-gray-700 outline-none focus:border-red-500"
+              placeholder="Coverage keywords separated by comma"
+            />
+            <button
+              onClick={createDeliveryZone}
+              disabled={isCreatingDeliveryZone}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-3 text-sm font-black text-white hover:bg-red-800 disabled:bg-gray-300"
+            >
+              <Plus className="h-4 w-4" />
+              {isCreatingDeliveryZone ? "Adding" : "Add Zone"}
+            </button>
+          </div>
+        </div>
+
         {isDeliveryLoading ? (
           <div className="mt-5 rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm font-semibold text-gray-500">
             Loading delivery zones...
@@ -1450,6 +1631,14 @@ export default function Settings() {
                   >
                     <Save className="h-4 w-4" />
                     {savingZoneId === zone.id ? "Saving" : "Save Zone"}
+                  </button>
+                  <button
+                    onClick={() => archiveDeliveryZone(zone)}
+                    disabled={archivingZoneId === zone.id}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-sm font-black text-gray-700 hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {archivingZoneId === zone.id ? "Archiving" : "Archive Zone"}
                   </button>
                 </div>
               );

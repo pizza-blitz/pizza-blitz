@@ -35,6 +35,16 @@ class DeliveryZoneUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class DeliveryZoneCreate(BaseModel):
+    name: str
+    keywords: List[str] = Field(default_factory=list)
+    delivery_fee: float = Field(default=0, ge=0)
+    minimum_order_amount: float = Field(default=0, ge=0)
+    eta_min_minutes: int = Field(default=25, ge=1)
+    eta_max_minutes: int = Field(default=45, ge=1)
+    is_active: bool = True
+
+
 class DeliveryAssignmentUpdate(BaseModel):
     assigned_to: Optional[str] = None
     status: str = "assigned"
@@ -44,6 +54,19 @@ class DeliveryAssignmentUpdate(BaseModel):
 def ensure_delivery_zones(db: Session) -> None:
     seed_default_delivery_zones(db)
     db.commit()
+
+
+def normalized_keywords(keywords: Optional[List[str]]) -> list[str]:
+    return [
+        keyword.strip().lower()
+        for keyword in (keywords or [])
+        if keyword and keyword.strip()
+    ]
+
+
+def validate_eta_window(min_minutes: int, max_minutes: int) -> None:
+    if min_minutes > max_minutes:
+        raise HTTPException(status_code=422, detail="Minimum ETA cannot be greater than maximum ETA.")
 
 
 def serialize_delivery_assignment(assignment: DeliveryAssignment) -> dict:
@@ -219,6 +242,37 @@ def list_delivery_zones(db: Session = Depends(get_db)):
     return [serialize_delivery_zone(zone) for zone in zones]
 
 
+@router.post("/zones")
+def create_delivery_zone(
+    payload: DeliveryZoneCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    ensure_delivery_zones(db)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Delivery zone name is required.")
+    duplicate = db.query(DeliveryZone).filter(DeliveryZone.name == name).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A delivery zone with this name already exists.")
+    validate_eta_window(payload.eta_min_minutes, payload.eta_max_minutes)
+
+    zone = DeliveryZone(
+        name=name,
+        keywords=normalized_keywords(payload.keywords),
+        delivery_fee=round(float(payload.delivery_fee or 0), 2),
+        minimum_order_amount=round(float(payload.minimum_order_amount or 0), 2),
+        eta_min_minutes=int(payload.eta_min_minutes),
+        eta_max_minutes=int(payload.eta_max_minutes),
+        is_active=payload.is_active,
+    )
+    db.add(zone)
+    db.commit()
+    db.refresh(zone)
+    return serialize_delivery_zone(zone)
+
+
 @router.get("/economics")
 def delivery_economics(
     db: Session = Depends(get_db),
@@ -337,11 +391,7 @@ def update_delivery_zone(
         zone.name = name
 
     if payload.keywords is not None:
-        zone.keywords = [
-            keyword.strip().lower()
-            for keyword in payload.keywords
-            if keyword and keyword.strip()
-        ]
+        zone.keywords = normalized_keywords(payload.keywords)
     if payload.delivery_fee is not None:
         zone.delivery_fee = round(float(payload.delivery_fee), 2)
     if payload.minimum_order_amount is not None:
@@ -350,18 +400,50 @@ def update_delivery_zone(
         zone.eta_min_minutes = int(payload.eta_min_minutes)
     if payload.eta_max_minutes is not None:
         zone.eta_max_minutes = int(payload.eta_max_minutes)
-    if (
-        zone.eta_min_minutes is not None
-        and zone.eta_max_minutes is not None
-        and zone.eta_min_minutes > zone.eta_max_minutes
-    ):
-        raise HTTPException(status_code=422, detail="Minimum ETA cannot be greater than maximum ETA.")
+    if zone.eta_min_minutes is not None and zone.eta_max_minutes is not None:
+        validate_eta_window(zone.eta_min_minutes, zone.eta_max_minutes)
     if payload.is_active is not None:
         zone.is_active = payload.is_active
 
     db.commit()
     db.refresh(zone)
     return serialize_delivery_zone(zone)
+
+
+@router.delete("/zones/{zone_id}")
+def archive_delivery_zone(
+    zone_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    ensure_delivery_zones(db)
+    zone = db.query(DeliveryZone).filter(DeliveryZone.id == zone_id).first()
+    if zone is None:
+        raise HTTPException(status_code=404, detail="Delivery zone not found.")
+
+    has_assignments = (
+        db.query(DeliveryAssignment)
+        .filter(DeliveryAssignment.zone_id == zone_id)
+        .first()
+        is not None
+    )
+    if has_assignments:
+        zone.is_active = False
+        db.commit()
+        db.refresh(zone)
+        return {
+            "status": "archived",
+            "reason": "Zone has delivery history, so it was deactivated instead of deleted.",
+            "zone": serialize_delivery_zone(zone),
+        }
+
+    db.delete(zone)
+    db.commit()
+    return {
+        "status": "deleted",
+        "zone_id": zone_id,
+    }
 
 
 @router.post("/quote")
