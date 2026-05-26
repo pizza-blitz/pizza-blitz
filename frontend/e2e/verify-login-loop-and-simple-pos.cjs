@@ -38,6 +38,11 @@ async function main() {
       assert(!page.url().includes("/login"), `${path} redirected back to login.`);
     }
 
+    await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
+    for (const lane of ["open", "preparing", "ready", "closed"]) {
+      await page.getByTestId(`kitchen-lane-${lane}`).waitFor({ timeout: 15000 });
+    }
+
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("counter-new-takeaway").click();
     await page.getByPlaceholder("Search pizza, sides, drinks").waitFor({ timeout: 15000 });

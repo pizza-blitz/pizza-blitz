@@ -271,6 +271,35 @@ export default function OperationsPage() {
     if (filter === "payment_due") return paymentDueOrders;
     return orders.filter((order) => order.status === filter);
   }, [activeOrders, addressReviewOrders, deliveryOrders, filter, orders, paymentDueOrders]);
+  const kitchenLanes = useMemo(
+    () => [
+      {
+        key: "open",
+        label: "New",
+        tone: "border-orange-200 bg-orange-50",
+        orders: activeOrders.filter((order) => order.status === "open"),
+      },
+      {
+        key: "preparing",
+        label: "Preparing",
+        tone: "border-sky-200 bg-sky-50",
+        orders: activeOrders.filter((order) => order.status === "preparing"),
+      },
+      {
+        key: "ready",
+        label: "Ready",
+        tone: "border-emerald-200 bg-emerald-50",
+        orders: activeOrders.filter((order) => order.status === "ready"),
+      },
+      {
+        key: "closed",
+        label: "Closed",
+        tone: "border-slate-200 bg-slate-50",
+        orders: orders.filter((order) => order.status === "closed").slice(0, 6),
+      },
+    ],
+    [activeOrders, orders]
+  );
 
   useEffect(() => {
     fetchOrders();
@@ -559,6 +588,134 @@ export default function OperationsPage() {
           {message}
         </div>
       )}
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-gray-950">Kitchen Board</h2>
+            <p className="text-sm text-gray-500">
+              Simple lane view for cooking, ready handoff, and closing orders.
+            </p>
+          </div>
+          <div className="flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+            {["active", "ready", "closed"].map((lane) => (
+              <button
+                key={lane}
+                onClick={() => setFilter(lane)}
+                className="rounded-md px-3 py-2 text-xs font-black uppercase text-gray-600 hover:bg-gray-100"
+              >
+                {lane}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-4">
+          {kitchenLanes.map((lane) => (
+            <div
+              key={lane.key}
+              data-testid={`kitchen-lane-${lane.key}`}
+              className={`min-h-64 rounded-lg border p-3 shadow-sm ${lane.tone}`}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-black uppercase tracking-wide text-gray-900">
+                  {lane.label}
+                </h3>
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-gray-800 shadow-sm">
+                  {lane.orders.length}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {lane.orders.map((order) => {
+                  const isPrepaidDue =
+                    (order.payment_method || "").toLowerCase() === "prepaid" &&
+                    order.payment_status !== "paid";
+                  return (
+                    <article
+                      key={`${lane.key}-${order.id}`}
+                      className="rounded-lg border border-white/70 bg-white p-3 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-black text-gray-950">#{order.id}</p>
+                          <p className="mt-0.5 text-xs font-bold uppercase text-gray-500">
+                            {order.table_number
+                              ? `Table ${order.table_number}`
+                              : order.fulfillment_type || order.order_type}
+                          </p>
+                        </div>
+                        <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-black text-gray-700">
+                          {ageLabel(order.created_at)}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-1">
+                        {order.items.slice(0, 4).map((item, index) => (
+                          <p
+                            key={`${order.id}-${item.name}-${index}`}
+                            className="text-sm font-semibold leading-5 text-gray-700"
+                          >
+                            {itemSummary(item)}
+                          </p>
+                        ))}
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {order.status === "open" && (
+                          <button
+                            onClick={() => updateStatus(order, "preparing")}
+                            disabled={busyAction === `${order.id}-preparing`}
+                            className="col-span-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
+                          >
+                            Start Prep
+                          </button>
+                        )}
+                        {order.status === "preparing" && (
+                          <button
+                            onClick={() => updateStatus(order, "ready")}
+                            disabled={busyAction === `${order.id}-ready`}
+                            className="col-span-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            Mark Ready
+                          </button>
+                        )}
+                        {order.status === "ready" && (
+                          <>
+                            <Link
+                              href={`/receipt/${order.id}`}
+                              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-center text-sm font-black text-gray-700 hover:bg-gray-50"
+                            >
+                              Bill
+                            </Link>
+                            <button
+                              onClick={() => closeOrder(order)}
+                              disabled={isPrepaidDue || busyAction === `${order.id}-close`}
+                              className="rounded-md bg-gray-950 px-3 py-2 text-sm font-black text-white hover:bg-gray-800 disabled:bg-gray-300"
+                            >
+                              Close
+                            </button>
+                          </>
+                        )}
+                        {order.status === "closed" && (
+                          <Link
+                            href={`/receipt/${order.id}`}
+                            className="col-span-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-center text-sm font-black text-gray-700 hover:bg-gray-50"
+                          >
+                            Receipt
+                          </Link>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+                {!lane.orders.length && (
+                  <div className="rounded-lg border border-dashed border-white/80 bg-white/60 p-5 text-center text-sm font-semibold text-gray-500">
+                    No orders.
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section data-testid="operations-order-flow-watch" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
