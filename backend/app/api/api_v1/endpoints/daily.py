@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.domain import DailySales, GoogleSheetSync, WasteLog
 from pydantic import BaseModel
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 import calendar
 import io
@@ -22,11 +22,16 @@ def list_sales(db: Session = Depends(get_db)):
 @router.get("/reconciliation")
 def sales_reconciliation(
     expected_min_total: float = Query(default=3000000, ge=0),
+    detail: str = Query(default="full"),
+    limit: int = Query(default=12, ge=1, le=60),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Month-wise import health so source-sheet gaps are visible before reports are trusted."""
+    if detail not in {"full", "summary"}:
+      raise HTTPException(status_code=400, detail="detail must be full or summary")
+
     today = date.today()
     parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
     parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else today
@@ -51,14 +56,25 @@ def sales_reconciliation(
           "total_expense": 0.0,
           "profit": 0.0,
           "days_with_sales": 0,
+          "days_with_amount": 0,
+          "zero_sale_days": 0,
           "first_date": row.date.isoformat(),
           "last_date": row.date.isoformat(),
+          "imported_dates": set(),
+          "zero_sale_dates": [],
         },
       )
-      month["total_sale"] += float(row.total_sale or 0)
+      sale_amount = float(row.total_sale or 0)
+      month["total_sale"] += sale_amount
       month["total_expense"] += float(row.total_expense or 0)
       month["profit"] += float(row.profit or 0)
       month["days_with_sales"] += 1
+      month["imported_dates"].add(row.date.isoformat())
+      if sale_amount > 0:
+        month["days_with_amount"] += 1
+      else:
+        month["zero_sale_days"] += 1
+        month["zero_sale_dates"].append(row.date.isoformat())
       month["first_date"] = min(month["first_date"], row.date.isoformat())
       month["last_date"] = max(month["last_date"], row.date.isoformat())
 
@@ -73,16 +89,58 @@ def sales_reconciliation(
         month_end = min(month_end, parsed_end)
       expected_days = max((month_end - month_start).days + 1, 0)
       row = month_map[month_key]
+      expected_dates = [
+        (month_start + timedelta(days=offset)).isoformat()
+        for offset in range(expected_days)
+      ]
+      imported_dates = set(row.pop("imported_dates"))
+      missing_dates = [item for item in expected_dates if item not in imported_dates]
       row["expected_days"] = expected_days
-      row["missing_days"] = max(expected_days - int(row["days_with_sales"]), 0)
+      row["missing_days"] = len(missing_dates)
+      row["missing_dates"] = missing_dates
+      row["zero_sale_dates"] = sorted(row["zero_sale_dates"])
       row["coverage_percent"] = round(
         (int(row["days_with_sales"]) / expected_days) * 100,
         1,
       ) if expected_days else 0
-      row["status"] = "complete" if row["missing_days"] == 0 else "needs_review"
+      if row["missing_days"] == 0 and row["zero_sale_days"] == 0:
+        row["status"] = "complete"
+        row["repair_priority"] = "clear"
+        row["repair_action"] = "No repair needed."
+      elif row["missing_days"] >= 7 or row["zero_sale_days"] > 0:
+        row["status"] = "needs_review"
+        row["repair_priority"] = "high"
+        row["repair_action"] = "Open the source sheet month and repair missing or zero-sale dates first."
+      else:
+        row["status"] = "needs_review"
+        row["repair_priority"] = "medium"
+        row["repair_action"] = "Cross-check the listed dates against the source sheet."
       month_rows.append(row)
 
     imported_total = sum(float(row.total_sale or 0) for row in rows)
+    repair_queue = [
+      row for row in month_rows
+      if row["status"] != "complete"
+    ]
+    repair_queue.sort(
+      key=lambda row: (
+        0 if row["repair_priority"] == "high" else 1,
+        -(int(row["missing_days"]) + int(row["zero_sale_days"])),
+        row["month"],
+      )
+    )
+    def compact_month(row: dict) -> dict:
+      compact = dict(row)
+      if detail == "summary":
+        compact["missing_dates"] = list(compact.get("missing_dates") or [])[:8]
+        compact["zero_sale_dates"] = list(compact.get("zero_sale_dates") or [])[:8]
+      return compact
+
+    response_months = [compact_month(row) for row in month_rows]
+    response_repair_queue = [
+      compact_month(row)
+      for row in (repair_queue[:limit] if detail == "summary" else repair_queue)
+    ]
     last_sync = db.query(GoogleSheetSync).order_by(GoogleSheetSync.id.desc()).first()
     return {
       "expected_min_total": expected_min_total,
@@ -98,8 +156,11 @@ def sales_reconciliation(
         "rows_imported": last_sync.rows_imported,
         "last_synced_at": last_sync.last_synced_at.isoformat() if last_sync.last_synced_at else None,
       } if last_sync else None,
-      "months": month_rows,
-      "next_action": "Import remaining Google Sheet months sequentially and re-run reconciliation until gap is zero.",
+      "months": response_months,
+      "repair_queue": response_repair_queue,
+      "repair_queue_count": len(repair_queue),
+      "next_repair_month": repair_queue[0]["month"] if repair_queue else None,
+      "next_action": "Repair the highest-priority month in the queue, then re-run reconciliation until every month is complete.",
     }
 
 class DailyEntryRequest(BaseModel):

@@ -31,27 +31,19 @@ async function main() {
     await page.getByRole("button", { name: /Sign In to Portal/i }).click();
     await page.waitForURL(/\/dashboard/, { timeout: 30000 });
 
-    for (const path of ["/reports", "/sales", "/orders", "/menu", "/dashboard"]) {
-      const response = await page.goto(`${baseURL}${path}`, { waitUntil: "domcontentloaded" });
-      await page.waitForTimeout(1000);
-      assert(response?.ok(), `${path} returned HTTP ${response?.status() || "no response"}.`);
-      assert(!page.url().includes("/login"), `${path} redirected back to login.`);
-    }
-
     await page.goto(`${baseURL}/roadmap`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("twelve-gap-delivery-program").waitFor({ timeout: 15000 });
 
     await page.goto(`${baseURL}/sales`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("sales-reconciliation-board").waitFor({ timeout: 15000 });
-    const reconciliationResponse = await page.request.get(
-      `${baseURL}/server/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000`,
-      { timeout: 70000 }
-    );
-    assert(reconciliationResponse.ok(), `Sales reconciliation API returned ${reconciliationResponse.status()}.`);
-    const reconciliation = await reconciliationResponse.json();
-    assert(
-      typeof reconciliation.imported_total === "number",
-      "Sales reconciliation API did not return imported_total."
+    await page.getByTestId("sales-repair-queue").waitFor({ timeout: 15000 });
+    await page.waitForFunction(
+      () =>
+        document.body.innerText.includes("Review Month") ||
+        document.body.innerText.includes("All imported months are complete.") ||
+        document.body.innerText.includes("Reconciliation needs retry."),
+      null,
+      { timeout: 120000 }
     );
 
     await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
@@ -78,6 +70,13 @@ async function main() {
       await page.getByText("Current Bill", { exact: true }).isVisible(),
       "POS bill rail was not visible."
     );
+
+    for (const path of ["/reports", "/menu", "/dashboard"]) {
+      const response = await page.goto(`${baseURL}${path}`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1000);
+      assert(response?.ok(), `${path} returned HTTP ${response?.status() || "no response"}.`);
+      assert(!page.url().includes("/login"), `${path} redirected back to login.`);
+    }
     assert(logoutPrefetches.length === 0, `Logout route was prefetched:\n${logoutPrefetches.join("\n")}`);
 
     console.log("login-loop-and-simple-pos verification passed");

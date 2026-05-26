@@ -9,6 +9,8 @@ export default function SalesHistory() {
   const [summary, setSummary] = useState<any>(null);
   const [reconciliation, setReconciliation] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isReconciliationLoading, setIsReconciliationLoading] = useState(true);
+  const [reconciliationError, setReconciliationError] = useState("");
   
   // New Month/Year Filter State
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -20,29 +22,53 @@ export default function SalesHistory() {
 
   const fetchData = async () => {
     setIsLoading(true);
+    setIsReconciliationLoading(true);
+    setReconciliationError("");
+
+    const fetchJson = async (endpoint: string, init?: RequestInit) => {
+      const response = await fetch(getApiUrl(endpoint), {
+        cache: "no-store",
+        credentials: "include",
+        ...init,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || `Request failed: ${endpoint}`);
+      return payload;
+    };
+
+    const reconciliationController = new AbortController();
+    const reconciliationTimer = window.setTimeout(() => reconciliationController.abort(), 75000);
+    const reconciliationRequest = fetchJson(
+      '/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000&detail=summary&limit=12',
+      { signal: reconciliationController.signal }
+    )
+      .then((reconciliationRes) => {
+        setReconciliation(reconciliationRes);
+      })
+      .catch((error) => {
+        console.error("Failed to fetch sales reconciliation", error);
+        setReconciliation(null);
+        setReconciliationError("Reconciliation needs retry. The sales table is available, but the month repair queue could not load yet.");
+      })
+      .finally(() => {
+        window.clearTimeout(reconciliationTimer);
+        setIsReconciliationLoading(false);
+      });
+
     try {
-      const fetchJson = async (endpoint: string) => {
-        const response = await fetch(getApiUrl(endpoint), {
-          cache: "no-store",
-          credentials: "include",
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.detail || `Request failed: ${endpoint}`);
-        return payload;
-      };
-      const [salesRes, statsRes, reconciliationRes] = await Promise.all([
+      const [salesRes, statsRes] = await Promise.all([
         fetchJson('/api/v1/restaurant/sales/'),
-        fetchJson('/api/v1/restaurant/stats/dashboard-stats?period=30days'),
-        fetchJson('/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000')
+        fetchJson('/api/v1/restaurant/stats/dashboard-stats?period=30days')
       ]);
       setSalesData(Array.isArray(salesRes) ? salesRes : []);
       setSummary(statsRes.metrics);
-      setReconciliation(reconciliationRes);
     } catch (error) {
       console.error("Failed to fetch sales history", error);
     } finally {
       setIsLoading(false);
     }
+
+    await reconciliationRequest;
   };
 
   const handleExport = () => {
@@ -66,6 +92,12 @@ export default function SalesHistory() {
   const selectedMonthReconciliation = reconciliation?.months?.find((row: any) => row.month === selectedMonthKey);
   const money = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
   const reconciliationGap = reconciliation ? Number(reconciliation.gap_to_expected || 0) : 3000000;
+  const repairRows = (reconciliation?.repair_queue || []).slice(0, 12);
+  const selectRepairMonth = (monthKey: string) => {
+    const [year, month] = monthKey.split("-");
+    setSelectedYear(Number(year));
+    setSelectedMonth(Number(month) - 1);
+  };
 
   return (
     <div className="space-y-6">
@@ -174,6 +206,126 @@ export default function SalesHistory() {
               Last sheet sync: {reconciliation?.last_sheet_sync?.last_synced_at || "No sync recorded yet"}
             </p>
           </div>
+        </div>
+      </section>
+
+      <section data-testid="sales-repair-queue" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-orange-600">Month Repair Queue</p>
+            <h2 className="mt-1 text-xl font-black text-gray-950">Fix Missing And Zero-Sale Dates First</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">
+              Work this queue from top to bottom. Selecting a month updates the archive filter above, so the source sheet
+              and portal month can be checked side by side.
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-black uppercase text-gray-500">
+            {isReconciliationLoading
+              ? "Loading queue"
+              : reconciliationError
+                ? "Retry needed"
+                : `${reconciliation?.repair_queue_count || 0} months need review`}
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50 text-xs uppercase tracking-wide text-gray-400">
+                <th className="px-4 py-3 font-black">Month</th>
+                <th className="px-4 py-3 font-black">Priority</th>
+                <th className="px-4 py-3 font-black">Imported Sale</th>
+                <th className="px-4 py-3 font-black">Coverage</th>
+                <th className="px-4 py-3 font-black">Dates To Check</th>
+                <th className="px-4 py-3 font-black text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isReconciliationLoading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm font-bold text-gray-400">
+                    Loading repair queue...
+                  </td>
+                </tr>
+              ) : reconciliationError ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center">
+                    <p className="text-sm font-black text-amber-700">Reconciliation needs retry.</p>
+                    <p className="mt-2 text-sm font-semibold text-gray-500">{reconciliationError}</p>
+                    <button
+                      onClick={fetchData}
+                      className="mt-4 rounded-md bg-gray-950 px-4 py-2 text-xs font-black uppercase text-white hover:bg-gray-800"
+                    >
+                      Retry Queue
+                    </button>
+                  </td>
+                </tr>
+              ) : repairRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm font-bold text-emerald-700">
+                    All imported months are complete.
+                  </td>
+                </tr>
+              ) : (
+                repairRows.map((row: any) => {
+                  const datesToCheck = [
+                    ...(row.missing_dates || []).slice(0, 4),
+                    ...(row.zero_sale_dates || []).slice(0, 3),
+                  ];
+                  return (
+                    <tr key={row.month} className="border-b border-gray-100 align-top last:border-b-0">
+                      <td className="px-4 py-4">
+                        <p className="font-black text-gray-950">{row.month}</p>
+                        <p className="mt-1 text-xs font-semibold text-gray-400">
+                          {row.days_with_sales}/{row.expected_days} records
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex rounded-md border px-2 py-1 text-xs font-black uppercase ${
+                          row.repair_priority === "high"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-amber-200 bg-amber-50 text-amber-700"
+                        }`}>
+                          {row.repair_priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 font-black text-gray-800">{money(row.total_sale)}</td>
+                      <td className="px-4 py-4">
+                        <p className="font-black text-gray-900">{row.coverage_percent}%</p>
+                        <p className="mt-1 text-xs font-semibold text-gray-500">
+                          {row.missing_days} missing | {row.zero_sale_days} zero-sale
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {datesToCheck.length ? (
+                            datesToCheck.map((item: string) => (
+                              <span key={`${row.month}-${item}`} className="rounded-md bg-gray-100 px-2 py-1 text-xs font-bold text-gray-600">
+                                {item}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-xs font-semibold text-gray-400">No date list returned</span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-xs font-semibold leading-5 text-gray-500">
+                          {row.repair_action}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <button
+                          onClick={() => selectRepairMonth(row.month)}
+                          className="rounded-md bg-gray-950 px-3 py-2 text-xs font-black uppercase text-white hover:bg-gray-800"
+                        >
+                          Review Month
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 

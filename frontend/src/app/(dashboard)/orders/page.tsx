@@ -183,6 +183,7 @@ export default function OrdersPage() {
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
   const [menuSearch, setMenuSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const defaultDraftForItem = (item: MenuItem) => {
     const draft: Record<number, number[]> = {};
@@ -290,6 +291,7 @@ export default function OrdersPage() {
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
 
   useEffect(() => {
+    setIsHydrated(true);
     fetchData();
   }, []);
 
@@ -632,21 +634,24 @@ export default function OrdersPage() {
         </div>
         <div className="flex gap-3">
           <button
+            disabled={!isHydrated}
             onClick={fetchData}
-            className="bg-white/5 text-white px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all"
+            className="bg-white/5 text-white px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all disabled:cursor-wait disabled:opacity-60"
           >
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
           <button
             data-testid="counter-new-takeaway"
+            disabled={!isHydrated}
             onClick={() => openOrderModal()}
-            className="bg-white text-black px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-500 hover:text-white transition-all shadow-lg active:scale-95"
+            className="bg-white text-black px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-500 hover:text-white transition-all shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-60"
           >
             <Plus className="w-5 h-5" /> Takeaway
           </button>
           <button
+            disabled={!isHydrated}
             onClick={() => openOrderModal(undefined, "delivery")}
-            className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-600 transition-all shadow-lg active:scale-95"
+            className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-orange-600 transition-all shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-60"
           >
             <Truck className="w-5 h-5" /> Delivery
           </button>
