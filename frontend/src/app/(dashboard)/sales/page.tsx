@@ -11,6 +11,10 @@ export default function SalesHistory() {
   const [isLoading, setIsLoading] = useState(true);
   const [isReconciliationLoading, setIsReconciliationLoading] = useState(true);
   const [reconciliationError, setReconciliationError] = useState("");
+  const [repairSheetUrl, setRepairSheetUrl] = useState("");
+  const [repairImportingMonth, setRepairImportingMonth] = useState("");
+  const [repairImportMessage, setRepairImportMessage] = useState("");
+  const [repairImportResult, setRepairImportResult] = useState<any>(null);
   
   // New Month/Year Filter State
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -93,10 +97,48 @@ export default function SalesHistory() {
   const money = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
   const reconciliationGap = reconciliation ? Number(reconciliation.gap_to_expected || 0) : 3000000;
   const repairRows = (reconciliation?.repair_queue || []).slice(0, 12);
+  const nextRepairMonth = reconciliation?.next_repair_month || repairRows[0]?.month || "";
   const selectRepairMonth = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
     setSelectedYear(Number(year));
     setSelectedMonth(Number(month) - 1);
+  };
+  const importRepairMonth = async (monthKey: string) => {
+    if (!monthKey) return;
+    if (!repairSheetUrl.trim()) {
+      setRepairImportMessage("Paste the Google Sheet URL before importing a repair month.");
+      return;
+    }
+
+    setRepairImportingMonth(monthKey);
+    setRepairImportMessage("");
+    setRepairImportResult(null);
+    try {
+      const response = await fetch(getApiUrl('/api/v1/restaurant/import/sheets'), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sheet_url: repairSheetUrl.trim(),
+          mode: "month",
+          target_month: monthKey,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setRepairImportMessage(data.detail || `${monthKey} import failed.`);
+        return;
+      }
+      setRepairImportResult(data.data);
+      setRepairImportMessage(
+        `${monthKey}: imported ${data.data.rows_imported || 0} rows, created ${data.data.rows_created || 0}, updated ${data.data.rows_updated || 0}.`
+      );
+      await fetchData();
+    } catch (error) {
+      setRepairImportMessage("Month repair import API is not available right now.");
+    } finally {
+      setRepairImportingMonth("");
+    }
   };
 
   return (
@@ -228,6 +270,42 @@ export default function SalesHistory() {
           </div>
         </div>
 
+        <div data-testid="sales-repair-import-command" className="mt-5 rounded-lg border border-orange-100 bg-orange-50 p-4">
+          <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+            <label className="text-xs font-black uppercase tracking-widest text-orange-700">
+              Source Google Sheet
+              <input
+                type="url"
+                value={repairSheetUrl}
+                onChange={(event) => setRepairSheetUrl(event.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="mt-2 w-full rounded-md border border-orange-200 bg-white px-3 py-3 text-sm font-semibold normal-case tracking-normal text-gray-800 outline-none focus:border-orange-500"
+              />
+            </label>
+            <button
+              onClick={() => importRepairMonth(nextRepairMonth)}
+              disabled={!nextRepairMonth || !!repairImportingMonth}
+              className="rounded-md bg-orange-600 px-4 py-3 text-xs font-black uppercase text-white hover:bg-orange-700 disabled:bg-gray-300"
+            >
+              {repairImportingMonth === nextRepairMonth ? "Importing" : `Import ${nextRepairMonth || "Next Month"}`}
+            </button>
+          </div>
+          {repairImportMessage && (
+            <div className={`mt-3 rounded-md border px-3 py-2 text-sm font-semibold ${
+              repairImportResult
+                ? "border-emerald-100 bg-white text-emerald-700"
+                : "border-amber-100 bg-white text-amber-700"
+            }`}>
+              {repairImportMessage}
+            </div>
+          )}
+          {repairImportResult?.skip_reasons?.length ? (
+            <div className="mt-2 rounded-md bg-white px-3 py-2 text-xs font-semibold text-gray-600">
+              {repairImportResult.skip_reasons.slice(0, 3).join(" ")}
+            </div>
+          ) : null}
+        </div>
+
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[900px] border-collapse text-left text-sm">
             <thead>
@@ -313,12 +391,21 @@ export default function SalesHistory() {
                         </p>
                       </td>
                       <td className="px-4 py-4 text-right">
-                        <button
-                          onClick={() => selectRepairMonth(row.month)}
-                          className="rounded-md bg-gray-950 px-3 py-2 text-xs font-black uppercase text-white hover:bg-gray-800"
-                        >
-                          Review Month
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={() => selectRepairMonth(row.month)}
+                            className="rounded-md bg-gray-950 px-3 py-2 text-xs font-black uppercase text-white hover:bg-gray-800"
+                          >
+                            Review
+                          </button>
+                          <button
+                            onClick={() => importRepairMonth(row.month)}
+                            disabled={!!repairImportingMonth}
+                            className="rounded-md bg-orange-600 px-3 py-2 text-xs font-black uppercase text-white hover:bg-orange-700 disabled:bg-gray-300"
+                          >
+                            {repairImportingMonth === row.month ? "Importing" : "Import"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

@@ -14,6 +14,7 @@ router = APIRouter()
 class SheetImportRequest(BaseModel):
     sheet_url: str
     mode: str = "all"
+    target_month: str | None = None
 
 
 @router.post("/sheets")
@@ -28,12 +29,20 @@ def import_from_sheets(
     try:
         target_url = (payload.sheet_url if payload else sheet_url) or ""
         import_mode = (payload.mode if payload else mode) or "all"
+        target_month = payload.target_month if payload else None
         if not target_url.strip():
             raise HTTPException(status_code=422, detail="Google Sheet URL is required.")
-        if import_mode not in {"all", "current"}:
-            raise HTTPException(status_code=422, detail="Import mode must be 'all' or 'current'.")
+        if import_mode not in {"all", "current", "month"}:
+            raise HTTPException(status_code=422, detail="Import mode must be 'all', 'current', or 'month'.")
+        if import_mode == "month" and not target_month:
+            raise HTTPException(status_code=422, detail="Target month is required for month repair import.")
         service = SheetsService()
-        result = service.process_and_import(db, target_url.strip(), import_mode)
+        result = service.process_and_import(
+            db,
+            target_url.strip(),
+            import_mode,
+            target_month=target_month,
+        )
         if result.get("status") == "error":
             raise HTTPException(status_code=422, detail=result.get("message") or "No rows were imported.")
         return {"status": "success", "data": result}

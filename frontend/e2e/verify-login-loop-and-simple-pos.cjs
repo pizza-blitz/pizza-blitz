@@ -37,9 +37,10 @@ async function main() {
     await page.goto(`${baseURL}/sales`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("sales-reconciliation-board").waitFor({ timeout: 15000 });
     await page.getByTestId("sales-repair-queue").waitFor({ timeout: 15000 });
+    await page.getByTestId("sales-repair-import-command").waitFor({ timeout: 15000 });
     await page.waitForFunction(
       () =>
-        document.body.innerText.includes("Review Month") ||
+        document.body.innerText.includes("Import 20") ||
         document.body.innerText.includes("All imported months are complete.") ||
         document.body.innerText.includes("Reconciliation needs retry."),
       null,

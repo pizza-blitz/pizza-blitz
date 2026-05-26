@@ -341,6 +341,7 @@ class SheetsService:
         source_label: str,
         mode: str = "all",
         tab_name: str | None = None,
+        target_month: str | None = None,
     ) -> Dict[str, Any]:
         if not rows:
             return {
@@ -381,6 +382,8 @@ class SheetsService:
                 continue
 
             if mode == "current" and (parsed_date.year != current.year or parsed_date.month != current.month):
+                continue
+            if mode == "month" and parsed_date.strftime("%Y-%m") != target_month:
                 continue
 
             sale = self._money(self._cell(row, mapping.get("sale")))
@@ -427,9 +430,16 @@ class SheetsService:
             "skip_reasons": skip_reasons,
             "date_start": min(imported_dates) if imported_dates else None,
             "date_end": max(imported_dates) if imported_dates else None,
+            "target_month": target_month,
         }
 
-    def _import_with_google_credentials(self, db: Session, sheet_url: str, mode: str) -> Dict[str, Any] | None:
+    def _import_with_google_credentials(
+        self,
+        db: Session,
+        sheet_url: str,
+        mode: str,
+        target_month: str | None = None,
+    ) -> Dict[str, Any] | None:
         tabs = self.fetch_all_sheet_tabs(sheet_url)
         if not tabs:
             return None
@@ -449,8 +459,20 @@ class SheetsService:
         for tab in tabs:
             if "summary" in tab.lower() or "yearly" in tab.lower():
                 continue
+            tab_month = self._month_from_tab_title(tab)
+            if target_month and tab_month:
+                year, month = tab_month
+                if f"{year:04d}-{month:02d}" != target_month:
+                    continue
             rows = self.fetch_sheet_data(sheet_url, range_name=f"'{tab}'!A:Z")
-            result = self.import_rows(db, rows, source_label=f"Google tab {tab}", mode=mode, tab_name=tab)
+            result = self.import_rows(
+                db,
+                rows,
+                source_label=f"Google tab {tab}",
+                mode=mode,
+                tab_name=tab,
+                target_month=target_month,
+            )
             if result["rows_found"] == 0:
                 continue
             combined["tabs_processed"].append(tab)
@@ -471,9 +493,16 @@ class SheetsService:
             "months_processed": len(combined["tabs_processed"]),
             "source": "google_sheets_api",
             "status": "success",
+            "target_month": target_month,
         }
 
-    def _import_public_gviz_tabs(self, db: Session, sheet_url: str, mode: str) -> Dict[str, Any] | None:
+    def _import_public_gviz_tabs(
+        self,
+        db: Session,
+        sheet_url: str,
+        mode: str,
+        target_month: str | None = None,
+    ) -> Dict[str, Any] | None:
         combined = {
             "rows_found": 0,
             "rows_imported": 0,
@@ -486,7 +515,11 @@ class SheetsService:
             "date_end": None,
         }
 
-        selected_months = self._select_public_gviz_month_candidates(sheet_url, mode)
+        selected_months = self._select_public_gviz_month_candidates(
+            sheet_url,
+            mode,
+            target_month=target_month,
+        )
         for candidate in selected_months:
             result = self.import_rows(
                 db,
@@ -494,6 +527,7 @@ class SheetsService:
                 source_label=f"public Google Sheet gid {candidate['gid']} month {candidate['month']}",
                 mode=mode,
                 tab_name=None,
+                target_month=target_month,
             )
             if result["rows_imported"] == 0:
                 continue
@@ -518,9 +552,15 @@ class SheetsService:
             "months_processed": len(combined["tabs_processed"]),
             "source": "public_gviz_tabs",
             "status": "success",
+            "target_month": target_month,
         }
 
-    def _select_public_gviz_month_candidates(self, sheet_url: str, mode: str) -> List[Dict[str, Any]]:
+    def _select_public_gviz_month_candidates(
+        self,
+        sheet_url: str,
+        mode: str,
+        target_month: str | None = None,
+    ) -> List[Dict[str, Any]]:
         tabs = self.discover_public_tabs(sheet_url)
         current = datetime.utcnow().date()
         month_candidates: Dict[str, List[Dict[str, Any]]] = {}
@@ -562,6 +602,8 @@ class SheetsService:
                 if parsed_date > current:
                     continue
                 if mode == "current" and (parsed_date.year != current.year or parsed_date.month != current.month):
+                    continue
+                if mode == "month" and parsed_date.strftime("%Y-%m") != target_month:
                     continue
 
                 sale = self._money(self._cell(row, mapping.get("sale")))
@@ -611,14 +653,46 @@ class SheetsService:
 
         return selected
 
-    def process_and_import(self, db: Session, sheet_url: str, mode: str = "all") -> Dict[str, Any]:
-        if mode == "all":
-            credential_result = self._import_with_google_credentials(db, sheet_url, mode)
+    def process_and_import(
+        self,
+        db: Session,
+        sheet_url: str,
+        mode: str = "all",
+        target_month: str | None = None,
+    ) -> Dict[str, Any]:
+        if mode == "month":
+            target_month = (target_month or "").strip()
+            if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", target_month):
+                return {
+                    "rows_found": 0,
+                    "rows_imported": 0,
+                    "rows_created": 0,
+                    "rows_updated": 0,
+                    "rows_skipped": 0,
+                    "months_processed": 0,
+                    "source": "month_repair",
+                    "status": "error",
+                    "target_month": target_month,
+                    "message": "Target month must use YYYY-MM format.",
+                }
+
+        if mode in {"all", "month"}:
+            credential_result = self._import_with_google_credentials(
+                db,
+                sheet_url,
+                mode,
+                target_month=target_month,
+            )
             if credential_result and credential_result["rows_imported"] > 0:
                 self._log_sync(db, sheet_url, credential_result["rows_imported"], "success")
                 return credential_result
 
-            public_gviz_result = self._import_public_gviz_tabs(db, sheet_url, mode)
+            public_gviz_result = self._import_public_gviz_tabs(
+                db,
+                sheet_url,
+                mode,
+                target_month=target_month,
+            )
             if public_gviz_result and public_gviz_result["rows_imported"] > 0:
                 self._log_sync(db, sheet_url, public_gviz_result["rows_imported"], "success")
                 return public_gviz_result
@@ -629,6 +703,7 @@ class SheetsService:
             rows,
             source_label="linked Google Sheet tab",
             mode=mode,
+            target_month=target_month,
         )
         if result["rows_imported"] == 0:
             self._log_sync(db, sheet_url, 0, "failed")
@@ -637,6 +712,7 @@ class SheetsService:
                 "months_processed": 0,
                 "source": "public_csv_linked_tab",
                 "status": "error",
+                "target_month": target_month,
                 "message": "No daily sales rows could be imported from this sheet tab.",
             }
 
@@ -646,6 +722,7 @@ class SheetsService:
             "months_processed": 1,
             "source": "public_csv_linked_tab",
             "status": "success",
+            "target_month": target_month,
         }
 
     def _log_sync(self, db: Session, sheet_url: str, rows_imported: int, status: str) -> None:
