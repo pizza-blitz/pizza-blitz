@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
-from app.api.deps import get_db
-from app.models.domain import DailySales, GoogleSheetSync, WasteLog
+from app.api.deps import get_db, require_roles
+from app.models.domain import DailySales, GoogleSheetSync, SalesRepairBlock, WasteLog
 from pydantic import BaseModel
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -12,6 +12,11 @@ import csv
 from fastapi.responses import StreamingResponse
 
 router = APIRouter()
+
+class SalesRepairBlockRequest(BaseModel):
+    reason: Optional[str] = None
+    source_url: Optional[str] = None
+    blocked_by: Optional[str] = None
 
 @router.get("/")
 def list_sales(db: Session = Depends(get_db)):
@@ -43,6 +48,17 @@ def sales_reconciliation(
       query = query.filter(DailySales.date <= parsed_end)
 
     rows = query.all()
+    blocked_rows = db.query(SalesRepairBlock).order_by(SalesRepairBlock.month.asc()).all()
+    blocked_map = {
+      row.month: {
+        "month": row.month,
+        "reason": row.reason,
+        "source_url": row.source_url,
+        "blocked_by": row.blocked_by,
+        "blocked_at": row.blocked_at.isoformat() if row.blocked_at else None,
+      }
+      for row in blocked_rows
+    }
     month_map: dict[str, dict] = {}
     for row in rows:
       if not row.date:
@@ -107,6 +123,11 @@ def sales_reconciliation(
         row["status"] = "complete"
         row["repair_priority"] = "clear"
         row["repair_action"] = "No repair needed."
+      elif month_key in blocked_map:
+        row["status"] = "source_missing"
+        row["repair_priority"] = "blocked"
+        row["source_block"] = blocked_map[month_key]
+        row["repair_action"] = "Source sheet is missing the listed dates. Keep visible, but continue with the next month."
       elif row["missing_days"] >= 7 or row["zero_sale_days"] > 0:
         row["status"] = "needs_review"
         row["repair_priority"] = "high"
@@ -120,9 +141,14 @@ def sales_reconciliation(
     imported_total = sum(float(row.total_sale or 0) for row in rows)
     repair_queue = [
       row for row in month_rows
-      if row["status"] != "complete"
+      if row["status"] == "needs_review"
     ]
     repair_queue.sort(key=lambda row: row["month"])
+    blocked_queue = [
+      row for row in month_rows
+      if row["status"] == "source_missing"
+    ]
+    blocked_queue.sort(key=lambda row: row["month"])
     def compact_month(row: dict) -> dict:
       compact = dict(row)
       if detail == "summary":
@@ -153,9 +179,68 @@ def sales_reconciliation(
       "months": response_months,
       "repair_queue": response_repair_queue,
       "repair_queue_count": len(repair_queue),
+      "blocked_queue": [compact_month(row) for row in blocked_queue],
+      "blocked_queue_count": len(blocked_queue),
       "next_repair_month": repair_queue[0]["month"] if repair_queue else None,
-      "next_action": "Repair the highest-priority month in the queue, then re-run reconciliation until every month is complete.",
+      "next_action": "Repair the next chronological unblocked month, and mark months as source-missing only after confirming the source sheet lacks those dates.",
     }
+
+@router.post("/reconciliation/blocked/{month_key}")
+def block_sales_repair_month(
+    month_key: str,
+    request: SalesRepairBlockRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    if not month_key or len(month_key) != 7:
+      raise HTTPException(status_code=422, detail="Month must use YYYY-MM format.")
+    try:
+      datetime.strptime(f"{month_key}-01", "%Y-%m-%d")
+    except ValueError:
+      raise HTTPException(status_code=422, detail="Month must use YYYY-MM format.")
+
+    existing = db.query(SalesRepairBlock).filter(SalesRepairBlock.month == month_key).first()
+    actor = request.blocked_by or session.get("role") or "admin"
+    reason = request.reason or "Source sheet missing listed dates after targeted repair import."
+    if existing:
+      existing.reason = reason
+      existing.source_url = request.source_url
+      existing.blocked_by = actor
+      existing.blocked_at = datetime.utcnow()
+      block = existing
+    else:
+      block = SalesRepairBlock(
+        month=month_key,
+        reason=reason,
+        source_url=request.source_url,
+        blocked_by=actor,
+      )
+      db.add(block)
+
+    db.commit()
+    db.refresh(block)
+    return {
+      "status": "blocked",
+      "month": block.month,
+      "reason": block.reason,
+      "source_url": block.source_url,
+      "blocked_by": block.blocked_by,
+      "blocked_at": block.blocked_at.isoformat() if block.blocked_at else None,
+    }
+
+@router.delete("/reconciliation/blocked/{month_key}")
+def unblock_sales_repair_month(
+    month_key: str,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    block = db.query(SalesRepairBlock).filter(SalesRepairBlock.month == month_key).first()
+    if not block:
+      raise HTTPException(status_code=404, detail="Blocked month was not found.")
+    db.delete(block)
+    db.commit()
+    return {"status": "unblocked", "month": month_key}
 
 class DailyEntryRequest(BaseModel):
     date: date

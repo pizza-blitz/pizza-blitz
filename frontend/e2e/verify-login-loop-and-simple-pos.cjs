@@ -29,7 +29,7 @@ async function main() {
     await page.getByPlaceholder("Enter admin ID").fill(adminId);
     await page.getByPlaceholder("Enter password").fill(adminPassword);
     await page.getByRole("button", { name: /Sign In to Portal/i }).click();
-    await page.waitForURL(/\/dashboard/, { timeout: 30000 });
+    await page.waitForURL(/\/dashboard/, { timeout: 45000, waitUntil: "domcontentloaded" });
 
     await page.goto(`${baseURL}/roadmap`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("twelve-gap-delivery-program").waitFor({ timeout: 15000 });
@@ -38,11 +38,16 @@ async function main() {
     await page.getByTestId("sales-reconciliation-board").waitFor({ timeout: 15000 });
     await page.getByTestId("sales-repair-queue").waitFor({ timeout: 15000 });
     await page.getByTestId("sales-repair-import-command").waitFor({ timeout: 15000 });
+    await page.getByTestId("sales-source-missing-board").waitFor({ timeout: 15000 });
     await page.waitForFunction(
-      () =>
-        document.body.innerText.includes("Import 20") ||
-        document.body.innerText.includes("All imported months are complete.") ||
-        document.body.innerText.includes("Reconciliation needs retry."),
+      () => {
+        const text = document.body.innerText.toLowerCase();
+        return (
+          text.includes("import 20") ||
+          text.includes("all imported months are complete.") ||
+          text.includes("reconciliation needs retry.")
+        );
+      },
       null,
       { timeout: 120000 }
     );

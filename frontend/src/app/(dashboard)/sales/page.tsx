@@ -15,6 +15,7 @@ export default function SalesHistory() {
   const [repairImportingMonth, setRepairImportingMonth] = useState("");
   const [repairImportMessage, setRepairImportMessage] = useState("");
   const [repairImportResult, setRepairImportResult] = useState<any>(null);
+  const [blockingMonth, setBlockingMonth] = useState("");
   
   // New Month/Year Filter State
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -97,6 +98,7 @@ export default function SalesHistory() {
   const money = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
   const reconciliationGap = reconciliation ? Number(reconciliation.gap_to_expected || 0) : 3000000;
   const repairRows = (reconciliation?.repair_queue || []).slice(0, 12);
+  const blockedRows = (reconciliation?.blocked_queue || []).slice(0, 12);
   const nextRepairMonth = reconciliation?.next_repair_month || repairRows[0]?.month || "";
   const selectRepairMonth = (monthKey: string) => {
     const [year, month] = monthKey.split("-");
@@ -138,6 +140,57 @@ export default function SalesHistory() {
       setRepairImportMessage("Month repair import API is not available right now.");
     } finally {
       setRepairImportingMonth("");
+    }
+  };
+  const blockRepairMonth = async (row: any) => {
+    if (!row?.month) return;
+    setBlockingMonth(row.month);
+    setRepairImportMessage("");
+    setRepairImportResult(null);
+    try {
+      const response = await fetch(getApiUrl(`/api/v1/restaurant/sales/reconciliation/blocked/${row.month}`), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: `${row.month}: source sheet missing ${row.missing_days || 0} date(s) after targeted repair import.`,
+          source_url: repairSheetUrl.trim() || null,
+          blocked_by: "admin",
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setRepairImportMessage(data.detail || `${row.month} could not be marked source missing.`);
+        return;
+      }
+      setRepairImportMessage(`${row.month} marked source missing. Continuing to the next chronological repair month.`);
+      await fetchData();
+    } catch (error) {
+      setRepairImportMessage("Source-missing marker API is not available right now.");
+    } finally {
+      setBlockingMonth("");
+    }
+  };
+  const unblockRepairMonth = async (monthKey: string) => {
+    if (!monthKey) return;
+    setBlockingMonth(monthKey);
+    setRepairImportMessage("");
+    try {
+      const response = await fetch(getApiUrl(`/api/v1/restaurant/sales/reconciliation/blocked/${monthKey}`), {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setRepairImportMessage(data.detail || `${monthKey} could not be reopened.`);
+        return;
+      }
+      setRepairImportMessage(`${monthKey} reopened in the active repair queue.`);
+      await fetchData();
+    } catch (error) {
+      setRepairImportMessage("Source-missing marker API is not available right now.");
+    } finally {
+      setBlockingMonth("");
     }
   };
 
@@ -266,7 +319,7 @@ export default function SalesHistory() {
               ? "Loading queue"
               : reconciliationError
                 ? "Retry needed"
-                : `${reconciliation?.repair_queue_count || 0} months need review`}
+                : `${reconciliation?.repair_queue_count || 0} active | ${reconciliation?.blocked_queue_count || 0} blocked`}
           </div>
         </div>
 
@@ -405,6 +458,13 @@ export default function SalesHistory() {
                           >
                             {repairImportingMonth === row.month ? "Importing" : "Import"}
                           </button>
+                          <button
+                            onClick={() => blockRepairMonth(row)}
+                            disabled={!!blockingMonth}
+                            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black uppercase text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                          >
+                            {blockingMonth === row.month ? "Marking" : "Source Missing"}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -413,6 +473,57 @@ export default function SalesHistory() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div data-testid="sales-source-missing-board" className="mt-5 rounded-lg border border-amber-100 bg-amber-50 p-4">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-amber-700">Source Missing</p>
+              <h3 className="mt-1 text-lg font-black text-gray-950">Blocked Months Still Visible</h3>
+              <p className="mt-1 text-sm font-semibold leading-6 text-gray-600">
+                These months were checked against the source sheet and are waiting for missing source rows. They do not block the next active repair month.
+              </p>
+            </div>
+            <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase text-amber-700">
+              {reconciliation?.blocked_queue_count || 0} blocked
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {blockedRows.map((row: any) => (
+              <div key={`blocked-${row.month}`} className="rounded-lg border border-amber-100 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-black text-gray-950">{row.month}</p>
+                    <p className="mt-1 text-xs font-semibold text-gray-500">
+                      {row.missing_days} missing | {row.zero_sale_days} zero-sale | {row.coverage_percent}% coverage
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => unblockRepairMonth(row.month)}
+                    disabled={!!blockingMonth}
+                    className="rounded-md border border-gray-200 px-3 py-2 text-xs font-black uppercase text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {blockingMonth === row.month ? "Opening" : "Reopen"}
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {[...(row.missing_dates || []), ...(row.zero_sale_dates || [])].slice(0, 6).map((item: string) => (
+                    <span key={`blocked-${row.month}-${item}`} className="rounded-md bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs font-semibold leading-5 text-gray-500">
+                  {row.source_block?.reason || row.repair_action}
+                </p>
+              </div>
+            ))}
+            {!blockedRows.length && (
+              <div className="rounded-lg border border-dashed border-amber-200 bg-white/70 p-5 text-sm font-semibold text-amber-700">
+                No source-missing months have been marked yet.
+              </div>
+            )}
+          </div>
         </div>
       </section>
 

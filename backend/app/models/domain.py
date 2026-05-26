@@ -15,6 +15,15 @@ class DailySales(Base):
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class SalesRepairBlock(Base):
+    __tablename__ = "sales_repair_blocks"
+    id = Column(Integer, primary_key=True, index=True)
+    month = Column(String(7), unique=True, index=True, nullable=False)
+    reason = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
+    blocked_by = Column(String(120), nullable=True)
+    blocked_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 class MenuItem(Base):
     __tablename__ = "menu_items"
     id = Column(Integer, primary_key=True, index=True)
