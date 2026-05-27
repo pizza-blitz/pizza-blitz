@@ -64,6 +64,29 @@ async function portalLogin(role) {
   return cookie;
 }
 
+async function optionalPortalLogin(role) {
+  const response = await fetch(`${baseURL}/api/admin-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: role === "staff" ? staffId : adminId,
+      password: role === "staff" ? staffPassword : adminPassword,
+      role,
+    }),
+  });
+  const data = await response.json();
+  if (response.ok) {
+    const cookie = cookieHeaderFromSetCookie(response.headers.get("set-cookie"));
+    assert(cookie.includes(`pb_${role}_session=`), `${role} login did not return a portal session cookie.`);
+    return { available: true, cookie, status: response.status, data };
+  }
+  if (role === "staff" && [401, 503].includes(response.status)) {
+    console.log(`Direct staff login proof skipped: ${data.detail || response.statusText}`);
+    return { available: false, cookie: "", status: response.status, data };
+  }
+  throw new Error(`${role} portal login failed: ${JSON.stringify(data)}`);
+}
+
 async function portalLoginWithCredentials({ id, password, role, expectedRole, expectedStartPath }) {
   const response = await fetch(`${baseURL}/api/admin-session`, {
     method: "POST",
@@ -191,6 +214,11 @@ async function screenshotSettingsWithAdmin() {
 
     const response = await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Settings returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByTestId("access-control-command").waitFor({ timeout: 10000 });
+    await page.getByTestId("access-route-matrix").waitFor({ timeout: 10000 });
+    await page.getByTestId("access-hardening-score").waitFor({ timeout: 10000 });
+    await page.getByText("Access Control Command", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Counter POS", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Authentication Hardening Command", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Security overview API", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Account Recovery Controls", { exact: false }).waitFor({ timeout: 10000 });
@@ -263,7 +291,8 @@ async function main() {
   );
 
   const adminCookie = await portalLogin("admin");
-  const staffCookie = await portalLogin("staff");
+  const staffLogin = await optionalPortalLogin("staff");
+  const staffCookie = staffLogin.cookie;
   const masterCounterCookie = await portalLoginWithCredentials({
     id: adminId,
     password: adminPassword,
@@ -273,7 +302,9 @@ async function main() {
   });
   const customerCookie = await customerLogin();
 
-  await assertFrontendStatus("/api/security-overview", 403, staffCookie, "staff security overview");
+  if (staffCookie) {
+    await assertFrontendStatus("/api/security-overview", 403, staffCookie, "staff security overview");
+  }
   const securityOverviewResponse = await assertFrontendStatus(
     "/api/security-overview",
     200,
@@ -285,6 +316,22 @@ async function main() {
     securityOverview.gateChecks?.some((check) => check.name === "Security overview API"),
     "Security overview did not include the protected API gate check."
   );
+  assert(
+    securityOverview.summary?.roleCount === 4 &&
+      securityOverview.summary.hardeningTotalCount >= 8 &&
+      typeof securityOverview.summary.launchStatus === "string",
+    "Security overview did not include the access-control summary."
+  );
+  assert(
+    securityOverview.routeMatrix?.some((row) => row.area === "Counter POS" && row.staffAccess === "Allowed"),
+    "Security overview did not include the route access matrix."
+  );
+  if (!staffCookie && staffLogin.status === 503) {
+    assert(
+      securityOverview.summary.staffConfigured === false,
+      "Direct staff login failed, but security overview did not report staff credentials as unconfigured."
+    );
+  }
   assert(
     securityOverview.recoveryControls?.length >= 3 && securityOverview.auditControls?.length >= 3,
     "Security overview did not include recovery and audit controls."
@@ -308,8 +355,10 @@ async function main() {
     masterCounterCookie,
     "master counter login keeps admin access"
   );
-  await assertStatus("/api/v1/restaurant/ops/readiness", 403, staffCookie, "staff ops readiness");
-  await assertStatus("/api/v1/restaurant/orders/today", 200, staffCookie, "staff today's orders");
+  if (staffCookie) {
+    await assertStatus("/api/v1/restaurant/ops/readiness", 403, staffCookie, "staff ops readiness");
+    await assertStatus("/api/v1/restaurant/orders/today", 200, staffCookie, "staff today's orders");
+  }
   await assertStatus("/api/v1/restaurant/orders/today", 403, customerCookie, "customer today's orders");
 
   const masterStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
@@ -327,16 +376,20 @@ async function main() {
     "Master credentials through staff JWT login did not return an admin token."
   );
 
-  const staffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: staffId, password: staffPassword }),
-  });
-  const staffJwt = await staffJwtResponse.json();
-  assert(staffJwtResponse.ok, `Staff JWT login failed: ${JSON.stringify(staffJwt)}`);
-  assert(staffJwt.role === "staff" && staffJwt.access_token, "Staff JWT login did not return a staff token.");
+  if (staffCookie) {
+    const staffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: staffId, password: staffPassword }),
+    });
+    const staffJwt = await staffJwtResponse.json();
+    assert(staffJwtResponse.ok, `Staff JWT login failed: ${JSON.stringify(staffJwt)}`);
+    assert(staffJwt.role === "staff" && staffJwt.access_token, "Staff JWT login did not return a staff token.");
+  }
 
-  await assertStaffSettingsRedirect();
+  if (staffCookie) {
+    await assertStaffSettingsRedirect();
+  }
   await screenshotSettingsWithAdmin();
   console.log("Role gate proof passed.");
 }

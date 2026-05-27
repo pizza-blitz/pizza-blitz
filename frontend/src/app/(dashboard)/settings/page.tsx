@@ -58,7 +58,33 @@ type SecurityControl = {
   proof?: string;
 };
 
+type SecuritySummary = {
+  launchStatus: string;
+  launchTone: string;
+  adminConfigured: boolean;
+  staffConfigured: boolean;
+  sessionSecretConfigured: boolean;
+  hardeningReadyCount: number;
+  hardeningTotalCount: number;
+  adminRouteCount: number;
+  staffRouteCount: number;
+  customerRouteCount: number;
+  publicRouteCount: number;
+  roleCount: number;
+};
+
+type RouteMatrixEntry = {
+  area: string;
+  routeGroup: string;
+  publicAccess: string;
+  customerAccess: string;
+  staffAccess: string;
+  adminAccess: string;
+};
+
 type SecurityOverview = {
+  summary: SecuritySummary;
+  routeMatrix: RouteMatrixEntry[];
   roles: RoleAccess[];
   sessions: SessionStatus[];
   gateChecks: SecurityControl[];
@@ -729,6 +755,117 @@ export default function Settings() {
           </div>
         ) : securityOverview ? (
           <div className="mt-5 space-y-5">
+            <div
+              data-testid="access-control-command"
+              className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-slate-700" />
+                    <h4 className="font-black text-gray-950">Access Control Command</h4>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-gray-600">
+                    Role boundaries, protected route counts, and credential hardening are tracked in one owner view.
+                  </p>
+                </div>
+                <span
+                  data-testid="access-launch-status"
+                  className={`inline-flex w-fit items-center gap-2 rounded-md px-3 py-2 text-xs font-black uppercase ${
+                    securityOverview.summary.launchTone === "Ready"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {securityOverview.summary.launchTone}
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-gray-700">
+                {securityOverview.summary.launchStatus}
+              </p>
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div className="rounded-lg border border-white bg-white p-4">
+                  <p className="text-xs font-black uppercase text-gray-500">Hardening score</p>
+                  <p data-testid="access-hardening-score" className="mt-2 text-2xl font-black text-gray-950">
+                    {securityOverview.summary.hardeningReadyCount}/{securityOverview.summary.hardeningTotalCount}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-gray-500">checks ready</p>
+                </div>
+                <div className="rounded-lg border border-white bg-white p-4">
+                  <p className="text-xs font-black uppercase text-gray-500">Owner routes</p>
+                  <p className="mt-2 text-2xl font-black text-gray-950">
+                    {securityOverview.summary.adminRouteCount}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-gray-500">admin-only groups</p>
+                </div>
+                <div className="rounded-lg border border-white bg-white p-4">
+                  <p className="text-xs font-black uppercase text-gray-500">Counter routes</p>
+                  <p className="mt-2 text-2xl font-black text-gray-950">
+                    {securityOverview.summary.staffRouteCount}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-gray-500">staff workflow groups</p>
+                </div>
+                <div className="rounded-lg border border-white bg-white p-4">
+                  <p className="text-xs font-black uppercase text-gray-500">Credential split</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-md px-2.5 py-1 text-xs font-black ${
+                        securityOverview.summary.adminConfigured
+                          ? "bg-green-50 text-green-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      Admin
+                    </span>
+                    <span
+                      className={`rounded-md px-2.5 py-1 text-xs font-black ${
+                        securityOverview.summary.staffConfigured
+                          ? "bg-green-50 text-green-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      Staff
+                    </span>
+                    <span
+                      className={`rounded-md px-2.5 py-1 text-xs font-black ${
+                        securityOverview.summary.sessionSecretConfigured
+                          ? "bg-green-50 text-green-700"
+                          : "bg-amber-50 text-amber-700"
+                      }`}
+                    >
+                      Session
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div data-testid="access-route-matrix" className="overflow-hidden rounded-lg border border-gray-100">
+              <div className="overflow-x-auto">
+                <div className="min-w-[820px]">
+                  <div className="grid grid-cols-12 bg-gray-50 px-4 py-3 text-xs font-black uppercase text-gray-500">
+                    <div className="col-span-2">Area</div>
+                    <div className="col-span-3">Routes</div>
+                    <div className="col-span-2">Public</div>
+                    <div className="col-span-2">Customer</div>
+                    <div className="col-span-2">Staff</div>
+                    <div className="col-span-1">Admin</div>
+                  </div>
+                  {securityOverview.routeMatrix.map((row) => (
+                    <div key={row.area} className="grid grid-cols-12 gap-2 border-t border-gray-100 px-4 py-3 text-sm">
+                      <div className="col-span-2 font-black text-gray-900">{row.area}</div>
+                      <div className="col-span-3 font-mono text-xs font-bold text-gray-600">{row.routeGroup}</div>
+                      <div className="col-span-2 text-gray-600">{row.publicAccess}</div>
+                      <div className="col-span-2 text-gray-600">{row.customerAccess}</div>
+                      <div className="col-span-2 text-gray-600">{row.staffAccess}</div>
+                      <div className="col-span-1 text-gray-600">{row.adminAccess}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {securityOverview.sessions.map((session) => (
                 <div key={session.cookie} className="rounded-lg border border-gray-100 bg-gray-50 p-4">

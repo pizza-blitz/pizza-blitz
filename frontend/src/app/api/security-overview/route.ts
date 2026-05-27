@@ -59,8 +59,121 @@ export async function GET(request: Request) {
   const adminPasswordHardened = adminPassword !== "admin123";
   const staffPasswordHardened = staffPassword !== "staff123";
   const sessionSecretHardened = Boolean(sessionSecret);
+  const adminIdConfigured = adminId !== "admin";
+  const staffIdConfigured = staffId !== "staff";
+  const routeMatrix = [
+    {
+      area: "Owner command",
+      routeGroup: "/dashboard, /reports, /settings",
+      publicAccess: "Login required",
+      customerAccess: "Blocked",
+      staffAccess: "Redirected to /orders",
+      adminAccess: "Allowed",
+    },
+    {
+      area: "Counter POS",
+      routeGroup: "/orders, /operations, /receipt",
+      publicAccess: "Login required",
+      customerAccess: "Blocked",
+      staffAccess: "Allowed",
+      adminAccess: "Allowed",
+    },
+    {
+      area: "Customer account",
+      routeGroup: "/account",
+      publicAccess: "Phone login required",
+      customerAccess: "Allowed",
+      staffAccess: "Blocked",
+      adminAccess: "Not used",
+    },
+    {
+      area: "Public ordering",
+      routeGroup: "/, /order, /track",
+      publicAccess: "Allowed",
+      customerAccess: "Allowed",
+      staffAccess: "Allowed",
+      adminAccess: "Allowed",
+    },
+  ];
+  const hardening = [
+    {
+      name: "Admin ID",
+      status: adminIdConfigured ? "Configured" : "Default",
+      detail:
+        adminIdConfigured
+          ? "Admin ID is configured from environment."
+          : "Local admin ID is still the default value.",
+    },
+    {
+      name: "Admin Password",
+      status: adminPasswordHardened ? "Configured" : "Default",
+      detail: adminPasswordHardened
+        ? "Admin password is no longer the local default."
+        : "Replace the default admin password before real staff use.",
+    },
+    {
+      name: "Staff ID",
+      status: staffIdConfigured ? "Configured" : "Default",
+      detail:
+        staffIdConfigured
+          ? "Staff ID is configured from environment."
+          : "Local staff ID is still the default value.",
+    },
+    {
+      name: "Staff Password",
+      status: staffPasswordHardened ? "Configured" : "Default",
+      detail: staffPasswordHardened
+        ? "Staff password is no longer the local default."
+        : "Replace the default staff password before counter use.",
+    },
+    {
+      name: "Session Signing",
+      status: sessionSecretHardened ? "Configured" : "Fallback",
+      detail: sessionSecretHardened
+        ? "Session signing secret is configured separately."
+        : "Session signing falls back to admin password/local secret.",
+    },
+    {
+      name: "Role Split",
+      status: "Configured",
+      detail: "Counter staff uses a separate session and can access only POS, kitchen ops, and receipt routes.",
+    },
+    {
+      name: "Backend API Role Gates",
+      status: "Configured",
+      detail: "Operations readiness, backups, order status, invoices, delivery assignment, and delivery-zone edits now require signed admin or staff sessions.",
+    },
+    {
+      name: "Manual Payment Webhook",
+      status: "Configured",
+      detail: "Manual paid-webhook testing requires an admin or staff session; signed gateway webhooks remain provider-facing.",
+    },
+  ];
+  const actionStatuses = new Set(["Default", "Fallback", "Planned"]);
+  const hardeningActionCount = hardening.filter((item) =>
+    actionStatuses.has(item.status)
+  ).length;
+  const hardeningReadyCount = hardening.length - hardeningActionCount;
 
   return NextResponse.json({
+    summary: {
+      launchStatus:
+        hardeningActionCount === 0
+          ? "Ready for controlled staff use"
+          : `${hardeningActionCount} security action${hardeningActionCount === 1 ? "" : "s"} remaining`,
+      launchTone: hardeningActionCount === 0 ? "Ready" : "Action needed",
+      adminConfigured: adminIdConfigured && adminPasswordHardened,
+      staffConfigured: staffIdConfigured && staffPasswordHardened,
+      sessionSecretConfigured: sessionSecretHardened,
+      hardeningReadyCount,
+      hardeningTotalCount: hardening.length,
+      adminRouteCount: adminOnlyRoutePrefixes.length,
+      staffRouteCount: staffRoutePrefixes.length,
+      customerRouteCount: 1,
+      publicRouteCount: 3,
+      roleCount: 4,
+    },
+    routeMatrix,
     roles: [
       {
         role: "Owner / Admin",
@@ -170,59 +283,6 @@ export async function GET(request: Request) {
         detail: "Browser/API proof checks anonymous, admin, staff and customer access boundaries.",
       },
     ],
-    hardening: [
-      {
-        name: "Admin ID",
-        status: adminId === "admin" ? "Default" : "Configured",
-        detail:
-          adminId === "admin"
-            ? "Local admin ID is still the default value."
-            : "Admin ID is configured from environment.",
-      },
-      {
-        name: "Admin Password",
-        status: adminPasswordHardened ? "Configured" : "Default",
-        detail: adminPasswordHardened
-          ? "Admin password is no longer the local default."
-          : "Replace the default admin password before real staff use.",
-      },
-      {
-        name: "Staff ID",
-        status: staffId === "staff" ? "Default" : "Configured",
-        detail:
-          staffId === "staff"
-            ? "Local staff ID is still the default value."
-            : "Staff ID is configured from environment.",
-      },
-      {
-        name: "Staff Password",
-        status: staffPasswordHardened ? "Configured" : "Default",
-        detail: staffPasswordHardened
-          ? "Staff password is no longer the local default."
-          : "Replace the default staff password before counter use.",
-      },
-      {
-        name: "Session Signing",
-        status: sessionSecretHardened ? "Configured" : "Fallback",
-        detail: sessionSecretHardened
-          ? "Session signing secret is configured separately."
-          : "Session signing falls back to admin password/local secret.",
-      },
-      {
-        name: "Role Split",
-        status: "Configured",
-        detail: "Counter staff uses a separate session and can access only POS, kitchen ops, and receipt routes.",
-      },
-      {
-        name: "Backend API Role Gates",
-        status: "Configured",
-        detail: "Operations readiness, backups, order status, invoices, delivery assignment, and delivery-zone edits now require signed admin or staff sessions.",
-      },
-      {
-        name: "Manual Payment Webhook",
-        status: "Configured",
-        detail: "Manual paid-webhook testing requires an admin or staff session; signed gateway webhooks remain provider-facing.",
-      },
-    ],
+    hardening,
   });
 }
