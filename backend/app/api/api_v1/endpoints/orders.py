@@ -95,6 +95,10 @@ class PaymentSessionRequest(BaseModel):
     return_url: Optional[str] = None
 
 
+class CancelOrderRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 class ProviderPaymentVerification(BaseModel):
     provider: str
     provider_order_id: Optional[str] = None
@@ -225,6 +229,8 @@ def order_metadata(order: RestaurantOrder) -> dict:
 
 
 def order_eta_window(order: RestaurantOrder) -> str:
+    if order.status == "cancelled":
+        return "Cancelled"
     if order.status == "closed":
         return "Completed"
     assignment_status = (
@@ -292,6 +298,11 @@ def order_tracking_steps(order: RestaurantOrder) -> list[dict]:
         if order.delivery_assignment
         else "unassigned"
     )
+    if status == "cancelled":
+        return [
+            {"key": "placed", "label": "Order placed", "complete": True},
+            {"key": "cancelled", "label": "Cancelled", "complete": True},
+        ]
     if (order.order_type or "").lower() == "delivery":
         steps = [
             ("placed", True, "Order placed"),
@@ -341,7 +352,9 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
     assignment = order.delivery_assignment
     delivery_status = assignment.status if assignment else None
     next_action = order_next_action(order)
-    if (order.order_type or "").lower() == "delivery":
+    if order.status == "cancelled":
+        next_action = "Order cancelled. No sales or inventory were posted."
+    elif (order.order_type or "").lower() == "delivery":
         if delivery_status == "assigned":
             next_action = "Delivery partner assigned. Your order will leave shortly."
         elif delivery_status == "out_for_delivery":
@@ -467,6 +480,8 @@ def customer_history_insights(orders: list[RestaurantOrder], customer: Optional[
 
 
 def order_next_action(order: RestaurantOrder) -> str:
+    if order.status == "cancelled":
+        return "Order cancelled. No sales or inventory were posted."
     if (order.payment_method or "").lower() == "prepaid" and order.payment_status != "paid":
         return "Payment is pending. Confirm prepaid payment to continue."
     if order.status == "open":
@@ -542,6 +557,8 @@ def order_has_customization(order: RestaurantOrder) -> bool:
 
 
 def order_payment_due(order: RestaurantOrder) -> bool:
+    if order.status == "cancelled":
+        return False
     return (
         (order.payment_method or "").lower() == "prepaid"
         and (order.payment_status or "").lower() != "paid"
@@ -549,6 +566,8 @@ def order_payment_due(order: RestaurantOrder) -> bool:
 
 
 def order_flow_stage(order: RestaurantOrder) -> str:
+    if order.status == "cancelled":
+        return "cancelled"
     if order.status == "closed":
         return "closed"
     if order_payment_due(order):
@@ -576,6 +595,8 @@ def serialize_order_flow_row(order: RestaurantOrder, invoice_ids: set[int]) -> d
         next_action = "Mark ready when the kitchen finishes."
     elif order.status == "closed":
         next_action = "Order is closed."
+    elif order.status == "cancelled":
+        next_action = "Order cancelled. No sales or inventory posted."
     else:
         next_action = order_next_action(order)
 
@@ -974,6 +995,69 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
     }
 
 
+@router.patch("/{order_id}/cancel")
+def cancel_order(
+    order_id: int,
+    payload: CancelOrderRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "cancelled":
+        return {
+            "status": "cancelled",
+            "payment_status": order.payment_status,
+            "refund_required": (order.payment_status or "").lower() == "refund_due",
+            "sales_posted": False,
+            "inventory_posted": False,
+            "order": serialize_order(order),
+        }
+    if order.status == "closed":
+        raise HTTPException(
+            status_code=409,
+            detail="Closed orders already posted sales. Use refund adjustment instead.",
+        )
+
+    reason = (payload.reason or "").strip() or "Cancelled from portal"
+    refund_required = (order.payment_status or "").lower() == "paid"
+    if order.status != "cancelled":
+        now = datetime.utcnow()
+        order.status = "cancelled"
+        order.payment_status = "refund_due" if refund_required else "voided"
+        order.notes = append_order_note(order.notes, f"Cancelled: {reason}")
+        order.notes = append_order_note(order.notes, f"Cancelled At: {now.isoformat()}")
+
+        if order.table_number:
+            table = db.query(DiningTable).filter(
+                DiningTable.table_number == order.table_number
+            ).first()
+            if table and table.current_order_id == order.id:
+                table.status = "available"
+                table.current_order_id = None
+                table.last_updated = now
+
+        if order.delivery_assignment:
+            order.delivery_assignment.status = "failed"
+            order.delivery_assignment.notes = append_order_note(
+                order.delivery_assignment.notes,
+                f"Order cancelled: {reason}",
+            )
+            order.delivery_assignment.updated_at = now
+
+    db.commit()
+    db.refresh(order)
+    return {
+        "status": "cancelled",
+        "payment_status": order.payment_status,
+        "refund_required": refund_required,
+        "sales_posted": False,
+        "inventory_posted": False,
+        "order": serialize_order(order),
+    }
+
+
 @router.patch("/{order_id}/close")
 def close_order(
     order_id: int,
@@ -984,6 +1068,8 @@ def close_order(
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Cancelled orders cannot be closed.")
 
     inventory_usage = []
     if order.status != "closed":
@@ -1055,6 +1141,8 @@ def update_order_status(
         raise HTTPException(status_code=404, detail="Order not found")
     if order.status == "closed":
         raise HTTPException(status_code=409, detail="Closed orders cannot be moved.")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Cancelled orders cannot be moved.")
 
     status = payload.status.strip().lower()
     allowed_statuses = {"open", "preparing", "ready"}
@@ -1079,8 +1167,8 @@ def create_order_payment_session(
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    if order.status == "closed":
-        raise HTTPException(status_code=409, detail="Closed orders cannot start payment.")
+    if order.status in {"closed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="Closed or cancelled orders cannot start payment.")
     if order.payment_status == "paid":
         raise HTTPException(status_code=409, detail="Order is already paid.")
 
@@ -1418,7 +1506,9 @@ def order_flow_readiness(
         if invoice.order_id is not None
     }
     flow_rows = [serialize_order_flow_row(order, invoice_ids) for order in rows]
-    active_rows = [row for row in flow_rows if row["status"] != "closed"]
+    active_rows = [
+        row for row in flow_rows if row["status"] not in {"closed", "cancelled"}
+    ]
     ready_to_close_rows = [row for row in active_rows if row["ready_to_close"]]
     payment_due_rows = [row for row in active_rows if row["payment_due"]]
     customized_rows = [row for row in flow_rows if row["customized"]]
@@ -1450,6 +1540,7 @@ def order_flow_readiness(
             "receipt_ready_count": sum(1 for row in active_rows if row["receipt_ready"]),
             "customized_line_count": sum(row["customized_line_count"] for row in customized_rows),
             "closed_count": sum(1 for row in flow_rows if row["status"] == "closed"),
+            "cancelled_count": sum(1 for row in flow_rows if row["status"] == "cancelled"),
         },
         "orders": flow_rows,
         "ready_to_close": ready_to_close_rows[:8],

@@ -18,6 +18,7 @@ import {
   TimerReset,
   Truck,
   Utensils,
+  XCircle,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
@@ -120,6 +121,7 @@ type OrderFlowReadiness = {
     receipt_ready_count: number;
     customized_line_count: number;
     closed_count: number;
+    cancelled_count?: number;
   };
   orders: OrderFlowRow[];
   ready_to_close: OrderFlowRow[];
@@ -136,6 +138,7 @@ const filters = [
   { id: "address_review", label: "Address Review" },
   { id: "payment_due", label: "Payment Due" },
   { id: "closed", label: "Closed" },
+  { id: "cancelled", label: "Cancelled" },
 ];
 
 function money(value: number) {
@@ -156,6 +159,7 @@ function ageLabel(createdAt?: string | null) {
 }
 
 function statusClass(status: string) {
+  if (status === "cancelled") return "bg-rose-50 text-rose-700 border-rose-200";
   if (status === "ready") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (status === "preparing") return "bg-sky-50 text-sky-700 border-sky-200";
   if (status === "closed") return "bg-slate-100 text-slate-600 border-slate-200";
@@ -204,6 +208,7 @@ function isPrepaidPaymentDue(order: Order) {
 
 function closeBlockers(order: Order) {
   const blockers: string[] = [];
+  if (order.status === "cancelled") blockers.push("cancelled");
   if (isPrepaidPaymentDue(order)) blockers.push("payment due");
   if (isDeliveryOrder(order)) {
     if (order.requires_address_review || order.address_validation?.requires_review) {
@@ -235,7 +240,9 @@ export default function OperationsPage() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
 
-  const activeOrders = orders.filter((order) => order.status !== "closed");
+  const activeOrders = orders.filter(
+    (order) => !["closed", "cancelled"].includes(order.status)
+  );
   const paymentDueOrders = activeOrders.filter(
     (order) =>
       (order.payment_method || "").toLowerCase() === "prepaid" &&
@@ -351,6 +358,12 @@ export default function OperationsPage() {
         label: "Closed",
         tone: "border-slate-200 bg-slate-50",
         orders: orders.filter((order) => order.status === "closed").slice(0, 6),
+      },
+      {
+        key: "cancelled",
+        label: "Cancelled",
+        tone: "border-rose-200 bg-rose-50",
+        orders: orders.filter((order) => order.status === "cancelled").slice(0, 6),
       },
     ],
     [activeOrders, orders]
@@ -536,6 +549,40 @@ export default function OperationsPage() {
       await fetchOrders({ preserveMessage: true });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not close order.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const cancelOrder = async (order: Order) => {
+    if (["closed", "cancelled"].includes(order.status)) {
+      setMessage(`Order #${order.id} is already ${order.status}.`);
+      return;
+    }
+    const reason = window.prompt(
+      `Reason for voiding order #${order.id}?`,
+      "Customer cancelled"
+    );
+    if (reason === null) return;
+
+    setBusyAction(`${order.id}-cancel`);
+    try {
+      const response = await fetch(`${ORDERS_API}/${order.id}/cancel`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() || "Cancelled from operations" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not void order.");
+      setMessage(
+        data.refund_required
+          ? `Order #${order.id} cancelled and marked refund due. No sales or inventory posted.`
+          : `Order #${order.id} voided. No sales or inventory posted.`
+      );
+      await fetchOrders({ preserveMessage: true });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not void order.");
     } finally {
       setBusyAction(null);
     }
@@ -770,7 +817,7 @@ export default function OperationsPage() {
           </button>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-4">
+        <div className="grid gap-4 xl:grid-cols-5">
           {kitchenLanes.map((lane) => (
             <div
               key={lane.key}
@@ -902,6 +949,26 @@ export default function OperationsPage() {
                           >
                             Receipt
                           </Link>
+                        )}
+                        {order.status === "cancelled" && (
+                          <span className="col-span-2 flex h-11 items-center justify-center rounded-md border border-rose-200 bg-rose-50 px-3 text-center text-sm font-black text-rose-700">
+                            Voided
+                          </span>
+                        )}
+                        {!["closed", "cancelled"].includes(order.status) && (
+                          <button
+                            data-testid={`operations-void-card-${order.id}`}
+                            onClick={() => cancelOrder(order)}
+                            disabled={busyAction === `${order.id}-cancel`}
+                            className="col-span-2 flex h-10 items-center justify-center gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                          >
+                            {busyAction === `${order.id}-cancel` ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <XCircle className="h-4 w-4" />
+                            )}
+                            Void
+                          </button>
                         )}
                       </div>
                     </article>
@@ -1200,7 +1267,7 @@ export default function OperationsPage() {
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
         <div className="min-w-[900px]">
-          <div className="grid grid-cols-[1fr_140px_150px_230px] gap-4 border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500">
+          <div className="grid grid-cols-[1fr_140px_150px_270px] gap-4 border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-gray-500">
             <span>Order</span>
             <span>Payment</span>
             <span>Status</span>
@@ -1224,6 +1291,7 @@ export default function OperationsPage() {
             visibleOrders.map((order) => {
               const blockers = closeBlockers(order);
               const canClose = order.status !== "closed" && blockers.length === 0;
+              const canVoid = !["closed", "cancelled"].includes(order.status);
               const flow = orderFlowById.get(order.id);
               const flowSteps = [
                 {
@@ -1250,6 +1318,16 @@ export default function OperationsPage() {
                   complete: order.status === "closed",
                   current: false,
                 },
+                ...(order.status === "cancelled"
+                  ? [
+                      {
+                        key: "cancelled",
+                        label: "Voided",
+                        complete: true,
+                        current: false,
+                      },
+                    ]
+                  : []),
               ];
               const primaryLocation = order.table_number
                 ? `Table ${order.table_number}`
@@ -1260,7 +1338,7 @@ export default function OperationsPage() {
                 <div
                   key={order.id}
                   data-testid={`operations-order-row-${order.id}`}
-                  className="grid grid-cols-[1fr_140px_150px_230px] gap-4 border-b border-gray-100 px-4 py-4 last:border-b-0"
+                  className="grid grid-cols-[1fr_140px_150px_270px] gap-4 border-b border-gray-100 px-4 py-4 last:border-b-0"
                 >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -1399,6 +1477,20 @@ export default function OperationsPage() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <CheckCircle2 className="h-4 w-4" />
+                    )}
+                  </button>
+                  <button
+                    data-testid={`operations-void-${order.id}`}
+                    title="Void order"
+                    aria-label={`Void order ${order.id}`}
+                    onClick={() => cancelOrder(order)}
+                    disabled={!canVoid || busyAction === `${order.id}-cancel`}
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {busyAction === `${order.id}-cancel` ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <XCircle className="h-4 w-4" />
                     )}
                   </button>
                 </div>

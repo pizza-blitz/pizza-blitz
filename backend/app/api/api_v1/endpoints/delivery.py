@@ -296,7 +296,7 @@ def delivery_economics(
     orders = (
         db.query(RestaurantOrder)
         .filter(RestaurantOrder.order_type == "delivery")
-        .filter(RestaurantOrder.status != "closed")
+        .filter(RestaurantOrder.status.notin_(["closed", "cancelled"]))
         .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
         .all()
     )
@@ -469,7 +469,7 @@ def delivery_queue(
     orders = (
         db.query(RestaurantOrder)
         .filter(RestaurantOrder.order_type == "delivery")
-        .filter(RestaurantOrder.status != "closed")
+        .filter(RestaurantOrder.status.notin_(["closed", "cancelled"]))
         .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
         .all()
     )

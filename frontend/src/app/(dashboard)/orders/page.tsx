@@ -331,7 +331,9 @@ export default function OrdersPage() {
       icon: ReceiptText,
     },
   ];
-  const openOrders = orders.filter((order) => order.status !== "closed");
+  const openOrders = orders.filter(
+    (order) => !["closed", "cancelled"].includes(order.status)
+  );
   const deliveryOrders = openOrders.filter(
     (order) => (order.fulfillment_type || order.order_type) === "delivery"
   );
@@ -579,6 +581,34 @@ export default function OrdersPage() {
       response.ok
         ? `Order #${order.id} closed${usageCount ? ` and ${usageCount} ingredients updated.` : "."}`
         : data.detail || "Could not close order."
+    );
+    await fetchData();
+  };
+
+  const cancelOrder = async (order: Order) => {
+    if (["closed", "cancelled"].includes(order.status)) {
+      setMessage(`Order #${order.id} is already ${order.status}.`);
+      return;
+    }
+    const reason = window.prompt(
+      `Reason for voiding order #${order.id}?`,
+      "Customer cancelled"
+    );
+    if (reason === null) return;
+
+    const response = await fetch(`${ORDERS_API}/${order.id}/cancel`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() || "Cancelled from counter" }),
+    });
+    const data = await response.json();
+    setMessage(
+      response.ok
+        ? data.refund_required
+          ? `Order #${order.id} cancelled and marked refund due. No sales or inventory posted.`
+          : `Order #${order.id} voided. No sales or inventory posted.`
+        : data.detail || "Could not void order."
     );
     await fetchData();
   };
@@ -920,7 +950,16 @@ export default function OrdersPage() {
                         {order.customer_name ? ` | ${order.customer_name}` : ""}
                       </p>
                     </div>
-                    <span className={`text-[10px] font-black uppercase ${order.status === "closed" ? "text-green-400" : "text-orange-400"}`}>
+                    <span
+                      data-testid={`counter-order-status-${order.id}`}
+                      className={`text-[10px] font-black uppercase ${
+                        order.status === "closed"
+                          ? "text-green-400"
+                          : order.status === "cancelled"
+                          ? "text-red-300"
+                          : "text-orange-400"
+                      }`}
+                    >
                       {order.status}
                     </span>
                   </div>
@@ -988,10 +1027,18 @@ export default function OrdersPage() {
                     <button
                       data-testid={`counter-close-${order.id}`}
                       onClick={() => closeOrder(order)}
-                      disabled={order.status === "closed"}
+                      disabled={["closed", "cancelled"].includes(order.status)}
                       className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40"
                     >
                       <CheckCircle2 className="h-4 w-4" /> Close
+                    </button>
+                    <button
+                      data-testid={`counter-void-${order.id}`}
+                      onClick={() => cancelOrder(order)}
+                      disabled={["closed", "cancelled"].includes(order.status)}
+                      className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-red-500/15 py-2 text-xs font-bold text-red-300 hover:bg-red-500/25 disabled:opacity-40"
+                    >
+                      <X className="h-4 w-4" /> Void Order
                     </button>
                   </div>
                 </div>
