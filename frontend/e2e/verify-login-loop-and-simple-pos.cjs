@@ -65,9 +65,16 @@ async function main() {
 
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("counter-new-takeaway").click();
+    await page.getByTestId("counter-speed-bar").waitFor({ timeout: 15000 });
+    await page.locator('[data-testid^="counter-quick-add-"]').first().click();
     await page.getByPlaceholder("Search pizza, sides, drinks").waitFor({ timeout: 15000 });
     await page.getByText("Current Bill", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Ready to send", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /^cash$/i }).waitFor({ timeout: 15000 });
+    assert(
+      await page.getByTestId("counter-speed-bar").isVisible(),
+      "Counter speed bar was not visible."
+    );
     assert(
       await page.getByPlaceholder("Search pizza, sides, drinks").isVisible(),
       "Simplified POS search was not visible."

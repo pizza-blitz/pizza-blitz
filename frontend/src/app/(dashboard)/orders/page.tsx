@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ComponentType, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -279,6 +279,58 @@ export default function OrdersPage() {
     0
   );
   const quickPaymentMethods = ["cash", "upi", "card", "mixed"];
+  const quickMenuItems = [...menuItems]
+    .filter((item) => item.is_available)
+    .sort((a, b) => {
+      const aPizza = `${a.name} ${a.category}`.toLowerCase().includes("pizza") ? 0 : 1;
+      const bPizza = `${b.name} ${b.category}`.toLowerCase().includes("pizza") ? 0 : 1;
+      return aPizza - bPizza || Number(a.selling_price || 0) - Number(b.selling_price || 0);
+    })
+    .slice(0, 6);
+  const deliveryReady =
+    !isDeliveryOrder ||
+    Boolean(
+      formData.delivery_address.trim() &&
+        selectedDeliveryZoneId &&
+        deliveryQuote?.is_deliverable &&
+        !isQuotingDelivery
+    );
+  const canSendOrder = selectedItems.length > 0 && deliveryReady && !saving;
+  const sendBlockReason = !selectedItems.length
+    ? "Add item"
+    : isDeliveryOrder && !formData.delivery_address.trim()
+    ? "Address"
+    : isDeliveryOrder && isQuotingDelivery
+    ? "Quote"
+    : isDeliveryOrder && !deliveryQuote?.is_deliverable
+    ? "Delivery"
+    : "Ready";
+  const counterStepCards = [
+    {
+      label: "Items",
+      value: selectedItemCount ? `${selectedItemCount} selected` : "Empty bill",
+      active: selectedItemCount > 0,
+      icon: ShoppingBag,
+    },
+    {
+      label: isDeliveryOrder ? "Delivery" : "Mode",
+      value: isDeliveryOrder
+        ? deliveryReady
+          ? deliveryQuote?.eta_window || "Ready"
+          : sendBlockReason
+        : selectedTable
+        ? `Table ${selectedTable}`
+        : "Takeaway",
+      active: deliveryReady,
+      icon: isDeliveryOrder ? Truck : Utensils,
+    },
+    {
+      label: "Payment",
+      value: formData.payment_method.toUpperCase(),
+      active: true,
+      icon: ReceiptText,
+    },
+  ];
   const openOrders = orders.filter((order) => order.status !== "closed");
   const deliveryOrders = openOrders.filter(
     (order) => (order.fulfillment_type || order.order_type) === "delivery"
@@ -967,6 +1019,65 @@ export default function OrdersPage() {
               </button>
             </div>
 
+            <section
+              data-testid="counter-speed-bar"
+              className="mb-5 rounded-xl border border-white/10 bg-black/30 p-4"
+            >
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto]">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {counterStepCards.map((step) => (
+                    <CounterStepCard key={step.label} {...step} />
+                  ))}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:min-w-64">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, customer_name: "", customer_phone: "" });
+                      setMessage("Walk-in customer selected.");
+                    }}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black uppercase text-gray-200 hover:bg-white/10"
+                  >
+                    Walk-in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetOrderForm}
+                    className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-black uppercase text-red-200 hover:bg-red-500/20"
+                  >
+                    Clear Bill
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase text-gray-500">
+                    Quick Add
+                  </p>
+                  <span className={`rounded-md px-2 py-1 text-[10px] font-black uppercase ${canSendOrder ? "bg-green-500/15 text-green-300" : "bg-orange-500/15 text-orange-300"}`}>
+                    {canSendOrder ? "Ready to send" : `Waiting: ${sendBlockReason}`}
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {quickMenuItems.map((item) => (
+                    <button
+                      key={`quick-${item.id}`}
+                      data-testid={`counter-quick-add-${item.id}`}
+                      type="button"
+                      onClick={() => updateQuantity(item.id, Number(item.quantity || 0) + 1)}
+                      className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left hover:border-orange-400/60 hover:bg-orange-500/10"
+                    >
+                      <p className="max-w-36 truncate text-xs font-black text-white">{item.name}</p>
+                      <p className="mt-1 text-[10px] font-bold text-gray-500">
+                        Rs {Math.round(configuredPriceForItem(item)).toLocaleString()}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+
             <div className="grid grid-cols-2 gap-3 mb-5">
               <input
                 type="text"
@@ -1310,17 +1421,41 @@ export default function OrdersPage() {
             <button
               data-testid="counter-send-order"
               onClick={createOrder}
-              disabled={saving}
+              disabled={!canSendOrder}
               className="mt-5 w-full bg-orange-500 p-4 rounded-xl font-bold text-lg hover:bg-orange-600 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
             >
               <Printer className="w-5 h-5" />
-              {saving ? "Sending..." : isDeliveryOrder ? "Send Delivery to Kitchen" : "Send to Kitchen"}
+              {saving ? "Sending..." : canSendOrder ? (isDeliveryOrder ? "Send Delivery to Kitchen" : "Send to Kitchen") : `Waiting: ${sendBlockReason}`}
             </button>
               </aside>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CounterStepCard({
+  icon: Icon,
+  label,
+  value,
+  active,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  active: boolean;
+}) {
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${active ? "border-green-400/30 bg-green-500/10" : "border-white/10 bg-white/5"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase text-gray-500">{label}</p>
+          <p className={`mt-1 text-sm font-black ${active ? "text-green-200" : "text-gray-300"}`}>{value}</p>
+        </div>
+        <Icon className={`h-4 w-4 ${active ? "text-green-300" : "text-gray-500"}`} />
+      </div>
     </div>
   );
 }
