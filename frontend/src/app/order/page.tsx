@@ -499,6 +499,7 @@ export default function PublicOrderPage() {
     orderType === "delivery" && deliveryQuote?.is_deliverable
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
+  const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
   const deliveryMinimumGap = Math.max(
     Number(deliveryQuote?.charge_breakdown?.minimum_gap || 0),
     0
@@ -557,6 +558,7 @@ export default function PublicOrderPage() {
       complete: paymentReady,
     },
   ];
+  const checkoutReadyCount = checkoutSteps.filter((step) => step.complete).length;
 
   const filteredMenu = useMemo(
     () =>
@@ -608,7 +610,7 @@ export default function PublicOrderPage() {
     },
     {
       label: "Checkout",
-      detail: `${checkoutSteps.filter((step) => step.complete).length}/${checkoutSteps.length} ready`,
+      detail: `${checkoutReadyCount}/${checkoutSteps.length} ready`,
       complete: Boolean(orderId) || canSubmitOrder,
     },
     {
@@ -1122,6 +1124,66 @@ export default function PublicOrderPage() {
             </div>
           </div>
 
+          <div
+            data-testid="customer-funnel-command"
+            className="mb-6 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 lg:grid-cols-[1.1fr_1.1fr_0.9fr_0.9fr]"
+          >
+            <button
+              data-testid="customer-command-pickup"
+              type="button"
+              onClick={() => {
+                setOrderType("pickup");
+                setMessage("");
+                document.getElementById("checkout")?.scrollIntoView({ block: "start", behavior: "smooth" });
+              }}
+              className={`rounded-md border px-4 py-3 text-left transition ${
+                orderType === "pickup"
+                  ? "border-red-700 bg-red-50 text-red-900"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:border-red-600"
+              }`}
+            >
+              <span className="block text-sm font-black">Pickup Order</span>
+              <span className="mt-1 block text-xs font-semibold">Fast counter collection, 20-25 min</span>
+            </button>
+            <button
+              data-testid="customer-command-delivery"
+              type="button"
+              onClick={() => {
+                setOrderType("delivery");
+                setMessage("");
+                document.getElementById("checkout")?.scrollIntoView({ block: "start", behavior: "smooth" });
+              }}
+              className={`rounded-md border px-4 py-3 text-left transition ${
+                orderType === "delivery"
+                  ? "border-red-700 bg-red-50 text-red-900"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:border-red-600"
+              }`}
+            >
+              <span className="block text-sm font-black">Delivery Order</span>
+              <span className="mt-1 block text-xs font-semibold">Address fee and ETA before checkout</span>
+            </button>
+            <div
+              data-testid="customer-funnel-cart-total"
+              className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3"
+            >
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400">Cart Total</p>
+              <p className="mt-1 text-xl font-black">Rs {total}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {cartItemCount} item{cartItemCount === 1 ? "" : "s"} selected
+              </p>
+            </div>
+            <div
+              data-testid="customer-funnel-ready-state"
+              className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3"
+            >
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400">Checkout</p>
+              <p className="mt-1 text-xl font-black">{checkoutReadyCount}/{checkoutSteps.length}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {canSubmitOrder ? "Ready to place" : "Complete checkout details"}
+              </p>
+            </div>
+          </div>
+
           {activePromotions.length > 0 && (
             <div className="mb-5 rounded-lg border border-red-100 bg-white p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -1209,9 +1271,13 @@ export default function PublicOrderPage() {
               const draft = draftForItem(item);
               const selectedOptions = selectedOptionsForItem(item, draft);
               const configuredPrice = configuredPriceForItem(item, draft);
+              const selectedQuantity = cart
+                .filter((cartItem) => cartItem.id === item.id)
+                .reduce((total, cartItem) => total + cartItem.quantity, 0);
               return (
                 <article
                   key={item.id}
+                  data-testid={`customer-menu-card-${item.id}`}
                   className="overflow-hidden rounded-lg border border-slate-200 bg-white"
                 >
                   <div className="grid grid-cols-12">
@@ -1228,9 +1294,18 @@ export default function PublicOrderPage() {
                           {selectedOptions.map(optionLabel).join(" | ")}
                         </p>
                       )}
+                      {selectedQuantity > 0 && (
+                        <p
+                          data-testid={`customer-menu-card-quantity-${item.id}`}
+                          className="mt-2 inline-flex rounded-md bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700"
+                        >
+                          {selectedQuantity} in cart
+                        </p>
+                      )}
                       <div className="mt-4 flex items-center justify-between gap-3">
                         <span className="text-lg font-black">Rs {configuredPrice}</span>
                         <button
+                          data-testid={`customer-add-item-${item.id}`}
                           onClick={() => addToCart(item)}
                           className="flex items-center gap-2 rounded-md bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-red-700"
                         >
@@ -1346,7 +1421,10 @@ export default function PublicOrderPage() {
               </div>
             )}
 
-            <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div
+              data-testid="customer-checkout-progress"
+              className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4"
+            >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-widest text-slate-400">
@@ -1485,7 +1563,7 @@ export default function PublicOrderPage() {
               </div>
             </div>
 
-            <div className="mb-5 space-y-3">
+            <div data-testid="customer-cart-summary" className="mb-5 space-y-3">
               {cart.map((item) => (
                 <div key={item.cart_key} className="grid grid-cols-12 items-center gap-3">
                   <div className="col-span-6">
@@ -1556,7 +1634,10 @@ export default function PublicOrderPage() {
             </div>
 
             {queuedCouponCode && !coupon && (
-              <div className="mb-5 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-800">
+              <div
+                data-testid="customer-selected-coupon"
+                className="mb-5 rounded-md border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-800"
+              >
                 {queuedCouponCode} is selected. Add items or update the cart and it will apply automatically.
               </div>
             )}
@@ -1725,6 +1806,7 @@ export default function PublicOrderPage() {
                   : "Cash keeps the order open for counter or delivery collection."}
               </div>
               <button
+                data-testid="customer-place-order"
                 disabled={!canSubmitOrder}
                 className="flex w-full items-center justify-center gap-2 rounded-md bg-red-700 px-5 py-4 font-black text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >

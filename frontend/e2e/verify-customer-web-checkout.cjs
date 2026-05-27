@@ -168,11 +168,17 @@ async function main() {
     const response = await page.goto(`${baseURL}/order?coupon=${code}`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Order page returned HTTP ${response?.status() || "no response"}.`);
     await assertHealthyPage(page, "customer order page");
+    await page.getByTestId("customer-funnel-command").waitFor({ timeout: 15000 });
+    await page.getByTestId("customer-command-pickup").waitFor({ timeout: 10000 });
+    await page.getByTestId("customer-command-delivery").click();
+    await page.getByTestId("customer-funnel-ready-state").getByText("Complete checkout details", { exact: false }).waitFor({ timeout: 10000 });
 
-    await page.getByText(`${code} selected from this offer link`, { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByTestId("customer-selected-coupon").getByText(code, { exact: false }).waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /^Add$/i }).first().click();
+    await page.getByTestId("customer-funnel-cart-total").getByText("1 item selected", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("customer-cart-summary").waitFor({ timeout: 10000 });
     await page.getByText(new RegExp(`Applied\\s+${code}`, "i")).first().waitFor({ timeout: 15000 });
-    await page.getByText("Checkout Progress", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("customer-checkout-progress").getByText("Checkout Progress", { exact: false }).waitFor({ timeout: 10000 });
 
     await page.getByRole("button", { name: /^Delivery$/i }).click();
     await page.getByPlaceholder("Name").fill("Customer Checkout Proof");
@@ -181,7 +187,7 @@ async function main() {
     await page.getByPlaceholder("Delivery address").fill("Civil Lines market near main road");
     await page.getByText(/Delivery .*: Rs .*ETA/i).waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /^Cash$/i }).click();
-    await page.getByRole("button", { name: /Place Order/i }).click();
+    await page.getByTestId("customer-place-order").click();
     await page.getByText(/Order #\d+ confirmed/i).waitFor({ timeout: 15000 });
 
     const bodyText = await page.locator("body").innerText();
