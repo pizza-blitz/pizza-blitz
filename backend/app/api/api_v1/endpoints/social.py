@@ -153,6 +153,90 @@ def _delivery_audit_counts(deliveries: list[SocialPostDelivery]) -> dict:
     }
 
 
+def _delivery_proof_dict(delivery: SocialPostDelivery | None) -> dict | None:
+    if not delivery:
+        return None
+    return {
+        "id": delivery.id,
+        "social_post_id": delivery.social_post_id,
+        "platform": delivery.platform,
+        "provider": delivery.provider,
+        "status": delivery.status,
+        "dry_run": delivery.dry_run,
+        "external_id": delivery.external_id,
+        "issue_reason": _delivery_issue_reason(delivery),
+        "error": delivery.error,
+        "recovery_action": _delivery_recovery_action(delivery),
+        "attempted_at": delivery.attempted_at.isoformat() if delivery.attempted_at else None,
+    }
+
+
+def _platform_activation_status(status: dict, counts: dict, blocked_due_count: int) -> tuple[str, str, list[str]]:
+    blockers: list[str] = []
+    if status.get("unsupported"):
+        return "unsupported", "Select a supported Meta platform provider.", ["Unsupported provider selected"]
+    if not settings.SOCIAL_PUBLISH_ENABLED:
+        blockers.append("SOCIAL_PUBLISH_ENABLED=true")
+    blockers.extend(setting for setting in status.get("missing_settings") or [] if setting not in blockers)
+    if blockers:
+        return "credentials_needed", f"Configure {', '.join(blockers)}.", blockers
+    if blocked_due_count:
+        return "content_blocked", "Fix blocked due-post content before auto-posting.", ["Blocked due-post content"]
+    if counts["dry_run_count"] == 0 and counts["published_count"] == 0:
+        return "proof_needed", "Run a dry-run proof before live auto-posting.", ["Dry-run proof missing"]
+    if counts["retryable_count"]:
+        return "recovery_needed", "Retry failed or skipped delivery attempts before the next live run.", ["Retryable delivery issues"]
+    return "live_ready", "Platform is ready for due-post auto-publishing.", []
+
+
+def _platform_mission_control(
+    db: Session,
+    platform: str,
+    due_posts: list[dict],
+) -> dict:
+    status = _social_provider_readiness(platform)
+    deliveries = (
+        db.query(SocialPostDelivery)
+        .filter(SocialPostDelivery.platform == platform)
+        .order_by(SocialPostDelivery.attempted_at.desc(), SocialPostDelivery.id.desc())
+        .all()
+    )
+    counts = {
+        **_delivery_counts(deliveries),
+        **_delivery_audit_counts(deliveries),
+    }
+    blocked_due = [
+        post for post in due_posts
+        if platform in (post.get("platforms") or []) and not post.get("eligible")
+    ]
+    eligible_due = [
+        post for post in due_posts
+        if platform in (post.get("platforms") or []) and post.get("eligible")
+    ]
+    latest_dry_run = next((delivery for delivery in deliveries if delivery.status == "dry_run"), None)
+    latest_published = next((delivery for delivery in deliveries if delivery.status == "published"), None)
+    latest_issue = next((delivery for delivery in deliveries if delivery.status in {"failed", "skipped"}), None)
+    activation_status, next_action, blockers = _platform_activation_status(
+        status,
+        counts,
+        len(blocked_due),
+    )
+    return {
+        "platform": platform,
+        "provider_status": status,
+        "activation_status": activation_status,
+        "blockers": blockers,
+        "due_count": len(eligible_due) + len(blocked_due),
+        "eligible_due_count": len(eligible_due),
+        "blocked_due_count": len(blocked_due),
+        "counts": counts,
+        "latest_dry_run": _delivery_proof_dict(latest_dry_run),
+        "latest_published": _delivery_proof_dict(latest_published),
+        "latest_issue": _delivery_proof_dict(latest_issue),
+        "next_action": next_action,
+    }
+
+
 def _provider_credential_checks(platform: str, status: dict) -> list[dict]:
     credential_map = {
         "facebook": [
@@ -341,6 +425,80 @@ def social_publishing_readiness(
             if all_ready
             else "Finish Meta token setup, then run dry-run proof before live publishing."
         ),
+    }
+
+
+@router.get("/auto-post/mission-control")
+def social_auto_post_mission_control(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    queue = social_auto_publish_status(db, limit=limit)
+    due_posts = queue.get("due_posts") or []
+    platforms = [
+        _platform_mission_control(db, platform, due_posts)
+        for platform in sorted(VALID_SOCIAL_PLATFORMS)
+    ]
+    recent_deliveries = (
+        db.query(SocialPostDelivery)
+        .order_by(SocialPostDelivery.attempted_at.desc(), SocialPostDelivery.id.desc())
+        .limit(8)
+        .all()
+    )
+    configured_count = sum(1 for platform in platforms if platform["provider_status"]["configured"])
+    live_ready_count = sum(1 for platform in platforms if platform["activation_status"] == "live_ready")
+    blocked_count = len(platforms) - live_ready_count
+    retryable_count = sum(platform["counts"]["retryable_count"] for platform in platforms)
+    if live_ready_count == len(platforms):
+        overall_status = "live_ready"
+        next_action = "All social platforms are live-ready. Run due posts from the auto-post console."
+    elif configured_count:
+        overall_status = "partially_ready"
+        next_action = "Finish proof, content and recovery blockers before the next live auto-post run."
+    else:
+        overall_status = "setup_needed"
+        next_action = "Configure Meta credentials, then run dry-run proof for Facebook and Instagram."
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "overall_status": overall_status,
+            "publish_enabled": settings.SOCIAL_PUBLISH_ENABLED,
+            "configured_count": configured_count,
+            "live_ready_count": live_ready_count,
+            "blocked_count": blocked_count,
+            "due_count": queue.get("due_count", 0),
+            "eligible_count": queue.get("eligible_count", 0),
+            "blocked_due_count": queue.get("blocked_count", 0),
+            "retryable_count": retryable_count,
+            "next_action": next_action,
+        },
+        "platforms": platforms,
+        "controls": [
+            {
+                "label": "Secret-safe Meta tokens",
+                "status": "enforced",
+                "detail": "Only missing setting names are returned; access tokens are never exposed.",
+            },
+            {
+                "label": "Due-post gate",
+                "status": "enforced",
+                "detail": "Auto-post only considers ready or scheduled posts whose scheduled_at time has arrived.",
+            },
+            {
+                "label": "Instagram asset gate",
+                "status": "enforced",
+                "detail": "Instagram posts stay blocked until a public image URL is attached.",
+            },
+            {
+                "label": "Dry-run recovery",
+                "status": "ready",
+                "detail": "Failed and skipped deliveries can be retried in dry-run mode before live posting.",
+            },
+        ],
+        "due_posts": due_posts,
+        "recent_delivery_events": [_delivery_proof_dict(delivery) for delivery in recent_deliveries],
     }
 
 

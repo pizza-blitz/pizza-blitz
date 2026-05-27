@@ -130,6 +130,75 @@ type SocialReadiness = {
   next_action: string;
 };
 
+type AutoPostActivationStatus =
+  | "live_ready"
+  | "partially_ready"
+  | "setup_needed"
+  | "credentials_needed"
+  | "content_blocked"
+  | "proof_needed"
+  | "recovery_needed"
+  | "unsupported";
+
+type AutoPostProof = {
+  id: number;
+  social_post_id?: number | null;
+  platform: PlatformKey;
+  provider?: string | null;
+  status: SocialDelivery["status"];
+  dry_run: boolean;
+  external_id?: string | null;
+  issue_reason?: SocialDelivery["issue_reason"];
+  error?: string | null;
+  recovery_action?: string | null;
+  attempted_at?: string | null;
+};
+
+type AutoPostPlatformControl = {
+  platform: PlatformKey;
+  provider_status: ProviderStatus;
+  activation_status: AutoPostActivationStatus;
+  blockers: string[];
+  due_count: number;
+  eligible_due_count: number;
+  blocked_due_count: number;
+  counts: {
+    attempted_count: number;
+    published_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    retryable_count: number;
+    provider_issue_count: number;
+    asset_issue_count: number;
+    needs_review_count: number;
+  };
+  latest_dry_run?: AutoPostProof | null;
+  latest_published?: AutoPostProof | null;
+  latest_issue?: AutoPostProof | null;
+  next_action: string;
+};
+
+type SocialAutoPostMissionControl = {
+  generated_at: string;
+  summary: {
+    overall_status: AutoPostActivationStatus;
+    publish_enabled: boolean;
+    configured_count: number;
+    live_ready_count: number;
+    blocked_count: number;
+    due_count: number;
+    eligible_count: number;
+    blocked_due_count: number;
+    retryable_count: number;
+    next_action: string;
+  };
+  platforms: AutoPostPlatformControl[];
+  controls: ContentRequirement[];
+  due_posts: AutoPublishPost[];
+  recent_delivery_events: AutoPostProof[];
+};
+
 type SocialRetryResult = {
   post: SocialPost;
   dry_run: boolean;
@@ -169,11 +238,47 @@ const platformLabels: Record<PlatformKey, string> = {
   instagram: "Instagram",
 };
 
+const emptyAutoPostCounts: AutoPostPlatformControl["counts"] = {
+  attempted_count: 0,
+  published_count: 0,
+  dry_run_count: 0,
+  failed_count: 0,
+  skipped_count: 0,
+  retryable_count: 0,
+  provider_issue_count: 0,
+  asset_issue_count: 0,
+  needs_review_count: 0,
+};
+
+const missionFallbackControls: ContentRequirement[] = [
+  {
+    label: "Secret-safe Meta tokens",
+    status: "checked",
+    detail: "The portal only reports configured or missing settings; token values are never exposed.",
+  },
+  {
+    label: "Due-post gate",
+    status: "enforced",
+    detail: "Only ready or scheduled posts whose scheduled_at time has arrived enter the auto-post queue.",
+  },
+  {
+    label: "Instagram asset gate",
+    status: "enforced",
+    detail: "Instagram posts remain blocked until a public image URL is attached.",
+  },
+  {
+    label: "Dry-run recovery",
+    status: "available",
+    detail: "Failed or skipped delivery attempts can be retried safely before live publishing.",
+  },
+];
+
 export default function SocialPublishingPage() {
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [providerStatus, setProviderStatus] = useState<Record<PlatformKey, ProviderStatus> | null>(null);
   const [autoPublishStatus, setAutoPublishStatus] = useState<AutoPublishStatus | null>(null);
   const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
+  const [missionControl, setMissionControl] = useState<SocialAutoPostMissionControl | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<DeliveryHistory | null>(null);
   const [formData, setFormData] = useState(emptyForm);
@@ -201,11 +306,12 @@ export default function SocialPublishingPage() {
 
   const fetchSocial = async (preferredPostId?: number | null) => {
     setLoading(true);
-    const [statusResponse, postsResponse, autoResponse, readinessResponse] = await Promise.all([
+    const [statusResponse, postsResponse, autoResponse, readinessResponse, missionResponse] = await Promise.all([
       fetch(`${SOCIAL_API}/provider-status`, { credentials: "include" }),
       fetch(`${SOCIAL_API}/posts`, { credentials: "include" }),
       fetch(`${SOCIAL_API}/auto-publish/status`, { credentials: "include" }),
       fetch(`${SOCIAL_API}/readiness`, { credentials: "include" }),
+      fetch(`${SOCIAL_API}/auto-post/mission-control`, { credentials: "include" }),
     ]);
     if (statusResponse.ok) {
       setProviderStatus(await statusResponse.json());
@@ -215,6 +321,13 @@ export default function SocialPublishingPage() {
     }
     if (readinessResponse.ok) {
       setSocialReadiness(await readinessResponse.json());
+    } else {
+      setSocialReadiness(null);
+    }
+    if (missionResponse.ok) {
+      setMissionControl(await missionResponse.json());
+    } else {
+      setMissionControl(null);
     }
     if (postsResponse.ok) {
       const data: SocialPost[] = await postsResponse.json();
@@ -369,6 +482,62 @@ export default function SocialPublishingPage() {
     setRetrying(false);
   };
 
+  const missionDuePosts =
+    missionControl?.due_posts || autoPublishStatus?.due_posts || socialReadiness?.schedule.due_posts || [];
+  const missionPlatforms =
+    missionControl?.platforms ||
+    (["facebook", "instagram"] as PlatformKey[]).map((platform) => {
+      const status =
+        socialReadiness?.providers?.[platform] ||
+        autoPublishStatus?.provider_status?.[platform] ||
+        providerStatus?.[platform] ||
+        fallbackProviderStatus(platform);
+      const platformDuePosts = missionDuePosts.filter((post) => post.platforms.includes(platform));
+      const blockedDueCount = platformDuePosts.filter((post) => !post.eligible).length;
+      const activationStatus: AutoPostActivationStatus = status.unsupported
+        ? "unsupported"
+        : blockedDueCount
+          ? "content_blocked"
+          : status.configured
+            ? "proof_needed"
+            : "credentials_needed";
+
+      return {
+        platform,
+        provider_status: status,
+        activation_status: activationStatus,
+        blockers: blockedDueCount
+          ? ["Blocked due-post content"]
+          : status.configured
+            ? ["Dry-run proof missing"]
+            : status.missing_settings,
+        due_count: platformDuePosts.length,
+        eligible_due_count: platformDuePosts.filter((post) => post.eligible).length,
+        blocked_due_count: blockedDueCount,
+        counts: emptyAutoPostCounts,
+        latest_dry_run: null,
+        latest_published: null,
+        latest_issue: null,
+        next_action: status.next_action || "Refresh mission control before live auto-posting.",
+      };
+    });
+  const missionSummary =
+    missionControl?.summary || {
+      overall_status: missionPlatforms.some((platform) => platform.provider_status.configured)
+        ? ("partially_ready" as AutoPostActivationStatus)
+        : ("setup_needed" as AutoPostActivationStatus),
+      publish_enabled: Boolean(missionPlatforms.some((platform) => platform.provider_status.enabled)),
+      configured_count: missionPlatforms.filter((platform) => platform.provider_status.configured).length,
+      live_ready_count: missionPlatforms.filter((platform) => platform.activation_status === "live_ready").length,
+      blocked_count: missionPlatforms.filter((platform) => platform.activation_status !== "live_ready").length,
+      due_count: missionDuePosts.length,
+      eligible_count: missionDuePosts.filter((post) => post.eligible).length,
+      blocked_due_count: missionDuePosts.filter((post) => !post.eligible).length,
+      retryable_count: socialReadiness?.audit.retryable_count || 0,
+      next_action: socialReadiness?.next_action || "Loading social auto-post audit.",
+    };
+  const missionControls = missionControl?.controls || missionFallbackControls;
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -420,6 +589,164 @@ export default function SocialPublishingPage() {
           icon={Image}
         />
       </div>
+
+      <section
+        data-testid="social-autopost-mission-control"
+        className="mb-8 rounded-xl border border-sky-500/10 bg-[#111115] p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-sky-300">
+              Social Auto-Post Mission Control
+            </p>
+            <h2 className="mt-1 text-xl font-black">Due-post gates, Meta provider proof and recovery</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              One place to see whether Facebook and Instagram can safely auto-publish, which due posts are blocked, and what action clears the next blocker.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-4 py-2 text-xs font-black uppercase ${autoPostActivationClass(
+              missionSummary.overall_status
+            )}`}
+          >
+            {autoPostActivationLabel(missionSummary.overall_status)}
+          </span>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+          <AutoMetric label="Live Ready" value={missionSummary.live_ready_count} icon={CheckCircle2} />
+          <AutoMetric label="Due" value={missionSummary.due_count} icon={Clock} />
+          <AutoMetric label="Eligible" value={missionSummary.eligible_count} icon={Send} />
+          <AutoMetric label="Blocked" value={missionSummary.blocked_due_count || missionSummary.blocked_count} icon={AlertTriangle} />
+          <AutoMetric label="Retryable" value={missionSummary.retryable_count} icon={RefreshCw} />
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-4">
+          {missionControls.map((control) => (
+            <div key={`mission-control-${control.label}`} className="rounded-xl border border-white/5 bg-black/25 p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-white">{control.label}</p>
+                <span className="rounded-full bg-sky-500/10 px-2 py-1 text-[11px] font-black uppercase text-sky-200">
+                  {control.status}
+                </span>
+              </div>
+              <p className="text-xs font-semibold leading-5 text-gray-500">{control.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="xl:col-span-7">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {missionPlatforms.map((platformControl) => {
+                const Icon = platformControl.platform === "instagram" ? Image : Share2;
+                return (
+                  <div
+                    key={`autopost-platform-${platformControl.platform}`}
+                    data-testid={`autopost-platform-${platformControl.platform}`}
+                    className="rounded-xl border border-white/5 bg-black/25 p-5"
+                  >
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/10 text-sky-300">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-black">{platformLabels[platformControl.platform]}</p>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
+                            {platformControl.provider_status.provider || "checking provider"}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-black uppercase ${autoPostActivationClass(
+                          platformControl.activation_status
+                        )}`}
+                      >
+                        {autoPostActivationLabel(platformControl.activation_status)}
+                      </span>
+                    </div>
+
+                    <div className="mb-4 grid grid-cols-3 gap-2">
+                      <Detail label="Due" value={String(platformControl.due_count)} />
+                      <Detail label="Eligible" value={String(platformControl.eligible_due_count)} />
+                      <Detail label="Blocked" value={String(platformControl.blocked_due_count)} />
+                    </div>
+
+                    <div className="space-y-3">
+                      <AutoPostProofRow
+                        label="Dry-run proof"
+                        proof={platformControl.latest_dry_run}
+                        empty="Run a dry-run proof for this platform."
+                      />
+                      <AutoPostProofRow
+                        label="Live proof"
+                        proof={platformControl.latest_published}
+                        empty="No live publish proof recorded yet."
+                      />
+                      <AutoPostProofRow
+                        label="Latest issue"
+                        proof={platformControl.latest_issue}
+                        empty="No current delivery issue."
+                      />
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-white/5 bg-white/[0.03] p-3">
+                      <p className="text-xs font-black uppercase tracking-widest text-gray-500">Blockers</p>
+                      <p className="mt-2 text-sm font-semibold leading-6 text-gray-400">
+                        {platformControl.blockers.length ? platformControl.blockers.join(", ") : "No active blockers."}
+                      </p>
+                    </div>
+                    <p className="mt-4 text-xs font-bold leading-5 text-sky-100">{platformControl.next_action}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div data-testid="autopost-due-lane" className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-sky-300">Due-Post Lane</p>
+                <h3 className="mt-1 text-lg font-black">Next posts auto-publish will inspect</h3>
+              </div>
+              <Clock className="h-5 w-5 text-sky-300" />
+            </div>
+            <div className="space-y-2">
+              {missionDuePosts.slice(0, 4).map((post) => (
+                <div
+                  key={`mission-due-${post.id}`}
+                  data-testid={`autopost-due-post-${post.id}`}
+                  className="rounded-lg border border-white/5 bg-white/[0.03] p-3"
+                >
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-black text-white">{post.title}</p>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-black uppercase ${
+                        post.eligible ? "bg-green-500/15 text-green-300" : "bg-yellow-500/15 text-yellow-300"
+                      }`}
+                    >
+                      {post.eligible ? "eligible" : "blocked"}
+                    </span>
+                  </div>
+                  <p className="text-xs font-semibold text-gray-500">{formatDateTime(post.scheduled_at)}</p>
+                  <p className="mt-2 text-sm leading-6 text-gray-400">
+                    {post.eligible
+                      ? post.platforms.map((platform) => platformLabels[platform]).join(", ")
+                      : post.blockers.join(", ")}
+                  </p>
+                </div>
+              ))}
+              {!missionDuePosts.length && (
+                <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
+                  No social posts are due for auto-publish right now.
+                </div>
+              )}
+            </div>
+            <p className="mt-4 text-xs font-bold leading-5 text-orange-200">{missionSummary.next_action}</p>
+          </div>
+        </div>
+      </section>
 
       <section
         data-testid="social-readiness-command"
@@ -852,6 +1179,24 @@ function providerLabel(status?: ProviderStatus) {
   return status.configured ? "Ready" : "Setup needed";
 }
 
+function fallbackProviderStatus(platform: PlatformKey): ProviderStatus {
+  return {
+    platform,
+    provider: platform === "instagram" ? "meta-instagram" : "meta-facebook",
+    enabled: false,
+    configured: false,
+    unsupported: false,
+    missing_settings:
+      platform === "instagram"
+        ? ["SOCIAL_PUBLISH_ENABLED", "INSTAGRAM_BUSINESS_ACCOUNT_ID", "INSTAGRAM_ACCESS_TOKEN"]
+        : ["SOCIAL_PUBLISH_ENABLED", "FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"],
+    readiness_label: "Checking setup",
+    credential_checks: [],
+    content_requirements: missionFallbackControls,
+    next_action: `Configure ${platformLabels[platform]} provider settings, then run a dry-run proof.`,
+  };
+}
+
 function setSelectedPostParam(postId: number) {
   const url = new URL(window.location.href);
   url.searchParams.set("post", String(postId));
@@ -943,6 +1288,72 @@ function SocialProviderCard({
       <p className="mt-4 text-xs font-semibold leading-5 text-gray-500">
         {status?.next_action || "Refresh readiness before publishing."}
       </p>
+    </div>
+  );
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "No schedule";
+  return new Date(value).toLocaleString();
+}
+
+function autoPostActivationLabel(status?: AutoPostActivationStatus) {
+  if (status === "live_ready") return "Live ready";
+  if (status === "partially_ready") return "Partially ready";
+  if (status === "setup_needed") return "Setup needed";
+  if (status === "credentials_needed") return "Credentials needed";
+  if (status === "content_blocked") return "Content blocked";
+  if (status === "proof_needed") return "Proof needed";
+  if (status === "recovery_needed") return "Recovery needed";
+  if (status === "unsupported") return "Unsupported";
+  return "Checking";
+}
+
+function autoPostActivationClass(status?: AutoPostActivationStatus) {
+  if (status === "live_ready") return "bg-green-500/15 text-green-300";
+  if (status === "partially_ready" || status === "proof_needed") return "bg-blue-500/15 text-blue-300";
+  if (status === "content_blocked" || status === "recovery_needed") return "bg-yellow-500/15 text-yellow-300";
+  if (status === "credentials_needed" || status === "setup_needed") return "bg-orange-500/15 text-orange-300";
+  if (status === "unsupported") return "bg-red-500/15 text-red-300";
+  return "bg-white/10 text-gray-300";
+}
+
+function AutoPostProofRow({
+  label,
+  proof,
+  empty,
+}: {
+  label: string;
+  proof?: AutoPostProof | null;
+  empty: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-black/30 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+        {proof ? (
+          <span className={`rounded-full px-2 py-1 text-[11px] font-black uppercase ${deliveryStatusClass(proof.status)}`}>
+            {proof.status}
+          </span>
+        ) : (
+          <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black uppercase text-gray-400">
+            waiting
+          </span>
+        )}
+      </div>
+      {proof ? (
+        <>
+          <p className="text-sm font-semibold leading-6 text-gray-300">
+            {proof.provider || platformLabels[proof.platform]} {proof.dry_run ? "dry-run" : "live"} attempt
+            {proof.external_id ? ` | ${proof.external_id}` : ""}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-gray-500">
+            {proof.recovery_action || proof.error || proof.issue_reason || formatDateTime(proof.attempted_at)}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm font-semibold leading-6 text-gray-500">{empty}</p>
+      )}
     </div>
   );
 }
