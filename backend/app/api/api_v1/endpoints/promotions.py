@@ -679,6 +679,78 @@ def _provider_readiness_status(channel: str) -> dict:
     }
 
 
+def _delivery_proof_dict(delivery: CampaignDelivery | None) -> dict | None:
+    if not delivery:
+        return None
+    return {
+        "id": delivery.id,
+        "promotion_id": delivery.promotion_id,
+        "channel": delivery.channel,
+        "provider": delivery.provider,
+        "status": delivery.status,
+        "dry_run": delivery.dry_run,
+        "external_id": delivery.external_id,
+        "recipient_masked": (
+            _masked_destination(delivery.channel, delivery.destination)
+            if delivery.destination
+            else None
+        ),
+        "issue_reason": _delivery_issue_reason(delivery),
+        "error": delivery.error,
+        "attempted_at": delivery.attempted_at.isoformat() if delivery.attempted_at else None,
+    }
+
+
+def _dispatch_activation_status(channel: str, status: dict, counts: dict) -> tuple[str, str, list[str]]:
+    missing_settings = status.get("missing_settings") or []
+    blockers: list[str] = []
+    if status.get("unsupported"):
+        blockers = ["Unsupported provider selected"]
+        return "unsupported", "Select a supported provider before sending.", blockers
+    if not settings.CAMPAIGN_SEND_ENABLED:
+        blockers.append("CAMPAIGN_SEND_ENABLED=true")
+    blockers.extend(setting for setting in missing_settings if setting not in blockers)
+    if blockers:
+        return "credentials_needed", f"Configure {', '.join(blockers)}.", blockers
+    if channel == "whatsapp" and status.get("template_status") == "needs_template":
+        blockers = ["WHATSAPP_TEMPLATE_NAME"]
+        return "template_needed", "Add the approved Meta template name before WhatsApp broadcasts.", blockers
+    if counts["dry_run_count"] == 0 and counts["sent_count"] == 0:
+        blockers = ["Dry-run proof missing"]
+        return "test_proof_needed", "Run a dry-run campaign send before live launch.", blockers
+    if counts["needs_attention_count"] > 0 and counts["sent_count"] == 0:
+        blockers = ["Delivery issues need recovery"]
+        return "recovery_needed", "Resolve failed or skipped delivery attempts before live launch.", blockers
+    return "live_ready", "Channel has credentials, compliance checks and send proof.", []
+
+
+def _dispatch_control_channel(db: Session, channel: str) -> dict:
+    status = _provider_readiness_status(channel)
+    deliveries = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.channel == channel)
+        .order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        .all()
+    )
+    counts = _delivery_counts(deliveries)
+    audit_counts = _delivery_audit_counts(deliveries)
+    latest_dry_run = next((delivery for delivery in deliveries if delivery.status == "dry_run"), None)
+    latest_sent = next((delivery for delivery in deliveries if delivery.status == "sent"), None)
+    latest_issue = next((delivery for delivery in deliveries if delivery.status in {"failed", "skipped"}), None)
+    activation_status, next_action, blockers = _dispatch_activation_status(channel, status, counts)
+    return {
+        "channel": channel,
+        "provider_status": status,
+        "activation_status": activation_status,
+        "blockers": blockers,
+        "counts": {**counts, **audit_counts},
+        "latest_dry_run": _delivery_proof_dict(latest_dry_run),
+        "latest_sent": _delivery_proof_dict(latest_sent),
+        "latest_issue": _delivery_proof_dict(latest_issue),
+        "next_action": next_action,
+    }
+
+
 def _render_provider_test_message(template: str) -> str:
     values = {
         "name": "Test Customer",
@@ -1898,6 +1970,78 @@ def campaign_provider_statuses(
             if all_configured and settings.CAMPAIGN_SEND_ENABLED
             else "Finish provider credentials, then run a dry-run proof for each channel."
         ),
+    }
+
+
+@router.get("/providers/dispatch-control")
+def campaign_dispatch_control(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    channels = [_dispatch_control_channel(db, channel) for channel in CHANNEL_ORDER]
+    delivery_counts = {
+        "attempted_count": sum(channel["counts"]["attempted_count"] for channel in channels),
+        "sent_count": sum(channel["counts"]["sent_count"] for channel in channels),
+        "dry_run_count": sum(channel["counts"]["dry_run_count"] for channel in channels),
+        "failed_count": sum(channel["counts"]["failed_count"] for channel in channels),
+        "skipped_count": sum(channel["counts"]["skipped_count"] for channel in channels),
+        "needs_attention_count": sum(channel["counts"]["needs_attention_count"] for channel in channels),
+        "provider_issue_count": sum(channel["counts"]["provider_issue_count"] for channel in channels),
+    }
+    configured_count = sum(1 for channel in channels if channel["provider_status"]["configured"])
+    live_ready_count = sum(1 for channel in channels if channel["activation_status"] == "live_ready")
+    blocked_count = len(channels) - live_ready_count
+    recent_deliveries = (
+        db.query(CampaignDelivery)
+        .order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        .limit(8)
+        .all()
+    )
+    if live_ready_count == len(CHANNEL_ORDER):
+        overall_status = "live_ready"
+        next_action = "All channels are live-ready. Use the send queue for campaign-level approval."
+    elif configured_count:
+        overall_status = "partially_ready"
+        next_action = "Complete the remaining channel blockers, then run dry-run proof before live sending."
+    else:
+        overall_status = "setup_needed"
+        next_action = "Add provider credentials and keep test sends in dry-run mode until proof is recorded."
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "overall_status": overall_status,
+            "send_enabled": settings.CAMPAIGN_SEND_ENABLED,
+            "configured_count": configured_count,
+            "live_ready_count": live_ready_count,
+            "blocked_count": blocked_count,
+            **delivery_counts,
+            "next_action": next_action,
+        },
+        "channels": channels,
+        "controls": [
+            {
+                "label": "Secret-safe activation",
+                "status": "enforced",
+                "detail": "Only missing setting names and masked recipients are shown; provider secrets are never returned.",
+            },
+            {
+                "label": "Consent gate",
+                "status": "enforced",
+                "detail": "Campaign delivery skips customers without promotional opt-in before any provider call.",
+            },
+            {
+                "label": "Dry-run proof",
+                "status": "enforced",
+                "detail": "Live campaign sends stay blocked until a dry-run receipt exists for the channel.",
+            },
+            {
+                "label": "Recovery queue",
+                "status": "ready",
+                "detail": "Failed and skipped deliveries are classified for resend or contact-cleanup action.",
+            },
+        ],
+        "recent_delivery_events": [_delivery_proof_dict(delivery) for delivery in recent_deliveries],
     }
 
 

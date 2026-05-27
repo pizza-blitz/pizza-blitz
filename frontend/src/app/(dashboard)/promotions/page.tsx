@@ -212,6 +212,74 @@ type ProviderReadiness = {
   next_action?: string;
 };
 
+type DispatchActivationStatus =
+  | "live_ready"
+  | "partially_ready"
+  | "setup_needed"
+  | "credentials_needed"
+  | "template_needed"
+  | "test_proof_needed"
+  | "recovery_needed"
+  | "unsupported";
+
+type DispatchDeliveryProof = {
+  id: number;
+  promotion_id?: number | null;
+  channel: ChannelKey;
+  provider?: string | null;
+  status: CampaignDelivery["status"];
+  dry_run: boolean;
+  external_id?: string | null;
+  recipient_masked?: string | null;
+  issue_reason?: DeliveryReasonFilter | "none";
+  error?: string | null;
+  attempted_at?: string | null;
+};
+
+type DispatchDeliveryCounts = DeliveryAuditCounts & {
+  attempted_count: number;
+  sent_count: number;
+  dry_run_count: number;
+  failed_count: number;
+  skipped_count: number;
+  needs_attention_count: number;
+  retryable_count?: number;
+};
+
+type DispatchChannelControl = {
+  channel: ChannelKey;
+  provider_status: ProviderStatus;
+  activation_status: DispatchActivationStatus;
+  blockers: string[];
+  counts: DispatchDeliveryCounts;
+  latest_dry_run?: DispatchDeliveryProof | null;
+  latest_sent?: DispatchDeliveryProof | null;
+  latest_issue?: DispatchDeliveryProof | null;
+  next_action: string;
+};
+
+type CampaignDispatchControl = {
+  generated_at: string;
+  summary: {
+    overall_status: DispatchActivationStatus;
+    send_enabled: boolean;
+    configured_count: number;
+    live_ready_count: number;
+    blocked_count: number;
+    attempted_count: number;
+    sent_count: number;
+    dry_run_count: number;
+    failed_count: number;
+    skipped_count: number;
+    needs_attention_count: number;
+    provider_issue_count: number;
+    next_action: string;
+  };
+  channels: DispatchChannelControl[];
+  controls: ProviderComplianceCheck[];
+  recent_delivery_events: DispatchDeliveryProof[];
+};
+
 type SocialPlatformKey = "facebook" | "instagram";
 
 type SocialProviderStatus = {
@@ -664,6 +732,7 @@ export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [providerReadiness, setProviderReadiness] = useState<ProviderReadiness | null>(null);
+  const [dispatchControl, setDispatchControl] = useState<CampaignDispatchControl | null>(null);
   const [providerTestChannel, setProviderTestChannel] = useState<ChannelKey>("whatsapp");
   const [providerTestRecipient, setProviderTestRecipient] = useState(defaultTestRecipient("whatsapp"));
   const [providerTestTemplate, setProviderTestTemplate] = useState(emptyForm.message_template);
@@ -715,6 +784,7 @@ export default function PromotionsPage() {
     }
     fetchPromotions(initialReturn.campaignId);
     fetchProviderReadiness();
+    fetchDispatchControl();
     fetchPlaybook();
     fetchPerformanceRollup();
     fetchScheduleQueue();
@@ -753,6 +823,79 @@ export default function PromotionsPage() {
     channel,
     status: providerReadiness?.channels.find((item) => item.channel === channel),
   }));
+  const fallbackDispatchControls: ProviderComplianceCheck[] = [
+    {
+      label: "Secret-safe activation",
+      status: "enforced",
+      detail: "Only missing setting names and masked recipients are shown; provider secrets are never returned.",
+    },
+    {
+      label: "Consent gate",
+      status: "enforced",
+      detail: "Campaign delivery skips customers without promotional opt-in before any provider call.",
+    },
+    {
+      label: "Dry-run proof",
+      status: "enforced",
+      detail: "Live campaign sends stay blocked until a dry-run receipt exists for the channel.",
+    },
+    {
+      label: "Recovery queue",
+      status: "ready",
+      detail: "Failed and skipped deliveries are classified for resend or contact-cleanup action.",
+    },
+  ];
+  const fallbackDispatchChannels: DispatchChannelControl[] = providerChannels.map(({ channel, status }) => ({
+    channel,
+    provider_status:
+      status || {
+        channel,
+        provider: "checking",
+        enabled: false,
+        configured: false,
+        unsupported: false,
+        missing_settings: [],
+        readiness_label: "Checking",
+      },
+    activation_status: status?.configured ? "test_proof_needed" : "credentials_needed",
+    blockers: status?.missing_settings?.length ? status.missing_settings : ["Loading delivery proof"],
+    counts: {
+      attempted_count: 0,
+      sent_count: 0,
+      dry_run_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      needs_attention_count: 0,
+      retryable_count: 0,
+      consent_blocked_count: 0,
+      missing_destination_count: 0,
+      already_sent_count: 0,
+      provider_issue_count: 0,
+      needs_review_count: 0,
+    },
+    latest_dry_run: null,
+    latest_sent: null,
+    latest_issue: null,
+    next_action: status?.next_action || "Loading delivery proof and provider audit.",
+  }));
+  const dispatchSummary =
+    dispatchControl?.summary || {
+      overall_status: (providerReadiness?.configured_count ? "partially_ready" : "setup_needed") as DispatchActivationStatus,
+      send_enabled: Boolean(providerReadiness?.send_enabled),
+      configured_count: providerReadiness?.configured_count || 0,
+      live_ready_count: 0,
+      blocked_count: 3,
+      attempted_count: 0,
+      sent_count: 0,
+      dry_run_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      needs_attention_count: 0,
+      provider_issue_count: 0,
+      next_action: providerReadiness?.next_action || "Loading delivery proof and provider audit.",
+    };
+  const dispatchChannels = dispatchControl?.channels || fallbackDispatchChannels;
+  const dispatchControls = dispatchControl?.controls || fallbackDispatchControls;
   const deliveryAuditCounts = deliveryHistory?.audit_counts || {
     consent_blocked_count: deliveryHistory?.consent_blocked_count || 0,
     missing_destination_count: deliveryHistory?.missing_destination_count || 0,
@@ -848,6 +991,7 @@ export default function PromotionsPage() {
   const marketingPassedChecks = marketingLiveChecks.filter((item) => item.passed).length;
   const marketingReadinessScore = Math.round((marketingPassedChecks / marketingLiveChecks.length) * 100);
   const marketingNextActions = [
+    dispatchSummary.next_action,
     providerReadiness?.next_action,
     socialReadiness?.next_action,
     adSyncReadiness?.next_action || adLaunchReadiness?.provider_status.next_action,
@@ -862,6 +1006,17 @@ export default function PromotionsPage() {
       return;
     }
     setProviderReadiness(await response.json());
+  };
+
+  const fetchDispatchControl = async () => {
+    const response = await fetch(`${PROMOTIONS_API}/providers/dispatch-control`, {
+      credentials: "include",
+    });
+    if (!response.ok) {
+      setDispatchControl(null);
+      return;
+    }
+    setDispatchControl(await response.json());
   };
 
   const changeProviderTestChannel = (channel: ChannelKey) => {
@@ -892,6 +1047,7 @@ export default function PromotionsPage() {
       setProviderTestResult(data);
       setMessage(`${channelLabel(providerTestChannel)} safe test send generated in dry-run mode.`);
       await fetchProviderReadiness();
+      await fetchDispatchControl();
     } catch {
       setMessage("Safe test send could not be generated.");
     } finally {
@@ -1490,6 +1646,7 @@ export default function PromotionsPage() {
             onClick={() => {
               fetchPromotions();
               fetchProviderReadiness();
+              fetchDispatchControl();
               fetchPlaybook();
               fetchPerformanceRollup();
               fetchScheduleQueue();
@@ -1648,6 +1805,121 @@ export default function PromotionsPage() {
           {providerChannels.map(({ channel, status }) => (
             <ProviderCard key={channel} status={status} channel={channel} />
           ))}
+        </div>
+
+        <div
+          data-testid="campaign-dispatch-control"
+          className="mb-5 rounded-xl border border-white/5 bg-black/25 p-5"
+        >
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-orange-400">Campaign Dispatch Control</p>
+              <h3 className="mt-1 text-lg font-black">Live-provider blockers and send proof</h3>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+                One view for credentials, consent, dry-run receipts and recovery work before WhatsApp, SMS or email goes live.
+              </p>
+            </div>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-black uppercase ${dispatchActivationClass(
+                dispatchSummary.overall_status
+              )}`}
+            >
+              {dispatchActivationLabel(dispatchSummary.overall_status)}
+            </span>
+          </div>
+
+          {dispatchControl || providerReadiness ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+                <MiniSignal icon={CheckCircle2} label="Live Ready" value={`${dispatchSummary.live_ready_count}/3`} />
+                <MiniSignal icon={AlertTriangle} label="Blocked" value={`${dispatchSummary.blocked_count}`} />
+                <MiniSignal icon={Send} label="Dry Runs" value={`${dispatchSummary.dry_run_count}`} />
+                <MiniSignal icon={MessageCircle} label="Sent" value={`${dispatchSummary.sent_count}`} />
+                <MiniSignal icon={Clock} label="Attention" value={`${dispatchSummary.needs_attention_count}`} />
+                <MiniSignal icon={RefreshCw} label="Provider Issues" value={`${dispatchSummary.provider_issue_count}`} />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {dispatchControls.map((control) => (
+                  <div key={control.label} className="rounded-lg border border-white/5 bg-white/[0.03] p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-sm font-black text-white">{control.label}</p>
+                      <span className="rounded-full bg-green-500/10 px-2 py-1 text-[10px] font-black uppercase text-green-300">
+                        {control.status}
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold leading-5 text-gray-500">{control.detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                {dispatchChannels.map((channel) => (
+                  <div
+                    data-testid={`dispatch-channel-${channel.channel}`}
+                    key={`dispatch-${channel.channel}`}
+                    className="rounded-xl border border-white/5 bg-white/[0.03] p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-white">{channelLabel(channel.channel)}</p>
+                        <p className="mt-1 text-xs font-semibold text-gray-500">
+                          {channel.provider_status.provider} | {channel.provider_status.readiness_label}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-black uppercase ${dispatchActivationClass(
+                          channel.activation_status
+                        )}`}
+                      >
+                        {dispatchActivationLabel(channel.activation_status)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-lg border border-white/5 bg-black/25 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">Dry Run</p>
+                        <p className="mt-1 text-sm font-black text-gray-200">{channel.counts.dry_run_count}</p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-black/25 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">Sent</p>
+                        <p className="mt-1 text-sm font-black text-gray-200">{channel.counts.sent_count}</p>
+                      </div>
+                      <div className="rounded-lg border border-white/5 bg-black/25 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">Issues</p>
+                        <p className="mt-1 text-sm font-black text-gray-200">{channel.counts.needs_attention_count}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <DispatchProofRow label="Dry-run proof" proof={channel.latest_dry_run} empty="Awaiting proof" />
+                      <DispatchProofRow label="Last live send" proof={channel.latest_sent} empty="No live send yet" />
+                      <DispatchProofRow label="Latest issue" proof={channel.latest_issue} empty="No open issue" />
+                    </div>
+
+                    {channel.blockers.length > 0 && (
+                      <div className="mt-4 rounded-lg border border-yellow-500/10 bg-yellow-500/5 p-3">
+                        <p className="text-xs font-black uppercase tracking-widest text-yellow-300">Blockers</p>
+                        <p className="mt-2 break-words text-xs font-semibold leading-5 text-yellow-100">
+                          {channel.blockers.join(", ")}
+                        </p>
+                      </div>
+                    )}
+                    <p className="mt-4 text-xs font-semibold leading-5 text-gray-500">{channel.next_action}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-white/5 bg-white/[0.03] p-4">
+                <p className="text-xs font-black uppercase tracking-widest text-gray-500">Next Operator Action</p>
+                <p className="mt-2 text-sm font-semibold leading-6 text-gray-300">{dispatchSummary.next_action}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-white/10 p-8 text-center text-sm font-semibold leading-6 text-gray-500">
+              Dispatch control is loading the provider audit and delivery proof.
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
@@ -3143,6 +3415,18 @@ function formatRupees(value: number) {
   return `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "No record";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function MiniSignal({
   icon: Icon,
   label,
@@ -3161,6 +3445,44 @@ function MiniSignal({
         <p className="text-xs font-black uppercase tracking-widest text-gray-600">{label}</p>
         <p className="text-sm font-black leading-5 text-gray-200">{value}</p>
       </div>
+    </div>
+  );
+}
+
+function DispatchProofRow({
+  label,
+  proof,
+  empty,
+}: {
+  label: string;
+  proof?: DispatchDeliveryProof | null;
+  empty: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-black/25 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
+        {proof ? (
+          <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${statusClass(proof.status)}`}>
+            {proof.status.replace("_", " ")}
+          </span>
+        ) : (
+          <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-black uppercase text-gray-400">
+            Waiting
+          </span>
+        )}
+      </div>
+      {proof ? (
+        <div className="space-y-1">
+          <p className="text-sm font-black text-gray-200">
+            #{proof.id} {proof.recipient_masked ? `| ${proof.recipient_masked}` : ""}
+          </p>
+          <p className="text-xs font-semibold text-gray-500">{formatDateTime(proof.attempted_at)}</p>
+          {proof.error && <p className="break-words text-xs font-semibold leading-5 text-yellow-200">{proof.error}</p>}
+        </div>
+      ) : (
+        <p className="text-sm font-semibold text-gray-500">{empty}</p>
+      )}
     </div>
   );
 }
@@ -3518,6 +3840,27 @@ function sendQueueStatusClass(status: CampaignSendQueueRow["queue_status"]) {
   if (status === "provider_blocked") return "bg-yellow-500/15 text-yellow-300";
   if (status === "audience_blocked") return "bg-red-500/15 text-red-300";
   if (status === "dry_run_done") return "bg-blue-500/15 text-blue-300";
+  return "bg-white/10 text-gray-300";
+}
+
+function dispatchActivationLabel(status?: DispatchActivationStatus) {
+  if (status === "live_ready") return "Live Ready";
+  if (status === "partially_ready") return "Partially Ready";
+  if (status === "setup_needed") return "Setup Needed";
+  if (status === "credentials_needed") return "Credentials Needed";
+  if (status === "template_needed") return "Template Needed";
+  if (status === "test_proof_needed") return "Proof Needed";
+  if (status === "recovery_needed") return "Recovery Needed";
+  if (status === "unsupported") return "Unsupported";
+  return "Checking";
+}
+
+function dispatchActivationClass(status?: DispatchActivationStatus) {
+  if (status === "live_ready") return "bg-green-500/15 text-green-300";
+  if (status === "test_proof_needed") return "bg-orange-500/15 text-orange-300";
+  if (status === "partially_ready") return "bg-blue-500/15 text-blue-300";
+  if (status === "credentials_needed" || status === "template_needed") return "bg-yellow-500/15 text-yellow-300";
+  if (status === "recovery_needed" || status === "unsupported") return "bg-red-500/15 text-red-300";
   return "bg-white/10 text-gray-300";
 }
 
