@@ -27,6 +27,7 @@ const DELIVERY_QUOTE_API = getApiUrl('/api/v1/restaurant/delivery/quote');
 const DELIVERY_ECONOMICS_API = getApiUrl('/api/v1/restaurant/delivery/economics');
 const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
+const PAYMENT_RECONCILIATION_API = getApiUrl('/api/v1/restaurant/orders/payments/reconciliation');
 const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
 const STAFF_CREDENTIAL_API = getApiUrl('/api/v1/auth/staff/credential');
@@ -262,9 +263,47 @@ type PaymentProductionReadiness = {
   next_actions: string[];
 };
 
+type PaymentAuditEvent = {
+  id: number;
+  order_id: number;
+  provider: string;
+  event_type: string;
+  payment_status: string;
+  action: string;
+  provider_order_id?: string | null;
+  provider_payment_id?: string | null;
+  paid_amount?: number | null;
+  duplicate_count: number;
+  received_at?: string | null;
+  last_seen_at?: string | null;
+};
+
+type PaymentReconciliation = {
+  generated_at: string;
+  summary: {
+    events_today_count: number;
+    processed_today_count: number;
+    already_paid_today_count: number;
+    ignored_today_count: number;
+    duplicate_delivery_count: number;
+    recent_event_count: number;
+  };
+  provider_breakdown: {
+    provider: string;
+    count: number;
+  }[];
+  recent_events: PaymentAuditEvent[];
+  controls: {
+    name: string;
+    status: string;
+    detail: string;
+  }[];
+};
+
 type PaymentWebhookResult = {
   status: string;
   event: string;
+  audit?: PaymentAuditEvent;
   order?: {
     id: number;
     payment_status: string;
@@ -289,6 +328,13 @@ type SheetSyncResult = {
 
 const formatMoney = (value?: number | null) =>
   `Rs ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
+
+const paymentEventActionClass = (action?: string) => {
+  if (action === "processed") return "bg-green-100 text-green-700";
+  if (action === "already_paid") return "bg-blue-100 text-blue-700";
+  if (action === "ignored") return "bg-amber-100 text-amber-700";
+  return "bg-gray-100 text-gray-700";
+};
 
 const emptyDeliveryZoneDraft: DeliveryZoneDraft = {
   name: "",
@@ -318,6 +364,7 @@ export default function Settings() {
   const [staffCredentialMessage, setStaffCredentialMessage] = useState("");
   const [paymentReadiness, setPaymentReadiness] = useState<PaymentReadiness | null>(null);
   const [paymentProduction, setPaymentProduction] = useState<PaymentProductionReadiness | null>(null);
+  const [paymentReconciliation, setPaymentReconciliation] = useState<PaymentReconciliation | null>(null);
   const [isPaymentLoading, setIsPaymentLoading] = useState(true);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [webhookOrderId, setWebhookOrderId] = useState("");
@@ -410,12 +457,16 @@ export default function Settings() {
   const loadPaymentReadiness = async () => {
     setIsPaymentLoading(true);
     try {
-      const [readinessResponse, productionResponse] = await Promise.all([
+      const [readinessResponse, productionResponse, reconciliationResponse] = await Promise.all([
         fetch(PAYMENT_READINESS_API, {
           cache: "no-store",
           credentials: "include",
         }),
         fetch(PAYMENT_PRODUCTION_API, {
+          cache: "no-store",
+          credentials: "include",
+        }),
+        fetch(PAYMENT_RECONCILIATION_API, {
           cache: "no-store",
           credentials: "include",
         }),
@@ -431,9 +482,16 @@ export default function Settings() {
       } else {
         setPaymentProduction(null);
       }
+      if (reconciliationResponse.ok) {
+        const reconciliationData: PaymentReconciliation = await reconciliationResponse.json();
+        setPaymentReconciliation(reconciliationData);
+      } else {
+        setPaymentReconciliation(null);
+      }
     } catch {
       setPaymentReadiness(null);
       setPaymentProduction(null);
+      setPaymentReconciliation(null);
       setPaymentMessage("Payment readiness API is not available right now.");
     } finally {
       setIsPaymentLoading(false);
@@ -539,8 +597,12 @@ export default function Settings() {
   const activePaymentProvider = paymentReadiness?.payment || paymentProviders[0];
   const webhookContracts = paymentReadiness?.payment_webhook_contracts || [];
   const paymentProductionSummary = paymentProduction?.summary;
+  const paymentReconciliationSummary = paymentReconciliation?.summary;
   const awaitingSettlement = paymentProduction?.queues.awaiting_settlement || [];
   const recentPaidSettlements = paymentProduction?.queues.recent_paid || [];
+  const recentPaymentEvents = paymentReconciliation?.recent_events || [];
+  const paymentReconciliationControls = paymentReconciliation?.controls || [];
+  const paymentProviderBreakdown = paymentReconciliation?.provider_breakdown || [];
   const deliveryEconomicsSummary = deliveryEconomics?.summary;
 
   const updateDeliveryDraft = (zoneId: number, updates: Partial<DeliveryZone>) => {
@@ -1544,6 +1606,158 @@ export default function Settings() {
                         ) : (
                           <p className="rounded-md bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
                             No paid settlement has been recorded yet.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {paymentReconciliationSummary && (
+              <div
+                data-testid="payment-reconciliation-ledger"
+                className="rounded-lg border border-sky-100 bg-sky-50 p-4"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-white p-2 text-sky-700">
+                      <Shield className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-black text-gray-900">Payment Reconciliation Ledger</p>
+                      <p className="text-sm text-sky-900">
+                        Webhook audit trail with idempotency, duplicate delivery count, and settlement proof.
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    data-testid="payment-duplicate-count"
+                    className="inline-flex rounded-md bg-white px-3 py-2 text-xs font-black uppercase text-sky-700"
+                  >
+                    {paymentReconciliationSummary.duplicate_delivery_count} duplicate deliveries
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border border-sky-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Events Today</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentReconciliationSummary.events_today_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">
+                      {paymentReconciliationSummary.recent_event_count} recent audits visible
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-sky-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Processed</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentReconciliationSummary.processed_today_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">Marked paid by provider event</p>
+                  </div>
+                  <div className="rounded-lg border border-sky-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Already Paid</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentReconciliationSummary.already_paid_today_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">Matched safely after settlement</p>
+                  </div>
+                  <div className="rounded-lg border border-sky-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Ignored</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentReconciliationSummary.ignored_today_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">Non-paid events preserved</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+                  <div className="rounded-lg border border-sky-100 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-black text-gray-900">Recent Payment Event Audit</p>
+                        <p className="text-sm text-gray-500">
+                          Latest provider events and manual webhook tests recorded for reconciliation.
+                        </p>
+                      </div>
+                      <span className="rounded-md bg-sky-50 px-2.5 py-1 text-xs font-black text-sky-700">
+                        {recentPaymentEvents.length} rows
+                      </span>
+                    </div>
+                    <div data-testid="payment-event-audit" className="mt-4 space-y-3">
+                      {recentPaymentEvents.length ? (
+                        recentPaymentEvents.slice(0, 6).map((event) => (
+                          <div
+                            key={event.id}
+                            className="grid grid-cols-1 gap-3 rounded-md border border-gray-100 bg-gray-50 p-3 lg:grid-cols-[1fr_auto]"
+                          >
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-black text-gray-900">Order #{event.order_id}</p>
+                                <span className={`rounded-md px-2 py-1 text-[11px] font-black uppercase ${paymentEventActionClass(event.action)}`}>
+                                  {event.action.replace("_", " ")}
+                                </span>
+                                <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black uppercase text-gray-600">
+                                  {event.provider}
+                                </span>
+                              </div>
+                              <p className="mt-2 text-xs font-semibold text-gray-500">
+                                {event.event_type} - {event.payment_status}
+                              </p>
+                              <p
+                                data-testid="payment-event-reference"
+                                className="mt-1 break-all font-mono text-xs font-bold text-gray-700"
+                              >
+                                {event.provider_payment_id || event.provider_order_id || "reference pending"}
+                              </p>
+                            </div>
+                            <div className="rounded-md bg-white px-3 py-2 text-sm font-black text-gray-900">
+                              Duplicate {event.duplicate_count}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
+                          No payment webhook events have been recorded yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-sky-100 bg-white p-4">
+                    <p className="font-black text-gray-900">Reconciliation Controls</p>
+                    <div className="mt-3 space-y-2">
+                      {paymentReconciliationControls.map((control) => (
+                        <div key={control.name} className="rounded-md bg-gray-50 px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-black text-gray-900">{control.name}</p>
+                            <span className="rounded bg-green-50 px-2 py-1 text-[11px] font-black uppercase text-green-700">
+                              {control.status}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">{control.detail}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 border-t border-gray-100 pt-4">
+                      <p className="font-black text-gray-900">Provider Mix</p>
+                      <div className="mt-3 space-y-2">
+                        {paymentProviderBreakdown.length ? (
+                          paymentProviderBreakdown.map((provider) => (
+                            <div
+                              key={provider.provider}
+                              className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm font-bold text-gray-700"
+                            >
+                              <span className="capitalize">{provider.provider}</span>
+                              <span>{provider.count}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="rounded-md bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
+                            Provider events will appear here after checkout traffic starts.
                           </p>
                         )}
                       </div>

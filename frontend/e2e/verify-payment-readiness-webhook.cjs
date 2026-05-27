@@ -131,6 +131,7 @@ async function main() {
   const watch = createBrowserWatch(page);
   let orderId = 0;
   let paymentReference = "";
+  let reconciliationEvent = null;
 
   try {
     await signInAsAdmin(context);
@@ -141,11 +142,40 @@ async function main() {
     await assertHealthyPage(page, "settings page");
 
     await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Payment Reconciliation Ledger", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Manual Paid Webhook Tester", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByPlaceholder("Prepaid order ID").fill(String(orderId));
     await page.getByPlaceholder("Payment reference").fill(paymentReference);
     await page.getByRole("button", { name: /Send Manual Paid Webhook/i }).click();
     await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: 10000 });
+    const auditLedger = page.getByTestId("payment-event-audit");
+    await auditLedger.getByText(paymentReference, { exact: false }).first().waitFor({ timeout: 10000 });
+    await auditLedger.getByText("processed", { exact: false }).first().waitFor({ timeout: 10000 });
+
+    await page.getByRole("button", { name: /Send Manual Paid Webhook/i }).click();
+    await page.getByText("Webhook received with status: duplicate", { exact: false }).waitFor({ timeout: 10000 });
+    await auditLedger.getByText("Duplicate 1", { exact: false }).first().waitFor({ timeout: 10000 });
+
+    const reconciliationResponse = await context.request.get(
+      `${apiURL}/api/v1/restaurant/orders/payments/reconciliation`
+    );
+    const reconciliationData = await reconciliationResponse.json();
+    assert(
+      reconciliationResponse.ok(),
+      `Could not fetch payment reconciliation: ${JSON.stringify(reconciliationData)}`
+    );
+    reconciliationEvent = reconciliationData.recent_events.find(
+      (event) => event.provider_payment_id === paymentReference
+    );
+    assert(reconciliationEvent, `Payment audit did not include reference ${paymentReference}.`);
+    assert(
+      reconciliationEvent.action === "processed",
+      `Expected processed audit action, got ${reconciliationEvent.action}.`
+    );
+    assert(
+      reconciliationEvent.duplicate_count >= 1,
+      `Expected duplicate delivery count >= 1, got ${reconciliationEvent.duplicate_count}.`
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-payment-readiness-webhook.png"),
@@ -157,6 +187,7 @@ async function main() {
   }
 
   assert(orderId > 0, "No prepaid order was created for the payment proof.");
+  assert(reconciliationEvent, "No payment reconciliation event was captured.");
 
   const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/${orderId}`, {
     cache: "no-store",

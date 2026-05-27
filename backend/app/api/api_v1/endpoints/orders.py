@@ -1,3 +1,4 @@
+import hashlib
 from collections import Counter
 from datetime import date, datetime
 from typing import List, Optional
@@ -15,6 +16,7 @@ from app.models.domain import (
     InventoryItem,
     InventoryTransaction,
     Invoice,
+    PaymentEventAudit,
     Promotion,
     Recipe,
     RestaurantOrder,
@@ -546,6 +548,79 @@ def serialize_payment_queue_order(order: RestaurantOrder) -> dict:
         ),
         "created_at": order.created_at.isoformat() if order.created_at else None,
     }
+
+
+def payment_event_key(event: dict) -> str:
+    raw_key = "|".join(
+        [
+            str(event.get("provider") or ""),
+            str(event.get("event_type") or ""),
+            str(event.get("order_id") or event.get("provider_order_id") or ""),
+            str(event.get("provider_payment_id") or event.get("provider_order_id") or ""),
+            str(event.get("status") or ""),
+        ]
+    )
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def serialize_payment_event(event: PaymentEventAudit) -> dict:
+    return {
+        "id": event.id,
+        "event_key": event.event_key,
+        "order_id": event.order_id,
+        "provider": event.provider,
+        "event_type": event.event_type,
+        "payment_status": event.payment_status,
+        "action": event.action,
+        "provider_order_id": event.provider_order_id,
+        "provider_payment_id": event.provider_payment_id,
+        "paid_amount": round(float(event.paid_amount or 0), 2) if event.paid_amount is not None else None,
+        "duplicate_count": int(event.duplicate_count or 0),
+        "received_at": event.received_at.isoformat() if event.received_at else None,
+        "last_seen_at": event.last_seen_at.isoformat() if event.last_seen_at else None,
+    }
+
+
+def existing_payment_event(db: Session, event: dict) -> PaymentEventAudit | None:
+    return (
+        db.query(PaymentEventAudit)
+        .filter(PaymentEventAudit.event_key == payment_event_key(event))
+        .first()
+    )
+
+
+def mark_duplicate_payment_event(db: Session, event_audit: PaymentEventAudit) -> PaymentEventAudit:
+    event_audit.duplicate_count = int(event_audit.duplicate_count or 0) + 1
+    event_audit.last_seen_at = datetime.utcnow()
+    db.commit()
+    db.refresh(event_audit)
+    return event_audit
+
+
+def record_payment_event(
+    db: Session,
+    order: RestaurantOrder,
+    event: dict,
+    *,
+    action: str,
+) -> PaymentEventAudit:
+    event_audit = PaymentEventAudit(
+        event_key=payment_event_key(event),
+        order_id=order.id,
+        provider=event["provider"],
+        event_type=event["event_type"],
+        payment_status=event["status"],
+        action=action,
+        provider_order_id=event.get("provider_order_id"),
+        provider_payment_id=event.get("provider_payment_id"),
+        paid_amount=event.get("paid_amount"),
+        raw_payload=event.get("raw") or event,
+        received_at=datetime.utcnow(),
+    )
+    db.add(event_audit)
+    db.commit()
+    db.refresh(event_audit)
+    return event_audit
 
 
 def order_has_customization(order: RestaurantOrder) -> bool:
@@ -1298,6 +1373,62 @@ def payment_production_readiness(
     }
 
 
+@router.get("/payments/reconciliation")
+def payment_reconciliation(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    today_start = datetime.combine(date.today(), datetime.min.time())
+    events_today = (
+        db.query(PaymentEventAudit)
+        .filter(PaymentEventAudit.received_at >= today_start)
+        .all()
+    )
+    recent_events = (
+        db.query(PaymentEventAudit)
+        .order_by(PaymentEventAudit.received_at.desc(), PaymentEventAudit.id.desc())
+        .limit(12)
+        .all()
+    )
+    provider_breakdown = Counter(event.provider for event in recent_events)
+    action_breakdown = Counter(event.action for event in events_today)
+    duplicate_total = sum(int(event.duplicate_count or 0) for event in events_today)
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "events_today_count": len(events_today),
+            "processed_today_count": action_breakdown.get("processed", 0),
+            "already_paid_today_count": action_breakdown.get("already_paid", 0),
+            "ignored_today_count": action_breakdown.get("ignored", 0),
+            "duplicate_delivery_count": duplicate_total,
+            "recent_event_count": len(recent_events),
+        },
+        "provider_breakdown": [
+            {"provider": provider, "count": count}
+            for provider, count in provider_breakdown.items()
+        ],
+        "recent_events": [serialize_payment_event(event) for event in recent_events],
+        "controls": [
+            {
+                "name": "Stable webhook event key",
+                "status": "Active",
+                "detail": "Provider, event type, order, payment reference and status are hashed into a duplicate-safe key.",
+            },
+            {
+                "name": "Duplicate delivery counter",
+                "status": "Active",
+                "detail": "Repeated webhook deliveries increment duplicate_count instead of applying payment twice.",
+            },
+            {
+                "name": "Settlement trace",
+                "status": "Active",
+                "detail": "Processed, already-paid and ignored events remain visible for owner reconciliation.",
+            },
+        ],
+    }
+
+
 @router.post("/{order_id}/payment-confirmation")
 def confirm_order_payment(
     order_id: int,
@@ -1401,11 +1532,24 @@ async def process_payment_webhook(
             detail="Webhook did not match an existing order.",
         )
 
+    duplicate_event = existing_payment_event(db, event)
+    if duplicate_event is not None:
+        duplicate_event = mark_duplicate_payment_event(db, duplicate_event)
+        return {
+            "status": "duplicate",
+            "event": event["event_type"],
+            "payment_status": order.payment_status,
+            "audit": serialize_payment_event(duplicate_event),
+            "order": serialize_order(order),
+        }
+
     if event["status"] != "paid":
+        audit_event = record_payment_event(db, order, event, action="ignored")
         return {
             "status": "ignored",
             "event": event["event_type"],
             "payment_status": order.payment_status,
+            "audit": serialize_payment_event(audit_event),
             "order": serialize_order(order),
         }
 
@@ -1416,9 +1560,16 @@ async def process_payment_webhook(
         reference=event.get("provider_payment_id") or event.get("provider_order_id"),
         paid_amount=event.get("paid_amount"),
     )
+    audit_event = record_payment_event(
+        db,
+        order,
+        event,
+        action="processed" if changed else "already_paid",
+    )
     return {
         "status": "processed" if changed else "already_paid",
         "event": event["event_type"],
+        "audit": serialize_payment_event(audit_event),
         "order": payment_order,
     }
 

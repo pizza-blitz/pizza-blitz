@@ -351,6 +351,23 @@ class RestaurantOrder(Base):
     closed_at = Column(DateTime, nullable=True)
     delivery_assignment = relationship("DeliveryAssignment", back_populates="order", uselist=False)
 
+class PaymentEventAudit(Base):
+    __tablename__ = "payment_event_audits"
+    id = Column(Integer, primary_key=True, index=True)
+    event_key = Column(String(80), unique=True, index=True, nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True, nullable=False)
+    provider = Column(String(50), index=True, nullable=False)
+    event_type = Column(String(120), index=True, nullable=False)
+    payment_status = Column(String(40), index=True, nullable=False)
+    action = Column(String(40), index=True, nullable=False)
+    provider_order_id = Column(String(160), nullable=True)
+    provider_payment_id = Column(String(160), nullable=True)
+    paid_amount = Column(Float, nullable=True)
+    duplicate_count = Column(Integer, default=0)
+    raw_payload = Column(JSON, nullable=True)
+    received_at = Column(DateTime, default=datetime.utcnow, index=True)
+    last_seen_at = Column(DateTime, nullable=True)
+
 class DeliveryAssignment(Base):
     __tablename__ = "delivery_assignments"
     id = Column(Integer, primary_key=True, index=True)
