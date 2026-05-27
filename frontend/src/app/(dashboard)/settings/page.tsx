@@ -27,6 +27,7 @@ const DELIVERY_QUOTE_API = getApiUrl('/api/v1/restaurant/delivery/quote');
 const DELIVERY_ECONOMICS_API = getApiUrl('/api/v1/restaurant/delivery/economics');
 const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
+const PAYMENT_GATEWAY_ACTIVATION_API = getApiUrl('/api/v1/restaurant/orders/payments/gateway-activation');
 const PAYMENT_RECONCILIATION_API = getApiUrl('/api/v1/restaurant/orders/payments/reconciliation');
 const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
@@ -300,6 +301,60 @@ type PaymentReconciliation = {
   }[];
 };
 
+type PaymentGatewayActivationStep = {
+  name: string;
+  status: string;
+  detail: string;
+};
+
+type PaymentGatewayActivationProvider = {
+  provider: string;
+  label: string;
+  environment: string;
+  dashboard: string;
+  activation_status: string;
+  next_action: string;
+  missing_settings: string[];
+  checkout_configured: boolean;
+  webhook_configured: boolean;
+  session_endpoint: string;
+  webhook_endpoint: string;
+  session_count: number;
+  webhook_event_count: number;
+  latest_session?: {
+    order_id: number;
+    provider?: string | null;
+    session_id?: string | null;
+    checkout_url_present: boolean;
+    payment_status?: string | null;
+    total_amount: number;
+    created_at?: string | null;
+  } | null;
+  latest_webhook_event?: PaymentAuditEvent | null;
+  blockers: string[];
+  steps: PaymentGatewayActivationStep[];
+};
+
+type PaymentGatewayActivation = {
+  generated_at: string;
+  summary: {
+    overall_status: string;
+    active_provider: string;
+    active_provider_status: string;
+    live_ready_provider_count: number;
+    proof_needed_provider_count: number;
+    blocked_provider_count: number;
+    selectable_live_providers: string[];
+    next_action: string;
+  };
+  providers: PaymentGatewayActivationProvider[];
+  controls: {
+    name: string;
+    status: string;
+    detail: string;
+  }[];
+};
+
 type PaymentWebhookResult = {
   status: string;
   event: string;
@@ -336,6 +391,47 @@ const paymentEventActionClass = (action?: string) => {
   return "bg-gray-100 text-gray-700";
 };
 
+const gatewayActivationStatusClass = (status?: string) => {
+  if (status === "live_ready") return "bg-green-100 text-green-700";
+  if (status === "proof_needed") return "bg-blue-100 text-blue-700";
+  if (status === "fallback_ready") return "bg-emerald-100 text-emerald-700";
+  return "bg-amber-100 text-amber-700";
+};
+
+const paymentStepStatusClass = (status?: string) => {
+  if (status === "complete") return "bg-green-100 text-green-700";
+  if (status === "pending") return "bg-blue-100 text-blue-700";
+  return "bg-amber-100 text-amber-700";
+};
+
+const formatTimestamp = (value?: string | null) => {
+  if (!value) return "Not recorded";
+  return new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+async function fetchPaymentJson<T>(url: string): Promise<T | null> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      credentials: "include",
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 const emptyDeliveryZoneDraft: DeliveryZoneDraft = {
   name: "",
   keywords: "",
@@ -364,6 +460,8 @@ export default function Settings() {
   const [staffCredentialMessage, setStaffCredentialMessage] = useState("");
   const [paymentReadiness, setPaymentReadiness] = useState<PaymentReadiness | null>(null);
   const [paymentProduction, setPaymentProduction] = useState<PaymentProductionReadiness | null>(null);
+  const [paymentGatewayActivation, setPaymentGatewayActivation] =
+    useState<PaymentGatewayActivation | null>(null);
   const [paymentReconciliation, setPaymentReconciliation] = useState<PaymentReconciliation | null>(null);
   const [isPaymentLoading, setIsPaymentLoading] = useState(true);
   const [paymentMessage, setPaymentMessage] = useState("");
@@ -457,40 +555,30 @@ export default function Settings() {
   const loadPaymentReadiness = async () => {
     setIsPaymentLoading(true);
     try {
-      const [readinessResponse, productionResponse, reconciliationResponse] = await Promise.all([
-        fetch(PAYMENT_READINESS_API, {
-          cache: "no-store",
-          credentials: "include",
-        }),
-        fetch(PAYMENT_PRODUCTION_API, {
-          cache: "no-store",
-          credentials: "include",
-        }),
-        fetch(PAYMENT_RECONCILIATION_API, {
-          cache: "no-store",
-          credentials: "include",
-        }),
+      const [
+        readinessData,
+        productionData,
+        gatewayActivationData,
+        reconciliationData,
+      ] = await Promise.all([
+        fetchPaymentJson<PaymentReadiness>(PAYMENT_READINESS_API),
+        fetchPaymentJson<PaymentProductionReadiness>(PAYMENT_PRODUCTION_API),
+        fetchPaymentJson<PaymentGatewayActivation>(PAYMENT_GATEWAY_ACTIVATION_API),
+        fetchPaymentJson<PaymentReconciliation>(PAYMENT_RECONCILIATION_API),
       ]);
-      if (!readinessResponse.ok) {
-        throw new Error("Payment readiness API failed.");
-      }
-      const data: PaymentReadiness = await readinessResponse.json();
-      setPaymentReadiness(data);
-      if (productionResponse.ok) {
-        const productionData: PaymentProductionReadiness = await productionResponse.json();
-        setPaymentProduction(productionData);
-      } else {
-        setPaymentProduction(null);
-      }
-      if (reconciliationResponse.ok) {
-        const reconciliationData: PaymentReconciliation = await reconciliationResponse.json();
-        setPaymentReconciliation(reconciliationData);
-      } else {
-        setPaymentReconciliation(null);
+      setPaymentReadiness(readinessData);
+      setPaymentProduction(productionData);
+      setPaymentGatewayActivation(gatewayActivationData);
+      setPaymentReconciliation(reconciliationData);
+      if (!readinessData && !productionData && !gatewayActivationData && !reconciliationData) {
+        setPaymentMessage("Payment readiness API is not available right now.");
+      } else if (paymentMessage === "Payment readiness API is not available right now.") {
+        setPaymentMessage("");
       }
     } catch {
       setPaymentReadiness(null);
       setPaymentProduction(null);
+      setPaymentGatewayActivation(null);
       setPaymentReconciliation(null);
       setPaymentMessage("Payment readiness API is not available right now.");
     } finally {
@@ -591,12 +679,18 @@ export default function Settings() {
     : 0;
   const paymentProviders = paymentReadiness?.payment_providers?.length
     ? paymentReadiness.payment_providers
-    : paymentReadiness?.payment
-      ? [paymentReadiness.payment]
-      : [];
-  const activePaymentProvider = paymentReadiness?.payment || paymentProviders[0];
+    : paymentProduction?.providers?.length
+      ? paymentProduction.providers
+      : paymentReadiness?.payment
+        ? [paymentReadiness.payment]
+        : [];
+  const activePaymentProvider =
+    paymentReadiness?.payment || paymentProduction?.active_provider || paymentProviders[0];
   const webhookContracts = paymentReadiness?.payment_webhook_contracts || [];
   const paymentProductionSummary = paymentProduction?.summary;
+  const paymentGatewayActivationSummary = paymentGatewayActivation?.summary;
+  const gatewayActivationProviders = paymentGatewayActivation?.providers || [];
+  const gatewayActivationControls = paymentGatewayActivation?.controls || [];
   const paymentReconciliationSummary = paymentReconciliation?.summary;
   const awaitingSettlement = paymentProduction?.queues.awaiting_settlement || [];
   const recentPaidSettlements = paymentProduction?.queues.recent_paid || [];
@@ -1455,6 +1549,170 @@ export default function Settings() {
                 );
               })}
             </div>
+
+            {paymentGatewayActivationSummary && (
+              <div
+                data-testid="payment-gateway-activation-command"
+                className="rounded-lg border border-orange-100 bg-orange-50 p-4"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-white p-2 text-orange-700">
+                      <Globe2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-black text-gray-900">Gateway Activation Command</p>
+                      <p className="text-sm text-orange-900">
+                        Live provider switchboard for credentials, checkout proof, webhook proof, and final go-live blockers.
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    data-testid="gateway-activation-status"
+                    className={`inline-flex rounded-md px-3 py-2 text-xs font-black uppercase ${gatewayActivationStatusClass(paymentGatewayActivationSummary.active_provider_status)}`}
+                  >
+                    {paymentGatewayActivationSummary.active_provider_status.replace("_", " ")}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg border border-orange-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Active Provider</p>
+                    <p className="mt-2 text-xl font-black capitalize text-gray-900">
+                      {paymentGatewayActivationSummary.active_provider}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">
+                      {paymentGatewayActivationSummary.overall_status.replace("_", " ")}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-orange-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Live Ready</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentGatewayActivationSummary.live_ready_provider_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">
+                      {paymentGatewayActivationSummary.selectable_live_providers.length
+                        ? paymentGatewayActivationSummary.selectable_live_providers.join(", ")
+                        : "No public gateway yet"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-orange-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Proof Needed</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentGatewayActivationSummary.proof_needed_provider_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">Session or webhook proof pending</p>
+                  </div>
+                  <div className="rounded-lg border border-orange-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Blocked</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentGatewayActivationSummary.blocked_provider_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">Missing credentials or secrets</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-md border border-orange-100 bg-white px-4 py-3">
+                  <p className="text-xs font-black uppercase text-orange-700">Next Gateway Action</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">
+                    {paymentGatewayActivationSummary.next_action}
+                  </p>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  {gatewayActivationProviders.map((provider) => (
+                    <div
+                      key={provider.provider}
+                      data-testid={`gateway-activation-${provider.provider}`}
+                      className="rounded-lg border border-orange-100 bg-white p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-black text-gray-900">{provider.label}</p>
+                          <p className="text-xs font-semibold text-gray-500">{provider.environment}</p>
+                        </div>
+                        <span
+                          className={`rounded-md px-2 py-1 text-[11px] font-black uppercase ${gatewayActivationStatusClass(provider.activation_status)}`}
+                        >
+                          {provider.activation_status.replace("_", " ")}
+                        </span>
+                      </div>
+
+                      <p className="mt-3 text-sm font-semibold text-gray-700">{provider.next_action}</p>
+
+                      {provider.missing_settings.length ? (
+                        <div className="mt-3 rounded-md border border-amber-100 bg-amber-50 px-3 py-2">
+                          <p className="text-xs font-black uppercase text-amber-700">Missing Env</p>
+                          <p className="mt-1 break-words text-xs font-semibold text-gray-700">
+                            {provider.missing_settings.join(", ")}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-green-50 px-3 py-2 text-xs font-black text-green-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          No gateway secrets shown
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid grid-cols-1 gap-2 text-xs font-semibold text-gray-600">
+                        <div className="rounded-md bg-gray-50 px-3 py-2">
+                          <p className="font-black text-gray-900">Session Proof</p>
+                          <p className="mt-1">
+                            {provider.latest_session
+                              ? `Order #${provider.latest_session.order_id} - ${formatMoney(provider.latest_session.total_amount)}`
+                              : "Not recorded"}
+                          </p>
+                          <p className="mt-1 text-gray-500">
+                            {formatTimestamp(provider.latest_session?.created_at)}
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-gray-50 px-3 py-2">
+                          <p className="font-black text-gray-900">Webhook Proof</p>
+                          <p className="mt-1">
+                            {provider.latest_webhook_event
+                              ? `Order #${provider.latest_webhook_event.order_id} - ${provider.latest_webhook_event.action}`
+                              : "Not recorded"}
+                          </p>
+                          <p className="mt-1 text-gray-500">
+                            {formatTimestamp(provider.latest_webhook_event?.received_at)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 space-y-2">
+                        {provider.steps.map((step) => (
+                          <div key={`${provider.provider}-${step.name}`} className="rounded-md bg-gray-50 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-black text-gray-900">{step.name}</p>
+                              <span
+                                className={`rounded px-2 py-1 text-[10px] font-black uppercase ${paymentStepStatusClass(step.status)}`}
+                              >
+                                {step.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-gray-500">{step.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+                  {gatewayActivationControls.map((control) => (
+                    <div key={control.name} className="rounded-md border border-orange-100 bg-white px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-black text-gray-900">{control.name}</p>
+                        <span className="rounded bg-green-50 px-2 py-1 text-[11px] font-black uppercase text-green-700">
+                          {control.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">{control.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {paymentProductionSummary && (
               <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">

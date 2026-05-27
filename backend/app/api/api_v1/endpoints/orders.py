@@ -51,6 +51,26 @@ DEFAULT_TABLES = [
 
 ORDER_USAGE_NOTE_PREFIX = "Auto usage from order"
 PAYMENT_PROVIDER_ORDER = ("manual", "cashfree", "razorpay")
+PAYMENT_GATEWAY_RUNBOOK = {
+    "manual": {
+        "label": "Manual fallback",
+        "dashboard": "Admin controlled",
+        "credential_step": "No external credentials required.",
+        "webhook_step": "Use the protected manual webhook tester for admin proof.",
+    },
+    "cashfree": {
+        "label": "Cashfree",
+        "dashboard": "Cashfree merchant dashboard",
+        "credential_step": "Add CASHFREE_APP_ID and CASHFREE_SECRET_KEY in Vercel production env.",
+        "webhook_step": "Add CASHFREE_WEBHOOK_SECRET and point Cashfree to the webhook endpoint.",
+    },
+    "razorpay": {
+        "label": "Razorpay",
+        "dashboard": "Razorpay dashboard",
+        "credential_step": "Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in Vercel production env.",
+        "webhook_step": "Add RAZORPAY_WEBHOOK_SECRET and enable payment captured webhooks.",
+    },
+}
 
 
 class OrderItem(BaseModel):
@@ -727,6 +747,117 @@ def payment_production_next_actions(
     return actions
 
 
+def serialize_gateway_session_proof(order: RestaurantOrder | None) -> dict | None:
+    if not order:
+        return None
+    return {
+        "order_id": order.id,
+        "provider": order.payment_provider,
+        "session_id": order.payment_session_id,
+        "checkout_url_present": bool(order.payment_session_url),
+        "payment_status": order.payment_status,
+        "total_amount": round(float(order.total_amount or 0), 2),
+        "created_at": (
+            order.payment_session_created_at.isoformat()
+            if order.payment_session_created_at
+            else order.created_at.isoformat() if order.created_at else None
+        ),
+    }
+
+
+def gateway_activation_provider(
+    *,
+    provider_status: dict,
+    session_proof: RestaurantOrder | None,
+    webhook_event: PaymentEventAudit | None,
+    session_count: int,
+    webhook_count: int,
+) -> dict:
+    provider = provider_status["provider"]
+    runbook = PAYMENT_GATEWAY_RUNBOOK[provider]
+    missing_settings = list(
+        dict.fromkeys(
+            provider_status["missing_checkout_settings"]
+            + provider_status["missing_webhook_settings"]
+        )
+    )
+    steps = [
+        {
+            "name": "Credential environment",
+            "status": "complete" if provider_status["checkout_configured"] else "blocked",
+            "detail": runbook["credential_step"]
+            if provider_status["checkout_configured"]
+            else f"Missing {', '.join(provider_status['missing_checkout_settings'])}.",
+        },
+        {
+            "name": "Webhook signature",
+            "status": "complete" if provider_status["webhook_configured"] else "blocked",
+            "detail": runbook["webhook_step"]
+            if provider_status["webhook_configured"]
+            else f"Missing {', '.join(provider_status['missing_webhook_settings'])}.",
+        },
+        {
+            "name": "Provider session proof",
+            "status": "complete" if session_proof else "pending",
+            "detail": "A payment session has been created and stored for this provider."
+            if session_proof
+            else "Create one low-value prepaid checkout to store the provider order/session id.",
+        },
+        {
+            "name": "Webhook settlement proof",
+            "status": "complete" if webhook_event else "pending",
+            "detail": "A provider event has reached the duplicate-safe audit ledger."
+            if webhook_event
+            else "Complete the test payment and confirm the signed webhook reaches the ledger.",
+        },
+    ]
+
+    if provider == "manual":
+        activation_status = "fallback_ready"
+        next_action = "Keep manual as controlled fallback while Cashfree or Razorpay is activated."
+        blockers = [
+            "Manual mode is not a public payment gateway; select Cashfree or Razorpay before public prepaid checkout."
+        ]
+    else:
+        blockers = []
+        if missing_settings:
+            blockers.append(f"Add missing production env vars: {', '.join(missing_settings)}.")
+        if not session_proof:
+            blockers.append("Run a low-value provider checkout session.")
+        if not webhook_event:
+            blockers.append("Confirm one signed provider webhook in the audit ledger.")
+
+        if not provider_status["checkout_configured"] or not provider_status["webhook_configured"]:
+            activation_status = "blocked"
+            next_action = blockers[0]
+        elif session_proof and webhook_event:
+            activation_status = "live_ready"
+            next_action = "Provider can be selected for public prepaid checkout after payout report comparison."
+        else:
+            activation_status = "proof_needed"
+            next_action = blockers[0] if blockers else "Run final low-value checkout proof."
+
+    return {
+        "provider": provider,
+        "label": runbook["label"],
+        "environment": provider_status["environment"],
+        "dashboard": runbook["dashboard"],
+        "activation_status": activation_status,
+        "next_action": next_action,
+        "missing_settings": missing_settings,
+        "checkout_configured": provider_status["checkout_configured"],
+        "webhook_configured": provider_status["webhook_configured"],
+        "session_endpoint": provider_status["session_endpoint"],
+        "webhook_endpoint": provider_status["webhook_endpoint"],
+        "session_count": session_count,
+        "webhook_event_count": webhook_count,
+        "latest_session": serialize_gateway_session_proof(session_proof),
+        "latest_webhook_event": serialize_payment_event(webhook_event) if webhook_event else None,
+        "blockers": blockers,
+        "steps": steps,
+    }
+
+
 def normalize_coupon_code(value: Optional[str]) -> Optional[str]:
     if not value:
         return None
@@ -1370,6 +1501,111 @@ def payment_production_readiness(
             active_provider=active_provider,
             awaiting_settlement_count=awaiting_settlement_count,
         ),
+    }
+
+
+@router.get("/payments/gateway-activation")
+def payment_gateway_activation(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    provider_statuses = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
+    activation_providers = []
+
+    for provider_status in provider_statuses:
+        provider = provider_status["provider"]
+        session_query = (
+            db.query(RestaurantOrder)
+            .filter(RestaurantOrder.payment_provider == provider)
+            .filter(RestaurantOrder.payment_session_id.isnot(None))
+        )
+        latest_session = (
+            session_query
+            .order_by(
+                RestaurantOrder.payment_session_created_at.desc(),
+                RestaurantOrder.id.desc(),
+            )
+            .first()
+        )
+        webhook_query = db.query(PaymentEventAudit).filter(PaymentEventAudit.provider == provider)
+        latest_webhook_event = (
+            webhook_query
+            .order_by(PaymentEventAudit.received_at.desc(), PaymentEventAudit.id.desc())
+            .first()
+        )
+        activation_providers.append(
+            gateway_activation_provider(
+                provider_status=provider_status,
+                session_proof=latest_session,
+                webhook_event=latest_webhook_event,
+                session_count=session_query.count(),
+                webhook_count=webhook_query.count(),
+            )
+        )
+
+    active_provider_name = payment_provider_status()["provider"]
+    active_provider = next(
+        (provider for provider in activation_providers if provider["provider"] == active_provider_name),
+        activation_providers[0],
+    )
+    live_ready_count = sum(
+        1 for provider in activation_providers if provider["activation_status"] == "live_ready"
+    )
+    blocked_count = sum(
+        1 for provider in activation_providers if provider["activation_status"] == "blocked"
+    )
+    proof_needed_count = sum(
+        1 for provider in activation_providers if provider["activation_status"] == "proof_needed"
+    )
+    selectable_live_providers = [
+        provider["provider"]
+        for provider in activation_providers
+        if provider["activation_status"] == "live_ready"
+    ]
+
+    if live_ready_count:
+        overall_status = "live_provider_ready"
+        next_action = "Select a live-ready provider and run the final payout report comparison."
+    elif proof_needed_count:
+        overall_status = "gateway_proof_needed"
+        next_action = "Finish one low-value checkout and signed webhook proof for the configured provider."
+    elif blocked_count:
+        overall_status = "credentials_needed"
+        next_action = "Add provider credentials and webhook secrets in Vercel production env."
+    else:
+        overall_status = "manual_fallback"
+        next_action = "Manual fallback is available while provider credentials are prepared."
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "overall_status": overall_status,
+            "active_provider": active_provider_name,
+            "active_provider_status": active_provider["activation_status"],
+            "live_ready_provider_count": live_ready_count,
+            "proof_needed_provider_count": proof_needed_count,
+            "blocked_provider_count": blocked_count,
+            "selectable_live_providers": selectable_live_providers,
+            "next_action": next_action,
+        },
+        "providers": activation_providers,
+        "controls": [
+            {
+                "name": "Secret-safe activation",
+                "status": "Active",
+                "detail": "Only env var names and readiness states are returned; credential values are never exposed.",
+            },
+            {
+                "name": "Checkout proof",
+                "status": "Active",
+                "detail": "A gateway is not live-ready until a provider session id is created and stored.",
+            },
+            {
+                "name": "Webhook proof",
+                "status": "Active",
+                "detail": "A gateway is not live-ready until a signed provider event lands in the audit ledger.",
+            },
+        ],
     }
 
 

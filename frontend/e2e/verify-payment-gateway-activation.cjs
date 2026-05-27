@@ -1,0 +1,155 @@
+const fs = require("fs");
+const path = require("path");
+const { chromium } = require("@playwright/test");
+
+const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
+const adminId = process.env.E2E_ADMIN_ID || "admin";
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
+const artifactsDir = path.join(__dirname, "artifacts");
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForHttp(url, label) {
+  const startedAt = Date.now();
+  let lastError = "";
+
+  while (Date.now() - startedAt < 30000) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (response.ok) return;
+      lastError = `${response.status} ${response.statusText}`;
+    } catch (error) {
+      lastError = error.message;
+    }
+    await sleep(750);
+  }
+
+  throw new Error(`${label} did not become ready at ${url}: ${lastError}`);
+}
+
+function createBrowserWatch(page) {
+  const issues = [];
+
+  page.on("pageerror", (error) => {
+    issues.push(`page error: ${error.message}`);
+  });
+
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/Failed to load resource|favicon\.ico|images\.unsplash\.com/i.test(text)) return;
+    issues.push(`console error: ${text}`);
+  });
+
+  page.on("requestfailed", (request) => {
+    const url = request.url();
+    const localRequest = url.startsWith(baseURL) || url.startsWith(apiURL);
+    if (!localRequest) return;
+    const failure = request.failure();
+    if (failure?.errorText === "net::ERR_ABORTED") return;
+    issues.push(`request failed: ${request.method()} ${url} ${failure?.errorText || ""}`.trim());
+  });
+
+  return {
+    assertClean(label) {
+      assert(!issues.length, `${label} produced browser issues:\n${issues.join("\n")}`);
+    },
+  };
+}
+
+async function assertHealthyPage(page, label) {
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForLoadState("networkidle", { timeout: 7000 }).catch(() => undefined);
+  const bodyText = await page.locator("body").innerText({ timeout: 7000 });
+  assert(bodyText.trim().length > 40, `${label} rendered too little content.`);
+  assert(
+    !/Unhandled Runtime Error|Build Error|Application error|Hydration failed/i.test(bodyText),
+    `${label} rendered a framework error overlay.`
+  );
+  const overlayCount = await page
+    .locator("[data-nextjs-dialog], [data-nextjs-dialog-overlay], nextjs-portal")
+    .count();
+  assert(overlayCount === 0, `${label} has a Next.js error overlay.`);
+}
+
+async function signInAsAdmin(context) {
+  const response = await context.request.post(`${baseURL}/api/admin-session`, {
+    data: { id: adminId, password: adminPassword, role: "admin" },
+  });
+  const data = await response.json();
+  assert(response.ok(), `Admin session failed: ${JSON.stringify(data)}`);
+}
+
+async function main() {
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  await waitForHttp(`${apiURL}/health`, "restaurant API");
+  await waitForHttp(baseURL, "frontend");
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 1440, height: 1100 },
+  });
+  const page = await context.newPage();
+  const watch = createBrowserWatch(page);
+
+  try {
+    await signInAsAdmin(context);
+
+    const apiResponse = await context.request.get(
+      `${apiURL}/api/v1/restaurant/orders/payments/gateway-activation`
+    );
+    const activation = await apiResponse.json();
+    assert(apiResponse.ok(), `Gateway activation API failed: ${JSON.stringify(activation)}`);
+    assert(activation.summary?.active_provider, "Gateway activation summary did not include active provider.");
+    assert(Array.isArray(activation.providers), "Gateway activation did not include providers.");
+    assert(activation.providers.length >= 3, "Gateway activation should include manual, Cashfree, and Razorpay.");
+    assert(
+      activation.providers.some((provider) => provider.provider === "manual"),
+      "Gateway activation did not include manual fallback."
+    );
+    assert(
+      activation.providers.some((provider) => provider.provider === "cashfree"),
+      "Gateway activation did not include Cashfree."
+    );
+    assert(
+      activation.providers.some((provider) => provider.provider === "razorpay"),
+      "Gateway activation did not include Razorpay."
+    );
+
+    const response = await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
+    assert(response && response.ok(), `Settings returned HTTP ${response?.status() || "no response"}.`);
+    await assertHealthyPage(page, "settings page");
+
+    await page.getByText("Gateway Activation Command", { exact: false }).waitFor({ timeout: 25000 });
+    await page.getByTestId("gateway-activation-manual").waitFor({ timeout: 25000 });
+    await page.getByTestId("gateway-activation-cashfree").waitFor({ timeout: 25000 });
+    await page.getByTestId("gateway-activation-razorpay").waitFor({ timeout: 25000 });
+    await page.getByText("No gateway secrets shown", { exact: false }).waitFor({ timeout: 25000 });
+    await page.getByText("Secret-safe activation", { exact: false }).waitFor({ timeout: 25000 });
+
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-payment-gateway-activation.png"),
+      fullPage: true,
+    });
+    watch.assertClean("payment gateway activation command");
+  } finally {
+    await browser.close();
+  }
+
+  console.log("Payment gateway activation proof passed.");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
