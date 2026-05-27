@@ -141,6 +141,8 @@ const filters = [
   { id: "cancelled", label: "Cancelled" },
 ];
 
+const riderPresets = ["Ravi Rider", "Anita Rider", "Mohan Rider", "Backup Rider"];
+
 function money(value: number) {
   return `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
 }
@@ -206,12 +208,40 @@ function isPrepaidPaymentDue(order: Order) {
   );
 }
 
+function needsAddressReview(order: Order) {
+  return Boolean(order.requires_address_review || order.address_validation?.requires_review);
+}
+
+function deliveryPriorityScore(order: Order) {
+  const status = order.delivery_assignment?.status || "unassigned";
+  if (needsAddressReview(order)) return 0;
+  if (isPrepaidPaymentDue(order)) return 1;
+  if (!order.delivery_assignment?.assigned_to) return 2;
+  if (status === "assigned") return 3;
+  if (status === "out_for_delivery") return 4;
+  if (status === "failed") return 5;
+  if (status === "delivered") return 6;
+  return 7;
+}
+
+function deliveryPriorityLabel(order: Order) {
+  const status = order.delivery_assignment?.status || "unassigned";
+  if (needsAddressReview(order)) return "Address review";
+  if (isPrepaidPaymentDue(order)) return "Payment due";
+  if (!order.delivery_assignment?.assigned_to) return "Assign rider";
+  if (status === "assigned") return "Ready to dispatch";
+  if (status === "out_for_delivery") return "Out for delivery";
+  if (status === "failed") return "Failed delivery";
+  if (status === "delivered") return "Delivered";
+  return "Monitor";
+}
+
 function closeBlockers(order: Order) {
   const blockers: string[] = [];
   if (order.status === "cancelled") blockers.push("cancelled");
   if (isPrepaidPaymentDue(order)) blockers.push("payment due");
   if (isDeliveryOrder(order)) {
-    if (order.requires_address_review || order.address_validation?.requires_review) {
+    if (needsAddressReview(order)) {
       blockers.push("address review");
     }
     if (order.delivery_assignment?.status !== "delivered") {
@@ -252,7 +282,19 @@ export default function OperationsPage() {
     (order) => isDeliveryOrder(order)
   );
   const addressReviewOrders = deliveryOrders.filter(
-    (order) => order.requires_address_review || order.address_validation?.requires_review
+    (order) => needsAddressReview(order)
+  );
+  const sortedDeliveryOrders = useMemo(
+    () =>
+      [...deliveryOrders].sort((left, right) => {
+        const priority = deliveryPriorityScore(left) - deliveryPriorityScore(right);
+        if (priority !== 0) return priority;
+        const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
+        const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return left.id - right.id;
+      }),
+    [deliveryOrders]
   );
   const orderFlowById = useMemo(
     () => new Map((orderFlow?.orders || []).map((row) => [row.id, row])),
@@ -319,20 +361,57 @@ export default function OperationsPage() {
       blocked: deliveryOrders.filter(
         (order) =>
           isPrepaidPaymentDue(order) ||
-          order.requires_address_review ||
-          order.address_validation?.requires_review
+          needsAddressReview(order)
       ).length,
     }),
     [deliveryOrders]
   );
+  const nextDeliveryOrder = sortedDeliveryOrders[0] || null;
+  const deliveryMissionActions = useMemo(
+    () => [
+      {
+        label: "Address Review",
+        count: deliveryStats.addressReview,
+        detail: "Call before dispatch",
+        filter: "address_review",
+        testId: "delivery-priority-address-review",
+        tone: "border-amber-200 bg-amber-50 text-amber-800",
+      },
+      {
+        label: "Need Rider",
+        count: deliveryActionCounts.needsRider,
+        detail: "Assign from roster",
+        filter: "delivery",
+        testId: "delivery-priority-need-rider",
+        tone: "border-red-200 bg-red-50 text-red-700",
+      },
+      {
+        label: "Ready Dispatch",
+        count: deliveryActionCounts.readyToDispatch,
+        detail: "Rider can leave",
+        filter: "delivery",
+        testId: "delivery-priority-ready-dispatch",
+        tone: "border-sky-200 bg-sky-50 text-sky-700",
+      },
+      {
+        label: "Out Now",
+        count: deliveryActionCounts.outForDelivery,
+        detail: "Track handoff",
+        filter: "delivery",
+        testId: "delivery-priority-out-now",
+        tone: "border-orange-200 bg-orange-50 text-orange-700",
+      },
+    ],
+    [deliveryActionCounts, deliveryStats.addressReview]
+  );
 
   const visibleOrders = useMemo(() => {
     if (filter === "active") return activeOrders;
-    if (filter === "delivery") return deliveryOrders;
-    if (filter === "address_review") return addressReviewOrders;
+    if (filter === "delivery") return sortedDeliveryOrders;
+    if (filter === "address_review") return sortedDeliveryOrders.filter((order) => needsAddressReview(order));
     if (filter === "payment_due") return paymentDueOrders;
     return orders.filter((order) => order.status === filter);
-  }, [activeOrders, addressReviewOrders, deliveryOrders, filter, orders, paymentDueOrders]);
+  }, [activeOrders, filter, orders, paymentDueOrders, sortedDeliveryOrders]);
   const kitchenLanes = useMemo(
     () => [
       {
@@ -1072,6 +1151,67 @@ export default function OperationsPage() {
             </button>
           ))}
         </div>
+        <div
+          data-testid="delivery-mission-control"
+          className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm xl:grid-cols-[1.2fr_1.8fr]"
+        >
+          <div
+            data-testid="delivery-next-priority"
+            className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+          >
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Next Delivery Priority
+            </p>
+            {nextDeliveryOrder ? (
+              <div className="mt-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xl font-black text-slate-950">
+                    Order #{nextDeliveryOrder.id}
+                  </span>
+                  <span
+                    className={`rounded-md border px-2 py-1 text-xs font-black ${deliveryStatusClass(
+                      nextDeliveryOrder.delivery_assignment?.status || "unassigned"
+                    )}`}
+                  >
+                    {deliveryPriorityLabel(nextDeliveryOrder)}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-slate-600">
+                  {nextDeliveryOrder.delivery_next_action ||
+                    nextDeliveryOrder.delivery_assignment?.next_action ||
+                    "Assign rider and move the order through dispatch."}
+                </p>
+                <p className="flex items-center gap-1 text-xs font-semibold text-slate-500">
+                  <MapPin className="h-3.5 w-3.5 text-red-600" />
+                  <span className="truncate">
+                    {nextDeliveryOrder.delivery_address || "Address pending"}
+                  </span>
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm font-semibold text-slate-500">
+                No active delivery priority right now.
+              </p>
+            )}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {deliveryMissionActions.map((action) => (
+              <button
+                key={action.label}
+                data-testid={action.testId}
+                type="button"
+                onClick={() => setFilter(action.filter)}
+                className={`rounded-lg border p-4 text-left shadow-sm transition hover:brightness-95 ${action.tone}`}
+              >
+                <span className="block text-xs font-black uppercase tracking-wide">
+                  {action.label}
+                </span>
+                <span className="mt-2 block text-2xl font-black">{action.count}</span>
+                <span className="mt-1 block text-xs font-semibold">{action.detail}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
           {[
             ["Open Deliveries", deliveryStats.total, "text-gray-950"],
@@ -1115,21 +1255,34 @@ export default function OperationsPage() {
             </span>
           </div>
           <div data-testid="delivery-handoff-board" className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-            {deliveryOrders.map((order) => {
+            {sortedDeliveryOrders.map((order) => {
               const assignment = order.delivery_assignment;
               const assignmentStatus = assignment?.status || "unassigned";
               const assignmentLabel = assignmentStatus.replaceAll("_", " ");
               const addressValidation = order.address_validation;
               const addressWarnings = addressValidation?.warnings || [];
-              const needsAddressReview =
-                order.requires_address_review || addressValidation?.requires_review;
+              const orderNeedsAddressReview = needsAddressReview(order);
               const paymentDue = isPrepaidPaymentDue(order);
               const riderValue = assignmentDrafts[order.id] ?? assignment?.assigned_to ?? "";
               const noteValue = assignmentNoteDrafts[order.id] ?? assignment?.notes ?? "";
               const canAssign = Boolean(riderValue.trim());
-              const canDispatch = Boolean(riderValue.trim()) && !needsAddressReview;
-              const canDeliver = Boolean(riderValue.trim()) && !needsAddressReview && !paymentDue;
+              const canDispatch = Boolean(riderValue.trim()) && !orderNeedsAddressReview;
+              const canDeliver = Boolean(riderValue.trim()) && !orderNeedsAddressReview && !paymentDue;
               const canFail = Boolean(noteValue.trim());
+              const statusRail = [
+                { key: "unassigned", label: "Rider", complete: Boolean(riderValue.trim()) },
+                {
+                  key: "assigned",
+                  label: "Assigned",
+                  complete: ["assigned", "out_for_delivery", "delivered"].includes(assignmentStatus),
+                },
+                {
+                  key: "out_for_delivery",
+                  label: "Out",
+                  complete: ["out_for_delivery", "delivered"].includes(assignmentStatus),
+                },
+                { key: "delivered", label: "Done", complete: assignmentStatus === "delivered" },
+              ];
               return (
                 <article
                   key={`delivery-${order.id}`}
@@ -1143,9 +1296,29 @@ export default function OperationsPage() {
                         {order.customer_name || "Customer"} {order.customer_phone ? `| ${order.customer_phone}` : ""}
                       </p>
                     </div>
-                    <span className={`rounded-md border px-2 py-1 text-xs font-black ${deliveryStatusClass(assignmentStatus)}`}>
+                    <span
+                      data-testid={`delivery-assignment-status-${order.id}`}
+                      className={`rounded-md border px-2 py-1 text-xs font-black ${deliveryStatusClass(assignmentStatus)}`}
+                    >
                       {assignmentLabel}
                     </span>
+                  </div>
+                  <div
+                    data-testid={`delivery-status-rail-${order.id}`}
+                    className="mt-3 grid grid-cols-4 gap-1"
+                  >
+                    {statusRail.map((step) => (
+                      <span
+                        key={`${order.id}-${step.key}`}
+                        className={`rounded-md border px-2 py-1 text-center text-[11px] font-black uppercase ${
+                          step.complete
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-slate-50 text-slate-400"
+                        }`}
+                      >
+                        {step.label}
+                      </span>
+                    ))}
                   </div>
 
                   <div className="mt-3 rounded-md bg-slate-50 p-3">
@@ -1167,12 +1340,18 @@ export default function OperationsPage() {
                         {order.delivery_address || "Address pending"}
                       </span>
                     </p>
-                    {needsAddressReview && (
+                    {orderNeedsAddressReview && (
                       <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                         <div className="flex items-start gap-2">
                           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                           <div>
                             <p className="font-black uppercase">Address Review Required</p>
+                            <p
+                              data-testid={`delivery-address-score-${order.id}`}
+                              className="mt-1 font-black"
+                            >
+                              Address score {addressValidation?.score ?? 0}/100
+                            </p>
                             {addressWarnings.slice(0, 2).map((warning) => (
                               <p key={warning} className="mt-1 leading-5">
                                 {warning}
@@ -1201,6 +1380,31 @@ export default function OperationsPage() {
                       placeholder="Delivery partner"
                       className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm font-semibold outline-none focus:border-red-600"
                     />
+                    <div
+                      data-testid={`delivery-rider-roster-${order.id}`}
+                      className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2"
+                    >
+                      {riderPresets.map((rider) => (
+                        <button
+                          key={`${order.id}-${rider}`}
+                          type="button"
+                          data-testid={`delivery-rider-${order.id}-${rider.toLowerCase().replaceAll(" ", "-")}`}
+                          onClick={() =>
+                            setAssignmentDrafts((current) => ({
+                              ...current,
+                              [order.id]: rider,
+                            }))
+                          }
+                          className={`h-9 rounded-md border px-2 text-xs font-black ${
+                            riderValue === rider
+                              ? "border-slate-950 bg-slate-950 text-white"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-red-500 hover:text-red-700"
+                          }`}
+                        >
+                          {rider}
+                        </button>
+                      ))}
+                    </div>
                     <input
                       value={noteValue}
                       onChange={(event) =>
@@ -1215,12 +1419,13 @@ export default function OperationsPage() {
                   </div>
 
                   <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                    <span className="font-black text-slate-900">Next:</span>{" "}
+                    <span className="font-black text-slate-900">Next action:</span>{" "}
                     {order.delivery_next_action || assignment?.notes || "Add rider, assign, then dispatch."}
                   </div>
 
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
+                      data-testid={`delivery-assign-${order.id}`}
                       onClick={() => updateDeliveryAssignment(order, "assigned")}
                       disabled={!canAssign || busyAction === `${order.id}-delivery-assigned`}
                       className="h-11 rounded-md bg-slate-950 px-3 text-sm font-black text-white hover:bg-red-700 disabled:bg-slate-300"
@@ -1228,6 +1433,7 @@ export default function OperationsPage() {
                       Assign
                     </button>
                     <button
+                      data-testid={`delivery-dispatch-${order.id}`}
                       onClick={() => updateDeliveryAssignment(order, "out_for_delivery")}
                       disabled={!canDispatch || busyAction === `${order.id}-delivery-out_for_delivery`}
                       className="h-11 rounded-md border border-sky-200 bg-sky-50 px-3 text-sm font-black text-sky-700 hover:bg-sky-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
@@ -1235,6 +1441,7 @@ export default function OperationsPage() {
                       Dispatch
                     </button>
                     <button
+                      data-testid={`delivery-delivered-${order.id}`}
                       onClick={() => updateDeliveryAssignment(order, "delivered")}
                       disabled={!canDeliver || busyAction === `${order.id}-delivery-delivered`}
                       className="h-11 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-black text-emerald-700 hover:bg-emerald-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
@@ -1242,6 +1449,7 @@ export default function OperationsPage() {
                       Delivered & Close
                     </button>
                     <button
+                      data-testid={`delivery-failed-${order.id}`}
                       onClick={() => updateDeliveryAssignment(order, "failed")}
                       disabled={!canFail || busyAction === `${order.id}-delivery-failed`}
                       className="h-11 rounded-md border border-rose-200 bg-rose-50 px-3 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
@@ -1249,12 +1457,12 @@ export default function OperationsPage() {
                       Failed
                     </button>
                   </div>
-                  {(!riderValue.trim() || needsAddressReview || paymentDue) && (
+                  {(!riderValue.trim() || orderNeedsAddressReview || paymentDue) && (
                     <p className="mt-2 text-xs font-bold leading-5 text-amber-800">
                       {!riderValue.trim()
                         ? "Add rider before dispatch. "
                         : ""}
-                      {needsAddressReview ? "Review address before dispatch. " : ""}
+                      {orderNeedsAddressReview ? "Review address before dispatch. " : ""}
                       {paymentDue ? "Confirm payment before delivered-close." : ""}
                     </p>
                   )}

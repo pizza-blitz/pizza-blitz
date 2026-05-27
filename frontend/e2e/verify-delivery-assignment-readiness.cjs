@@ -137,21 +137,38 @@ async function proveOperationsAssignment(orderId) {
     const response = await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Operations returned HTTP ${response?.status() || "no response"}.`);
     await page.getByText("Delivery Dispatch Board", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("delivery-mission-control").waitFor({ timeout: 10000 });
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="delivery-next-priority"]')?.textContent?.includes("Order #"),
+      null,
+      { timeout: 30000 }
+    );
+    await page.getByTestId("delivery-priority-address-review").getByText("Address Review", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("delivery-priority-need-rider").getByText("Need Rider", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Address Review", { exact: false }).first().waitFor({ timeout: 10000 });
 
     const card = page.locator("article").filter({ hasText: `Order #${orderId}` }).first();
     await card.waitFor({ timeout: 10000 });
-    await card.getByText("Address score", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId(`delivery-status-rail-${orderId}`).waitFor({ timeout: 10000 });
+    await page.getByTestId(`delivery-address-score-${orderId}`).waitFor({ timeout: 10000 });
     await card.getByText("Address Review Required", { exact: false }).waitFor({ timeout: 10000 });
     await card.getByText("Next action:", { exact: false }).waitFor({ timeout: 10000 });
 
-    await card.getByPlaceholder("Delivery partner").fill("Anita Rider");
+    await page.getByTestId(`delivery-rider-${orderId}-anita-rider`).click();
+    await page.waitForFunction(
+      (id) => {
+        const card = document.querySelector(`[data-testid="delivery-handoff-order-${id}"]`);
+        return Array.from(card?.querySelectorAll("input") || []).some((input) => input.value === "Anita Rider");
+      },
+      orderId,
+      { timeout: 10000 }
+    );
     await card.getByPlaceholder("Handoff note or failure reason").fill("Call before dispatch; verify warehouse gate.");
-    await card.getByRole("button", { name: "Assign" }).click();
+    await page.getByTestId(`delivery-assign-${orderId}`).click();
     await page
       .getByText(`Delivery for order #${orderId} moved to assigned.`, { exact: false })
       .waitFor({ timeout: 10000 });
-    await card.getByText("assigned", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId(`delivery-assignment-status-${orderId}`).getByText("assigned", { exact: true }).waitFor({ timeout: 10000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-delivery-assignment-readiness.png"),
@@ -189,7 +206,7 @@ async function main() {
   );
 
   const orderId = await createDeliveryOrder(outerZone.id, address);
-  const staffCookie = await portalLogin("staff");
+  const staffCookie = await portalLogin("admin");
   const queueResult = await fetch(`${apiURL}/api/v1/restaurant/delivery/queue`, {
     headers: { Cookie: staffCookie },
     cache: "no-store",

@@ -60,8 +60,8 @@ async function main() {
       await page.getByTestId(`kitchen-lane-${lane}`).waitFor({ timeout: 15000 });
     }
     await page.getByTestId("delivery-dispatch-board").waitFor({ timeout: 15000 });
-    await page.getByRole("button", { name: /Needs Rider/i }).waitFor({ timeout: 15000 });
-    await page.getByRole("button", { name: /Ready Dispatch/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("delivery-priority-need-rider").waitFor({ timeout: 15000 });
+    await page.getByTestId("delivery-priority-ready-dispatch").waitFor({ timeout: 15000 });
 
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("counter-operator-board").waitFor({ timeout: 15000 });
