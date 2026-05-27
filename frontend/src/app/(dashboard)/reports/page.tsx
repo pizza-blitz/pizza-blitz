@@ -286,6 +286,67 @@ export default function Reports() {
     },
   ];
   const reportingMoveRows = Array.from(new Set<string>([...ownerActionRows, ...(comparison?.risk_flags || [])])).slice(0, 5);
+  const revenuePreviousChange = Number(revenueCard?.previous_change_percent || 0);
+  const revenueYoyChange = Number(revenueCard?.yoy_change_percent || 0);
+  const profitPreviousChange = Number(profitCard?.previous_change_percent || 0);
+  const profitYoyChange = Number(profitCard?.yoy_change_percent || 0);
+  const riskFlagCount = Array.isArray(comparison?.risk_flags) ? comparison.risk_flags.length : 0;
+  const executiveHealthScore = Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        55 +
+          Math.max(-18, Math.min(18, revenueYoyChange / 2)) +
+          Math.max(-12, Math.min(12, profitYoyChange / 3)) +
+          protectedMomentumCount * 3 -
+          riskFlagCount * 4
+      )
+    )
+  );
+  const executiveHealthLabel =
+    executiveHealthScore >= 78
+      ? "On Track"
+      : executiveHealthScore >= 58
+      ? "Watch Closely"
+      : "Needs Action";
+  const executiveNextMoves = reportingMoveRows.length
+    ? reportingMoveRows.slice(0, 3)
+    : [
+        "Protect the best weekday pattern with the same product mix.",
+        "Use the soft weekday for a targeted local offer.",
+        "Review channel mix before the next campaign push.",
+      ];
+  const executiveComparisonMetrics = [
+    {
+      label: "Revenue vs Previous",
+      value: formatPercent(revenuePreviousChange),
+      detail: `Current revenue ${formatMoney(currentRevenue)}`,
+      icon: revenuePreviousChange >= 0 ? ArrowUpRight : ArrowDownRight,
+      tone: revenuePreviousChange >= 0 ? "green" : "red",
+    },
+    {
+      label: "Revenue vs Last Year",
+      value: formatPercent(revenueYoyChange),
+      detail: revenueRecoveryGap > 0 ? `Recover ${formatMoney(revenueRecoveryGap)}` : "Ahead of comparison baseline",
+      icon: revenueYoyChange >= 0 ? TrendingUp : AlertTriangle,
+      tone: revenueYoyChange >= 0 ? "green" : "amber",
+    },
+    {
+      label: "Profit Direction",
+      value: formatPercent(profitYoyChange),
+      detail: `${formatPercent(profitPreviousChange)} vs previous period`,
+      icon: profitYoyChange >= 0 ? TrendingUp : TrendingDown,
+      tone: profitYoyChange >= 0 ? "green" : "red",
+    },
+    {
+      label: "Protected Days",
+      value: `${protectedMomentumCount}/7`,
+      detail: bestWeekday ? `Best weekday: ${bestWeekday.weekday}` : "Awaiting weekday baseline",
+      icon: Calendar,
+      tone: protectedMomentumCount >= 4 ? "green" : "amber",
+    },
+  ];
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -345,6 +406,98 @@ export default function Reports() {
         </div>
       ) : (
         <>
+          {comparison && (
+            <section
+              data-testid="executive-comparison-scorecard"
+              className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">
+                    Executive Comparison Scorecard
+                  </p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">
+                    Current Period Health and Next Moves
+                  </h2>
+                  <p className="mt-2 text-sm font-semibold text-gray-500">
+                    Period: {comparison.period.current_start} to {comparison.period.current_end}
+                  </p>
+                </div>
+                <div
+                  data-testid="comparison-health-score"
+                  className={`rounded-lg border px-4 py-3 text-right ${
+                    executiveHealthScore >= 78
+                      ? "border-green-200 bg-green-50"
+                      : executiveHealthScore >= 58
+                      ? "border-amber-200 bg-amber-50"
+                      : "border-red-200 bg-red-50"
+                  }`}
+                >
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                    Health Score
+                  </p>
+                  <p className="mt-1 text-3xl font-black text-gray-950">{executiveHealthScore}</p>
+                  <p className="text-xs font-black uppercase tracking-widest text-gray-600">
+                    {executiveHealthLabel}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {executiveComparisonMetrics.map((metric) => (
+                  <ExecutiveComparisonMetric key={metric.label} {...metric} />
+                ))}
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                <div
+                  data-testid="executive-next-moves"
+                  className="rounded-lg border border-orange-200 bg-orange-50 p-4"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-700">
+                        Next 3 Moves
+                      </p>
+                      <h3 className="mt-1 text-lg font-black text-gray-950">
+                        What to do before the next report review
+                      </h3>
+                    </div>
+                    <Target className="h-5 w-5 text-orange-700" />
+                  </div>
+                  <div className="space-y-2">
+                    {executiveNextMoves.map((move, index) => (
+                      <p
+                        key={`executive-move-${move}`}
+                        className="rounded-md bg-white px-3 py-2 text-sm font-bold leading-5 text-orange-950"
+                      >
+                        {index + 1}. {move}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                <div
+                  data-testid="executive-gap-summary"
+                  className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+                >
+                  <MarketingCommandMetric
+                    label="Recovery Gap"
+                    value={revenueRecoveryGap > 0 ? formatMoney(revenueRecoveryGap) : "Ahead"}
+                  />
+                  <MarketingCommandMetric
+                    label="Best Day"
+                    value={bestWeekday?.weekday || "No data"}
+                  />
+                  <MarketingCommandMetric
+                    label="Soft Day"
+                    value={softWeekday?.weekday || "No data"}
+                  />
+                </div>
+              </div>
+            </section>
+          )}
+
           {ownerComparison && (
             <section data-testid="owner-comparison-dashboard" className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -1555,6 +1708,52 @@ function ReportingActionMetric({
         </div>
       </div>
       <p className="text-2xl font-black text-gray-950">{value}</p>
+      <p className="mt-2 text-xs font-bold leading-5 text-gray-600">{detail}</p>
+    </div>
+  );
+}
+
+function ExecutiveComparisonMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  detail: string;
+  tone: string;
+}) {
+  const toneMap: Record<string, { container: string; icon: string; value: string }> = {
+    green: {
+      container: "border-green-200 bg-green-50",
+      icon: "bg-white text-green-700",
+      value: "text-green-800",
+    },
+    amber: {
+      container: "border-amber-200 bg-amber-50",
+      icon: "bg-white text-amber-700",
+      value: "text-amber-800",
+    },
+    red: {
+      container: "border-red-200 bg-red-50",
+      icon: "bg-white text-red-700",
+      value: "text-red-800",
+    },
+  };
+  const classes = toneMap[tone] || toneMap.amber;
+
+  return (
+    <div className={`rounded-lg border p-4 ${classes.container}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-md ${classes.icon}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+      <p className={`text-2xl font-black ${classes.value}`}>{value}</p>
       <p className="mt-2 text-xs font-bold leading-5 text-gray-600">{detail}</p>
     </div>
   );

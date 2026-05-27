@@ -215,7 +215,12 @@ async function assertReportsPage(page, watch) {
   assert(response && response.ok(), `Reports page returned HTTP ${response?.status() || "no response"}.`);
   await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
 
-  await page.getByText("Order Channel Comparison", { exact: false }).waitFor({ timeout: 15000 });
+  await page.getByTestId("executive-comparison-scorecard").waitFor({ timeout: 60000 });
+  await page.getByText("Executive Comparison Scorecard", { exact: false }).waitFor({ timeout: 10000 });
+  await page.getByTestId("comparison-health-score").getByText(/On Track|Watch Closely|Needs Action/i).waitFor({ timeout: 10000 });
+  await page.getByTestId("executive-next-moves").getByText("Next 3 Moves", { exact: false }).waitFor({ timeout: 10000 });
+  await page.getByTestId("executive-gap-summary").getByText("Recovery Gap", { exact: false }).waitFor({ timeout: 10000 });
+  await page.getByText("Order Channel Comparison", { exact: false }).waitFor({ timeout: 30000 });
   await page.getByTestId("owner-comparison-dashboard").waitFor({ timeout: 15000 });
   await page.getByTestId("reporting-action-board").waitFor({ timeout: 15000 });
   await page.getByText("Owner Comparison Command", { exact: false }).waitFor({ timeout: 15000 });
