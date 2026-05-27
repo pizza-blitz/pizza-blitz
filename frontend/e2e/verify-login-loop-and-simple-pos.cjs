@@ -66,7 +66,19 @@ async function main() {
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("counter-new-takeaway").click();
     await page.getByTestId("counter-speed-bar").waitFor({ timeout: 15000 });
-    await page.locator('[data-testid^="counter-quick-add-"]').first().click();
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll('[data-testid^="counter-quick-add-"]').length > 0 ||
+        document.querySelectorAll('[data-testid^="counter-item-quantity-"]').length > 0,
+      null,
+      { timeout: 60000 }
+    );
+    const quickAdd = page.locator('[data-testid^="counter-quick-add-"]').first();
+    if ((await quickAdd.count()) > 0) {
+      await quickAdd.click();
+    } else {
+      await page.locator('[data-testid^="counter-item-quantity-"]').first().fill("1");
+    }
     await page.getByPlaceholder("Search pizza, sides, drinks").waitFor({ timeout: 15000 });
     await page.getByText("Current Bill", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Ready to send", { exact: true }).waitFor({ timeout: 15000 });

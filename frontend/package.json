@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "typecheck": "tsc --noEmit",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e": "node e2e/portal-smoke.cjs"
+    "test:e2e": "node e2e/portal-smoke.cjs",
+    "verify:live": "node e2e/verify-login-loop-and-simple-pos.cjs",
+    "verify:roadmap": "node e2e/verify-roadmap-command-board.cjs",
+    "verify:quality": "npm run typecheck && npm run build && npm run verify:live"
   },
   "dependencies": {
     "lucide-react": "^0.577.0",

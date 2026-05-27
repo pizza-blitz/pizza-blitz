@@ -111,6 +111,9 @@ async function main() {
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("npm run typecheck", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Frontend typecheck quality gate", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("Frontend typecheck handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Authentication and role hardening", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Customer account lifecycle", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Marketing live-readiness command", { exact: true }).first().waitFor({ timeout: 15000 });

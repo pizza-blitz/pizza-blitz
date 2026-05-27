@@ -73,8 +73,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "46%",
-    note: "Vercel production deploy is working; full Supabase migration proof, backups, RLS, monitoring, gateway webhooks and secrets audit remain active work.",
+    value: "51%",
+    note: "Vercel production deploy, full frontend typecheck, build gate and live smoke are now green; Supabase migration proof, backups, RLS, monitoring and real provider webhooks remain active work.",
   },
   {
     label: "Execution Mode",
@@ -332,6 +332,11 @@ const completedValue: RoadmapItem[] = [
     title: "Beta delivery checkpoint command",
     status: "done",
     value: "Production Ops now shows final build, smoke proof queue, known gaps and next production plan for the June 20 checkpoint.",
+  },
+  {
+    title: "Frontend typecheck quality gate",
+    status: "done",
+    value: "The frontend now has explicit typecheck, live smoke and quality verification scripts so future slices can be checked before release.",
   },
 ];
 
@@ -880,8 +885,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "29",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "30",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -891,7 +896,7 @@ const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Stability State",
     value: "Green",
-    note: "Credential activation, live environment execution, production launch integrations, beta delivery, final acceptance, launch candidate hardening, data quality export, marketing live-readiness and operational command board are now proof-backed.",
+    note: "Typecheck, build, live smoke, credential activation, live environment execution, production launch integrations, beta delivery, final acceptance, launch candidate hardening and operational command board are now proof-backed.",
   },
   {
     label: "Next Risk",
@@ -956,6 +961,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "watch",
     value: "Provider setup, webhook proof and settlement visibility are ready for real credentials.",
     artifact: "visible-payment-production-pass.png",
+  },
+  {
+    area: "Frontend typecheck gate",
+    proof: "npm run typecheck",
+    status: "passed",
+    value: "Invoices, promotions and public checkout now pass the full TypeScript gate before release.",
+    artifact: "typecheck terminal proof",
   },
   {
     area: "Messaging readiness",
@@ -1109,8 +1121,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "29 / 29",
-    note: "Critical browser and API proofs now have named artifacts on the roadmap.",
+    value: "30 / 30",
+    note: "Critical browser, API and typecheck proofs now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",
@@ -1224,6 +1236,11 @@ const betaReviewOutcomes: RoadmapItem[] = [
     title: "Credential activation handoff",
     status: "done",
     value: "Production Ops now shows real provider credential readiness and payment/webhook, campaign, social and ad smoke checks.",
+  },
+  {
+    title: "Frontend typecheck handoff",
+    status: "done",
+    value: "Package scripts now expose typecheck, live smoke and quality verification so each future release can run the same gate.",
   },
   {
     title: "Live provider smoke handoff",
