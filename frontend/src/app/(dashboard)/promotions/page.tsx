@@ -1861,7 +1861,7 @@ export default function PromotionsPage() {
           </div>
           <button
             type="button"
-            onClick={fetchSendQueue}
+            onClick={() => fetchSendQueue()}
             className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
             <RefreshCw className="h-4 w-4" /> Refresh Send Queue

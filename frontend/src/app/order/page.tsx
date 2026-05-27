@@ -809,13 +809,15 @@ export default function PublicOrderPage() {
       setMessage("Choose a delivery zone.");
       return;
     }
-    if (orderType === "delivery" && (isQuotingDelivery || !deliveryQuote)) {
-      setMessage("Wait for the delivery fee and ETA before placing the order.");
-      return;
-    }
-    if (orderType === "delivery" && !deliveryQuote.is_deliverable) {
-      setMessage(deliveryQuote.reason || "This address is outside the delivery area.");
-      return;
+    if (orderType === "delivery") {
+      if (isQuotingDelivery || !deliveryQuote) {
+        setMessage("Wait for the delivery fee and ETA before placing the order.");
+        return;
+      }
+      if (!deliveryQuote.is_deliverable) {
+        setMessage(deliveryQuote.reason || "This address is outside the delivery area.");
+        return;
+      }
     }
 
     setIsSubmitting(true);

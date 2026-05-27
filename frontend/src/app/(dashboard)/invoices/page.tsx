@@ -6,8 +6,19 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/orders/invoices");
 
+type Invoice = {
+  id: number;
+  invoice_number: string;
+  customer_name?: string | null;
+  date: string;
+  payment_method?: string | null;
+  cgst: number;
+  sgst: number;
+  total: number;
+};
+
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,7 +56,7 @@ export default function InvoicesPage() {
     };
   }, []);
 
-  const filtered = invoices.filter((i: any) => 
+  const filtered = invoices.filter((i) =>
     i.invoice_number.toLowerCase().includes(search.toLowerCase()) ||
     i.customer_name?.toLowerCase().includes(search.toLowerCase())
   );
@@ -93,7 +104,7 @@ export default function InvoicesPage() {
 
       {!isLoading && !error && (
       <div className="grid grid-cols-1 gap-4">
-        {filtered.map((inv: any) => (
+        {filtered.map((inv) => (
           <div key={inv.id} className="group bg-[#1a1a1c] p-6 rounded-[2rem] border border-white/5 hover:border-orange-500/30 transition-all flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-6 w-full md:w-auto">
               <div className="w-14 h-14 rounded-2xl bg-orange-500/10 flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all text-orange-500">
