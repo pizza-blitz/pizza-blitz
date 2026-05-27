@@ -64,7 +64,14 @@ async function main() {
     await page.getByRole("button", { name: /Ready Dispatch/i }).waitFor({ timeout: 15000 });
 
     await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("counter-operator-board").waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-command-takeaway").waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-command-delivery").waitFor({ timeout: 15000 });
     await page.getByTestId("counter-new-takeaway").click();
+    await page.getByTestId("counter-mode-switch").waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-mode-delivery").click();
+    await page.getByText("Delivery Details", { exact: true }).waitFor({ timeout: 10000 });
+    await page.getByTestId("counter-mode-takeaway").click();
     await page.getByTestId("counter-speed-bar").waitFor({ timeout: 15000 });
     await page.waitForFunction(
       () =>
@@ -82,6 +89,8 @@ async function main() {
     await page.getByPlaceholder("Search pizza, sides, drinks").waitFor({ timeout: 15000 });
     await page.getByText("Current Bill", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Ready to send", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-payment-rail").waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-payment-cash").waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /^cash$/i }).waitFor({ timeout: 15000 });
     assert(
       await page.getByTestId("counter-speed-bar").isVisible(),
@@ -94,6 +103,10 @@ async function main() {
     assert(
       await page.getByText("Current Bill", { exact: true }).isVisible(),
       "POS bill rail was not visible."
+    );
+    assert(
+      await page.getByTestId("counter-operator-board").isVisible(),
+      "Counter operator command board was not visible."
     );
 
     for (const path of ["/reports", "/menu", "/dashboard"]) {

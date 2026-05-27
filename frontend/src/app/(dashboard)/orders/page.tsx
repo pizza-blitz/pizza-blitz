@@ -337,9 +337,17 @@ export default function OrdersPage() {
   const deliveryOrders = openOrders.filter(
     (order) => (order.fulfillment_type || order.order_type) === "delivery"
   );
+  const takeawayOrders = openOrders.filter(
+    (order) => (order.fulfillment_type || order.order_type) !== "delivery"
+  );
   const unassignedDeliveryCount = deliveryOrders.filter(
     (order) => !order.delivery_assignment?.assigned_to
   ).length;
+  const readyToBillCount = openOrders.filter((order) => order.status === "ready").length;
+  const paymentDueCount = openOrders.filter(
+    (order) => order.payment_due || order.payment_status === "awaiting_payment"
+  ).length;
+  const voidedTodayCount = orders.filter((order) => order.status === "cancelled").length;
   const closedTotal = orders
     .filter((order) => order.status === "closed")
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
@@ -762,7 +770,7 @@ export default function OrdersPage() {
               Take order, print bill, send to kitchen
             </h2>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-5">
             <div className="rounded-lg bg-black/30 px-4 py-2">
               <p className="text-lg font-black">{openOrders.length}</p>
               <p className="text-[10px] font-bold uppercase text-gray-500">Open</p>
@@ -772,9 +780,66 @@ export default function OrdersPage() {
               <p className="text-[10px] font-bold uppercase text-gray-500">Delivery</p>
             </div>
             <div className="rounded-lg bg-black/30 px-4 py-2">
+              <p className="text-lg font-black">{readyToBillCount}</p>
+              <p className="text-[10px] font-bold uppercase text-gray-500">Ready</p>
+            </div>
+            <div className="rounded-lg bg-black/30 px-4 py-2">
+              <p className="text-lg font-black">{paymentDueCount}</p>
+              <p className="text-[10px] font-bold uppercase text-gray-500">Payment</p>
+            </div>
+            <div className="rounded-lg bg-black/30 px-4 py-2">
               <p className="text-lg font-black">Rs {Math.round(closedTotal).toLocaleString()}</p>
               <p className="text-[10px] font-bold uppercase text-gray-500">Closed</p>
             </div>
+          </div>
+        </div>
+        <div
+          data-testid="counter-operator-board"
+          className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+        >
+          <button
+            data-testid="counter-command-takeaway"
+            disabled={!isHydrated}
+            onClick={() => openOrderModal(undefined, "takeaway")}
+            className="rounded-xl border border-white/10 bg-white px-4 py-4 text-left text-black shadow-lg transition hover:bg-orange-500 hover:text-white disabled:cursor-wait disabled:opacity-60"
+          >
+            <span className="flex items-center gap-2 text-sm font-black">
+              <ShoppingBag className="h-4 w-4" /> New Takeaway
+            </span>
+            <span className="mt-2 block text-xs font-bold opacity-70">
+              Pickup and counter orders in one drawer.
+            </span>
+          </button>
+          <button
+            data-testid="counter-command-delivery"
+            disabled={!isHydrated}
+            onClick={() => openOrderModal(undefined, "delivery")}
+            className="rounded-xl border border-orange-400/30 bg-orange-500 px-4 py-4 text-left text-white shadow-lg transition hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60"
+          >
+            <span className="flex items-center gap-2 text-sm font-black">
+              <Truck className="h-4 w-4" /> New Delivery
+            </span>
+            <span className="mt-2 block text-xs font-bold opacity-80">
+              Quote fee, ETA, and send to kitchen.
+            </span>
+          </button>
+          <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Takeaway Queue
+            </p>
+            <p className="mt-2 text-2xl font-black">{takeawayOrders.length}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              Ready bills: {readyToBillCount}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-black/25 px-4 py-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Safety
+            </p>
+            <p className="mt-2 text-2xl font-black">{voidedTodayCount}</p>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              Voided today, excluded from sales.
+            </p>
           </div>
         </div>
       </section>
@@ -1065,6 +1130,55 @@ export default function OrdersPage() {
                 <X />
               </button>
             </div>
+
+            <section
+              data-testid="counter-mode-switch"
+              className="mb-5 grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-black/30 p-2"
+            >
+              <button
+                data-testid="counter-mode-takeaway"
+                type="button"
+                onClick={() => {
+                  setSelectedTable(null);
+                  setOrderMode("takeaway");
+                  setDeliveryQuote(null);
+                }}
+                className={`flex min-h-16 items-center justify-between rounded-lg px-4 text-left transition ${
+                  !isDeliveryOrder
+                    ? "bg-white text-black"
+                    : "bg-white/5 text-gray-300 hover:bg-white/10"
+                }`}
+              >
+                <span>
+                  <span className="block text-sm font-black">Takeaway / Pickup</span>
+                  <span className="mt-1 block text-xs font-bold opacity-70">
+                    Fast counter sale
+                  </span>
+                </span>
+                <ShoppingBag className="h-5 w-5" />
+              </button>
+              <button
+                data-testid="counter-mode-delivery"
+                type="button"
+                onClick={() => {
+                  setSelectedTable(null);
+                  setOrderMode("delivery");
+                }}
+                className={`flex min-h-16 items-center justify-between rounded-lg px-4 text-left transition ${
+                  isDeliveryOrder
+                    ? "bg-orange-500 text-white"
+                    : "bg-white/5 text-gray-300 hover:bg-white/10"
+                }`}
+              >
+                <span>
+                  <span className="block text-sm font-black">Delivery</span>
+                  <span className="mt-1 block text-xs font-bold opacity-80">
+                    Address, fee, ETA
+                  </span>
+                </span>
+                <Truck className="h-5 w-5" />
+              </button>
+            </section>
 
             <section
               data-testid="counter-speed-bar"
@@ -1432,10 +1546,11 @@ export default function OrdersPage() {
                   <p className="mb-2 text-[11px] font-black uppercase tracking-widest text-gray-500">
                     Payment
                   </p>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div data-testid="counter-payment-rail" className="grid grid-cols-4 gap-2">
                     {quickPaymentMethods.map((method) => (
                       <button
                         key={method}
+                        data-testid={`counter-payment-${method}`}
                         type="button"
                         onClick={() => setFormData({ ...formData, payment_method: method })}
                         className={`rounded-lg border px-2 py-2 text-xs font-black uppercase ${
