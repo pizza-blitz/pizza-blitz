@@ -217,8 +217,11 @@ async function screenshotSettingsWithAdmin() {
     await page.getByTestId("access-control-command").waitFor({ timeout: 10000 });
     await page.getByTestId("access-route-matrix").waitFor({ timeout: 10000 });
     await page.getByTestId("access-hardening-score").waitFor({ timeout: 10000 });
+    await page.getByTestId("staff-credential-command").waitFor({ timeout: 10000 });
+    await page.getByTestId("staff-credential-status").waitFor({ timeout: 10000 });
     await page.getByText("Access Control Command", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Counter POS", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Counter Staff Credential Activation", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Authentication Hardening Command", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Security overview API", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Account Recovery Controls", { exact: false }).waitFor({ timeout: 10000 });
@@ -234,6 +237,54 @@ async function screenshotSettingsWithAdmin() {
   } finally {
     await browser.close();
   }
+}
+
+async function maybeVerifyManagedStaffCredential(adminCookie) {
+  if (process.env.E2E_ENABLE_STAFF_CREDENTIAL_WRITE !== "1") {
+    return;
+  }
+
+  const managedStaffId = `counter-e2e-${Date.now()}`;
+  const managedStaffPassword = `Staff-${Date.now()}!`;
+  const saveResponse = await assertStatus(
+    "/api/v1/auth/staff/credential",
+    200,
+    adminCookie,
+    "admin managed staff credential save",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: managedStaffId,
+        password: managedStaffPassword,
+        display_name: "E2E Counter Staff",
+        is_active: true,
+      }),
+    }
+  );
+  const saved = await saveResponse.json();
+  assert(saved.configured === true, "Managed staff credential was not marked active after save.");
+  assert(saved.staff_id === managedStaffId, "Managed staff credential did not return the saved staff ID.");
+
+  const managedStaffCookie = await portalLoginWithCredentials({
+    id: managedStaffId,
+    password: managedStaffPassword,
+    role: "staff",
+    expectedRole: "staff",
+    expectedStartPath: "/orders",
+  });
+  await assertStatus("/api/v1/restaurant/orders/today", 200, managedStaffCookie, "managed staff today's orders");
+
+  const managedStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
+  });
+  const managedStaffJwt = await managedStaffJwtResponse.json();
+  assert(
+    managedStaffJwtResponse.ok && managedStaffJwt.role === "staff" && managedStaffJwt.access_token,
+    `Managed staff JWT login failed: ${JSON.stringify(managedStaffJwt)}`
+  );
 }
 
 async function assertStaffSettingsRedirect() {
@@ -289,6 +340,7 @@ async function main() {
       }),
     }
   );
+  await assertStatus("/api/v1/auth/staff/credential", 401, "", "anonymous staff credential status");
 
   const adminCookie = await portalLogin("admin");
   const staffLogin = await optionalPortalLogin("staff");
@@ -336,6 +388,19 @@ async function main() {
     securityOverview.recoveryControls?.length >= 3 && securityOverview.auditControls?.length >= 3,
     "Security overview did not include recovery and audit controls."
   );
+
+  const staffCredentialResponse = await assertStatus(
+    "/api/v1/auth/staff/credential",
+    200,
+    adminCookie,
+    "admin staff credential status"
+  );
+  const staffCredential = await staffCredentialResponse.json();
+  assert(
+    staffCredential.password_policy?.includes("salted") && staffCredential.source === "managed",
+    "Staff credential status did not include managed hashed-password policy."
+  );
+  await maybeVerifyManagedStaffCredential(adminCookie);
 
   const adminReadiness = await assertStatus(
     "/api/v1/restaurant/ops/readiness",

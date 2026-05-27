@@ -29,6 +29,7 @@ const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
 const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
+const STAFF_CREDENTIAL_API = getApiUrl('/api/v1/auth/staff/credential');
 
 type RoleAccess = {
   role: string;
@@ -91,6 +92,26 @@ type SecurityOverview = {
   recoveryControls: SecurityControl[];
   auditControls: SecurityControl[];
   hardening: HardeningCheck[];
+};
+
+type StaffCredentialStatus = {
+  configured: boolean;
+  source: string;
+  staff_id?: string | null;
+  display_name?: string | null;
+  is_active: boolean;
+  must_rotate: boolean;
+  updated_at?: string | null;
+  last_login_at?: string | null;
+  password_policy: string;
+  next_action: string;
+};
+
+type StaffCredentialDraft = {
+  id: string;
+  display_name: string;
+  password: string;
+  is_active: boolean;
 };
 
 type DeliveryZone = {
@@ -279,9 +300,22 @@ const emptyDeliveryZoneDraft: DeliveryZoneDraft = {
   is_active: true,
 };
 
+const emptyStaffCredentialDraft: StaffCredentialDraft = {
+  id: "counter",
+  display_name: "Counter Staff",
+  password: "",
+  is_active: true,
+};
+
 export default function Settings() {
   const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
   const [isSecurityLoading, setIsSecurityLoading] = useState(true);
+  const [staffCredential, setStaffCredential] = useState<StaffCredentialStatus | null>(null);
+  const [staffCredentialDraft, setStaffCredentialDraft] =
+    useState<StaffCredentialDraft>(emptyStaffCredentialDraft);
+  const [isStaffCredentialLoading, setIsStaffCredentialLoading] = useState(true);
+  const [isSavingStaffCredential, setIsSavingStaffCredential] = useState(false);
+  const [staffCredentialMessage, setStaffCredentialMessage] = useState("");
   const [paymentReadiness, setPaymentReadiness] = useState<PaymentReadiness | null>(null);
   const [paymentProduction, setPaymentProduction] = useState<PaymentProductionReadiness | null>(null);
   const [isPaymentLoading, setIsPaymentLoading] = useState(true);
@@ -322,6 +356,56 @@ export default function Settings() {
   // Missing State for Admin Credentials
   const [adminId, setAdminId] = useState("admin");
   const [adminPassword, setAdminPassword] = useState("");
+
+  const loadStaffCredential = async () => {
+    setIsStaffCredentialLoading(true);
+    try {
+      const response = await fetch(STAFF_CREDENTIAL_API, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Staff credential API failed.");
+      }
+      const data: StaffCredentialStatus = await response.json();
+      setStaffCredential(data);
+      setStaffCredentialDraft((current) => ({
+        id: data.staff_id || current.id || "counter",
+        display_name: data.display_name || current.display_name || "Counter Staff",
+        password: "",
+        is_active: data.staff_id ? data.is_active : true,
+      }));
+    } catch {
+      setStaffCredential(null);
+      setStaffCredentialMessage("Staff credential status is unavailable right now.");
+    } finally {
+      setIsStaffCredentialLoading(false);
+    }
+  };
+
+  const saveStaffCredential = async () => {
+    setIsSavingStaffCredential(true);
+    setStaffCredentialMessage("");
+    try {
+      const response = await fetch(STAFF_CREDENTIAL_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(staffCredentialDraft),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not save staff credential.");
+      }
+      setStaffCredential(data as StaffCredentialStatus);
+      setStaffCredentialDraft((current) => ({ ...current, password: "" }));
+      setStaffCredentialMessage("Counter staff credential saved and ready for staff login.");
+    } catch (error) {
+      setStaffCredentialMessage(error instanceof Error ? error.message : "Could not save staff credential.");
+    } finally {
+      setIsSavingStaffCredential(false);
+    }
+  };
 
   const loadPaymentReadiness = async () => {
     setIsPaymentLoading(true);
@@ -430,6 +514,7 @@ export default function Settings() {
 
     if (isMounted) {
       void loadDeliveryZones();
+      void loadStaffCredential();
     }
 
     loadPaymentReadiness();
@@ -864,6 +949,142 @@ export default function Settings() {
                   ))}
                 </div>
               </div>
+            </div>
+
+            <div
+              data-testid="staff-credential-command"
+              className="rounded-lg border border-blue-100 bg-blue-50 p-4"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="h-5 w-5 text-blue-700" />
+                    <h4 className="font-black text-gray-950">Counter Staff Credential Activation</h4>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-gray-600">
+                    Create or rotate a separate counter login without changing the master admin ID.
+                  </p>
+                </div>
+                <span
+                  data-testid="staff-credential-status"
+                  className={`inline-flex w-fit items-center gap-2 rounded-md px-3 py-2 text-xs font-black uppercase ${
+                    staffCredential?.configured
+                      ? "bg-green-100 text-green-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  <Shield className="h-3.5 w-3.5" />
+                  {staffCredential?.configured ? "Staff Active" : "Setup Needed"}
+                </span>
+              </div>
+
+              {isStaffCredentialLoading ? (
+                <div className="mt-4 rounded-lg border border-blue-100 bg-white/70 p-4 text-sm font-semibold text-gray-500">
+                  Loading staff credential status...
+                </div>
+              ) : (
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-5">
+                  <div className="rounded-lg border border-white bg-white/80 p-4 xl:col-span-2">
+                    <p className="text-xs font-black uppercase text-gray-500">Current staff login</p>
+                    <p className="mt-2 text-lg font-black text-gray-950">
+                      {staffCredential?.staff_id || "Not activated"}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-gray-600">
+                      {staffCredential?.display_name || "No counter staff credential saved yet."}
+                    </p>
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-md bg-blue-50 p-3">
+                        <p className="text-xs font-black uppercase text-blue-700">Source</p>
+                        <p className="mt-1 font-bold text-gray-900">{staffCredential?.source || "managed"}</p>
+                      </div>
+                      <div className="rounded-md bg-blue-50 p-3">
+                        <p className="text-xs font-black uppercase text-blue-700">Last login</p>
+                        <p className="mt-1 font-bold text-gray-900">
+                          {staffCredential?.last_login_at ? "Recorded" : "No login yet"}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-5 text-gray-600">
+                      {staffCredential?.next_action || "Save a staff ID and password to unlock direct staff sign-in."}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-white bg-white/80 p-4 xl:col-span-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="block text-sm font-bold text-gray-700">
+                        Staff ID
+                        <input
+                          value={staffCredentialDraft.id}
+                          onChange={(event) =>
+                            setStaffCredentialDraft((current) => ({ ...current, id: event.target.value }))
+                          }
+                          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          placeholder="counter"
+                        />
+                      </label>
+                      <label className="block text-sm font-bold text-gray-700">
+                        Display Name
+                        <input
+                          value={staffCredentialDraft.display_name}
+                          onChange={(event) =>
+                            setStaffCredentialDraft((current) => ({
+                              ...current,
+                              display_name: event.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          placeholder="Counter Staff"
+                        />
+                      </label>
+                      <label className="block text-sm font-bold text-gray-700 md:col-span-2">
+                        New Password
+                        <input
+                          type="password"
+                          value={staffCredentialDraft.password}
+                          onChange={(event) =>
+                            setStaffCredentialDraft((current) => ({ ...current, password: event.target.value }))
+                          }
+                          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          placeholder="Minimum 8 characters"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <label className="inline-flex items-center gap-2 text-sm font-bold text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={staffCredentialDraft.is_active}
+                          onChange={(event) =>
+                            setStaffCredentialDraft((current) => ({
+                              ...current,
+                              is_active: event.target.checked,
+                            }))
+                          }
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                        />
+                        Active for staff login
+                      </label>
+                      <button
+                        data-testid="staff-credential-save"
+                        onClick={saveStaffCredential}
+                        disabled={isSavingStaffCredential || staffCredentialDraft.password.length < 8}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Save className="h-4 w-4" />
+                        {isSavingStaffCredential ? "Saving..." : "Save Staff Login"}
+                      </button>
+                    </div>
+                    {staffCredentialMessage && (
+                      <p className="mt-3 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700">
+                        {staffCredentialMessage}
+                      </p>
+                    )}
+                    <p className="mt-3 text-xs font-semibold text-gray-500">
+                      {staffCredential?.password_policy || "Passwords are stored only as a salted hash."}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
