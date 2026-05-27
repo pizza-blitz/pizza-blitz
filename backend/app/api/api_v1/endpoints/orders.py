@@ -227,6 +227,17 @@ def order_metadata(order: RestaurantOrder) -> dict:
 def order_eta_window(order: RestaurantOrder) -> str:
     if order.status == "closed":
         return "Completed"
+    assignment_status = (
+        (order.delivery_assignment.status or "").lower()
+        if order.delivery_assignment
+        else ""
+    )
+    if assignment_status == "delivered":
+        return "Completed"
+    if assignment_status == "out_for_delivery":
+        return "Arriving soon"
+    if assignment_status == "assigned":
+        return "Rider assigned"
     if order.status == "ready":
         return "Ready now"
     if order.status == "preparing":
@@ -237,6 +248,19 @@ def order_eta_window(order: RestaurantOrder) -> str:
     if (order.order_type or "").lower() == "delivery":
         return "35-45 min"
     return "20-25 min"
+
+
+def delivery_assignment_next_action(status: Optional[str]) -> str:
+    normalized = (status or "unassigned").lower()
+    if normalized == "assigned":
+        return "Rider assigned. Your order will leave shortly."
+    if normalized == "out_for_delivery":
+        return "Rider is on the way with your order."
+    if normalized == "delivered":
+        return "Delivery completed. Thank you for ordering."
+    if normalized == "failed":
+        return "Delivery needs attention. The store team will contact you."
+    return "Store team is assigning a delivery partner."
 
 
 def serialize_delivery_assignment(assignment: Optional[DeliveryAssignment]) -> Optional[dict]:
@@ -255,6 +279,7 @@ def serialize_delivery_assignment(assignment: Optional[DeliveryAssignment]) -> O
             else None
         ),
         "delivered_at": assignment.delivered_at.isoformat() if assignment.delivered_at else None,
+        "next_action": delivery_assignment_next_action(assignment.status),
     }
 
 

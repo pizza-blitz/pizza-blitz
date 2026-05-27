@@ -37,6 +37,9 @@ type TrackedOrder = {
     status: string;
     notes?: string | null;
     next_action?: string | null;
+    assigned_at?: string | null;
+    out_for_delivery_at?: string | null;
+    delivered_at?: string | null;
   } | null;
   customer_name?: string | null;
   customer_phone?: string | null;
@@ -58,6 +61,13 @@ type TrackedOrder = {
   tracking_steps: TrackingStep[];
   created_at?: string | null;
 };
+
+function formatTrackingTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export default function TrackOrderPage() {
   const [orderId, setOrderId] = useState("");
@@ -84,10 +94,52 @@ export default function TrackOrderPage() {
     return new Date(order.created_at).toLocaleString();
   }, [order?.created_at]);
   const isDeliveryOrder = (order?.fulfillment_type || order?.order_type || "").toLowerCase() === "delivery";
-  const deliveryStatus = order?.delivery_assignment?.status?.replaceAll("_", " ") || "unassigned";
+  const rawDeliveryStatus = (order?.delivery_assignment?.status || "unassigned").toLowerCase();
+  const deliveryStatus = rawDeliveryStatus.replaceAll("_", " ");
   const isPaymentPending =
     (order?.payment_method || "").toLowerCase() === "prepaid" &&
     (order?.payment_status || "").toLowerCase() !== "paid";
+  const deliveryTimeline = useMemo(() => {
+    if (!order || !isDeliveryOrder) return [];
+    const assignment = order.delivery_assignment;
+    const status = (assignment?.status || "unassigned").toLowerCase();
+    const delivered = status === "delivered" || order.status === "closed";
+    return [
+      {
+        label: "Address confirmed",
+        detail: order.delivery_zone || "Delivery zone selected",
+        complete: true,
+        time: placedAt,
+      },
+      {
+        label: "Rider assigned",
+        detail: assignment?.assigned_to || "Store team is assigning a rider",
+        complete: ["assigned", "out_for_delivery", "delivered"].includes(status),
+        time: formatTrackingTime(assignment?.assigned_at),
+      },
+      {
+        label: "Out for delivery",
+        detail: status === "out_for_delivery" || delivered ? "Rider is on the way" : "Waiting for dispatch",
+        complete: ["out_for_delivery", "delivered"].includes(status),
+        time: formatTrackingTime(assignment?.out_for_delivery_at),
+      },
+      {
+        label: "Delivered",
+        detail: delivered ? "Order handed over" : "Not completed yet",
+        complete: delivered,
+        time: formatTrackingTime(assignment?.delivered_at),
+      },
+    ];
+  }, [isDeliveryOrder, order, placedAt]);
+  const deliveryInstruction = useMemo(() => {
+    if (!isDeliveryOrder) return "";
+    if (rawDeliveryStatus === "assigned") return "Your rider is assigned. Keep your phone reachable for dispatch.";
+    if (rawDeliveryStatus === "out_for_delivery") return "Your rider is on the way. Please keep your phone reachable and payment ready if needed.";
+    if (rawDeliveryStatus === "delivered") return "Delivery is complete. Thank you for ordering from Pizza Blitz.";
+    if (rawDeliveryStatus === "failed") return "Delivery needs help. The store team may contact you to resolve it.";
+    return "We have your address. The store team is assigning a delivery partner.";
+  }, [isDeliveryOrder, rawDeliveryStatus]);
+  const completedDeliveryTimelineSteps = deliveryTimeline.filter((step) => step.complete).length;
 
   const lookupOrder = async (nextOrderId = orderId, nextPhone = phone) => {
     const trimmedOrderId = nextOrderId.trim();
@@ -326,15 +378,24 @@ export default function TrackOrderPage() {
                         Delivery Handoff
                       </p>
                       <h4 className="mt-1 text-lg font-black text-red-950">
-                        {deliveryStatus}
+                        {order.delivery_assignment?.next_action || deliveryInstruction}
                       </h4>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-red-900">
+                        {deliveryInstruction}
+                      </p>
                     </div>
                     <Truck className="h-5 w-5 text-red-700" />
                   </div>
-                  <div className="grid gap-3 text-sm md:grid-cols-3">
+                  <div className="grid gap-3 text-sm md:grid-cols-4">
                     <Detail
                       label="Rider"
                       value={order.delivery_assignment?.assigned_to || "Assigning"}
+                      testId="track-delivery-rider"
+                    />
+                    <Detail
+                      label="Status"
+                      value={deliveryStatus}
+                      testId="track-delivery-assignment-status"
                     />
                     <Detail
                       label="Zone"
@@ -344,6 +405,51 @@ export default function TrackOrderPage() {
                       label="Fee"
                       value={`Rs ${Number(order.delivery_fee || 0).toLocaleString()}`}
                     />
+                  </div>
+                  <div
+                    data-testid="track-delivery-timeline"
+                    className="mt-4 rounded-lg border border-red-100 bg-white p-4"
+                  >
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+                          Delivery Timeline
+                        </p>
+                        <h5 className="mt-1 font-black text-slate-950">
+                          {completedDeliveryTimelineSteps}/{deliveryTimeline.length} delivery steps complete
+                        </h5>
+                      </div>
+                      <span className="rounded-md bg-red-50 px-3 py-2 text-xs font-black uppercase text-red-700">
+                        {order.eta_window}
+                      </span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-4">
+                      {deliveryTimeline.map((step) => (
+                        <div
+                          key={step.label}
+                          className={`rounded-md border px-3 py-3 ${
+                            step.complete
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                              : "border-slate-200 bg-slate-50 text-slate-600"
+                          }`}
+                        >
+                          <div
+                            className={`mb-3 flex h-8 w-8 items-center justify-center rounded-full ${
+                              step.complete ? "bg-emerald-600 text-white" : "bg-white text-slate-400"
+                            }`}
+                          >
+                            <Check className="h-4 w-4" />
+                          </div>
+                          <p className="text-sm font-black">{step.label}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5">{step.detail}</p>
+                          {step.time && (
+                            <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                              {step.time}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   {order.delivery_address && (
                     <p className="mt-3 flex items-start gap-2 rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-900">
@@ -394,9 +500,9 @@ export default function TrackOrderPage() {
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value, testId }: { label: string; value: string; testId?: string }) {
   return (
-    <div className="rounded-md bg-slate-50 p-3">
+    <div className="rounded-md bg-slate-50 p-3" data-testid={testId}>
       <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
       <p className="mt-1 break-words font-bold capitalize">{value}</p>
     </div>

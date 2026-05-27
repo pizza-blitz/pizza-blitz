@@ -210,7 +210,7 @@ async function main() {
     await page.getByText("Delivery Dispatch Board", { exact: false }).waitFor({ timeout: 15000 });
     await assertHealthyPage(page, "delivery operations page");
 
-    const deliveryCard = page.locator("article").filter({ hasText: `Order #${orderId}` }).first();
+    const deliveryCard = page.getByTestId(`delivery-handoff-order-${orderId}`);
     await deliveryCard.waitFor({ timeout: 15000 });
     await deliveryCard.getByText(address, { exact: false }).waitFor({ timeout: 10000 });
     await deliveryCard.getByPlaceholder("Delivery partner").fill("Ravi Rider");
@@ -233,10 +233,16 @@ async function main() {
     });
     assert(response && response.ok(), `Tracking returned HTTP ${response?.status() || "no response"}.`);
     await page.getByRole("heading", { name: new RegExp(`Order #${orderId}`, "i") }).waitFor({ timeout: 15000 });
-    await page.getByText("Rider is on the way with your order.", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByTestId("track-delivery-status").getByText("out for delivery", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByTestId("track-delivery-status").getByText("Ravi Rider", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText("Out for delivery", { exact: true }).waitFor({ timeout: 10000 });
+    await page
+      .getByTestId("track-delivery-status")
+      .getByText("Rider is on the way with your order.", { exact: false })
+      .waitFor({ timeout: 15000 });
+    await page.getByTestId("track-delivery-assignment-status").getByText("out for delivery", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-rider").getByText("Ravi Rider", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-timeline").waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-timeline").getByText("3/4 delivery steps complete", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-timeline").getByText("Rider assigned", { exact: true }).waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-timeline").getByText("Out for delivery", { exact: true }).waitFor({ timeout: 10000 });
     await assertHealthyPage(page, "delivery tracking out-for-delivery page");
 
     response = await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
@@ -250,8 +256,13 @@ async function main() {
     });
     assert(response && response.ok(), `Tracking returned HTTP ${response?.status() || "no response"} after delivery close.`);
     await page.getByRole("heading", { name: new RegExp(`Order #${orderId}`, "i") }).waitFor({ timeout: 15000 });
-    await page.getByText("Delivery completed. Thank you for ordering.", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByTestId("track-delivery-status").getByText("delivered", { exact: false }).waitFor({ timeout: 10000 });
+    await page
+      .getByTestId("track-delivery-status")
+      .getByText("Delivery completed. Thank you for ordering.", { exact: false })
+      .waitFor({ timeout: 15000 });
+    await page.getByTestId("track-delivery-assignment-status").getByText("delivered", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-timeline").getByText("4/4 delivery steps complete", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("track-delivery-timeline").getByText("Delivered", { exact: true }).waitFor({ timeout: 10000 });
     await page.getByText(itemName, { exact: false }).waitFor({ timeout: 10000 });
 
     await page.screenshot({

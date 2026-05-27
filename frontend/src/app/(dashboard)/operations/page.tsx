@@ -395,31 +395,66 @@ export default function OperationsPage() {
       if (!queueResponse.ok) throw new Error(queueData.detail || "Could not load delivery queue.");
       if (!flowResponse.ok) throw new Error(flowData.detail || "Could not load order flow.");
 
+      const queueOrders = queueData.orders || [];
       const queueById = new Map<number, any>(
-        (queueData.orders || []).map((order: any) => [order.id, order])
+        queueOrders.map((order: any) => [order.id, order])
       );
       setDeliveryQueueSummary(queueData.summary || null);
       setOrderFlow(flowData || null);
       setLastRefreshedAt(
         new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
       );
+      const todaysOrders: Order[] = data.orders || [];
+      const mergedOrders = todaysOrders.map((order: Order) => {
+        const queueOrder = queueById.get(order.id);
+        if (!queueOrder) return order;
+        return {
+          ...order,
+          delivery_address: queueOrder.delivery_address ?? order.delivery_address,
+          delivery_zone: queueOrder.delivery_zone ?? order.delivery_zone,
+          delivery_fee: Number(queueOrder.delivery_fee ?? order.delivery_fee ?? 0),
+          delivery_assignment: queueOrder.assignment ?? order.delivery_assignment,
+          eta_window: queueOrder.eta_window ?? order.eta_window,
+          address_validation: queueOrder.address_validation ?? null,
+          requires_address_review: Boolean(queueOrder.requires_address_review),
+          delivery_next_action: queueOrder.next_action,
+          payment_due: Boolean(queueOrder.payment_due ?? order.payment_due),
+        };
+      });
+      const mergedOrderIds = new Set(mergedOrders.map((order) => order.id));
+      const queueOnlyOrders: Order[] = queueOrders
+        .filter((queueOrder: any) => !mergedOrderIds.has(queueOrder.id))
+        .map((queueOrder: any) => ({
+          id: queueOrder.id,
+          order_type: "delivery",
+          source: "delivery_queue",
+          fulfillment_type: "delivery",
+          delivery_address: queueOrder.delivery_address ?? null,
+          delivery_zone: queueOrder.delivery_zone ?? null,
+          delivery_fee: Number(queueOrder.delivery_fee || 0),
+          delivery_assignment: queueOrder.assignment ?? null,
+          eta_window: queueOrder.eta_window ?? null,
+          address_validation: queueOrder.address_validation ?? null,
+          requires_address_review: Boolean(queueOrder.requires_address_review),
+          delivery_next_action: queueOrder.next_action,
+          payment_due: Boolean(queueOrder.payment_due),
+          table_number: null,
+          customer_name: queueOrder.customer_name ?? "Delivery customer",
+          customer_phone: queueOrder.customer_phone ?? null,
+          items: [],
+          subtotal: 0,
+          discount_amount: 0,
+          tax_amount: 0,
+          total_amount: Number(queueOrder.total_amount || 0),
+          payment_status: queueOrder.payment_status ?? "pending",
+          payment_method: null,
+          status: queueOrder.order_status ?? "open",
+          notes: queueOrder.notes ?? null,
+          created_at: null,
+          closed_at: null,
+        }));
       setOrders(
-        (data.orders || []).map((order: Order) => {
-          const queueOrder = queueById.get(order.id);
-          if (!queueOrder) return order;
-          return {
-            ...order,
-            delivery_address: queueOrder.delivery_address ?? order.delivery_address,
-            delivery_zone: queueOrder.delivery_zone ?? order.delivery_zone,
-            delivery_fee: Number(queueOrder.delivery_fee ?? order.delivery_fee ?? 0),
-            delivery_assignment: queueOrder.assignment ?? order.delivery_assignment,
-            eta_window: queueOrder.eta_window ?? order.eta_window,
-            address_validation: queueOrder.address_validation ?? null,
-            requires_address_review: Boolean(queueOrder.requires_address_review),
-            delivery_next_action: queueOrder.next_action,
-            payment_due: Boolean(queueOrder.payment_due ?? order.payment_due),
-          };
-        })
+        [...mergedOrders, ...queueOnlyOrders].sort((left, right) => right.id - left.id)
       );
       if (!options?.preserveMessage) setMessage("");
     } catch (error) {
