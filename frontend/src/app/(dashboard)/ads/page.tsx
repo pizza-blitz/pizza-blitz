@@ -220,6 +220,59 @@ type BudgetHealth = {
   recommendations: string[];
 };
 
+type AdManagementStatus =
+  | "setup_needed"
+  | "sync_needed"
+  | "budget_review"
+  | "ready_to_launch"
+  | "planning_needed";
+
+type AdManagementCampaign = {
+  id: number;
+  name: string;
+  objective: ObjectiveKey;
+  status: CampaignStatus;
+  platforms: PlatformKey[];
+  budget: number;
+  launch: {
+    eligible: boolean;
+    blockers: string[];
+  };
+  sync: SyncCampaign;
+  budget_health: BudgetHealth & {
+    attention_required: boolean;
+  };
+  latest_launch?: AdLaunch | null;
+  latest_action?: AdAction | null;
+  next_action: string;
+};
+
+type AdManagementControl = {
+  generated_at: string;
+  provider_status: ProviderStatus;
+  summary: AdsSummary & {
+    overall_status: AdManagementStatus;
+    launch_ready_count: number;
+    launch_blocked_count: number;
+    budget_attention_count: number;
+    unsynced_live_count: number;
+    external_id_count: number;
+    retryable_launch_count: number;
+    dry_run_count: number;
+    action_count: number;
+    external_sync_count: number;
+    next_action: string;
+  };
+  controls: {
+    label: string;
+    status: string;
+    detail: string;
+  }[];
+  campaigns: AdManagementCampaign[];
+  recent_launches: AdLaunch[];
+  recent_actions: AdAction[];
+};
+
 type CampaignForm = {
   name: string;
   objective: ObjectiveKey;
@@ -288,6 +341,7 @@ export default function AdsManagerPage() {
   const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [syncReadiness, setSyncReadiness] = useState<AdSyncReadiness | null>(null);
+  const [managementControl, setManagementControl] = useState<AdManagementControl | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<LaunchHistory | null>(null);
   const [actionHistory, setActionHistory] = useState<ActionHistory | null>(null);
@@ -350,17 +404,23 @@ export default function AdsManagerPage() {
 
   const fetchAds = async (preferredCampaignId?: number | null) => {
     setLoading(true);
-    const [statusResponse, summaryResponse, campaignsResponse, readinessResponse, syncResponse] = await Promise.all([
+    const [statusResponse, summaryResponse, campaignsResponse, readinessResponse, syncResponse, managementResponse] = await Promise.all([
       fetchWithAuth(`${ADS_API}/provider-status`),
       fetchWithAuth(`${ADS_API}/summary`),
       fetchWithAuth(`${ADS_API}/campaigns`),
       fetchWithAuth(`${ADS_API}/launch-readiness`),
       fetchWithAuth(`${ADS_API}/sync-readiness`),
+      fetchWithAuth(`${ADS_API}/management-control?limit=100`),
     ]);
     if (statusResponse.ok) setProviderStatus(await statusResponse.json());
     if (summaryResponse.ok) setSummary(await summaryResponse.json());
     if (readinessResponse.ok) setLaunchReadiness(await readinessResponse.json());
     if (syncResponse.ok) setSyncReadiness(await syncResponse.json());
+    if (managementResponse.ok) {
+      setManagementControl(await managementResponse.json());
+    } else {
+      setManagementControl(null);
+    }
     if (campaignsResponse.ok) {
       const data: AdCampaign[] = await campaignsResponse.json();
       setCampaigns(data);
@@ -591,6 +651,55 @@ export default function AdsManagerPage() {
     setSyncing(null);
   };
 
+  const managementSummary =
+    managementControl?.summary || {
+      ...(summary || {
+        total_campaigns: 0,
+        active_campaigns: 0,
+        total_spend: 0,
+        total_revenue: 0,
+        total_clicks: 0,
+        total_conversions: 0,
+        average_cpc: 0,
+        average_cpa: 0,
+        roas: 0,
+      }),
+      overall_status: providerStatus?.configured
+        ? ("planning_needed" as AdManagementStatus)
+        : ("setup_needed" as AdManagementStatus),
+      launch_ready_count: launchReadiness?.ready_count || 0,
+      launch_blocked_count: launchReadiness?.blocked_count || 0,
+      budget_attention_count: 0,
+      unsynced_live_count: syncReadiness?.audit.unsynced_live_count || 0,
+      external_id_count: syncReadiness?.audit.external_id_count || 0,
+      retryable_launch_count: syncReadiness?.audit.retryable_count || 0,
+      dry_run_count: syncReadiness?.audit.dry_run_count || 0,
+      action_count: syncReadiness?.audit.action_count || 0,
+      external_sync_count: syncReadiness?.audit.external_sync_count || 0,
+      next_action: syncReadiness?.next_action || providerStatus?.next_action || "Load ad management control.",
+    };
+  const managementControls =
+    managementControl?.controls || [
+      {
+        label: "Provider launch gate",
+        status: providerStatus?.configured ? "ready" : "blocked",
+        detail: providerStatus?.configured
+          ? "Meta Ads launch settings are configured."
+          : providerStatus?.missing_settings.join(", ") || "Provider settings are loading.",
+      },
+      {
+        label: "Budget pacing gate",
+        status: "monitored",
+        detail: "Budget and ROAS risks appear after campaign metrics are loaded.",
+      },
+      {
+        label: "External ID audit",
+        status: "enforced",
+        detail: "Provider-connected campaigns should carry an external Meta campaign ID.",
+      },
+    ];
+  const managementCampaigns = managementControl?.campaigns || [];
+
   return (
     <div className="min-h-screen bg-[#0a0a0b] p-8 text-white">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
@@ -630,6 +739,136 @@ export default function AdsManagerPage() {
         <Metric label="Revenue" value={`Rs ${Math.round(summary?.total_revenue || 0).toLocaleString()}`} icon={CheckCircle2} />
         <Metric label="ROAS" value={`${summary?.roas || 0}x`} icon={Send} />
       </div>
+
+      <section
+        data-testid="ad-management-control"
+        className="mb-8 rounded-xl border border-sky-500/10 bg-[#111115] p-6"
+      >
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-sky-300">
+              Ad Campaign Mission Control
+            </p>
+            <h2 className="mt-1 text-xl font-black">Launch readiness, budget risk, sync audit and next actions</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+              A single command view for Meta Ads setup, paused-launch safety, external IDs, pacing risk, and campaign actions.
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-4 py-2 text-xs font-black uppercase ${adManagementStatusClass(
+              managementSummary.overall_status
+            )}`}
+          >
+            {adManagementStatusLabel(managementSummary.overall_status)}
+          </span>
+        </div>
+
+        <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+          <ReadinessMetric label="Launch Ready" value={managementSummary.launch_ready_count} icon={CheckCircle2} />
+          <ReadinessMetric label="Blocked" value={managementSummary.launch_blocked_count} icon={AlertTriangle} />
+          <ReadinessMetric label="Budget Review" value={managementSummary.budget_attention_count} icon={BarChart3} />
+          <ReadinessMetric label="Needs Sync" value={managementSummary.unsynced_live_count} icon={LinkIcon} />
+          <ReadinessMetric label="Actions" value={managementSummary.action_count} icon={History} />
+        </div>
+
+        <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-5">
+          {managementControls.map((control) => (
+            <div key={`ad-management-control-${control.label}`} className="rounded-xl border border-white/5 bg-black/25 p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-white">{control.label}</p>
+                <span className="rounded-full bg-sky-500/10 px-2 py-1 text-[11px] font-black uppercase text-sky-200">
+                  {control.status}
+                </span>
+              </div>
+              <p className="text-xs font-semibold leading-5 text-gray-500">{control.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="xl:col-span-8">
+            <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-sky-300">Priority Campaigns</p>
+                  <h3 className="mt-1 text-lg font-black">What needs action first</h3>
+                </div>
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black uppercase text-gray-400">
+                  {managementCampaigns.length || campaigns.length} tracked
+                </span>
+              </div>
+              <div className="space-y-3">
+                {managementCampaigns.slice(0, 5).map((campaign) => (
+                  <div
+                    key={`ad-management-${campaign.id}`}
+                    data-testid={`ad-management-campaign-${campaign.id}`}
+                    className="grid grid-cols-1 gap-3 rounded-lg border border-white/5 bg-white/[0.03] p-3 text-sm lg:grid-cols-12"
+                  >
+                    <div className="lg:col-span-3">
+                      <p className="font-black text-white">{campaign.name}</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {objectiveLabel(campaign.objective)} | {campaign.platforms.map((platform) => platformLabels[platform]).join(", ")}
+                      </p>
+                    </div>
+                    <div className="lg:col-span-2">
+                      <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(campaign.status)}`}>
+                        {campaign.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 lg:col-span-4">
+                      <MiniState
+                        label="Launch"
+                        value={campaign.launch.eligible ? "ready" : "blocked"}
+                        danger={!campaign.launch.eligible}
+                      />
+                      <MiniState
+                        label="Budget"
+                        value={campaign.budget_health.attention_required ? "review" : "ok"}
+                        danger={campaign.budget_health.attention_required}
+                      />
+                      <MiniState
+                        label="Sync"
+                        value={campaign.sync.provider_state.replaceAll("_", " ")}
+                        danger={campaign.sync.provider_state !== "synced" && ["launched", "paused", "completed"].includes(campaign.status)}
+                      />
+                    </div>
+                    <div className="text-gray-400 lg:col-span-3">
+                      <p className="font-semibold leading-6">{campaign.next_action}</p>
+                      {campaign.latest_launch && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Latest launch: {campaign.latest_launch.status} | {campaign.latest_launch.recovery_action}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {!managementCampaigns.length && (
+                  <div className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-gray-500">
+                    Management control is loading campaign priorities.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-white/5 bg-black/25 p-5 xl:col-span-4">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-sky-300">Operator Summary</p>
+                <h3 className="mt-1 text-lg font-black">Current command decision</h3>
+              </div>
+              <Target className="h-5 w-5 text-sky-300" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <BudgetMetric label="Dry Runs" value={managementSummary.dry_run_count} />
+              <BudgetMetric label="Retryable" value={managementSummary.retryable_launch_count} />
+              <BudgetMetric label="External IDs" value={managementSummary.external_id_count} />
+              <BudgetMetric label="Syncs" value={managementSummary.external_sync_count} />
+            </div>
+            <p className="mt-4 text-sm font-semibold leading-6 text-gray-300">{managementSummary.next_action}</p>
+          </div>
+        </div>
+      </section>
 
       <section
         data-testid="ad-provider-sync-command"
@@ -1343,6 +1582,24 @@ function setSelectedCampaignParam(campaignId: number) {
   window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
 }
 
+function adManagementStatusLabel(status: AdManagementStatus) {
+  const labels: Record<AdManagementStatus, string> = {
+    setup_needed: "Setup Needed",
+    sync_needed: "Sync Needed",
+    budget_review: "Budget Review",
+    ready_to_launch: "Ready To Launch",
+    planning_needed: "Planning Needed",
+  };
+  return labels[status];
+}
+
+function adManagementStatusClass(status: AdManagementStatus) {
+  if (status === "ready_to_launch") return "bg-green-500/15 text-green-300";
+  if (status === "budget_review" || status === "sync_needed") return "bg-yellow-500/15 text-yellow-300";
+  if (status === "setup_needed") return "bg-orange-500/15 text-orange-300";
+  return "bg-blue-500/15 text-blue-300";
+}
+
 function syncStatusFromCampaign(status: CampaignStatus): AdSyncStatus {
   if (status === "launched" || status === "paused" || status === "completed" || status === "failed") {
     return status;
@@ -1465,6 +1722,17 @@ function BudgetMetric({ label, value }: { label: string; value: string | number 
     <div className="rounded-lg border border-white/5 bg-black/30 p-4">
       <p className="text-xs font-black uppercase tracking-widest text-gray-500">{label}</p>
       <p className="mt-2 text-xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function MiniState({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-black/30 p-3">
+      <p className="text-[11px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+      <p className={`mt-1 text-xs font-black uppercase ${danger ? "text-yellow-300" : "text-green-300"}`}>
+        {value}
+      </p>
     </div>
   );
 }

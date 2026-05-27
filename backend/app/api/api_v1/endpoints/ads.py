@@ -483,6 +483,113 @@ def _campaign_launch_blockers(campaign: AdCampaign, provider_status: dict) -> li
     return sorted(set(blockers))
 
 
+def _ads_summary_snapshot(db: Session) -> dict:
+    total_campaigns = db.query(AdCampaign).count()
+    active_campaigns = (
+        db.query(AdCampaign)
+        .filter(AdCampaign.status.in_(["ready", "launched", "planned"]))
+        .count()
+    )
+    spend, revenue, clicks, conversions = (
+        db.query(
+            func.sum(AdCampaign.spend),
+            func.sum(AdCampaign.revenue),
+            func.sum(AdCampaign.clicks),
+            func.sum(AdCampaign.conversions),
+        )
+        .one()
+    )
+    spend_value = float(spend or 0)
+    revenue_value = float(revenue or 0)
+    clicks_value = int(clicks or 0)
+    conversions_value = int(conversions or 0)
+    return {
+        "total_campaigns": total_campaigns,
+        "active_campaigns": active_campaigns,
+        "total_spend": round(spend_value, 2),
+        "total_revenue": round(revenue_value, 2),
+        "total_clicks": clicks_value,
+        "total_conversions": conversions_value,
+        "average_cpc": round(spend_value / clicks_value, 2) if clicks_value else 0,
+        "average_cpa": round(spend_value / conversions_value, 2) if conversions_value else 0,
+        "roas": round(revenue_value / spend_value, 2) if spend_value else 0,
+    }
+
+
+def _budget_attention_required(budget_health: dict) -> bool:
+    return (
+        budget_health["pacing_status"] in {"no_budget", "over_pacing", "under_pacing"}
+        or budget_health["performance_status"] in {"needs_conversion", "watch"}
+    )
+
+
+def _campaign_management_next_action(
+    campaign: AdCampaign,
+    *,
+    launch_blockers: list[str],
+    sync_row: dict,
+    budget_health: dict,
+) -> str:
+    if launch_blockers:
+        return f"Clear launch blockers: {', '.join(launch_blockers)}."
+    if campaign.status in {"launched", "paused", "completed"} and not campaign.external_campaign_id:
+        return "Attach the external Meta campaign ID before provider-state actions."
+    if _budget_attention_required(budget_health):
+        return budget_health["recommendations"][0]
+    if campaign.status in {"draft", "planned", "ready"}:
+        return "Run dry-run proof, then launch a paused Meta campaign shell for review."
+    if campaign.status == "paused":
+        return "Review provider state, then resume or complete the campaign."
+    if campaign.status == "completed":
+        return "Review ROAS and duplicate only if the campaign economics still work."
+    if sync_row["provider_state"] == "needs_review":
+        return "Review the failed provider state before retrying launch or sync."
+    return "Monitor campaign performance and keep provider sync audit current."
+
+
+def _campaign_management_row(db: Session, campaign: AdCampaign, provider_status: dict) -> dict:
+    launch_blockers = _campaign_launch_blockers(campaign, provider_status)
+    budget_health = _campaign_budget_health(campaign)
+    sync_row = _campaign_sync_row(campaign)
+    latest_launch = (
+        db.query(AdCampaignLaunch)
+        .filter(AdCampaignLaunch.campaign_id == campaign.id)
+        .order_by(AdCampaignLaunch.attempted_at.desc(), AdCampaignLaunch.id.desc())
+        .first()
+    )
+    latest_action = (
+        db.query(AdCampaignAction)
+        .filter(AdCampaignAction.campaign_id == campaign.id)
+        .order_by(AdCampaignAction.created_at.desc(), AdCampaignAction.id.desc())
+        .first()
+    )
+    return {
+        "id": campaign.id,
+        "name": campaign.name,
+        "objective": campaign.objective,
+        "status": campaign.status,
+        "platforms": campaign.platforms or [],
+        "budget": round(float(campaign.daily_budget or campaign.lifetime_budget or 0), 2),
+        "launch": {
+            "eligible": not launch_blockers,
+            "blockers": launch_blockers,
+        },
+        "sync": sync_row,
+        "budget_health": {
+            **budget_health,
+            "attention_required": _budget_attention_required(budget_health),
+        },
+        "latest_launch": _launch_dict(latest_launch) if latest_launch else None,
+        "latest_action": _action_dict(latest_action) if latest_action else None,
+        "next_action": _campaign_management_next_action(
+            campaign,
+            launch_blockers=launch_blockers,
+            sync_row=sync_row,
+            budget_health=budget_health,
+        ),
+    }
+
+
 @router.get("/provider-status")
 def ads_provider_status(
     session: dict = Depends(require_roles("admin", "staff")),
@@ -652,6 +759,120 @@ def ads_sync_readiness(
             if unsynced_live_count
             else provider_status["next_action"]
         ),
+    }
+
+
+@router.get("/management-control")
+def ads_management_control(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    provider_status = _ad_provider_readiness()
+    summary = _ads_summary_snapshot(db)
+    all_campaigns = db.query(AdCampaign).all()
+    campaigns = (
+        db.query(AdCampaign)
+        .order_by(AdCampaign.updated_at.desc(), AdCampaign.id.desc())
+        .limit(limit)
+        .all()
+    )
+    all_launches = db.query(AdCampaignLaunch).all()
+    all_actions = db.query(AdCampaignAction).all()
+    campaign_rows = [
+        _campaign_management_row(db, campaign, provider_status)
+        for campaign in campaigns
+    ]
+    launch_ready_count = sum(1 for campaign in campaign_rows if campaign["launch"]["eligible"])
+    launch_blocked_count = len(campaign_rows) - launch_ready_count
+    budget_attention_count = sum(
+        1 for campaign in campaign_rows if campaign["budget_health"]["attention_required"]
+    )
+    unsynced_live_count = sum(
+        1
+        for campaign in all_campaigns
+        if campaign.status in {"launched", "paused", "completed"} and not campaign.external_campaign_id
+    )
+    external_id_count = sum(1 for campaign in all_campaigns if campaign.external_campaign_id)
+    launch_counts = _launch_counts(all_launches)
+    action_counts = _action_counts(all_actions)
+
+    if not provider_status["configured"]:
+        overall_status = "setup_needed"
+        next_action = provider_status["next_action"]
+    elif unsynced_live_count:
+        overall_status = "sync_needed"
+        next_action = "Attach external Meta campaign IDs to live, paused, or completed campaigns."
+    elif budget_attention_count:
+        overall_status = "budget_review"
+        next_action = "Review budget pacing before scaling or duplicating active campaigns."
+    elif launch_ready_count:
+        overall_status = "ready_to_launch"
+        next_action = "Run dry-run proof, then launch paused Meta campaign shells for review."
+    else:
+        overall_status = "planning_needed"
+        next_action = "Create or update campaigns until at least one is launch-ready."
+
+    recent_launches = (
+        db.query(AdCampaignLaunch)
+        .order_by(AdCampaignLaunch.attempted_at.desc(), AdCampaignLaunch.id.desc())
+        .limit(8)
+        .all()
+    )
+    recent_actions = (
+        db.query(AdCampaignAction)
+        .order_by(AdCampaignAction.created_at.desc(), AdCampaignAction.id.desc())
+        .limit(8)
+        .all()
+    )
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "provider_status": provider_status,
+        "summary": {
+            **summary,
+            "overall_status": overall_status,
+            "launch_ready_count": launch_ready_count,
+            "launch_blocked_count": launch_blocked_count,
+            "budget_attention_count": budget_attention_count,
+            "unsynced_live_count": unsynced_live_count,
+            "external_id_count": external_id_count,
+            "retryable_launch_count": launch_counts["retryable_count"],
+            "dry_run_count": launch_counts["dry_run_count"],
+            "action_count": action_counts["action_count"],
+            "external_sync_count": action_counts["external_sync_count"],
+            "next_action": next_action,
+        },
+        "controls": [
+            {
+                "label": "Provider launch gate",
+                "status": "ready" if provider_status["configured"] else "blocked",
+                "detail": "Live launch is blocked until Meta Ads credentials and the launch safety switch are configured.",
+            },
+            {
+                "label": "Paused launch guardrail",
+                "status": "enforced",
+                "detail": "Live launch creates paused Meta campaign shells so final review happens before activation.",
+            },
+            {
+                "label": "Budget pacing gate",
+                "status": "monitored",
+                "detail": "Campaigns with no budget, over-pacing, under-pacing, or weak conversion signals are marked for review.",
+            },
+            {
+                "label": "External ID audit",
+                "status": "enforced",
+                "detail": "Live, paused, and completed campaigns are flagged until the external Meta campaign ID is attached.",
+            },
+            {
+                "label": "Action ledger",
+                "status": "tracked",
+                "detail": "Pause, resume, complete, duplicate, and external sync actions are recorded for campaign history.",
+            },
+        ],
+        "campaigns": campaign_rows,
+        "recent_launches": [_launch_dict(launch) for launch in recent_launches],
+        "recent_actions": [_action_dict(action) for action in recent_actions],
     }
 
 
