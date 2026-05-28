@@ -319,6 +319,14 @@ async function main() {
       await page.getByTestId(`${safeTest.testId}-test-recipient`).fill(safeTest.recipient);
       await page.getByTestId(`${safeTest.testId}-run-test`).click();
       await page.getByTestId(`${safeTest.testId}-test-result`).waitFor({ timeout: 20000 });
+      await page.waitForFunction(
+        (testId) =>
+          /Dry-run test generated/i.test(
+            document.querySelector(`[data-testid="${testId}-test-result"]`)?.textContent || ""
+          ),
+        safeTest.testId,
+        { timeout: 30000 }
+      );
       const safeTestResult = await page.getByTestId(`${safeTest.testId}-test-result`).innerText();
       assert(/Dry-run test generated/i.test(safeTestResult), `${safeTest.testId} did not show dry-run generation.`);
       assert(/No live send queued: Confirmed/i.test(safeTestResult), `${safeTest.testId} did not confirm no live send was queued.`);
@@ -332,6 +340,15 @@ async function main() {
         `Provider audit did not persist a safe ${channel} test.`
       );
     }
+    await page.getByTestId("communications-provider-test-audit").waitFor({ timeout: 20000 });
+    await page.waitForFunction(
+      () => /No live send/i.test(document.querySelector('[data-testid="communications-provider-test-audit"]')?.textContent || ""),
+      null,
+      { timeout: 30000 }
+    );
+    const providerAuditText = await page.getByTestId("communications-provider-test-audit").innerText();
+    assert(/Safe test timeline/i.test(providerAuditText), "Provider test audit timeline title missing.");
+    assert(/No live send/i.test(providerAuditText), "Provider test audit timeline did not show no-live-send proof.");
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Messaging command board" }).waitFor({ timeout: 20000 });
     for (const safeTest of safeProviderTests) {
@@ -339,6 +356,14 @@ async function main() {
       const persistedAuditText = await page.getByTestId(`${safeTest.testId}-test-result`).innerText();
       assert(/Latest safe test audit/i.test(persistedAuditText), `${safeTest.testId} did not reload persisted safe test audit.`);
       assert(/No live send queued: Confirmed/i.test(persistedAuditText), `${safeTest.testId} persisted audit did not confirm no live send.`);
+    }
+    await page.getByTestId("communications-provider-test-audit").waitFor({ timeout: 30000 });
+    const reloadedProviderAuditText = await page.getByTestId("communications-provider-test-audit").innerText();
+    for (const label of ["Whatsapp", "Sms", "Email"]) {
+      assert(
+        reloadedProviderAuditText.includes(`${label} safe test`),
+        `Provider test audit timeline did not reload ${label} safe test.`
+      );
     }
     await page.getByTestId("communications-send-queue").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-segments").waitFor({ timeout: 20000 });

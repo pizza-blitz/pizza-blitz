@@ -712,6 +712,7 @@ export default function CommunicationsPage() {
         ...current,
         [channel]: result,
       }));
+      await fetchData();
       setMessage(
         `${labelize(channel)} safe provider test generated for ${result.recipient_masked || "masked recipient"}; no live send was queued.`
       );
@@ -784,6 +785,7 @@ export default function CommunicationsPage() {
     ];
   }, [queueCampaigns, spotlightCampaignId]);
   const recentEvents = data?.dispatch.recent_delivery_events || [];
+  const recentProviderTests = data?.dispatch.recent_provider_tests || [];
   const bestCampaign = data?.performance.best_campaign;
   const whatsappChannel = data?.dispatch.channels.find((channel) => channel.channel === "whatsapp");
   const smsChannel = data?.dispatch.channels.find((channel) => channel.channel === "sms");
@@ -1397,6 +1399,48 @@ export default function CommunicationsPage() {
                 </div>
               ))}
               {!recentEvents.length && <EmptyState>No campaign delivery events have been recorded yet.</EmptyState>}
+            </div>
+          </article>
+
+          <article data-testid="communications-provider-test-audit" className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                  Provider Test Audit
+                </p>
+                <h2 className="mt-2 text-xl font-black text-gray-950">Safe test timeline</h2>
+              </div>
+              <ShieldCheck className="h-6 w-6 text-emerald-500" />
+            </div>
+            <div className="mt-4 space-y-3">
+              {recentProviderTests.slice(0, 6).map((test) => (
+                <div
+                  key={test.test_id}
+                  data-testid={`communications-provider-test-audit-${test.channel}-${test.test_id}`}
+                  className="rounded-md bg-gray-50 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-gray-900">
+                        {labelize(test.channel)} safe test
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-gray-500">
+                        {test.provider || "provider"} - {test.recipient_masked || "masked recipient"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-md bg-white px-2 py-1 text-[11px] font-black text-emerald-700">
+                      No live send
+                    </span>
+                  </div>
+                  <p className="mt-2 break-words text-xs font-semibold leading-5 text-gray-600">
+                    {test.message_preview || "Message preview unavailable"}
+                  </p>
+                  <p className="mt-2 text-[11px] font-black uppercase tracking-widest text-gray-400">
+                    {test.generated_at ? new Date(test.generated_at).toLocaleString("en-IN") : test.test_id}
+                  </p>
+                </div>
+              ))}
+              {!recentProviderTests.length && <EmptyState>No safe provider tests have been generated yet.</EmptyState>}
             </div>
           </article>
         </section>
