@@ -945,7 +945,14 @@ export default function OrdersPage() {
                 {Math.round(lastCreatedOrder.total).toLocaleString()} | {lastCreatedOrder.paymentMethod.toUpperCase()}
               </p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-4">
+              <Link
+                data-testid="counter-post-order-kitchen-ticket"
+                href={`/kitchen-ticket/${lastCreatedOrder.id}`}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-orange-400/30 bg-orange-500 px-4 py-3 text-sm font-black text-white hover:bg-orange-600"
+              >
+                <Utensils className="h-4 w-4" /> Kitchen
+              </Link>
               <Link
                 data-testid="counter-post-order-receipt"
                 href={`/receipt/${lastCreatedOrder.id}`}
@@ -1315,6 +1322,13 @@ export default function OrdersPage() {
                   )}
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <Link
+                      data-testid={`counter-kitchen-ticket-${order.id}`}
+                      href={`/kitchen-ticket/${order.id}`}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-orange-500/15 py-2 text-xs font-bold text-orange-200 hover:bg-orange-500/25"
+                    >
+                      <Utensils className="h-4 w-4" /> Kitchen
+                    </Link>
+                    <Link
                       data-testid={`counter-bill-${order.id}`}
                       href={`/receipt/${order.id}`}
                       className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
@@ -1323,7 +1337,7 @@ export default function OrdersPage() {
                     </Link>
                     <button
                       onClick={() => generateInvoice(order)}
-                      className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
+                      className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
                     >
                       <FileText className="h-4 w-4" /> Invoice
                     </button>
