@@ -25,6 +25,7 @@ import { getApiUrl } from "@/lib/api";
 
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
+const QUICK_BUILDS_API = getApiUrl("/api/v1/restaurant/menu/customizations/quick-builds");
 const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
 
 type CustomizationOption = {
@@ -67,6 +68,25 @@ type SelectedMenuItem = MenuItem & {
   base_price: number;
   customization_total: number;
   selected_options: SelectedOption[];
+};
+
+type QuickBuild = {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  item: {
+    id: number;
+    name: string;
+    category: string;
+    base_price: number;
+  };
+  base_price: number;
+  customization_total: number;
+  unit_price: number;
+  selected_options: SelectedOption[];
+  option_count: number;
+  operator_steps: string[];
 };
 
 type Table = {
@@ -167,6 +187,7 @@ function optionSummary(option: NonNullable<Order["items"][number]["selected_opti
 export default function OrdersPage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [quickBuilds, setQuickBuilds] = useState<QuickBuild[]>([]);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
   const [selectedDeliveryZoneId, setSelectedDeliveryZoneId] = useState<number | null>(null);
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
@@ -221,6 +242,31 @@ export default function OrdersPage() {
         });
     });
     return selected;
+  };
+
+  const draftFromSelectedOptions = (
+    item: MenuItem,
+    selectedOptions: SelectedOption[]
+  ) => {
+    const draft = defaultDraftForItem(item);
+    (item.customization_groups || []).forEach((group) => {
+      const optionIds = group.options
+        .filter((option) =>
+          selectedOptions.some(
+            (selectedOption) =>
+              selectedOption.group_name === group.name &&
+              selectedOption.option_name === option.name
+          )
+        )
+        .map((option) => option.id);
+
+      if (!optionIds.length) return;
+      draft[group.id] =
+        group.selection_type === "single"
+          ? [optionIds[0]]
+          : optionIds.slice(0, group.max_select || optionIds.length);
+    });
+    return draft;
   };
 
   const customizationTotalForItem = (item: MenuItem) =>
@@ -358,11 +404,12 @@ export default function OrdersPage() {
   }, []);
 
   const fetchData = async () => {
-    const [tablesRes, menuRes, todayRes, zonesRes] = await Promise.all([
+    const [tablesRes, menuRes, todayRes, zonesRes, quickBuildsRes] = await Promise.all([
       fetch(`${ORDERS_API}/tables`, { credentials: "include" }),
       fetch(MENU_API),
       fetch(`${ORDERS_API}/today`, { credentials: "include" }),
       fetch(`${DELIVERY_API}/zones`),
+      fetch(QUICK_BUILDS_API),
     ]);
 
     setTables(await tablesRes.json());
@@ -384,6 +431,8 @@ export default function OrdersPage() {
       : [];
     setDeliveryZones(activeZones);
     setSelectedDeliveryZoneId((current) => current || activeZones[0]?.id || null);
+    const quickBuildPayload = await quickBuildsRes.json();
+    setQuickBuilds(Array.isArray(quickBuildPayload.builds) ? quickBuildPayload.builds : []);
   };
 
   const resetOrderForm = () => {
@@ -418,6 +467,29 @@ export default function OrdersPage() {
         item.id === id ? { ...item, quantity: Math.max(quantity, 0) } : item
       )
     );
+  };
+
+  const applyQuickBuild = (build: QuickBuild) => {
+    const targetItem = menuItems.find((item) => item.id === build.item.id);
+    if (!targetItem) {
+      setMessage(`${build.name} is not available in the current menu.`);
+      return;
+    }
+    const nextDraft = draftFromSelectedOptions(targetItem, build.selected_options);
+    setMenuItems((current) =>
+      current.map((item) =>
+        item.id === build.item.id
+          ? {
+              ...item,
+              quantity: Number(item.quantity || 0) + 1,
+              customization_draft: nextDraft,
+            }
+          : item
+      )
+    );
+    setActiveCategory(build.item.category || "All");
+    setMenuSearch("");
+    setMessage(`${build.name} added to the bill.`);
   };
 
   const updateCustomization = (
@@ -1235,6 +1307,56 @@ export default function OrdersPage() {
                       </p>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase text-gray-500">
+                    Preset Builds
+                  </p>
+                  <span className="rounded-md bg-white/5 px-2 py-1 text-[10px] font-black uppercase text-gray-400">
+                    {quickBuilds.length} ready
+                  </span>
+                </div>
+                <div
+                  data-testid="counter-quick-builds"
+                  className="grid gap-2 md:grid-cols-3"
+                >
+                  {quickBuilds.map((build) => (
+                    <button
+                      key={build.id}
+                      data-testid={`counter-quick-build-${build.id}`}
+                      type="button"
+                      onClick={() => applyQuickBuild(build)}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-left hover:border-orange-400/60 hover:bg-orange-500/10"
+                    >
+                      <span className="block text-xs font-black text-white">
+                        {build.name}
+                      </span>
+                      <span className="mt-1 block text-[11px] font-semibold text-gray-500">
+                        {build.item.name} | Rs {Math.round(build.unit_price).toLocaleString()}
+                      </span>
+                      <span className="mt-2 flex flex-wrap gap-1">
+                        {build.tags.slice(0, 2).map((tag) => (
+                          <span
+                            key={`${build.id}-${tag}`}
+                            className="rounded bg-black/30 px-2 py-1 text-[10px] font-black uppercase text-orange-200"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                        <span className="rounded bg-black/30 px-2 py-1 text-[10px] font-black uppercase text-gray-300">
+                          {build.option_count} options
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                  {!quickBuilds.length && (
+                    <div className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-sm font-semibold text-gray-500 md:col-span-3">
+                      Preset builds are loading.
+                    </div>
+                  )}
                 </div>
               </div>
             </section>

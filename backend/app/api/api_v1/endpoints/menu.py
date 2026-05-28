@@ -21,6 +21,52 @@ from app.services.menu_customization_service import (
 router = APIRouter()
 
 
+CUSTOMIZATION_QUICK_BUILD_RECIPES = [
+    {
+        "id": "classic-regular",
+        "name": "Classic Regular",
+        "description": "Default regular pizza with classic crust and sauce.",
+        "item_name": "Margherita Pizza (R)",
+        "tags": ["fastest", "default"],
+        "choices": {
+            "Size": ["Regular"],
+            "Crust": ["Classic Hand Tossed"],
+            "Sauce": ["Classic Tomato"],
+        },
+    },
+    {
+        "id": "large-cheese-burst-combo",
+        "name": "Large Cheese Burst Combo",
+        "description": "Large pizza, cheese burst, two toppings, dip, drink combo.",
+        "item_name": "Farmhouse Pizza (R)",
+        "tags": ["upsell", "combo"],
+        "choices": {
+            "Size": ["Large"],
+            "Crust": ["Cheese Burst"],
+            "Toppings": ["Extra Cheese", "Paneer Cubes"],
+            "Add-ons": ["Cheesy Dip"],
+            "Combo": ["Garlic Bread + Drink"],
+            "Sauce": ["Spicy Schezwan"],
+        },
+    },
+    {
+        "id": "family-party-upgrade",
+        "name": "Family Party Upgrade",
+        "description": "Party size pizza with family combo and dessert add-on.",
+        "item_name": "Farmhouse Pizza (R)",
+        "tags": ["family", "premium"],
+        "choices": {
+            "Size": ["Party"],
+            "Crust": ["Cheese Burst"],
+            "Toppings": ["Extra Cheese", "Sweet Corn"],
+            "Add-ons": ["Choco Lava Dessert"],
+            "Combo": ["Family Meal Upgrade"],
+            "Sauce": ["Tandoori Mayo"],
+        },
+    },
+]
+
+
 class MenuItemSchema(BaseModel):
     id: Optional[int] = None
     name: str
@@ -37,6 +83,25 @@ class CustomizationPriceRequest(BaseModel):
     menu_item_id: Optional[int] = None
     item_name: Optional[str] = None
     selected_options: List[dict] = Field(default_factory=list)
+
+
+def quick_build_selections(recipe: dict) -> list[dict]:
+    return [
+        {
+            "group_name": group_name,
+            "option_name": option_name,
+        }
+        for group_name, option_names in recipe["choices"].items()
+        for option_name in option_names
+    ]
+
+
+def quick_build_operator_steps(selected_options: list[dict]) -> list[str]:
+    return [
+        f"{option['group_name']}: {option['option_name']}"
+        + (f" +Rs {round(float(option['price_delta']))}" if float(option.get("price_delta") or 0) > 0 else "")
+        for option in selected_options
+    ]
 
 
 @router.get("/menu", response_model=List[MenuItemSchema])
@@ -195,6 +260,88 @@ def get_customization_readiness(db: Session = Depends(get_db)):
         ],
         "recent_customized_lines": recent_customized_lines,
         "next_actions": next_actions,
+    }
+
+
+@router.get("/customizations/quick-builds")
+def get_customization_quick_builds(db: Session = Depends(get_db)):
+    seed_default_customizations(db)
+    db.commit()
+    builds = []
+    skipped = []
+
+    for recipe in CUSTOMIZATION_QUICK_BUILD_RECIPES:
+        menu_item = find_menu_item_for_order(db, item_name=recipe["item_name"])
+        if menu_item is None or not menu_item.is_available:
+            skipped.append(
+                {
+                    "id": recipe["id"],
+                    "reason": f"{recipe['item_name']} is not available.",
+                }
+            )
+            continue
+
+        try:
+            price = calculate_customized_item_price(
+                db,
+                menu_item,
+                quick_build_selections(recipe),
+            )
+        except HTTPException as exc:
+            skipped.append(
+                {
+                    "id": recipe["id"],
+                    "reason": str(exc.detail),
+                }
+            )
+            continue
+
+        selected_options = price["selected_options"]
+        builds.append(
+            {
+                "id": recipe["id"],
+                "name": recipe["name"],
+                "description": recipe["description"],
+                "tags": recipe["tags"],
+                "item": {
+                    "id": menu_item.id,
+                    "name": menu_item.name,
+                    "category": menu_item.category,
+                    "base_price": price["base_price"],
+                },
+                "base_price": price["base_price"],
+                "customization_total": price["customization_total"],
+                "unit_price": price["unit_price"],
+                "selected_options": selected_options,
+                "option_count": len(selected_options),
+                "operator_steps": quick_build_operator_steps(selected_options),
+            }
+        )
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "quick_build_count": len(builds),
+            "skipped_count": len(skipped),
+            "highest_unit_price": round(
+                max([float(build["unit_price"]) for build in builds] or [0]),
+                2,
+            ),
+            "average_customization_total": round(
+                sum(float(build["customization_total"] or 0) for build in builds) / len(builds),
+                2,
+            )
+            if builds
+            else 0,
+        },
+        "builds": builds,
+        "skipped": skipped,
+        "next_actions": [
+            "Use one-tap builds for common counter orders.",
+            "Keep manual customization open for unusual customer requests.",
+        ]
+        if builds
+        else ["Review menu availability and customization option names."],
     }
 
 
