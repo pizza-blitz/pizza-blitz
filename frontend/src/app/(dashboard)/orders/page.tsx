@@ -20,6 +20,7 @@ import {
   Utensils,
   Users,
   X,
+  Zap,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
@@ -333,6 +334,7 @@ export default function OrdersPage() {
       return aPizza - bPizza || Number(a.selling_price || 0) - Number(b.selling_price || 0);
     })
     .slice(0, 6);
+  const canStartExpressWalkIn = isHydrated && quickMenuItems.length > 0;
   const deliveryReady =
     !isDeliveryOrder ||
     Boolean(
@@ -459,6 +461,46 @@ export default function OrdersPage() {
     resetOrderForm();
     setShowOrderModal(true);
     setMessage("");
+  };
+
+  const startExpressWalkIn = () => {
+    const build = quickBuilds.find((candidate) =>
+      menuItems.some((item) => item.id === candidate.item.id && item.is_available)
+    );
+    const targetItem =
+      (build ? menuItems.find((item) => item.id === build.item.id) : null) ||
+      quickMenuItems[0] ||
+      menuItems.find((item) => item.is_available);
+
+    if (!targetItem) {
+      setMessage("Menu is still loading. Try Express Walk-in again in a moment.");
+      return;
+    }
+
+    const targetDraft = build
+      ? draftFromSelectedOptions(targetItem, build.selected_options)
+      : defaultDraftForItem(targetItem);
+
+    setSelectedTable(null);
+    setOrderMode("takeaway");
+    setDeliveryQuote(null);
+    setFormData({
+      ...emptyCustomer,
+      payment_method: "cash",
+      notes: "Express walk-in",
+    });
+    setMenuSearch("");
+    setActiveCategory(targetItem.category || "All");
+    setMenuItems((current) =>
+      current.map((item) => ({
+        ...item,
+        quantity: item.id === targetItem.id ? 1 : 0,
+        customization_draft:
+          item.id === targetItem.id ? targetDraft : defaultDraftForItem(item),
+      }))
+    );
+    setShowOrderModal(true);
+    setMessage(`${build?.name || targetItem.name} loaded for express walk-in.`);
   };
 
   const updateQuantity = (id: number, quantity: number) => {
@@ -803,6 +845,14 @@ export default function OrdersPage() {
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
           <button
+            data-testid="counter-express-walkin"
+            disabled={!canStartExpressWalkIn}
+            onClick={startExpressWalkIn}
+            className="bg-emerald-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Zap className="w-5 h-5" /> {canStartExpressWalkIn ? "Express Walk-in" : "Loading Menu"}
+          </button>
+          <button
             data-testid="counter-new-takeaway"
             disabled={!isHydrated}
             onClick={() => openOrderModal()}
@@ -869,6 +919,19 @@ export default function OrdersPage() {
           data-testid="counter-operator-board"
           className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4"
         >
+          <button
+            data-testid="counter-command-express-walkin"
+            disabled={!canStartExpressWalkIn}
+            onClick={startExpressWalkIn}
+            className="rounded-xl border border-emerald-400/30 bg-emerald-500 px-4 py-4 text-left text-white shadow-lg transition hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"
+          >
+            <span className="flex items-center gap-2 text-sm font-black">
+              <Zap className="h-4 w-4" /> Express Walk-in
+            </span>
+            <span className="mt-2 block text-xs font-bold opacity-85">
+              Loads cash, takeaway, and a popular item.
+            </span>
+          </button>
           <button
             data-testid="counter-command-takeaway"
             disabled={!isHydrated}
