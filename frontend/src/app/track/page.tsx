@@ -18,6 +18,7 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const TRACK_API = getApiUrl("/api/v1/restaurant/orders/track");
+const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
 
 type TrackingStep = {
   key: string;
@@ -47,7 +48,13 @@ type TrackedOrder = {
     name: string;
     quantity: number;
     price: number;
-    selected_options?: { option_name: string; price_delta: number }[];
+    selected_options?: {
+      group_id?: number;
+      group_name?: string;
+      option_id?: number;
+      option_name: string;
+      price_delta: number;
+    }[];
   }[];
   total_amount: number;
   payment_status: string;
@@ -204,6 +211,27 @@ export default function TrackOrderPage() {
     setOrder(data);
     setPaymentReference(data.payment_reference || "");
     setMessage(`Payment confirmed for order #${data.id}.`);
+  };
+
+  const saveReorderDraft = () => {
+    if (!order || typeof window === "undefined") return;
+
+    window.localStorage.setItem(
+      REORDER_STORAGE_KEY,
+      JSON.stringify({
+        source_order_id: order.id,
+        customer: {
+          name: order.customer_name || "",
+          phone: order.customer_phone || phone,
+          opt_in_marketing: true,
+        },
+        items: order.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          selected_options: item.selected_options || [],
+        })),
+      })
+    );
   };
 
   return (
@@ -492,6 +520,30 @@ export default function TrackOrderPage() {
                 <CreditCard className="h-4 w-4 text-red-700" />
                 {order.payment_status.replace("_", " ")}
               </div>
+              {!!order.items.length && (
+                <div
+                  data-testid="track-reorder-command"
+                  className="mt-4 rounded-lg border border-red-100 bg-red-50 p-4"
+                >
+                  <p className="text-xs font-black uppercase tracking-widest text-red-700">
+                    Order Again
+                  </p>
+                  <h4 className="mt-1 text-lg font-black text-red-950">
+                    Reorder this cart in one click
+                  </h4>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-red-900">
+                    Loads these items, quantities, and selected customizations into checkout.
+                  </p>
+                  <Link
+                    data-testid="track-reorder-link"
+                    href="/order"
+                    onClick={saveReorderDraft}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-red-700 px-4 py-3 text-sm font-black text-white hover:bg-red-800"
+                  >
+                    <ShoppingBag className="h-4 w-4" /> Reorder same items
+                  </Link>
+                </div>
+              )}
             </aside>
           </div>
         )}
