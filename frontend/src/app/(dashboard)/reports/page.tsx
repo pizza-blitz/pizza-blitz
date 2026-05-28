@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Mail, Megaphone, MessageCircle, Phone, Send, ShoppingBag, Tag, Target, Users } from 'lucide-react';
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, Calendar, CheckCircle2, CreditCard, Download, Share2, IndianRupee, TrendingUp, TrendingDown, FileText, Loader2, Mail, Megaphone, MessageCircle, Phone, Send, ShoppingBag, Tag, Target, Users } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 const Award = ({className}: {className?: string}) => (
@@ -25,19 +25,24 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(true);
   const [reportError, setReportError] = useState("");
   const [period, setPeriod] = useState("30days");
+  const [monthlyTarget, setMonthlyTarget] = useState("");
+  const [targetDraft, setTargetDraft] = useState("");
   const [selectedMarketingCampaignId, setSelectedMarketingCampaignId] = useState<number | null>(null);
   const [launchingSegmentCampaign, setLaunchingSegmentCampaign] = useState<string | null>(null);
   const [segmentLaunchMessage, setSegmentLaunchMessage] = useState("");
 
   useEffect(() => {
     fetchReports();
-  }, [period]);
+  }, [period, monthlyTarget]);
 
   const fetchReports = async () => {
     setIsLoading(true);
     setReportError("");
     try {
       const comparisonPeriod = period === "lifetime" ? "1year" : period;
+      const targetQuery = Number(monthlyTarget || 0) > 0
+        ? `?monthly_target=${encodeURIComponent(monthlyTarget)}`
+        : "";
       const fetchJson = async (endpoint: string) => {
         const response = await fetch(getApiUrl(endpoint), {
           cache: "no-store",
@@ -49,7 +54,7 @@ export default function Reports() {
         }
         return payload;
       };
-      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, ownerComparisonRes, marketingRes, orderChannelRes, customerSegmentRes] = await Promise.all([
+      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, ownerComparisonRes, marketingRes, orderChannelRes, customerSegmentRes, targetRes, breakevenRes] = await Promise.all([
         fetchJson(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`),
         fetchJson('/api/v1/restaurant/sales/'),
         fetchJson('/api/v1/restaurant/stats/insights/monthly-forecast'),
@@ -58,7 +63,9 @@ export default function Reports() {
         fetchJson(`/api/v1/restaurant/stats/compare/owner-command-dashboard?period=${comparisonPeriod}`),
         fetchJson('/api/v1/restaurant/promotions/performance?limit=25'),
         fetchJson(`/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`),
-        fetchJson('/api/v1/restaurant/customers/segments/report')
+        fetchJson('/api/v1/restaurant/customers/segments/report'),
+        fetchJson(`/api/v1/restaurant/stats/target/status${targetQuery}`),
+        fetchJson('/api/v1/restaurant/stats/breakeven')
       ]);
 
       setData({
@@ -70,7 +77,9 @@ export default function Reports() {
         ownerComparison: ownerComparisonRes,
         marketing: marketingRes,
         orderChannels: orderChannelRes,
-        customerSegments: customerSegmentRes
+        customerSegments: customerSegmentRes,
+        targetPacing: targetRes,
+        breakeven: breakevenRes
       });
     } catch (err) { 
       console.error(err);
@@ -83,6 +92,11 @@ export default function Reports() {
 
   const handleExport = () => {
     window.location.href = getApiUrl('/api/v1/restaurant/sales/export/csv');
+  };
+
+  const applyMonthlyTarget = () => {
+    const normalizedTarget = String(targetDraft || "").replace(/[^\d.]/g, "");
+    setMonthlyTarget(normalizedTarget);
   };
 
   const launchSegmentCampaign = async (row: any) => {
@@ -148,6 +162,8 @@ export default function Reports() {
   const marketing = data?.marketing;
   const orderChannels = data?.orderChannels;
   const customerSegments = data?.customerSegments;
+  const targetPacing = data?.targetPacing;
+  const breakeven = data?.breakeven;
   const orderChannelRows = orderChannels?.channel_mix || [];
   const paymentRows = orderChannels?.payment_mix || [];
   const paymentStatusRows = orderChannels?.payment_status_mix || [];
@@ -347,6 +363,70 @@ export default function Reports() {
       tone: protectedMomentumCount >= 4 ? "green" : "amber",
     },
   ];
+  const targetProgress = Number(targetPacing?.target_achieved_pct || 0);
+  const targetShortfall = Math.max(
+    Number(targetPacing?.monthly_target || 0) - Number(targetPacing?.revenue_so_far || 0),
+    0
+  );
+  const projectedTargetGap = Math.max(
+    Number(targetPacing?.monthly_target || 0) - Number(targetPacing?.projected_month_total || 0),
+    0
+  );
+  const breakEvenProgress =
+    Number(breakeven?.daily_breakeven_revenue || 0) > 0
+      ? Math.min(
+          100,
+          Math.round(
+            (Number(breakeven?.today_revenue || 0) /
+              Number(breakeven?.daily_breakeven_revenue || 1)) *
+              100
+          )
+        )
+      : 0;
+  const breakEvenGap = Math.max(
+    Number(breakeven?.daily_breakeven_revenue || 0) - Number(breakeven?.today_revenue || 0),
+    0
+  );
+  const targetPacingCards = [
+    {
+      label: "Monthly Target",
+      value: formatMoney(targetPacing?.monthly_target || 0),
+      detail: `${targetProgress.toFixed(1)}% complete for ${targetPacing?.month || "this month"}`,
+      tone: targetPacing?.on_track ? "green" : "amber",
+      icon: Target,
+    },
+    {
+      label: "Revenue So Far",
+      value: formatMoney(targetPacing?.revenue_so_far || 0),
+      detail: `Projected ${formatMoney(targetPacing?.projected_month_total || 0)}`,
+      tone: "green",
+      icon: IndianRupee,
+    },
+    {
+      label: "Required Daily",
+      value: formatMoney(targetPacing?.required_daily_to_hit_target || 0),
+      detail: `${targetPacing?.days_remaining || 0} days remaining`,
+      tone: targetPacing?.on_track ? "green" : "red",
+      icon: Calendar,
+    },
+    {
+      label: "Break-even Today",
+      value: breakeven?.today_above_breakeven ? "Above" : formatMoney(breakEvenGap),
+      detail: `${breakEvenProgress}% of daily break-even covered`,
+      tone: breakeven?.today_above_breakeven ? "green" : "amber",
+      icon: breakeven?.today_above_breakeven ? CheckCircle2 : AlertTriangle,
+    },
+  ];
+  const targetActionRows = [
+    targetPacing?.status_message,
+    projectedTargetGap > 0
+      ? `Projected month is short by ${formatMoney(projectedTargetGap)}. Lift average order value or run a focused offer.`
+      : "Projected month is on pace against the selected target.",
+    targetShortfall > 0
+      ? `Remaining monthly gap is ${formatMoney(targetShortfall)}. Required daily revenue is ${formatMoney(targetPacing?.required_daily_to_hit_target || 0)}.`
+      : "Monthly target has already been covered.",
+    breakeven?.status_message,
+  ].filter((row): row is string => Boolean(row));
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -493,6 +573,113 @@ export default function Reports() {
                     label="Soft Day"
                     value={softWeekday?.weekday || "No data"}
                   />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {targetPacing && breakeven && (
+            <section
+              data-testid="target-pacing-command"
+              className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">
+                    Target Pacing Command
+                  </p>
+                  <h2 className="mt-1 text-xl font-black text-gray-950">
+                    Monthly Target, Required Daily Revenue and Break-even
+                  </h2>
+                  <p className="mt-2 text-sm font-semibold text-gray-500">
+                    {targetPacing.month} | {targetPacing.on_track ? "On track" : "Needs push"} | Today break-even {breakeven.today_above_breakeven ? "covered" : "pending"}
+                  </p>
+                </div>
+                <div className="grid w-full gap-2 sm:grid-cols-[minmax(0,1fr)_auto] xl:w-[420px]">
+                  <input
+                    data-testid="target-pacing-input"
+                    value={targetDraft}
+                    onChange={(event) => setTargetDraft(event.target.value)}
+                    placeholder="Optional monthly target"
+                    inputMode="decimal"
+                    className="h-11 rounded-md border border-gray-200 bg-gray-50 px-3 text-sm font-bold text-gray-900 outline-none focus:border-orange-500"
+                  />
+                  <button
+                    data-testid="target-pacing-apply"
+                    type="button"
+                    onClick={applyMonthlyTarget}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-gray-950 px-4 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
+                  >
+                    <Target className="h-4 w-4" />
+                    Apply
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {targetPacingCards.map((card) => (
+                  <TargetPacingMetric key={card.label} {...card} />
+                ))}
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        Target Runway
+                      </p>
+                      <h3 className="mt-1 text-lg font-black text-gray-950">
+                        Revenue needed to finish the month
+                      </h3>
+                    </div>
+                    <Calendar className="h-5 w-5 text-orange-600" />
+                  </div>
+                  <div className="h-3 rounded-full bg-white">
+                    <div
+                      data-testid="target-pacing-progress"
+                      className={`h-3 rounded-full ${targetPacing.on_track ? "bg-green-600" : "bg-orange-600"}`}
+                      style={{ width: `${Math.min(100, Math.max(0, targetProgress))}%` }}
+                    />
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <MarketingCommandMetric
+                      label="Remaining Gap"
+                      value={targetShortfall > 0 ? formatMoney(targetShortfall) : "Covered"}
+                    />
+                    <MarketingCommandMetric
+                      label="Projected Gap"
+                      value={projectedTargetGap > 0 ? formatMoney(projectedTargetGap) : "Ahead"}
+                    />
+                    <MarketingCommandMetric
+                      label="Daily Average"
+                      value={formatMoney(targetPacing.daily_average)}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">
+                        Next Target Moves
+                      </p>
+                      <h3 className="mt-1 text-lg font-black text-gray-950">
+                        Decisions before the next sales review
+                      </h3>
+                    </div>
+                    <AlertTriangle className="h-5 w-5 text-amber-700" />
+                  </div>
+                  <div className="space-y-2">
+                    {targetActionRows.map((action: string) => (
+                      <p
+                        key={action}
+                        className="rounded-md bg-white px-3 py-2 text-sm font-bold leading-5 text-amber-950"
+                      >
+                        {action}
+                      </p>
+                    ))}
+                  </div>
                 </div>
               </div>
             </section>
@@ -1708,6 +1895,52 @@ function ReportingActionMetric({
         </div>
       </div>
       <p className="text-2xl font-black text-gray-950">{value}</p>
+      <p className="mt-2 text-xs font-bold leading-5 text-gray-600">{detail}</p>
+    </div>
+  );
+}
+
+function TargetPacingMetric({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  detail: string;
+  tone: string;
+}) {
+  const toneMap: Record<string, { container: string; icon: string; value: string }> = {
+    green: {
+      container: "border-green-200 bg-green-50",
+      icon: "bg-white text-green-700",
+      value: "text-green-800",
+    },
+    amber: {
+      container: "border-amber-200 bg-amber-50",
+      icon: "bg-white text-amber-700",
+      value: "text-amber-800",
+    },
+    red: {
+      container: "border-red-200 bg-red-50",
+      icon: "bg-white text-red-700",
+      value: "text-red-800",
+    },
+  };
+  const classes = toneMap[tone] || toneMap.amber;
+
+  return (
+    <div className={`rounded-lg border p-4 ${classes.container}`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">{label}</p>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-md ${classes.icon}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+      <p className={`text-2xl font-black ${classes.value}`}>{value}</p>
       <p className="mt-2 text-xs font-bold leading-5 text-gray-600">{detail}</p>
     </div>
   );
