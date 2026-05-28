@@ -15,6 +15,7 @@ from app.models.domain import (
     Customer,
     DailySales,
     Promotion,
+    ProviderTestRun,
     RestaurantOrder,
     SocialPost,
 )
@@ -810,6 +811,22 @@ def _delivery_proof_dict(delivery: CampaignDelivery | None) -> dict | None:
     }
 
 
+def _provider_test_run_dict(test_run: ProviderTestRun | None) -> dict | None:
+    if not test_run:
+        return None
+    return {
+        "id": test_run.id,
+        "test_id": test_run.test_id,
+        "channel": test_run.channel,
+        "provider": test_run.provider,
+        "recipient_masked": test_run.recipient_masked,
+        "message_preview": test_run.message_preview,
+        "queued": test_run.queued,
+        "live_send_blocked": test_run.live_send_blocked,
+        "generated_at": test_run.generated_at.isoformat() if test_run.generated_at else None,
+    }
+
+
 def _dispatch_activation_status(channel: str, status: dict, counts: dict) -> tuple[str, str, list[str]]:
     missing_settings = status.get("missing_settings") or []
     blockers: list[str] = []
@@ -912,6 +929,12 @@ def _dispatch_control_channel(db: Session, channel: str) -> dict:
     latest_dry_run = next((delivery for delivery in deliveries if delivery.status == "dry_run"), None)
     latest_sent = next((delivery for delivery in deliveries if delivery.status == "sent"), None)
     latest_issue = next((delivery for delivery in deliveries if delivery.status in {"failed", "skipped"}), None)
+    latest_provider_test = (
+        db.query(ProviderTestRun)
+        .filter(ProviderTestRun.channel == channel)
+        .order_by(ProviderTestRun.generated_at.desc(), ProviderTestRun.id.desc())
+        .first()
+    )
     activation_status, next_action, blockers = _dispatch_activation_status(channel, status, counts)
     return {
         "channel": channel,
@@ -923,6 +946,7 @@ def _dispatch_control_channel(db: Session, channel: str) -> dict:
         "latest_dry_run": _delivery_proof_dict(latest_dry_run),
         "latest_sent": _delivery_proof_dict(latest_sent),
         "latest_issue": _delivery_proof_dict(latest_issue),
+        "latest_provider_test": _provider_test_run_dict(latest_provider_test),
         "next_action": next_action,
     }
 
@@ -2193,6 +2217,12 @@ def campaign_dispatch_control(
         .limit(8)
         .all()
     )
+    recent_provider_tests = (
+        db.query(ProviderTestRun)
+        .order_by(ProviderTestRun.generated_at.desc(), ProviderTestRun.id.desc())
+        .limit(8)
+        .all()
+    )
     if live_ready_count == len(CHANNEL_ORDER):
         overall_status = "live_ready"
         next_action = "All channels are live-ready. Use the send queue for campaign-level approval."
@@ -2238,12 +2268,14 @@ def campaign_dispatch_control(
             },
         ],
         "recent_delivery_events": [_delivery_proof_dict(delivery) for delivery in recent_deliveries],
+        "recent_provider_tests": [_provider_test_run_dict(test_run) for test_run in recent_provider_tests],
     }
 
 
 @router.post("/providers/test-send")
 def provider_test_send(
     payload: ProviderTestSendRequest,
+    db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     channel = payload.channel.strip().lower()
@@ -2254,13 +2286,15 @@ def provider_test_send(
     if not destination:
         raise HTTPException(status_code=422, detail="Recipient could not be normalized for this channel.")
 
+    generated_at = datetime.utcnow()
     message_preview = _render_provider_test_message(payload.message_template.strip())
     provider_status = _provider_readiness_status(channel)
-    return {
+    test_id = f"provider-dryrun-{channel}-{generated_at.strftime('%Y%m%d%H%M%S%f')}"
+    result = {
         "status": "dry_run_test_generated",
         "mode": "dry_run_only",
-        "generated_at": datetime.utcnow().isoformat(),
-        "test_id": f"provider-dryrun-{channel}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        "generated_at": generated_at.isoformat(),
+        "test_id": test_id,
         "channel": channel,
         "provider_status": provider_status,
         "recipient_masked": _masked_destination(channel, destination),
@@ -2270,6 +2304,32 @@ def provider_test_send(
         "live_send_blocked": True,
         "compliance_checks": provider_status["compliance_checks"],
         "next_action": provider_status["next_action"],
+    }
+    test_run = ProviderTestRun(
+        test_id=test_id,
+        channel=channel,
+        provider=provider_status.get("provider"),
+        recipient_masked=result["recipient_masked"],
+        message_preview=message_preview,
+        queued=False,
+        live_send_blocked=True,
+        response_payload={
+            "mode": "dry_run_only",
+            "provider_status": {
+                "provider": provider_status.get("provider"),
+                "configured": provider_status.get("configured"),
+                "missing_settings": provider_status.get("missing_settings"),
+            },
+            "next_action": provider_status.get("next_action"),
+        },
+        generated_at=generated_at,
+    )
+    db.add(test_run)
+    db.commit()
+    db.refresh(test_run)
+    return {
+        **result,
+        "audit": _provider_test_run_dict(test_run),
     }
 
 

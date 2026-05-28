@@ -170,6 +170,19 @@ class CampaignDelivery(Base):
     promotion = relationship("Promotion")
     customer = relationship("Customer")
 
+class ProviderTestRun(Base):
+    __tablename__ = "provider_test_runs"
+    id = Column(Integer, primary_key=True, index=True)
+    test_id = Column(String(120), unique=True, index=True, nullable=False)
+    channel = Column(String(50), index=True, nullable=False)
+    provider = Column(String(80), nullable=True)
+    recipient_masked = Column(String(255), nullable=True)
+    message_preview = Column(String, nullable=True)
+    queued = Column(Boolean, default=False)
+    live_send_blocked = Column(Boolean, default=True)
+    response_payload = Column(JSON, nullable=True)
+    generated_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 class SocialPost(Base):
     __tablename__ = "social_posts"
     id = Column(Integer, primary_key=True, index=True)

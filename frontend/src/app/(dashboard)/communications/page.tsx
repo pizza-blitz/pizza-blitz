@@ -173,14 +173,16 @@ type ProviderTestDraft = {
 };
 
 type ProviderTestResult = {
-  status: string;
-  mode: string;
+  status?: string;
+  mode?: string;
   test_id: string;
   channel: ProviderChannel;
+  provider?: string | null;
   recipient_masked?: string | null;
   message_preview?: string | null;
   queued: boolean;
   live_send_blocked: boolean;
+  generated_at?: string | null;
 };
 
 type ChannelControl = {
@@ -204,6 +206,7 @@ type ChannelControl = {
     skipped_count: number;
     needs_attention_count: number;
   };
+  latest_provider_test?: ProviderTestResult | null;
   next_action: string;
 };
 
@@ -225,6 +228,7 @@ type DispatchControl = {
   };
   channels: ChannelControl[];
   controls: { label: string; status: string; detail: string }[];
+  recent_provider_tests?: ProviderTestResult[];
   recent_delivery_events: {
     id: number;
     channel: string;
@@ -421,6 +425,7 @@ function ProviderActivationCard({
   onRunProviderTest: () => void;
 }) {
   const setupSteps = channel?.provider_status.setup_steps || [];
+  const latestAudit = testResult || channel?.latest_provider_test;
 
   return (
     <article
@@ -521,16 +526,21 @@ function ProviderActivationCard({
         >
           <Send className="h-4 w-4" /> {testBusy ? "Generating" : "Generate Safe Test"}
         </button>
-        {testResult ? (
+        {latestAudit ? (
           <div
             data-testid={`${testId}-test-result`}
             className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-xs font-semibold leading-5 text-emerald-800"
           >
-            <p className="font-black">Dry-run test generated</p>
-            <p>Recipient: {testResult.recipient_masked || "masked"}</p>
-            <p>No live send queued: {testResult.queued ? "Needs review" : "Confirmed"}</p>
+            <p className="font-black">
+              {testResult ? "Dry-run test generated" : "Latest safe test audit"}
+            </p>
+            <p>Recipient: {latestAudit.recipient_masked || "masked"}</p>
+            <p>No live send queued: {latestAudit.queued ? "Needs review" : "Confirmed"}</p>
+            {latestAudit.generated_at ? (
+              <p>Audit time: {new Date(latestAudit.generated_at).toLocaleString("en-IN")}</p>
+            ) : null}
             <p className="mt-1 break-words text-emerald-700">
-              {testResult.message_preview}
+              {latestAudit.message_preview}
             </p>
           </div>
         ) : null}
