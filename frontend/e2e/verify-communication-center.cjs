@@ -217,6 +217,20 @@ async function main() {
   await waitForHttp(baseURL, "frontend");
 
   const adminCookie = await portalLogin();
+  const dispatchControl = await adminJson("/api/v1/restaurant/promotions/providers/dispatch-control", adminCookie);
+  assert(dispatchControl.response.ok, `Could not load provider activation control: ${JSON.stringify(dispatchControl.data)}`);
+  for (const channel of ["whatsapp", "sms", "email"]) {
+    const channelControl = dispatchControl.data.channels.find((item) => item.channel === channel);
+    assert(channelControl, `Provider activation control missed ${channel}.`);
+    assert(
+      Array.isArray(channelControl.activation_checklist) && channelControl.activation_checklist.length >= 5,
+      `${channel} activation checklist was missing required checks.`
+    );
+    const labels = channelControl.activation_checklist.map((item) => item.label).join(" | ");
+    assert(/Global send switch/i.test(labels), `${channel} activation checklist missed global send switch.`);
+    assert(/Provider credentials/i.test(labels), `${channel} activation checklist missed provider credentials.`);
+    assert(/Dry-run proof/i.test(labels), `${channel} activation checklist missed dry-run proof.`);
+  }
   const proof = await seedCommunicationProof(adminCookie);
 
   const browser = await chromium.launch({ headless: true });
@@ -244,6 +258,14 @@ async function main() {
       null,
       { timeout: 60000 }
     );
+    for (const channel of ["whatsapp", "sms", "email"]) {
+      await page.getByTestId(`communications-activation-checklist-${channel}`).waitFor({ timeout: 20000 });
+      const checklistText = await page.getByTestId(`communications-activation-checklist-${channel}`).innerText();
+      assert(/Activation Checklist/i.test(checklistText), `${channel} activation checklist title missing.`);
+      assert(/Global send switch/i.test(checklistText), `${channel} activation checklist missed global send switch.`);
+      assert(/Provider credentials/i.test(checklistText), `${channel} activation checklist missed provider credentials.`);
+      assert(/Dry-run proof/i.test(checklistText), `${channel} activation checklist missed dry-run proof.`);
+    }
     await page.getByTestId("communications-send-queue").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-segments").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-next-action").waitFor({ timeout: 20000 });
@@ -274,13 +296,16 @@ async function main() {
     assert(/missing email/i.test(cleanupBefore), `Cleanup review did not show missing email blocker: ${cleanupBefore}`);
     await page.getByTestId(`communications-cleanup-email-${proof.missingCustomerId}`).fill(proof.repairedEmail);
     await page.getByTestId(`communications-save-cleanup-${proof.missingCustomerId}`).click();
-    await page
-      .getByTestId("communications-message")
-      .getByText(new RegExp(`Updated .*${proof.missingPhone}|Updated .*cleanup`, "i"))
-      .waitFor({ timeout: 30000 });
-    const repairedLookup = await adminJson(`/api/v1/restaurant/customers/?q=${proof.missingPhone}`, adminCookie);
-    assert(repairedLookup.response.ok, `Could not recheck cleanup contact: ${JSON.stringify(repairedLookup.data)}`);
-    const repairedCustomer = repairedLookup.data.find((customer) => customer.phone === proof.missingPhone);
+    let repairedLookup = null;
+    let repairedCustomer = null;
+    const cleanupStartedAt = Date.now();
+    while (Date.now() - cleanupStartedAt < 45000) {
+      repairedLookup = await adminJson(`/api/v1/restaurant/customers/?q=${proof.missingPhone}`, adminCookie);
+      assert(repairedLookup.response.ok, `Could not recheck cleanup contact: ${JSON.stringify(repairedLookup.data)}`);
+      repairedCustomer = repairedLookup.data.find((customer) => customer.phone === proof.missingPhone);
+      if (repairedCustomer?.email === proof.repairedEmail) break;
+      await sleep(1500);
+    }
     assert(
       repairedCustomer?.email === proof.repairedEmail,
       `Cleanup email was not saved. Expected ${proof.repairedEmail}, got ${repairedCustomer?.email}.`

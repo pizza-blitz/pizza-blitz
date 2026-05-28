@@ -725,6 +725,72 @@ def _dispatch_activation_status(channel: str, status: dict, counts: dict) -> tup
     return "live_ready", "Channel has credentials, compliance checks and send proof.", []
 
 
+def _dispatch_activation_checklist(channel: str, status: dict, counts: dict) -> list[dict]:
+    credential_checks = status.get("credential_checks") or []
+    provider_credential_checks = [
+        check
+        for check in credential_checks
+        if check.get("key") != "CAMPAIGN_SEND_ENABLED=true"
+    ]
+    missing_credentials = [
+        check.get("label") or check.get("key")
+        for check in provider_credential_checks
+        if not check.get("configured")
+    ]
+    provider_credentials_ready = bool(provider_credential_checks) and not missing_credentials
+    template_ready = status.get("template_status") == "ready"
+    dry_run_count = counts.get("dry_run_count", 0)
+    sent_count = counts.get("sent_count", 0)
+    issue_count = counts.get("needs_attention_count", 0)
+
+    return [
+        {
+            "key": "send_switch",
+            "label": "Global send switch",
+            "passed": settings.CAMPAIGN_SEND_ENABLED,
+            "detail": (
+                "CAMPAIGN_SEND_ENABLED is enabled."
+                if settings.CAMPAIGN_SEND_ENABLED
+                else "Set CAMPAIGN_SEND_ENABLED=true only after provider tests pass."
+            ),
+        },
+        {
+            "key": "provider_credentials",
+            "label": "Provider credentials",
+            "passed": provider_credentials_ready,
+            "detail": (
+                f"{status.get('provider')} credentials are present."
+                if provider_credentials_ready
+                else f"Missing: {', '.join(missing_credentials) if missing_credentials else 'supported provider settings'}."
+            ),
+        },
+        {
+            "key": "template_content",
+            "label": "Template/content approval",
+            "passed": template_ready,
+            "detail": status.get("template_detail") or (
+                f"Review {channel} message content before live sends."
+            ),
+        },
+        {
+            "key": "dry_run_proof",
+            "label": "Dry-run proof",
+            "passed": dry_run_count > 0 or sent_count > 0,
+            "detail": f"{dry_run_count} dry-run receipt(s), {sent_count} live send receipt(s).",
+        },
+        {
+            "key": "issue_recovery",
+            "label": "Issue recovery",
+            "passed": issue_count == 0,
+            "detail": (
+                "No failed/skipped deliveries need review."
+                if issue_count == 0
+                else f"{issue_count} delivery issue(s) need cleanup before launch."
+            ),
+        },
+    ]
+
+
 def _dispatch_control_channel(db: Session, channel: str) -> dict:
     status = _provider_readiness_status(channel)
     deliveries = (
@@ -743,6 +809,7 @@ def _dispatch_control_channel(db: Session, channel: str) -> dict:
         "channel": channel,
         "provider_status": status,
         "activation_status": activation_status,
+        "activation_checklist": _dispatch_activation_checklist(channel, status, counts),
         "blockers": blockers,
         "counts": {**counts, **audit_counts},
         "latest_dry_run": _delivery_proof_dict(latest_dry_run),

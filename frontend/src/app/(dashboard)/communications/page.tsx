@@ -148,9 +148,17 @@ type CleanupDraft = {
   opt_in_marketing: boolean;
 };
 
+type ActivationChecklistItem = {
+  key: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+};
+
 type ChannelControl = {
   channel: "whatsapp" | "sms" | "email";
   activation_status: string;
+  activation_checklist?: ActivationChecklistItem[];
   blockers: string[];
   provider_status: {
     provider: string;
@@ -301,6 +309,14 @@ function liveGateChecks(campaign: QueueCampaign) {
       detail: campaign.sent_count === 0 ? "No live send recorded" : `${numberFmt(campaign.sent_count)} sent`,
     },
   ];
+}
+
+function activationProgress(channel: ChannelControl) {
+  const checks = channel.activation_checklist || [];
+  return {
+    passed: checks.filter((check) => check.passed).length,
+    total: checks.length,
+  };
 }
 
 function MetricCard({
@@ -614,6 +630,7 @@ export default function CommunicationsPage() {
             >
               {(data?.dispatch.channels || []).map((channel) => {
                 const Icon = channelIcon(channel.channel);
+                const progress = activationProgress(channel);
                 return (
                   <article
                     key={channel.channel}
@@ -649,6 +666,42 @@ export default function CommunicationsPage() {
                     <p className="mt-4 text-sm font-semibold leading-5 text-gray-600">
                       {channel.blockers[0] || channel.next_action}
                     </p>
+                    <div
+                      data-testid={`communications-activation-checklist-${channel.channel}`}
+                      className="mt-4 rounded-md border border-gray-100 bg-gray-50 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                          Activation Checklist
+                        </p>
+                        <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-gray-700">
+                          {progress.passed}/{progress.total || 5}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {(channel.activation_checklist || []).map((check) => (
+                          <div
+                            key={`${channel.channel}-${check.key}`}
+                            data-testid={`communications-activation-check-${channel.channel}-${check.key}`}
+                            className="flex items-start gap-2 rounded-md bg-white p-2"
+                          >
+                            {check.passed ? (
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                            ) : (
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            )}
+                            <div>
+                              <p className="text-xs font-black text-gray-900">
+                                {check.label}: {check.passed ? "Passed" : "Missing"}
+                              </p>
+                              <p className="mt-0.5 text-[11px] font-semibold leading-4 text-gray-500">
+                                {check.detail}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </article>
                 );
               })}
