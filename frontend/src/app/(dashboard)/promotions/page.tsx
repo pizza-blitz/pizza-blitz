@@ -772,6 +772,7 @@ export default function PromotionsPage() {
   const [creatingPlaybookAudience, setCreatingPlaybookAudience] = useState<AudienceKey | null>(null);
   const [creatingSocialPost, setCreatingSocialPost] = useState(false);
   const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
+  const [creatingLaunchBundle, setCreatingLaunchBundle] = useState(false);
   const [cleanupReturn, setCleanupReturn] = useState<CampaignReturnState>({
     fromCleanup: false,
     campaignId: null,
@@ -817,6 +818,9 @@ export default function PromotionsPage() {
   const selectedSchedule = selectedPromotion?.schedule;
   const selectedScheduledFuture =
     selectedPromotion?.status === "scheduled" && selectedSchedule?.phase === "upcoming";
+  const selectedSocialHandoff = performance?.social.latest_post || null;
+  const selectedAdHandoff = performance?.ads.latest_campaign || null;
+  const launchBundleReadyCount = [selectedSocialHandoff, selectedAdHandoff].filter(Boolean).length;
   const bestCampaign = performanceRollup?.best_campaign || null;
   const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
   const hygieneChannels = channelOptions.map((option) => option.value);
@@ -1638,6 +1642,65 @@ export default function PromotionsPage() {
       setMessage("Ad campaign could not be created.");
     } finally {
       setCreatingAdCampaign(false);
+    }
+  };
+
+  const createLaunchBundle = async () => {
+    if (!selectedPromotion) return;
+    setCreatingLaunchBundle(true);
+    try {
+      const offerLink = orderOfferLink(selectedPromotion);
+      const [socialResponse, adResponse] = await Promise.all([
+        fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/social-post`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            link_url: offerLink,
+            image_url: defaultSocialImage,
+            platforms: ["facebook", "instagram"],
+            status: "ready",
+          }),
+        }),
+        fetch(`${PROMOTIONS_API}/${selectedPromotion.id}/ad-campaign`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            link_url: offerLink,
+            image_url: defaultSocialImage,
+            platforms: ["facebook", "instagram"],
+            objective: "sales",
+            daily_budget: 500,
+            status: "ready",
+          }),
+        }),
+      ]);
+      const [socialData, adData] = await Promise.all([
+        socialResponse.json().catch(() => ({})),
+        adResponse.json().catch(() => ({})),
+      ]);
+      if (!socialResponse.ok || !adResponse.ok) {
+        setMessage(
+          [
+            !socialResponse.ok ? socialData.detail || "Social post could not be created." : null,
+            !adResponse.ok ? adData.detail || "Ad campaign could not be created." : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+        return;
+      }
+      setMessage(
+        `Launch bundle ready for ${selectedPromotion.name}: social post #${socialData.post.id} and ad campaign #${adData.campaign.id}.`
+      );
+      await fetchPerformance(selectedPromotion.id);
+      await fetchActivityTimeline(selectedPromotion.id);
+      await fetchPerformanceRollup();
+    } catch {
+      setMessage("Launch bundle could not be created.");
+    } finally {
+      setCreatingLaunchBundle(false);
     }
   };
 
@@ -2717,6 +2780,116 @@ export default function PromotionsPage() {
                     value={providerLabel(dispatch?.provider_status)}
                   />
                 </div>
+
+                <section
+                  data-testid="promotion-launch-bundle"
+                  className="mb-6 rounded-xl border border-sky-500/10 bg-black/25 p-5"
+                >
+                  <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-sky-300">
+                        Offer Launch Bundle
+                      </p>
+                      <h3 className="mt-1 text-lg font-black">Social draft plus Meta ad handoff</h3>
+                      <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-gray-500">
+                        Build the public marketing assets from the selected coupon using the same offer link, image, dates, and message.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${checkRatioClass(launchBundleReadyCount, 2)}`}>
+                        {launchBundleReadyCount}/2 ready
+                      </span>
+                      <button
+                        data-testid="create-launch-bundle-button"
+                        type="button"
+                        onClick={createLaunchBundle}
+                        disabled={creatingLaunchBundle}
+                        className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-5 py-3 text-sm font-black text-white hover:bg-sky-600 disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <ShoppingBag className="h-4 w-4" />
+                        {creatingLaunchBundle ? "Building" : "Build Launch Bundle"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                    <div
+                      data-testid="launch-bundle-social-card"
+                      className="rounded-lg border border-white/5 bg-white/[0.03] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-300">
+                            <Share2 className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase tracking-widest text-gray-600">Social Draft</p>
+                            <p className="mt-1 break-words text-sm font-black leading-5 text-gray-100">
+                              {selectedSocialHandoff?.title || "Not created yet"}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${handoffStatusClass(selectedSocialHandoff?.status || "pending")}`}>
+                          {selectedSocialHandoff?.status || "pending"}
+                        </span>
+                      </div>
+                      <p className="mt-3 break-words text-xs font-semibold leading-5 text-gray-500">
+                        {selectedSocialHandoff
+                          ? `${formatPlatforms(selectedSocialHandoff.platforms)} | Post #${selectedSocialHandoff.id}`
+                          : "Creates a ready Facebook and Instagram post with the coupon order link."}
+                      </p>
+                      <Link
+                        data-testid="launch-bundle-social-link"
+                        href={
+                          performance?.social.latest_post_id
+                            ? `/social?post=${performance.social.latest_post_id}`
+                            : "/social"
+                        }
+                        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15"
+                      >
+                        Open Social <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+
+                    <div
+                      data-testid="launch-bundle-ad-card"
+                      className="rounded-lg border border-white/5 bg-white/[0.03] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
+                            <Target className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase tracking-widest text-gray-600">Meta Ad</p>
+                            <p className="mt-1 break-words text-sm font-black leading-5 text-gray-100">
+                              {selectedAdHandoff?.name || "Not created yet"}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${handoffStatusClass(selectedAdHandoff?.status || "pending")}`}>
+                          {selectedAdHandoff?.status || "pending"}
+                        </span>
+                      </div>
+                      <p className="mt-3 break-words text-xs font-semibold leading-5 text-gray-500">
+                        {selectedAdHandoff
+                          ? `${formatPlatforms(selectedAdHandoff.platforms)} | ${formatRupees(selectedAdHandoff.daily_budget || selectedAdHandoff.lifetime_budget)} budget`
+                          : "Creates a ready sales campaign for Facebook and Instagram with controlled daily budget."}
+                      </p>
+                      <Link
+                        data-testid="launch-bundle-ad-link"
+                        href={
+                          performance?.ads.latest_campaign_id
+                            ? `/ads?campaign=${performance.ads.latest_campaign_id}`
+                            : "/ads"
+                        }
+                        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15"
+                      >
+                        Open Ads <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                </section>
 
                 <section
                   data-testid="campaign-schedule-panel"
