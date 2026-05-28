@@ -106,6 +106,38 @@ type SendQueue = {
   campaigns: QueueCampaign[];
 };
 
+type DispatchContact = {
+  id: number;
+  name?: string | null;
+  phone: string;
+  email?: string | null;
+  opt_in_marketing?: boolean;
+  total_orders: number;
+  total_spend: number;
+  message: string;
+  destination?: string | null;
+  action_url?: string | null;
+  send_ready?: boolean;
+  missing_reason?: string | null;
+  suppressed?: boolean;
+};
+
+type DispatchReview = {
+  promotion: QueueCampaign["promotion"];
+  audience_count: number;
+  channel: QueueCampaign["promotion"]["channel"];
+  message_preview: string;
+  send_ready_count: number;
+  missing_destination_count: number;
+  cleanup_recovered_ready_count?: number;
+  contacts: DispatchContact[];
+};
+
+type CleanupDraft = {
+  email: string;
+  opt_in_marketing: boolean;
+};
+
 type ChannelControl = {
   channel: "whatsapp" | "sms" | "email";
   activation_status: string;
@@ -269,6 +301,10 @@ export default function CommunicationsPage() {
   const [data, setData] = useState<CommsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyCampaignId, setBusyCampaignId] = useState<number | null>(null);
+  const [reviewLoadingId, setReviewLoadingId] = useState<number | null>(null);
+  const [dispatchReview, setDispatchReview] = useState<DispatchReview | null>(null);
+  const [cleanupDrafts, setCleanupDrafts] = useState<Record<number, CleanupDraft>>({});
+  const [savingContactId, setSavingContactId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   const fetchData = async () => {
@@ -338,6 +374,82 @@ export default function CommunicationsPage() {
       setMessage(`Could not run dry-run proof for ${campaign.promotion.name}.`);
     } finally {
       setBusyCampaignId(null);
+    }
+  };
+
+  const openDispatchReview = async (campaign: QueueCampaign) => {
+    setReviewLoadingId(campaign.promotion.id);
+    setMessage("");
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/${campaign.promotion.id}/dispatch?limit=50`, {
+        credentials: "include",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || `Could not open cleanup review for ${campaign.promotion.name}.`);
+        return;
+      }
+      setDispatchReview(result);
+      setCleanupDrafts(() => {
+        const next: Record<number, CleanupDraft> = {};
+        (result.contacts || []).forEach((contact: DispatchContact) => {
+          next[contact.id] = {
+            email: contact.email || "",
+            opt_in_marketing: Boolean(contact.opt_in_marketing),
+          };
+        });
+        return next;
+      });
+      setMessage(`Opened cleanup review for ${result.promotion?.name || campaign.promotion.name}.`);
+    } catch {
+      setMessage(`Could not open cleanup review for ${campaign.promotion.name}.`);
+    } finally {
+      setReviewLoadingId(null);
+    }
+  };
+
+  const updateCleanupDraft = (contactId: number, patch: Partial<CleanupDraft>) => {
+    setCleanupDrafts((current) => ({
+      ...current,
+      [contactId]: {
+        email: current[contactId]?.email || "",
+        opt_in_marketing: current[contactId]?.opt_in_marketing || false,
+        ...patch,
+      },
+    }));
+  };
+
+  const saveContactCleanup = async (contact: DispatchContact) => {
+    const draft = cleanupDrafts[contact.id] || {
+      email: contact.email || "",
+      opt_in_marketing: Boolean(contact.opt_in_marketing),
+    };
+    setSavingContactId(contact.id);
+    setMessage("");
+    try {
+      const response = await fetch(`${CUSTOMERS_API}/${contact.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: draft.email.trim() || null,
+          opt_in_marketing: draft.opt_in_marketing,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || `Could not update ${contact.name || contact.phone}.`);
+        return;
+      }
+      await fetchData();
+      if (dispatchReview) {
+        await openDispatchReview({ promotion: dispatchReview.promotion } as QueueCampaign);
+      }
+      setMessage(`Updated ${result.name || result.phone} for campaign cleanup.`);
+    } catch {
+      setMessage(`Could not update ${contact.name || contact.phone}.`);
+    } finally {
+      setSavingContactId(null);
     }
   };
 
@@ -597,6 +709,15 @@ export default function CommunicationsPage() {
                         >
                           <Users className="h-4 w-4" /> Cleanup
                         </Link>
+                        <button
+                          data-testid={`communications-review-contacts-${campaign.promotion.id}`}
+                          type="button"
+                          onClick={() => openDispatchReview(campaign)}
+                          className="inline-flex items-center justify-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 hover:bg-orange-100"
+                        >
+                          <AlertTriangle className="h-4 w-4" />
+                          {reviewLoadingId === campaign.promotion.id ? "Opening" : "Review"}
+                        </button>
                       </div>
                     </div>
                   </article>
@@ -658,6 +779,110 @@ export default function CommunicationsPage() {
             </div>
           </div>
         </section>
+
+        {dispatchReview ? (
+          <section
+            data-testid="communications-cleanup-review"
+            className="rounded-md border border-orange-200 bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-orange-600">
+                  Contact Cleanup Review
+                </p>
+                <h2 className="mt-2 text-xl font-black text-gray-950">
+                  {dispatchReview.promotion.name}
+                </h2>
+                <p className="mt-1 text-sm font-semibold text-gray-500">
+                  {numberFmt(dispatchReview.send_ready_count)} ready · {numberFmt(dispatchReview.missing_destination_count)} blocked · {labelize(dispatchReview.channel)}
+                </p>
+              </div>
+              <button
+                data-testid="communications-close-cleanup-review"
+                type="button"
+                onClick={() => setDispatchReview(null)}
+                className="inline-flex items-center justify-center rounded-md border border-gray-200 px-3 py-2 text-xs font-black text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3">
+              {dispatchReview.contacts.slice(0, 8).map((contact) => {
+                const draft = cleanupDrafts[contact.id] || {
+                  email: contact.email || "",
+                  opt_in_marketing: Boolean(contact.opt_in_marketing),
+                };
+                return (
+                  <article
+                    key={contact.id}
+                    data-testid={`communications-cleanup-contact-${contact.id}`}
+                    className={`rounded-md border p-4 ${
+                      contact.send_ready
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-amber-200 bg-amber-50"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-black text-gray-950">
+                            {contact.name || "Unnamed customer"}
+                          </p>
+                          <span className={`rounded-md px-2 py-1 text-[11px] font-black uppercase ${
+                            contact.send_ready
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}>
+                            {contact.send_ready ? "Ready" : contact.missing_reason || "Blocked"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs font-semibold text-gray-600">
+                          {contact.phone || "No phone"} · {contact.email || "No email"} · Rs {numberFmt(contact.total_spend)}
+                        </p>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(180px,260px)_auto_auto] sm:items-center">
+                        <input
+                          data-testid={`communications-cleanup-email-${contact.id}`}
+                          type="email"
+                          value={draft.email}
+                          onChange={(event) => updateCleanupDraft(contact.id, { email: event.target.value })}
+                          placeholder="Email"
+                          className="h-10 rounded-md border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-900 outline-none focus:border-orange-400"
+                        />
+                        <label className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-xs font-black text-gray-700">
+                          <input
+                            data-testid={`communications-cleanup-optin-${contact.id}`}
+                            type="checkbox"
+                            checked={draft.opt_in_marketing}
+                            onChange={(event) =>
+                              updateCleanupDraft(contact.id, { opt_in_marketing: event.target.checked })
+                            }
+                            className="h-4 w-4"
+                          />
+                          Opt-in
+                        </label>
+                        <button
+                          data-testid={`communications-save-cleanup-${contact.id}`}
+                          type="button"
+                          onClick={() => saveContactCleanup(contact)}
+                          disabled={savingContactId === contact.id}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-gray-950 px-4 text-xs font-black text-white hover:bg-gray-800 disabled:cursor-wait disabled:bg-gray-300"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          {savingContactId === contact.id ? "Saving" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+              {!dispatchReview.contacts.length && (
+                <EmptyState>No contacts are in this campaign audience yet.</EmptyState>
+              )}
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid gap-6 xl:grid-cols-2">
           <article data-testid="communications-performance" className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">

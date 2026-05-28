@@ -76,10 +76,25 @@ async function adminJson(endpoint, cookie, options = {}) {
   });
 }
 
+async function waitForDryRunProof(campaignId, cookie) {
+  const startedAt = Date.now();
+  let latest = null;
+  while (Date.now() - startedAt < 90000) {
+    const result = await adminJson(`/api/v1/restaurant/promotions/${campaignId}/deliveries`, cookie);
+    assert(result.response.ok, `Could not fetch dry-run proof: ${JSON.stringify(result.data)}`);
+    latest = result.data;
+    if (result.data.dry_run_count > 0) return result.data;
+    await sleep(1500);
+  }
+  throw new Error(`Communication center dry-run action did not record dry-run deliveries: ${JSON.stringify(latest)}`);
+}
+
 async function seedCommunicationProof(cookie) {
   const suffix = Date.now().toString().slice(-8);
   const contactPhone = `82${suffix}`;
   const contactEmail = `comms-${suffix}@example.com`;
+  const missingPhone = `81${suffix}`;
+  const repairedEmail = `comms-fixed-${suffix}@example.com`;
 
   const order = await apiJson("/api/v1/restaurant/orders/", {
     method: "POST",
@@ -96,6 +111,27 @@ async function seedCommunicationProof(cookie) {
     }),
   });
   assert(order.response.ok, `Could not seed communication contact: ${JSON.stringify(order.data)}`);
+
+  const missingOrder = await apiJson("/api/v1/restaurant/orders/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_type: "takeaway",
+      customer_name: `Comms Missing Email ${suffix}`,
+      customer_phone: missingPhone,
+      customer_email: null,
+      opt_in_marketing: true,
+      payment_method: "cash",
+      notes: "Communication center cleanup proof contact",
+      items: [{ name: "Comms Cleanup Pizza", quantity: 1, price: 249 }],
+    }),
+  });
+  assert(missingOrder.response.ok, `Could not seed communication cleanup contact: ${JSON.stringify(missingOrder.data)}`);
+
+  const missingLookup = await adminJson(`/api/v1/restaurant/customers/?q=${missingPhone}`, cookie);
+  assert(missingLookup.response.ok, `Could not look up cleanup contact: ${JSON.stringify(missingLookup.data)}`);
+  const missingCustomer = missingLookup.data.find((customer) => customer.phone === missingPhone);
+  assert(missingCustomer?.id, `Could not find cleanup contact ${missingPhone}.`);
 
   const today = new Date();
   const endDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -121,7 +157,16 @@ async function seedCommunicationProof(cookie) {
   assert(campaign.response.ok, `Could not create communication campaign: ${JSON.stringify(campaign.data)}`);
   const campaignId = campaign.data.promotion.id;
 
-  return { campaignId, name, code, contactPhone, contactEmail };
+  return {
+    campaignId,
+    name,
+    code,
+    contactPhone,
+    contactEmail,
+    missingPhone,
+    missingCustomerId: missingCustomer.id,
+    repairedEmail,
+  };
 }
 
 function createBrowserWatch(page) {
@@ -211,15 +256,35 @@ async function main() {
     assert(/provider readiness/i.test(bodyText), "Communications page missed provider readiness section.");
     assert(bodyText.includes(proof.name), `Communications page did not surface seeded campaign ${proof.name}.`);
 
-    await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).waitFor({ timeout: 60000 });
-    await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).click();
+    await page.getByTestId(`communications-review-contacts-${proof.campaignId}`).waitFor({ timeout: 60000 });
+    await page.getByTestId(`communications-review-contacts-${proof.campaignId}`).click();
+    await page.getByTestId("communications-cleanup-review").waitFor({ timeout: 30000 });
+    await page.getByTestId(`communications-cleanup-contact-${proof.missingCustomerId}`).waitFor({ timeout: 30000 });
+    const cleanupBefore = await page.getByTestId(`communications-cleanup-contact-${proof.missingCustomerId}`).innerText();
+    assert(/missing email/i.test(cleanupBefore), `Cleanup review did not show missing email blocker: ${cleanupBefore}`);
+    await page.getByTestId(`communications-cleanup-email-${proof.missingCustomerId}`).fill(proof.repairedEmail);
+    await page.getByTestId(`communications-save-cleanup-${proof.missingCustomerId}`).click();
     await page
       .getByTestId("communications-message")
-      .getByText(/Dry-run proof recorded/i)
+      .getByText(new RegExp(`Updated .*${proof.missingPhone}|Updated .*cleanup`, "i"))
       .waitFor({ timeout: 30000 });
-    const dryRunResult = await adminJson(`/api/v1/restaurant/promotions/${proof.campaignId}/deliveries`, adminCookie);
-    assert(dryRunResult.response.ok, `Could not fetch dry-run proof: ${JSON.stringify(dryRunResult.data)}`);
-    assert(dryRunResult.data.dry_run_count > 0, "Communication center dry-run action did not record dry-run deliveries.");
+    const repairedLookup = await adminJson(`/api/v1/restaurant/customers/?q=${proof.missingPhone}`, adminCookie);
+    assert(repairedLookup.response.ok, `Could not recheck cleanup contact: ${JSON.stringify(repairedLookup.data)}`);
+    const repairedCustomer = repairedLookup.data.find((customer) => customer.phone === proof.missingPhone);
+    assert(
+      repairedCustomer?.email === proof.repairedEmail,
+      `Cleanup email was not saved. Expected ${proof.repairedEmail}, got ${repairedCustomer?.email}.`
+    );
+    await page.getByTestId(`communications-cleanup-contact-${proof.missingCustomerId}`).getByText("Ready").waitFor({ timeout: 30000 });
+
+    await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).waitFor({ timeout: 60000 });
+    const beforeDryRun = await adminJson(`/api/v1/restaurant/promotions/${proof.campaignId}/deliveries`, adminCookie);
+    assert(beforeDryRun.response.ok, `Could not precheck dry-run proof: ${JSON.stringify(beforeDryRun.data)}`);
+    assert(beforeDryRun.data.dry_run_count === 0, `Seeded campaign already had dry-runs before click: ${JSON.stringify(beforeDryRun.data)}`);
+    await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).click();
+    const dryRunResult = await waitForDryRunProof(proof.campaignId, adminCookie);
+    assert(dryRunResult.dry_run_count > 0, "Communication center dry-run action did not record dry-run deliveries.");
+    await page.getByTestId("communications-refresh").click();
     await page.getByTestId("communications-recent-events").getByText(/dry run/i).first().waitFor({ timeout: 30000 });
 
     await page.screenshot({
