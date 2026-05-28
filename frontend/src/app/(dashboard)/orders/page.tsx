@@ -189,6 +189,17 @@ type LastCreatedOrder = {
   status: "sent" | "closed";
 };
 
+type PickupNotificationLog = {
+  orderId: number;
+  customerName: string;
+  customerPhone: string;
+  total: number;
+  href: string;
+  createdAt: string;
+};
+
+const PICKUP_NOTIFICATION_LOG_KEY = "pizza-blitz-counter-pickup-notifications";
+
 function optionSummary(option: NonNullable<Order["items"][number]["selected_options"]>[number]) {
   const delta = Number(option.price_delta || 0);
   const suffix = delta > 0 ? ` +Rs ${delta}` : "";
@@ -212,6 +223,17 @@ function pickupNotificationHref(order: Order) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
+function notificationTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Just now";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function OrdersPage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -232,6 +254,7 @@ export default function OrdersPage() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
+  const [pickupNotificationLog, setPickupNotificationLog] = useState<PickupNotificationLog[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [isHydrated, setIsHydrated] = useState(false);
@@ -432,6 +455,16 @@ export default function OrdersPage() {
 
   useEffect(() => {
     setIsHydrated(true);
+    try {
+      const storedLog = JSON.parse(
+        window.localStorage.getItem(PICKUP_NOTIFICATION_LOG_KEY) || "[]"
+      );
+      if (Array.isArray(storedLog)) {
+        setPickupNotificationLog(storedLog.slice(0, 6));
+      }
+    } catch {
+      setPickupNotificationLog([]);
+    }
     fetchData();
   }, []);
 
@@ -751,6 +784,30 @@ export default function OrdersPage() {
       );
     }
     await fetchData();
+  };
+
+  const recordPickupNotification = (order: Order) => {
+    const href = pickupNotificationHref(order);
+    if (!href) return;
+
+    const entry: PickupNotificationLog = {
+      orderId: order.id,
+      customerName: order.customer_name || "Counter pickup",
+      customerPhone: order.customer_phone || "",
+      total: Number(order.total_amount || 0),
+      href,
+      createdAt: new Date().toISOString(),
+    };
+
+    setPickupNotificationLog((current) => {
+      const next = [
+        entry,
+        ...current.filter((item) => item.orderId !== order.id),
+      ].slice(0, 6);
+      window.localStorage.setItem(PICKUP_NOTIFICATION_LOG_KEY, JSON.stringify(next));
+      return next;
+    });
+    setMessage(`Pickup notification prepared for order #${order.id}.`);
   };
 
   const closeLastCreatedOrder = async () => {
@@ -1171,6 +1228,7 @@ export default function OrdersPage() {
                       href={pickupNotificationHref(order)}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={() => recordPickupNotification(order)}
                       className="flex items-center justify-center gap-2 rounded-lg bg-sky-500/15 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/25"
                     >
                       <MessageCircle className="h-4 w-4" /> Notify
@@ -1201,6 +1259,72 @@ export default function OrdersPage() {
             className="mt-4 rounded-xl border border-dashed border-white/10 p-5 text-center text-sm font-semibold text-gray-400"
           >
             No kitchen-ready counter orders yet.
+          </div>
+        )}
+      </section>
+
+      <section
+        data-testid="counter-notification-log-panel"
+        className="mb-6 rounded-xl border border-sky-400/20 bg-sky-500/10 p-4"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-sky-200/80">
+              Pickup Messages
+            </p>
+            <h2 className="text-lg font-black text-white">
+              Recent ready notifications
+            </h2>
+          </div>
+          <span className="rounded-lg bg-sky-500 px-3 py-2 text-sm font-black text-white">
+            {pickupNotificationLog.length} prepared
+          </span>
+        </div>
+
+        {pickupNotificationLog.length > 0 ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {pickupNotificationLog.slice(0, 4).map((entry) => (
+              <article
+                key={`${entry.orderId}-${entry.createdAt}`}
+                data-testid={`counter-notification-log-entry-${entry.orderId}`}
+                className="rounded-xl border border-white/10 bg-black/25 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-base font-black text-white">
+                      Order #{entry.orderId}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-gray-400">
+                      {entry.customerName} · {entry.customerPhone || "No phone"}
+                    </p>
+                  </div>
+                  <span className="rounded-md bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-200">
+                    WhatsApp
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-gray-400">
+                  <span>Ready message</span>
+                  <span>Rs {Math.round(entry.total || 0).toLocaleString()}</span>
+                  <span>{notificationTime(entry.createdAt)}</span>
+                </div>
+                <a
+                  data-testid={`counter-notification-log-open-${entry.orderId}`}
+                  href={entry.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-sky-500/15 px-3 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/25"
+                >
+                  <MessageCircle className="h-4 w-4" /> Open message
+                </a>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div
+            data-testid="counter-notification-log-empty"
+            className="mt-4 rounded-xl border border-dashed border-white/10 p-5 text-center text-sm font-semibold text-gray-400"
+          >
+            No pickup notifications prepared yet.
           </div>
         )}
       </section>

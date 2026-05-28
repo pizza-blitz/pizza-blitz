@@ -231,6 +231,27 @@ async function main() {
       decodedNotifyHref.includes(`/receipt/${orderId}?phone=${phone}`),
       `Ready notification missed customer receipt link: ${decodedNotifyHref}`
     );
+    await page.getByTestId("counter-notification-log-panel").waitFor({ timeout: 10000 });
+    await page.getByTestId(`counter-ready-notify-${orderId}`).evaluate((node) => {
+      node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    await page
+      .getByTestId("counter-pos-message")
+      .getByText(new RegExp(`Pickup notification prepared for order #${orderId}`, "i"))
+      .waitFor({ timeout: 10000 });
+    await page.getByTestId(`counter-notification-log-entry-${orderId}`).waitFor({ timeout: 10000 });
+    const notificationLogText = await page.getByTestId(`counter-notification-log-entry-${orderId}`).innerText();
+    assert(notificationLogText.includes(`Order #${orderId}`), `Notification log missed order id: ${notificationLogText}`);
+    assert(notificationLogText.includes(phone), `Notification log missed customer phone ${phone}: ${notificationLogText}`);
+    assert(/whatsapp/i.test(notificationLogText), `Notification log missed channel label: ${notificationLogText}`);
+    const logHref = await page.getByTestId(`counter-notification-log-open-${orderId}`).getAttribute("href");
+    assert(logHref === notifyHref, `Notification log href did not match notify href. Expected ${notifyHref}, got ${logHref}.`);
+    const storedLog = await page.evaluate((id) => {
+      const value = window.localStorage.getItem("pizza-blitz-counter-pickup-notifications");
+      const entries = value ? JSON.parse(value) : [];
+      return entries.find((entry) => entry.orderId === id);
+    }, orderId);
+    assert(storedLog?.customerPhone === phone, `Notification log was not persisted for order #${orderId}.`);
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-counter-ready-handoff-panel.png"),
