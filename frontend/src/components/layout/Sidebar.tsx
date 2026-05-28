@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Package, Receipt, ShoppingCart,
   BarChart3, Settings, PlusCircle, Utensils,
   Sparkles, DollarSign, Trash2, Crown,
-  Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2, ShieldCheck, CalendarDays
+  Activity, FileText, Target, ClipboardList, Users, Truck, Megaphone, Flame, Share2, ShieldCheck, CalendarDays, MessageCircle
 } from "lucide-react";
 
 type PortalNavItem = {
@@ -31,6 +31,7 @@ export const portalNavItems: PortalNavItem[] = [
   { name: "Inventory", href: "/inventory", icon: Package },
   { name: "Recipes", href: "/recipes", icon: ClipboardList },
   { name: "Customers", href: "/customers", icon: Users },
+  { name: "Comms Center", href: "/communications", icon: MessageCircle },
   { name: "Promotions", href: "/promotions", icon: Megaphone },
   { name: "Social Publishing", href: "/social", icon: Share2 },
   { name: "Ad Campaigns", href: "/ads", icon: Target },

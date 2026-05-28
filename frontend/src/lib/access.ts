@@ -16,6 +16,7 @@ export const adminOnlyRoutePrefixes = [
   "/inventory",
   "/recipes",
   "/customers",
+  "/communications",
   "/promotions",
   "/social",
   "/ads",
