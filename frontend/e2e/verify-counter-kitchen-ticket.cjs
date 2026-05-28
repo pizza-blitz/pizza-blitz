@@ -219,6 +219,18 @@ async function main() {
     await page.getByTestId(`counter-ready-order-${orderId}`).waitFor({ timeout: 20000 });
     const readyBillHref = await page.getByTestId(`counter-ready-bill-${orderId}`).getAttribute("href");
     assert(readyBillHref === `/receipt/${orderId}`, `Expected ready bill href for order ${orderId}, got ${readyBillHref}.`);
+    const notifyHref = await page.getByTestId(`counter-ready-notify-${orderId}`).getAttribute("href");
+    assert(notifyHref, `Ready order #${orderId} did not expose a pickup notification link.`);
+    assert(notifyHref.includes(`wa.me/91${phone}`), `Ready notification did not normalize phone ${phone}: ${notifyHref}`);
+    const decodedNotifyHref = decodeURIComponent(notifyHref);
+    assert(
+      decodedNotifyHref.includes(`Order #${orderId} is ready for pickup`),
+      `Ready notification missed order-ready text: ${decodedNotifyHref}`
+    );
+    assert(
+      decodedNotifyHref.includes(`/receipt/${orderId}?phone=${phone}`),
+      `Ready notification missed customer receipt link: ${decodedNotifyHref}`
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-counter-ready-handoff-panel.png"),

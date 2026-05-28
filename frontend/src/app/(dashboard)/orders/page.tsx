@@ -19,6 +19,7 @@ import {
   Truck,
   Utensils,
   Users,
+  MessageCircle,
   X,
   Zap,
 } from "lucide-react";
@@ -192,6 +193,23 @@ function optionSummary(option: NonNullable<Order["items"][number]["selected_opti
   const delta = Number(option.price_delta || 0);
   const suffix = delta > 0 ? ` +Rs ${delta}` : "";
   return `${option.group_name || "Option"}: ${option.option_name}${suffix}`;
+}
+
+function whatsappPhone(value?: string | null) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `91${digits.slice(1)}`;
+  return digits;
+}
+
+function pickupNotificationHref(order: Order) {
+  const phone = whatsappPhone(order.customer_phone);
+  if (!phone) return "";
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://pizza-blitz.vercel.app";
+  const receiptUrl = `${origin}/receipt/${order.id}?phone=${encodeURIComponent(order.customer_phone || "")}`;
+  const message = `Pizza Blitz update: Order #${order.id} is ready for pickup. Bill: ${receiptUrl}`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
 export default function OrdersPage() {
@@ -1132,7 +1150,7 @@ export default function OrdersPage() {
                   <span>Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
                   <span>{(order.payment_method || "cash").toUpperCase()}</span>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Link
                     data-testid={`counter-ready-kitchen-${order.id}`}
                     href={`/kitchen-ticket/${order.id}`}
@@ -1147,6 +1165,24 @@ export default function OrdersPage() {
                   >
                     <ReceiptText className="h-4 w-4" /> Bill
                   </Link>
+                  {pickupNotificationHref(order) ? (
+                    <a
+                      data-testid={`counter-ready-notify-${order.id}`}
+                      href={pickupNotificationHref(order)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-center gap-2 rounded-lg bg-sky-500/15 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/25"
+                    >
+                      <MessageCircle className="h-4 w-4" /> Notify
+                    </a>
+                  ) : (
+                    <span
+                      data-testid={`counter-ready-notify-missing-${order.id}`}
+                      className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-500"
+                    >
+                      <MessageCircle className="h-4 w-4" /> No Phone
+                    </span>
+                  )}
                   <button
                     data-testid={`counter-ready-close-${order.id}`}
                     type="button"
