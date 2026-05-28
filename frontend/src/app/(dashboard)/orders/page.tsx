@@ -179,6 +179,15 @@ const emptyCustomer = {
   notes: "",
 };
 
+type LastCreatedOrder = {
+  id: number;
+  isDelivery: boolean;
+  paymentMethod: string;
+  itemCount: number;
+  total: number;
+  status: "sent" | "closed";
+};
+
 function optionSummary(option: NonNullable<Order["items"][number]["selected_options"]>[number]) {
   const delta = Number(option.price_delta || 0);
   const suffix = delta > 0 ? ` +Rs ${delta}` : "";
@@ -199,6 +208,8 @@ export default function OrdersPage() {
   const [formData, setFormData] = useState(emptyCustomer);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [lastCreatedOrder, setLastCreatedOrder] = useState<LastCreatedOrder | null>(null);
+  const [postOrderBusy, setPostOrderBusy] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
@@ -682,6 +693,17 @@ export default function OrdersPage() {
       return;
     }
 
+    const createdOrderId = Number(data.order_id || data.id);
+    if (createdOrderId > 0) {
+      setLastCreatedOrder({
+        id: createdOrderId,
+        isDelivery: isDeliveryOrder,
+        paymentMethod: formData.payment_method,
+        itemCount: selectedItemCount,
+        total,
+        status: "sent",
+      });
+    }
     setMessage(
       isDeliveryOrder
         ? `Delivery order #${data.order_id} sent to kitchen with ${data.delivery_zone || "delivery"} fee.`
@@ -703,6 +725,32 @@ export default function OrdersPage() {
       response.ok
         ? `Order #${order.id} closed${usageCount ? ` and ${usageCount} ingredients updated.` : "."}`
         : data.detail || "Could not close order."
+    );
+    if (response.ok) {
+      setLastCreatedOrder((current) =>
+        current?.id === order.id ? { ...current, status: "closed" } : current
+      );
+    }
+    await fetchData();
+  };
+
+  const closeLastCreatedOrder = async () => {
+    if (!lastCreatedOrder || lastCreatedOrder.status === "closed") return;
+    setPostOrderBusy(true);
+    const response = await fetch(
+      `${ORDERS_API}/${lastCreatedOrder.id}/close?payment_method=${encodeURIComponent(lastCreatedOrder.paymentMethod || "cash")}`,
+      { method: "PATCH", credentials: "include" }
+    );
+    const data = await response.json();
+    setPostOrderBusy(false);
+    const usageCount = Array.isArray(data.inventory_usage) ? data.inventory_usage.length : 0;
+    if (!response.ok) {
+      setMessage(data.detail || "Could not close order.");
+      return;
+    }
+    setLastCreatedOrder({ ...lastCreatedOrder, status: "closed" });
+    setMessage(
+      `Order #${lastCreatedOrder.id} closed and payment marked paid${usageCount ? ` with ${usageCount} ingredients updated.` : "."}`
     );
     await fetchData();
   };
@@ -877,6 +925,61 @@ export default function OrdersPage() {
         >
           {message}
         </div>
+      )}
+
+      {lastCreatedOrder && (
+        <section
+          data-testid="counter-post-order-panel"
+          className="mb-6 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-4"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-200/80">
+                Last Order
+              </p>
+              <h2 className="mt-1 text-xl font-black text-white">
+                Order #{lastCreatedOrder.id} {lastCreatedOrder.status === "closed" ? "closed" : "sent to kitchen"}
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-emerald-50/80">
+                {lastCreatedOrder.itemCount} item{lastCreatedOrder.itemCount === 1 ? "" : "s"} | Rs{" "}
+                {Math.round(lastCreatedOrder.total).toLocaleString()} | {lastCreatedOrder.paymentMethod.toUpperCase()}
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Link
+                data-testid="counter-post-order-receipt"
+                href={`/receipt/${lastCreatedOrder.id}`}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white px-4 py-3 text-sm font-black text-black hover:bg-emerald-50"
+              >
+                <ReceiptText className="h-4 w-4" /> Bill
+              </Link>
+              <button
+                data-testid="counter-post-order-close"
+                type="button"
+                onClick={closeLastCreatedOrder}
+                disabled={lastCreatedOrder.isDelivery || lastCreatedOrder.status === "closed" || postOrderBusy}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-500 px-4 py-3 text-sm font-black text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-gray-500"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {lastCreatedOrder.status === "closed" ? "Closed" : postOrderBusy ? "Closing" : "Close & Paid"}
+              </button>
+              <button
+                data-testid="counter-post-order-next-express"
+                type="button"
+                onClick={startExpressWalkIn}
+                disabled={!canStartExpressWalkIn}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-400/30 bg-emerald-500 px-4 py-3 text-sm font-black text-white hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Zap className="h-4 w-4" /> Next Express
+              </button>
+            </div>
+          </div>
+          {lastCreatedOrder.isDelivery && (
+            <p className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold text-emerald-50/80">
+              Delivery orders close from Delivery Handoff after rider completion.
+            </p>
+          )}
+        </section>
       )}
 
       <section
