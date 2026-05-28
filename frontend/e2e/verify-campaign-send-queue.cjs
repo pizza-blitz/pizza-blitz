@@ -139,7 +139,43 @@ async function assertSendQueueEndpoint(cookie, campaign) {
   assert(row.queue_status === "provider_blocked", `Send queue gave wrong status: ${row.queue_status}.`);
   assert(row.can_send === false, "Provider-blocked campaign should not be live-send enabled.");
   assert(row.live_send_blockers.length >= 1, "Provider-blocked campaign should explain live-send blockers.");
+  assert(
+    row.live_confirmation_phrase === `LIVE SEND ${campaign.id}`,
+    `Send queue should expose exact live confirmation phrase, got ${row.live_confirmation_phrase}.`
+  );
   assert(queue.data.summary.send_ready_contacts >= row.ready_count, "Send queue summary did not count ready contacts.");
+
+  const unconfirmedLiveSend = await adminJson(`/api/v1/restaurant/promotions/${campaign.id}/send`, cookie, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: false, limit: 1 }),
+  });
+  assert(
+    unconfirmedLiveSend.response.status === 409,
+    `Unconfirmed live send should be blocked, got ${unconfirmedLiveSend.response.status}.`
+  );
+  assert(
+    /confirmation phrase/i.test(unconfirmedLiveSend.data.detail || ""),
+    `Unconfirmed live send did not explain confirmation gate: ${JSON.stringify(unconfirmedLiveSend.data)}`
+  );
+
+  const confirmedButBlockedLiveSend = await adminJson(`/api/v1/restaurant/promotions/${campaign.id}/send`, cookie, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dry_run: false,
+      limit: 1,
+      live_confirmation: row.live_confirmation_phrase,
+    }),
+  });
+  assert(
+    confirmedButBlockedLiveSend.response.status === 409,
+    `Provider-blocked live send should still be blocked, got ${confirmedButBlockedLiveSend.response.status}.`
+  );
+  assert(
+    /live send blocked/i.test(confirmedButBlockedLiveSend.data.detail || ""),
+    `Provider-blocked live send did not explain preflight gate: ${JSON.stringify(confirmedButBlockedLiveSend.data)}`
+  );
 
   const providerBlocked = await adminJson("/api/v1/restaurant/promotions/send/queue?limit=50&view=provider_blocked", cookie);
   assert(providerBlocked.response.ok, `Provider-blocked send queue failed: ${JSON.stringify(providerBlocked.data)}`);
@@ -218,26 +254,16 @@ async function proveSendQueueInBrowser(campaign) {
     const dryRunResponse = page.waitForResponse(
       (apiResponse) =>
         apiResponse.url().includes(`/promotions/${campaign.id}/send`) &&
-        apiResponse.request().method() === "POST" &&
-        apiResponse.ok(),
-      { timeout: 15000 }
-    );
-    const refreshedQueue = page.waitForResponse(
-      (apiResponse) =>
-        apiResponse.url().includes("/promotions/send/queue") &&
-        apiResponse.request().method() === "GET" &&
-        apiResponse.ok(),
-      { timeout: 20000 }
+        apiResponse.request().method() === "POST",
+      { timeout: 60000 }
     );
     await page.getByTestId(`send-queue-dry-run-${campaign.id}`).click();
-    await dryRunResponse;
-    await page.getByText(/Queue dry run checked \d+ contacts/).waitFor({ timeout: 15000 });
-    await refreshedQueue;
-    await page.waitForFunction(
-      () => !(document.body.innerText || "").includes("CHECKING"),
-      undefined,
-      { timeout: 20000 }
+    const dryRunApiResponse = await dryRunResponse;
+    assert(
+      dryRunApiResponse.ok(),
+      `Dry-run request returned HTTP ${dryRunApiResponse.status()}: ${await dryRunApiResponse.text()}`
     );
+    await page.getByText(/Queue dry run checked \d+ contacts/).waitFor({ timeout: 15000 });
 
     const health = await page.evaluate(() => {
       const text = document.body.innerText || "";

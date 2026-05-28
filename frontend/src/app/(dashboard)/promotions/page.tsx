@@ -83,6 +83,7 @@ type CampaignSendQueueRow = {
   provider_status: ProviderStatus;
   can_dry_run: boolean;
   can_send: boolean;
+  live_confirmation_phrase?: string;
   queue_status: CampaignSendQueueView | "scheduled_wait";
   queue_label: string;
   live_send_blockers: string[];
@@ -1090,7 +1091,7 @@ export default function PromotionsPage() {
   };
 
   const fetchSendQueue = async (view: CampaignSendQueueView = sendQueueView) => {
-    const params = new URLSearchParams({ limit: "20", view });
+    const params = new URLSearchParams({ limit: "50", view });
     const response = await fetch(`${PROMOTIONS_API}/send/queue?${params.toString()}`, {
       credentials: "include",
     });
@@ -1412,15 +1413,25 @@ export default function PromotionsPage() {
       setMessage(`${row.promotion.name} cannot send live yet: ${blockers}.`);
       return;
     }
-    const confirmed = window.confirm(`Confirm live send for ${row.promotion.name} to ${row.ready_count} ready contacts?`);
-    if (!confirmed) return;
+    const confirmationPhrase = row.live_confirmation_phrase || `LIVE SEND ${row.promotion.id}`;
+    const typedConfirmation = window.prompt(
+      `Type ${confirmationPhrase} to send ${row.promotion.name} to ${row.ready_count} ready contacts.`
+    );
+    if (typedConfirmation !== confirmationPhrase) {
+      setMessage(`Live send cancelled for ${row.promotion.name}. Confirmation phrase did not match.`);
+      return;
+    }
 
     setQueueLiveSendingId(row.promotion.id);
     const response = await fetch(`${PROMOTIONS_API}/${row.promotion.id}/send`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dry_run: false, limit: 50 }),
+      body: JSON.stringify({
+        dry_run: false,
+        limit: 50,
+        live_confirmation: typedConfirmation,
+      }),
     });
     const data = await response.json();
     if (!response.ok) {
@@ -2203,6 +2214,14 @@ export default function PromotionsPage() {
                 </span>
                 <p className="mt-2 text-xs font-black uppercase text-gray-500">{row.provider_status.provider}</p>
                 <p className="mt-2 text-xs font-semibold leading-5 text-gray-600">{row.recommended_action}</p>
+                {row.can_send ? (
+                  <p
+                    data-testid={`send-queue-live-confirmation-${row.promotion.id}`}
+                    className="mt-2 break-words text-[11px] font-black uppercase tracking-widest text-emerald-300"
+                  >
+                    Confirm: {row.live_confirmation_phrase || `LIVE SEND ${row.promotion.id}`}
+                  </p>
+                ) : null}
               </div>
               <div className="col-span-3 flex flex-wrap justify-end gap-2">
                 <button

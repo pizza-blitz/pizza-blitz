@@ -212,6 +212,7 @@ class CampaignSendRequest(BaseModel):
     dry_run: bool = False
     force_resend: bool = False
     mark_completed: bool = False
+    live_confirmation: Optional[str] = None
 
 
 class CampaignDeliveryRetryRequest(BaseModel):
@@ -933,6 +934,7 @@ def _campaign_send_queue_row(db: Session, promo: Promotion) -> dict:
         "provider_status": provider_status,
         "can_dry_run": can_dry_run,
         "can_send": can_send,
+        "live_confirmation_phrase": _live_send_confirmation_phrase(promo),
         "queue_status": queue_status,
         "queue_label": queue_label,
         "live_send_blockers": live_send_blockers,
@@ -940,6 +942,25 @@ def _campaign_send_queue_row(db: Session, promo: Promotion) -> dict:
         "recommended_action": action,
         **counts,
     }
+
+
+def _live_send_confirmation_phrase(promo: Promotion) -> str:
+    return f"LIVE SEND {promo.id}"
+
+
+def _live_send_preflight_blockers(db: Session, promo: Promotion, force_resend: bool = False) -> list[str]:
+    queue_row = _campaign_send_queue_row(db, promo)
+    if queue_row["can_send"]:
+        return []
+
+    blockers = list(queue_row.get("live_send_blockers") or [])
+    if force_resend:
+        blockers = [
+            blocker
+            for blocker in blockers
+            if blocker != "Campaign already has sent deliveries"
+        ]
+    return blockers or ["Live send preflight is incomplete"]
 
 
 def _readiness_percent(ready_count: int, total_count: int) -> float:
@@ -1728,7 +1749,7 @@ def campaign_send_queue(
             0 if row["can_dry_run"] and row["dry_run_count"] == 0 else 1,
             0 if row["can_send"] else 1,
             -row["ready_count"],
-            row["promotion"]["id"],
+            -row["promotion"]["id"],
         )
     )
     filtered_rows = (
@@ -2357,6 +2378,23 @@ def send_promotion_campaign(
     )
     deliveries: list[CampaignDelivery] = []
     provider_status = campaign_provider_status(promo.channel)
+    if not payload.dry_run:
+        expected_confirmation = _live_send_confirmation_phrase(promo)
+        if payload.live_confirmation != expected_confirmation:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Live send requires confirmation phrase: {expected_confirmation}",
+            )
+        live_blockers = _live_send_preflight_blockers(
+            db,
+            promo,
+            force_resend=payload.force_resend,
+        )
+        if live_blockers:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Live send blocked: {', '.join(live_blockers)}.",
+            )
 
     for customer in customers:
         contact = _dispatch_contact(customer, promo)
