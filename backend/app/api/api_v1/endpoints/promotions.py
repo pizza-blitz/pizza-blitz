@@ -2070,6 +2070,35 @@ def activate_due_campaigns(
     }
 
 
+@router.post("/schedule/{promo_id}/activate")
+def activate_scheduled_campaign(
+    promo_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    promo = db.get(Promotion, promo_id)
+    if not promo:
+        raise HTTPException(status_code=404, detail="Promotion not found")
+    if promo.status != "scheduled":
+        raise HTTPException(status_code=409, detail="Only scheduled campaigns can be activated.")
+    today = date.today()
+    if promo.start_date > today:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Scheduled campaign is not due until {promo.start_date.isoformat()}.",
+        )
+    if promo.end_date < today:
+        raise HTTPException(status_code=409, detail="Scheduled campaign has already ended.")
+
+    promo.status = "active"
+    db.commit()
+    db.refresh(promo)
+    return {
+        "status": "scheduled campaign activated",
+        "promotion": _promotion_dict(promo),
+    }
+
+
 @router.post("/{promo_id}/schedule")
 def schedule_promotion_campaign(
     promo_id: int,

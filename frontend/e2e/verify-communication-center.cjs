@@ -170,6 +170,8 @@ async function seedCommunicationProof(cookie) {
   const endDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
   const code = `COM${suffix.slice(-5)}`;
   const name = `Communication Center Proof ${suffix}`;
+  const scheduledCode = `SCH${suffix.slice(-5)}`;
+  const scheduledName = `Scheduled Communication Proof ${suffix}`;
   const campaign = await adminJson("/api/v1/restaurant/promotions/", cookie, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -190,10 +192,33 @@ async function seedCommunicationProof(cookie) {
   assert(campaign.response.ok, `Could not create communication campaign: ${JSON.stringify(campaign.data)}`);
   const campaignId = campaign.data.promotion.id;
 
+  const scheduledCampaign = await adminJson("/api/v1/restaurant/promotions/", cookie, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: scheduledName,
+      code: scheduledCode,
+      start_date: "2020-01-01",
+      end_date: endDate.toISOString().slice(0, 10),
+      description: "E2E scheduled communication proof",
+      discount_type: "percentage",
+      discount_value: 12,
+      audience: "marketing_opt_in",
+      channel: "email",
+      status: "scheduled",
+      message_template: "Hi {name}, Pizza Blitz scheduled {offer}. Use {code}. Order here: {order_link}",
+    }),
+  });
+  assert(scheduledCampaign.response.ok, `Could not create scheduled communication campaign: ${JSON.stringify(scheduledCampaign.data)}`);
+  const scheduledCampaignId = scheduledCampaign.data.promotion.id;
+
   return {
     campaignId,
     name,
     code,
+    scheduledCampaignId,
+    scheduledName,
+    scheduledCode,
     contactPhone,
     contactEmail,
     missingPhone,
@@ -303,7 +328,7 @@ async function main() {
     });
     assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
 
-    const response = await page.goto(`${baseURL}/communications`, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(`${baseURL}/communications?proof=${Date.now()}`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Communications page returned HTTP ${response?.status() || "no response"}.`);
     await page.getByRole("heading", { name: "Messaging command board" }).waitFor({ timeout: 20000 });
     await page.getByTestId("communications-metrics").waitFor({ timeout: 20000 });
@@ -409,6 +434,40 @@ async function main() {
         `Provider test audit timeline did not reload ${label} safe test.`
       );
     }
+    await page.getByTestId("communications-schedule-queue").waitFor({ timeout: 30000 });
+    const scheduleText = await page.getByTestId("communications-schedule-queue").innerText();
+    assert(/Scheduled campaign queue/i.test(scheduleText), "Scheduled campaign queue title missing.");
+    assert(
+      scheduleText.includes(proof.scheduledName),
+      `Scheduled campaign queue did not surface seeded schedule ${proof.scheduledName}.`
+    );
+    await page
+      .getByTestId(`communications-scheduled-campaign-${proof.scheduledCampaignId}`)
+      .waitFor({ timeout: 30000 });
+    const scheduleQueue = await adminJson("/api/v1/restaurant/promotions/schedule/queue?limit=100", adminCookie);
+    assert(scheduleQueue.response.ok, `Could not load schedule queue: ${JSON.stringify(scheduleQueue.data)}`);
+    const scheduledRows = scheduleQueue.data.campaigns || [];
+    assert(
+      scheduledRows.some((row) => Number(row.promotion.id) === Number(proof.scheduledCampaignId)),
+      `Schedule API did not include seeded campaign #${proof.scheduledCampaignId}. Seen: ${scheduledRows
+        .slice(0, 8)
+        .map((row) => `#${row.promotion?.id}:${row.promotion?.name}`)
+        .join(", ")}`
+    );
+    await page.getByTestId(`communications-activate-scheduled-${proof.scheduledCampaignId}`).click();
+    await page.getByTestId("communications-message").getByText(/Activated scheduled campaign/i).waitFor({ timeout: 30000 });
+    const promotionsAfterActivation = await adminJson("/api/v1/restaurant/promotions/", adminCookie);
+    assert(
+      promotionsAfterActivation.response.ok,
+      `Could not verify scheduled campaign activation: ${JSON.stringify(promotionsAfterActivation.data)}`
+    );
+    const activatedSchedule = promotionsAfterActivation.data.find(
+      (promotion) => promotion.id === proof.scheduledCampaignId
+    );
+    assert(
+      activatedSchedule?.status === "active",
+      `Scheduled campaign was not activated. Current status: ${activatedSchedule?.status || "missing"}`
+    );
     await page.getByTestId("communications-send-queue").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-segments").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-next-action").waitFor({ timeout: 20000 });

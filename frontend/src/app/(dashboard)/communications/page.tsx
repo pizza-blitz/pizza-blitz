@@ -74,6 +74,7 @@ type QueueCampaign = {
     channel: "whatsapp" | "sms" | "email";
     audience: string;
     status: string;
+    start_date?: string;
     end_date: string;
   };
   audience_count: number;
@@ -115,6 +116,28 @@ type SendQueue = {
     missing_contacts: number;
   };
   campaigns: QueueCampaign[];
+};
+
+type ScheduledCampaign = {
+  promotion: QueueCampaign["promotion"] & { start_date: string };
+  phase: "due_today" | "upcoming" | "overdue" | string;
+  audience_count: number;
+  ready_count: number;
+  missing_count: number;
+  can_activate: boolean;
+  recommended_action: string;
+};
+
+type ScheduleQueue = {
+  summary: {
+    scheduled_count: number;
+    due_today_count: number;
+    upcoming_count: number;
+    overdue_count: number;
+    ready_count: number;
+    missing_count: number;
+  };
+  campaigns: ScheduledCampaign[];
 };
 
 type DispatchContact = {
@@ -274,8 +297,24 @@ type CommsData = {
   customers: CustomerSummary;
   segments: SegmentReport;
   queue: SendQueue;
+  schedule: ScheduleQueue;
   dispatch: DispatchControl;
   performance: Performance;
+};
+
+const EMPTY_PERFORMANCE: Performance = {
+  summary: {
+    campaign_count: 0,
+    redemption_orders: 0,
+    redemption_revenue: 0,
+    redemption_discount: 0,
+    average_order_value: 0,
+    unique_customers: 0,
+    social_post_count: 0,
+    ad_campaign_count: 0,
+    planned_ad_budget: 0,
+  },
+  best_campaign: null,
 };
 
 function numberFmt(value?: number | null) {
@@ -304,7 +343,7 @@ function statusTone(value: string) {
   if (["live_ready", "ready_to_send", "sent", "ready", "configured"].includes(value)) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
-  if (["partially_ready", "dry_run_done", "needs_dry_run", "scheduled_wait"].includes(value)) {
+  if (["partially_ready", "dry_run_done", "needs_dry_run", "scheduled_wait", "due_today", "upcoming"].includes(value)) {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
   return "border-red-200 bg-red-50 text-red-700";
@@ -555,6 +594,8 @@ export default function CommunicationsPage() {
   const [loading, setLoading] = useState(true);
   const [busyCampaignId, setBusyCampaignId] = useState<number | null>(null);
   const [retryBusyCampaignId, setRetryBusyCampaignId] = useState<number | null>(null);
+  const [activatingDue, setActivatingDue] = useState(false);
+  const [activatingScheduleCampaignId, setActivatingScheduleCampaignId] = useState<number | null>(null);
   const [reviewLoadingId, setReviewLoadingId] = useState<number | null>(null);
   const [spotlightCampaignId, setSpotlightCampaignId] = useState<number | null>(null);
   const [dispatchReview, setDispatchReview] = useState<DispatchReview | null>(null);
@@ -570,27 +611,51 @@ export default function CommunicationsPage() {
     setLoading(true);
     setMessage("");
     try {
-      const [customersRes, segmentsRes, queueRes, dispatchRes, performanceRes] = await Promise.all([
+      let loadedPerformance: Performance | null = null;
+      const performancePromise = fetch(`${PROMOTIONS_API}/performance`, {
+        credentials: "include",
+        cache: "no-store",
+      })
+        .then(async (response) => {
+          if (!response.ok) return null;
+          return (await response.json()) as Performance;
+        })
+        .then((performance) => {
+          if (!performance) return;
+          loadedPerformance = performance;
+          setData((current) => (current ? { ...current, performance } : current));
+        })
+        .catch(() => undefined);
+
+      const [customersRes, segmentsRes, queueRes, scheduleRes, dispatchRes] = await Promise.all([
         fetch(`${CUSTOMERS_API}/summary`, { credentials: "include", cache: "no-store" }),
         fetch(`${CUSTOMERS_API}/segments/report`, { credentials: "include", cache: "no-store" }),
-        fetch(`${PROMOTIONS_API}/send/queue`, { credentials: "include", cache: "no-store" }),
+        fetch(`${PROMOTIONS_API}/send/queue?limit=100`, { credentials: "include", cache: "no-store" }),
+        fetch(`${PROMOTIONS_API}/schedule/queue?limit=100`, { credentials: "include", cache: "no-store" }),
         fetch(`${PROMOTIONS_API}/providers/dispatch-control`, { credentials: "include", cache: "no-store" }),
-        fetch(`${PROMOTIONS_API}/performance`, { credentials: "include", cache: "no-store" }),
       ]);
-      const responses = [customersRes, segmentsRes, queueRes, dispatchRes, performanceRes];
+      const responses = [customersRes, segmentsRes, queueRes, scheduleRes, dispatchRes];
       const failed = responses.find((response) => !response.ok);
       if (failed) {
         setMessage(`Communication data returned HTTP ${failed.status}.`);
         return;
       }
-      const [customers, segments, queue, dispatch, performance] = await Promise.all([
+      const [customers, segments, queue, schedule, dispatch] = await Promise.all([
         customersRes.json(),
         segmentsRes.json(),
         queueRes.json(),
+        scheduleRes.json(),
         dispatchRes.json(),
-        performanceRes.json(),
       ]);
-      setData({ customers, segments, queue, dispatch, performance });
+      setData({
+        customers,
+        segments,
+        queue,
+        schedule,
+        dispatch,
+        performance: loadedPerformance || data?.performance || EMPTY_PERFORMANCE,
+      });
+      void performancePromise;
     } catch {
       setMessage("Communication center could not load data right now.");
     } finally {
@@ -601,6 +666,54 @@ export default function CommunicationsPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const activateDueCampaigns = async () => {
+    setActivatingDue(true);
+    setMessage("");
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/schedule/activate-due`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || "Could not activate due scheduled campaigns.");
+        return;
+      }
+      await fetchData();
+      setMessage(
+        `Activated ${numberFmt(result.activated_count)} due scheduled campaign${result.activated_count === 1 ? "" : "s"}.`
+      );
+    } catch {
+      setMessage("Could not activate due scheduled campaigns.");
+    } finally {
+      setActivatingDue(false);
+    }
+  };
+
+  const activateScheduledCampaign = async (campaign: ScheduledCampaign) => {
+    setActivatingScheduleCampaignId(campaign.promotion.id);
+    setMessage("");
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/schedule/${campaign.promotion.id}/activate`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || `Could not activate ${campaign.promotion.name}.`);
+        return;
+      }
+      await fetchData();
+      setMessage(`Activated scheduled campaign ${result.promotion?.name || campaign.promotion.name}.`);
+    } catch {
+      setMessage(`Could not activate ${campaign.promotion.name}.`);
+    } finally {
+      setActivatingScheduleCampaignId(null);
+    }
+  };
 
   const runDryRun = async (campaign: QueueCampaign) => {
     setSpotlightCampaignId(campaign.promotion.id);
@@ -808,6 +921,8 @@ export default function CommunicationsPage() {
   }, [data]);
 
   const queueCampaigns = data?.queue.campaigns || [];
+  const scheduledCampaigns = data?.schedule.campaigns || [];
+  const visibleScheduledCampaigns = scheduledCampaigns.slice(0, 6);
   const visibleQueueCampaigns = useMemo(() => {
     if (!spotlightCampaignId) return queueCampaigns.slice(0, 5);
     const spotlight = queueCampaigns.find((campaign) => campaign.promotion.id === spotlightCampaignId);
@@ -1065,6 +1180,113 @@ export default function CommunicationsPage() {
               onRunProviderTest={() => runProviderTest("email")}
             />
           </aside>
+        </section>
+
+        <section
+          data-testid="communications-schedule-queue"
+          className="rounded-md border border-gray-200 bg-white p-5 shadow-sm"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                Campaign Schedule
+              </p>
+              <h2 className="mt-2 text-xl font-black text-gray-950">Scheduled campaign queue</h2>
+              <p className="mt-1 text-sm font-semibold text-gray-500">
+                {numberFmt(data?.schedule.summary.due_today_count)} due today - {numberFmt(data?.schedule.summary.upcoming_count)} upcoming - {numberFmt(data?.schedule.summary.overdue_count)} overdue
+              </p>
+            </div>
+            <button
+              data-testid="communications-activate-due"
+              type="button"
+              onClick={activateDueCampaigns}
+              disabled={activatingDue || !data?.schedule.summary.due_today_count}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-gray-950 px-4 py-2 text-sm font-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              <Clock3 className={`h-4 w-4 ${activatingDue ? "animate-spin" : ""}`} />
+              {activatingDue ? "Activating" : "Activate Due"}
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-xl font-black">{numberFmt(data?.schedule.summary.scheduled_count)}</p>
+              <p className="text-xs font-bold uppercase text-gray-500">Scheduled</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-xl font-black">{numberFmt(data?.schedule.summary.due_today_count)}</p>
+              <p className="text-xs font-bold uppercase text-gray-500">Due</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-xl font-black">{numberFmt(data?.schedule.summary.ready_count)}</p>
+              <p className="text-xs font-bold uppercase text-gray-500">Ready Contacts</p>
+            </div>
+            <div className="rounded-md bg-gray-50 p-3">
+              <p className="text-xl font-black">{numberFmt(data?.schedule.summary.missing_count)}</p>
+              <p className="text-xs font-bold uppercase text-gray-500">Blocked Contacts</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleScheduledCampaigns.map((campaign) => {
+              const Icon = channelIcon(campaign.promotion.channel);
+              const activatingThis = activatingScheduleCampaignId === campaign.promotion.id;
+              return (
+                <article
+                  key={campaign.promotion.id}
+                  data-testid={`communications-scheduled-campaign-${campaign.promotion.id}`}
+                  className="rounded-md border border-gray-200 bg-gray-50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-black text-gray-950">{campaign.promotion.name}</p>
+                      <p className="mt-1 text-xs font-bold text-gray-500">
+                        {campaign.promotion.code || "No code"} - {new Date(campaign.promotion.start_date).toLocaleDateString("en-IN")}
+                      </p>
+                    </div>
+                    <span className={`inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-black ${statusTone(campaign.phase)}`}>
+                      <Icon className="h-3.5 w-3.5" /> {labelize(campaign.phase)}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-md bg-white p-2">
+                      <p className="font-black">{numberFmt(campaign.audience_count)}</p>
+                      <p className="text-[10px] font-bold uppercase text-gray-500">Audience</p>
+                    </div>
+                    <div className="rounded-md bg-white p-2">
+                      <p className="font-black">{numberFmt(campaign.ready_count)}</p>
+                      <p className="text-[10px] font-bold uppercase text-gray-500">Ready</p>
+                    </div>
+                    <div className="rounded-md bg-white p-2">
+                      <p className="font-black">{numberFmt(campaign.missing_count)}</p>
+                      <p className="text-[10px] font-bold uppercase text-gray-500">Missing</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-semibold leading-5 text-gray-600">
+                      {campaign.recommended_action}
+                    </p>
+                    <button
+                      data-testid={`communications-activate-scheduled-${campaign.promotion.id}`}
+                      type="button"
+                      onClick={() => activateScheduledCampaign(campaign)}
+                      disabled={!campaign.can_activate || activatingThis}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-black text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <Clock3 className={`h-4 w-4 ${activatingThis ? "animate-spin" : ""}`} />
+                      {activatingThis ? "Activating" : "Activate"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {!visibleScheduledCampaigns.length ? (
+            <div className="mt-5">
+              <EmptyState>No scheduled campaign is waiting.</EmptyState>
+            </div>
+          ) : null}
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
