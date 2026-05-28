@@ -827,6 +827,39 @@ def _provider_test_run_dict(test_run: ProviderTestRun | None) -> dict | None:
     }
 
 
+def _provider_test_audit_csv(test_runs: list[ProviderTestRun]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "test_id",
+            "generated_at",
+            "channel",
+            "provider",
+            "recipient_masked",
+            "queued",
+            "live_send_blocked",
+            "message_preview",
+        ]
+    )
+    for test_run in test_runs:
+        writer.writerow(
+            [
+                test_run.id,
+                test_run.test_id,
+                test_run.generated_at.isoformat() if test_run.generated_at else "",
+                test_run.channel,
+                test_run.provider or "",
+                test_run.recipient_masked or "",
+                "yes" if test_run.queued else "no",
+                "yes" if test_run.live_send_blocked else "no",
+                test_run.message_preview or "",
+            ]
+        )
+    return output.getvalue()
+
+
 def _dispatch_activation_status(channel: str, status: dict, counts: dict) -> tuple[str, str, list[str]]:
     missing_settings = status.get("missing_settings") or []
     blockers: list[str] = []
@@ -2270,6 +2303,35 @@ def campaign_dispatch_control(
         "recent_delivery_events": [_delivery_proof_dict(delivery) for delivery in recent_deliveries],
         "recent_provider_tests": [_provider_test_run_dict(test_run) for test_run in recent_provider_tests],
     }
+
+
+@router.get("/providers/test-runs/export.csv")
+def export_provider_test_runs_csv(
+    channel: str | None = Query(None),
+    limit: int = Query(250, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    query = db.query(ProviderTestRun)
+    if channel:
+        normalized_channel = channel.strip().lower()
+        if normalized_channel not in VALID_CHANNELS:
+            raise HTTPException(status_code=422, detail="Unsupported provider test channel.")
+        query = query.filter(ProviderTestRun.channel == normalized_channel)
+        filename_suffix = normalized_channel
+    else:
+        filename_suffix = "all"
+
+    test_runs = (
+        query.order_by(ProviderTestRun.generated_at.desc(), ProviderTestRun.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return StreamingResponse(
+        iter([_provider_test_audit_csv(test_runs)]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=provider_test_audit_{filename_suffix}.csv"},
+    )
 
 
 @router.post("/providers/test-send")

@@ -76,6 +76,19 @@ async function adminJson(endpoint, cookie, options = {}) {
   });
 }
 
+async function adminText(endpoint, cookie, options = {}) {
+  const response = await fetch(`${apiURL}${endpoint}`, {
+    ...options,
+    headers: {
+      Cookie: cookie,
+      ...(options.headers || {}),
+    },
+    cache: "no-store",
+  });
+  const text = await response.text();
+  return { response, text };
+}
+
 async function waitForDryRunProof(campaignId, cookie) {
   const startedAt = Date.now();
   let latest = null;
@@ -340,11 +353,22 @@ async function main() {
         `Provider audit did not persist a safe ${channel} test.`
       );
     }
+    const providerAuditCsv = await adminText("/api/v1/restaurant/promotions/providers/test-runs/export.csv", adminCookie);
+    assert(providerAuditCsv.response.ok, `Could not export provider audit CSV: ${providerAuditCsv.text}`);
+    assert(providerAuditCsv.text.includes("id,test_id,generated_at,channel"), "Provider audit CSV header missing expected columns.");
+    for (const channel of ["whatsapp", "sms", "email"]) {
+      assert(providerAuditCsv.text.includes(channel), `Provider audit CSV missed ${channel}.`);
+    }
     await page.getByTestId("communications-provider-test-audit").waitFor({ timeout: 20000 });
     await page.waitForFunction(
       () => /No live send/i.test(document.querySelector('[data-testid="communications-provider-test-audit"]')?.textContent || ""),
       null,
       { timeout: 30000 }
+    );
+    const exportHref = await page.getByTestId("communications-provider-test-export").getAttribute("href");
+    assert(
+      exportHref && /providers\/test-runs\/export\.csv/.test(exportHref),
+      "Provider audit export link missing CSV endpoint."
     );
     const providerAuditText = await page.getByTestId("communications-provider-test-audit").innerText();
     assert(/Safe test timeline/i.test(providerAuditText), "Provider test audit timeline title missing.");

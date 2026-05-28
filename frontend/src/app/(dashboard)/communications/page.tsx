@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Download,
   Mail,
   MessageCircle,
   Phone,
@@ -1410,7 +1411,17 @@ export default function CommunicationsPage() {
                 </p>
                 <h2 className="mt-2 text-xl font-black text-gray-950">Safe test timeline</h2>
               </div>
-              <ShieldCheck className="h-6 w-6 text-emerald-500" />
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  data-testid="communications-provider-test-export"
+                  href={`${PROMOTIONS_API}/providers/test-runs/export.csv`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 hover:bg-emerald-100"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </a>
+                <ShieldCheck className="h-6 w-6 text-emerald-500" />
+              </div>
             </div>
             <div className="mt-4 space-y-3">
               {recentProviderTests.slice(0, 6).map((test) => (
