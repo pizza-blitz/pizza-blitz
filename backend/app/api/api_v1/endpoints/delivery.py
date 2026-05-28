@@ -123,6 +123,178 @@ def delivery_economics_next_actions(
     return actions
 
 
+def delivery_priority_rank(order: dict) -> int:
+    status = order.get("assignment_status") or "unassigned"
+    if order.get("requires_address_review"):
+        return 0
+    if order.get("payment_due"):
+        return 1
+    if status == "unassigned" or not order.get("assigned_to"):
+        return 2
+    if status == "assigned":
+        return 3
+    if status == "out_for_delivery":
+        return 4
+    if status == "failed":
+        return 5
+    if status == "delivered":
+        return 6
+    return 7
+
+
+def delivery_mission_summary(
+    *,
+    queue_orders: list[dict],
+    zones: list[DeliveryZone],
+) -> dict:
+    active_zones = [zone for zone in zones if zone.is_active]
+    inactive_count = len(zones) - len(active_zones)
+    active_fees = [float(zone.delivery_fee or 0) for zone in active_zones]
+    active_eta_max = [int(zone.eta_max_minutes or 0) for zone in active_zones]
+    minimum_order_zones = [
+        zone for zone in active_zones if float(zone.minimum_order_amount or 0) > 0
+    ]
+    keyword_count = sum(len(zone.keywords or []) for zone in active_zones)
+    unassigned_count = sum(
+        1
+        for order in queue_orders
+        if order["assignment_status"] == "unassigned" or not order["assigned_to"]
+    )
+    assigned_count = sum(
+        1 for order in queue_orders if order["assignment_status"] == "assigned"
+    )
+    out_for_delivery_count = sum(
+        1 for order in queue_orders if order["assignment_status"] == "out_for_delivery"
+    )
+    delivered_count = sum(
+        1 for order in queue_orders if order["assignment_status"] == "delivered"
+    )
+    failed_count = sum(
+        1 for order in queue_orders if order["assignment_status"] == "failed"
+    )
+    address_review_count = sum(
+        1 for order in queue_orders if order["requires_address_review"]
+    )
+    payment_due_count = sum(1 for order in queue_orders if order["payment_due"])
+    dispatch_ready_count = sum(
+        1
+        for order in queue_orders
+        if order["assignment_status"] == "assigned"
+        and order["assigned_to"]
+        and not order["requires_address_review"]
+        and not order["payment_due"]
+    )
+    ready_to_close_count = sum(
+        1
+        for order in queue_orders
+        if order["assignment_status"] == "delivered"
+        and not order["requires_address_review"]
+        and not order["payment_due"]
+    )
+
+    if not active_zones:
+        overall_status = "no_zones"
+        next_action = "Activate one delivery zone before taking delivery orders."
+    elif address_review_count:
+        overall_status = "address_review"
+        next_action = f"Confirm address details for {address_review_count} delivery order(s)."
+    elif unassigned_count:
+        overall_status = "needs_assignment"
+        next_action = f"Assign riders to {unassigned_count} delivery order(s)."
+    elif payment_due_count:
+        overall_status = "payment_blocked"
+        next_action = f"Confirm prepaid payment for {payment_due_count} delivery order(s)."
+    elif dispatch_ready_count:
+        overall_status = "dispatch_ready"
+        next_action = f"Dispatch {dispatch_ready_count} assigned delivery order(s)."
+    elif out_for_delivery_count:
+        overall_status = "handoff_pending"
+        next_action = f"Track {out_for_delivery_count} order(s) until customer handoff."
+    else:
+        overall_status = "stable"
+        next_action = "Delivery queue is stable."
+
+    return {
+        "overall_status": overall_status,
+        "next_action": next_action,
+        "active_zone_count": len(active_zones),
+        "inactive_zone_count": inactive_count,
+        "lowest_fee": round(min(active_fees), 2) if active_fees else 0,
+        "highest_fee": round(max(active_fees), 2) if active_fees else 0,
+        "average_fee": round(sum(active_fees) / len(active_fees), 2) if active_fees else 0,
+        "longest_eta_minutes": max(active_eta_max) if active_eta_max else 0,
+        "minimum_order_zone_count": len(minimum_order_zones),
+        "coverage_keyword_count": keyword_count,
+        "open_delivery_count": len(queue_orders),
+        "open_delivery_value": round(
+            sum(float(order["total_amount"] or 0) for order in queue_orders),
+            2,
+        ),
+        "unassigned_count": unassigned_count,
+        "assigned_count": assigned_count,
+        "out_for_delivery_count": out_for_delivery_count,
+        "delivered_count": delivered_count,
+        "failed_count": failed_count,
+        "address_review_count": address_review_count,
+        "payment_due_count": payment_due_count,
+        "dispatch_ready_count": dispatch_ready_count,
+        "ready_to_close_count": ready_to_close_count,
+    }
+
+
+def delivery_mission_controls(summary: dict) -> list[dict]:
+    return [
+        {
+            "label": "Zone pricing gate",
+            "status": "ready" if summary["active_zone_count"] else "blocked",
+            "count": summary["active_zone_count"],
+            "detail": (
+                f"Rs {summary['lowest_fee']:.0f}-Rs {summary['highest_fee']:.0f} fees | "
+                f"{summary['minimum_order_zone_count']} minimum rules"
+            ),
+        },
+        {
+            "label": "Address validation gate",
+            "status": "blocked" if summary["address_review_count"] else "ready",
+            "count": summary["address_review_count"],
+            "detail": "Confirm weak addresses before rider dispatch.",
+        },
+        {
+            "label": "Rider assignment gate",
+            "status": "blocked" if summary["unassigned_count"] else "ready",
+            "count": summary["unassigned_count"],
+            "detail": "Every active delivery needs a rider owner.",
+        },
+        {
+            "label": "Payment close gate",
+            "status": "blocked" if summary["payment_due_count"] else "ready",
+            "count": summary["payment_due_count"],
+            "detail": "Prepaid orders must be paid before close.",
+        },
+        {
+            "label": "ETA handoff",
+            "status": "ready" if summary["dispatch_ready_count"] else "watch",
+            "count": summary["dispatch_ready_count"],
+            "detail": f"Longest active ETA is {summary['longest_eta_minutes']} min.",
+        },
+    ]
+
+
+def delivery_mission_next_actions(summary: dict) -> list[str]:
+    actions = [summary["next_action"]]
+    if summary["inactive_zone_count"]:
+        actions.append(f"Review {summary['inactive_zone_count']} inactive delivery zone(s).")
+    if summary["minimum_order_zone_count"] == 0 and summary["active_zone_count"]:
+        actions.append("Add minimum order rules for far zones to protect delivery margin.")
+    if summary["dispatch_ready_count"]:
+        actions.append("Move assigned orders to out for delivery once the rider leaves.")
+    if summary["ready_to_close_count"]:
+        actions.append(f"Close {summary['ready_to_close_count']} delivered order(s) after receipt check.")
+    if len(actions) == 1 and summary["overall_status"] == "stable":
+        actions.append("Run one checkout and delivery proof after any fee, ETA, or zone change.")
+    return actions
+
+
 def note_value(notes: Optional[str], label: str) -> Optional[str]:
     if not notes:
         return None
@@ -361,6 +533,39 @@ def delivery_economics(
             unassigned_count=unassigned_count,
             payment_due_count=payment_due_count,
         ),
+    }
+
+
+@router.get("/mission-control")
+def delivery_mission_control(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    ensure_delivery_zones(db)
+    zones = (
+        db.query(DeliveryZone)
+        .order_by(DeliveryZone.delivery_fee.asc(), DeliveryZone.id.asc())
+        .all()
+    )
+    orders = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.order_type == "delivery")
+        .filter(RestaurantOrder.status.notin_(["closed", "cancelled"]))
+        .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
+        .all()
+    )
+    queue_orders = [serialize_delivery_queue_order(db, order) for order in orders]
+    summary = delivery_mission_summary(queue_orders=queue_orders, zones=zones)
+    priority_orders = sorted(queue_orders, key=delivery_priority_rank)[:8]
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": summary,
+        "controls": delivery_mission_controls(summary),
+        "zones": [serialize_delivery_zone(zone) for zone in zones],
+        "priority_orders": priority_orders,
+        "next_actions": delivery_mission_next_actions(summary),
     }
 
 

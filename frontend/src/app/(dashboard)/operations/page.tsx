@@ -95,6 +95,65 @@ type DeliveryQueueSummary = {
   payment_due_count: number;
 };
 
+type DeliveryMissionSummary = DeliveryQueueSummary & {
+  overall_status: string;
+  next_action: string;
+  active_zone_count: number;
+  inactive_zone_count: number;
+  lowest_fee: number;
+  highest_fee: number;
+  average_fee: number;
+  longest_eta_minutes: number;
+  minimum_order_zone_count: number;
+  coverage_keyword_count: number;
+  open_delivery_value: number;
+  dispatch_ready_count: number;
+  ready_to_close_count: number;
+};
+
+type DeliveryMissionControlItem = {
+  label: string;
+  status: string;
+  count: number;
+  detail: string;
+};
+
+type DeliveryMissionZone = {
+  id: number;
+  name: string;
+  delivery_fee: number;
+  minimum_order_amount: number;
+  eta_window?: string;
+  eta_min_minutes?: number;
+  eta_max_minutes?: number;
+  keywords?: string[];
+  is_active: boolean;
+};
+
+type DeliveryMissionOrder = {
+  id: number;
+  customer_name?: string | null;
+  delivery_address?: string | null;
+  delivery_zone?: string | null;
+  delivery_fee?: string | number | null;
+  eta_window?: string | null;
+  total_amount: number;
+  payment_due: boolean;
+  assignment_status: string;
+  assigned_to?: string | null;
+  requires_address_review: boolean;
+  next_action: string;
+};
+
+type DeliveryMissionControl = {
+  generated_at?: string;
+  summary: DeliveryMissionSummary;
+  controls: DeliveryMissionControlItem[];
+  zones: DeliveryMissionZone[];
+  priority_orders: DeliveryMissionOrder[];
+  next_actions: string[];
+};
+
 type OrderFlowRow = {
   id: number;
   stage: string;
@@ -143,8 +202,9 @@ const filters = [
 
 const riderPresets = ["Ravi Rider", "Anita Rider", "Mohan Rider", "Backup Rider"];
 
-function money(value: number) {
-  return `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
+function money(value: number | string | null | undefined) {
+  const numeric = Number(value || 0);
+  return `Rs ${Math.round(Number.isFinite(numeric) ? numeric : 0).toLocaleString()}`;
 }
 
 function ageLabel(createdAt?: string | null) {
@@ -236,6 +296,27 @@ function deliveryPriorityLabel(order: Order) {
   return "Monitor";
 }
 
+function deliveryControlClass(status: string) {
+  if (status === "blocked") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (status === "watch") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-emerald-200 bg-emerald-50 text-emerald-800";
+}
+
+function readableStatus(status?: string | null) {
+  return (status || "stable").replaceAll("_", " ");
+}
+
+function missionOrderLabel(order: DeliveryMissionOrder) {
+  if (order.requires_address_review) return "Address review";
+  if (order.payment_due) return "Payment due";
+  if (!order.assigned_to) return "Assign rider";
+  if (order.assignment_status === "assigned") return "Ready to dispatch";
+  if (order.assignment_status === "out_for_delivery") return "Out for delivery";
+  if (order.assignment_status === "failed") return "Failed delivery";
+  if (order.assignment_status === "delivered") return "Delivered";
+  return "Monitor";
+}
+
 function closeBlockers(order: Order) {
   const blockers: string[] = [];
   if (order.status === "cancelled") blockers.push("cancelled");
@@ -266,6 +347,7 @@ export default function OperationsPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const [deliveryQueueSummary, setDeliveryQueueSummary] = useState<DeliveryQueueSummary | null>(null);
+  const [deliveryMission, setDeliveryMission] = useState<DeliveryMissionControl | null>(null);
   const [orderFlow, setOrderFlow] = useState<OrderFlowReadiness | null>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
@@ -404,6 +486,10 @@ export default function OperationsPage() {
     ],
     [deliveryActionCounts, deliveryStats.addressReview]
   );
+  const deliveryMissionSummary = deliveryMission?.summary || null;
+  const missionControls = deliveryMission?.controls || [];
+  const missionPriorityOrders = deliveryMission?.priority_orders || [];
+  const activeMissionZones = (deliveryMission?.zones || []).filter((zone) => zone.is_active);
 
   const visibleOrders = useMemo(() => {
     if (filter === "active") return activeOrders;
@@ -466,7 +552,7 @@ export default function OperationsPage() {
   const fetchOrders = async (options?: { preserveMessage?: boolean; silent?: boolean }) => {
     if (!options?.silent) setIsLoading(true);
     try {
-      const [response, queueResponse, flowResponse] = await Promise.all([
+      const [response, queueResponse, flowResponse, missionResponse] = await Promise.all([
         fetch(`${ORDERS_API}/today`, {
           cache: "no-store",
           credentials: "include",
@@ -479,19 +565,26 @@ export default function OperationsPage() {
           cache: "no-store",
           credentials: "include",
         }),
+        fetch(`${DELIVERY_API}/mission-control`, {
+          cache: "no-store",
+          credentials: "include",
+        }),
       ]);
       const data = await response.json();
       const queueData = await queueResponse.json();
       const flowData = await flowResponse.json();
+      const missionData = await missionResponse.json();
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
       if (!queueResponse.ok) throw new Error(queueData.detail || "Could not load delivery queue.");
       if (!flowResponse.ok) throw new Error(flowData.detail || "Could not load order flow.");
+      if (!missionResponse.ok) throw new Error(missionData.detail || "Could not load delivery mission control.");
 
       const queueOrders = queueData.orders || [];
       const queueById = new Map<number, any>(
         queueOrders.map((order: any) => [order.id, order])
       );
       setDeliveryQueueSummary(queueData.summary || null);
+      setDeliveryMission(missionData || null);
       setOrderFlow(flowData || null);
       setLastRefreshedAt(
         new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
@@ -1114,6 +1207,219 @@ export default function OperationsPage() {
                 {action}
               </p>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section
+        data-testid="delivery-operations-mission-control"
+        className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-black text-gray-950">
+                Delivery Operations Mission Control
+              </h2>
+              <span
+                data-testid="delivery-mission-status"
+                className="rounded-md bg-white px-2 py-1 text-xs font-black uppercase text-slate-700"
+              >
+                {readableStatus(deliveryMissionSummary?.overall_status)}
+              </span>
+            </div>
+            <p
+              data-testid="delivery-mission-next-action"
+              className="mt-1 text-sm font-semibold text-gray-600"
+            >
+              {deliveryMissionSummary?.next_action ||
+                "Loading delivery charges, zones, address review, and rider assignment."}
+            </p>
+          </div>
+          <button
+            onClick={() => setFilter("delivery")}
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-black text-slate-800 hover:bg-slate-100"
+          >
+            <Truck className="h-4 w-4" />
+            Open Queue
+          </button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {[
+            {
+              label: "Zone Rules",
+              value: deliveryMissionSummary?.active_zone_count ?? 0,
+              detail: `${deliveryMissionSummary?.minimum_order_zone_count ?? 0} min rules`,
+              tone: "text-slate-950",
+            },
+            {
+              label: "Open Deliveries",
+              value: deliveryMissionSummary?.open_delivery_count ?? deliveryStats.total,
+              detail: money(deliveryMissionSummary?.open_delivery_value ?? 0),
+              tone: "text-gray-950",
+            },
+            {
+              label: "Needs Rider",
+              value: deliveryMissionSummary?.unassigned_count ?? deliveryStats.unassigned,
+              detail: "assignment gate",
+              tone: "text-red-700",
+            },
+            {
+              label: "Address Review",
+              value: deliveryMissionSummary?.address_review_count ?? deliveryStats.addressReview,
+              detail: "confirm first",
+              tone: "text-amber-700",
+            },
+            {
+              label: "Dispatch Ready",
+              value: deliveryMissionSummary?.dispatch_ready_count ?? deliveryActionCounts.readyToDispatch,
+              detail: "rider can leave",
+              tone: "text-sky-700",
+            },
+            {
+              label: "Payment Blocks",
+              value: deliveryMissionSummary?.payment_due_count ?? deliveryStats.paymentDue,
+              detail: "close blocker",
+              tone: "text-violet-700",
+            },
+          ].map((metric) => (
+            <div key={metric.label} className="rounded-lg border border-white bg-white p-3 shadow-sm">
+              <p className="text-[11px] font-black uppercase tracking-wide text-gray-500">
+                {metric.label}
+              </p>
+              <p className={`mt-2 text-2xl font-black ${metric.tone}`}>{metric.value}</p>
+              <p className="mt-1 text-xs font-semibold text-gray-500">{metric.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-[1.2fr_1fr]">
+          <div className="grid gap-2 md:grid-cols-5">
+            {missionControls.length ? (
+              missionControls.map((control) => (
+                <div
+                  key={control.label}
+                  data-testid={`delivery-control-${control.label.toLowerCase().replaceAll(" ", "-")}`}
+                  className={`rounded-lg border p-3 shadow-sm ${deliveryControlClass(control.status)}`}
+                >
+                  <p className="text-[11px] font-black uppercase tracking-wide">
+                    {control.label}
+                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <span className="text-xl font-black">{control.count}</span>
+                    <span className="rounded-md bg-white/70 px-2 py-1 text-[10px] font-black uppercase">
+                      {control.status}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs font-semibold leading-5">{control.detail}</p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm font-semibold text-slate-500 md:col-span-5">
+                Loading delivery mission controls.
+              </div>
+            )}
+          </div>
+
+          <div
+            data-testid="delivery-zone-coverage"
+            className="rounded-lg border border-white bg-white p-4 shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+                  Zone Coverage
+                </p>
+                <p className="mt-1 text-sm font-semibold text-gray-600">
+                  {deliveryMissionSummary?.coverage_keyword_count ?? 0} coverage keywords | longest ETA{" "}
+                  {deliveryMissionSummary?.longest_eta_minutes ?? 0} min
+                </p>
+              </div>
+              <MapPin className="h-5 w-5 text-red-600" />
+            </div>
+            <div className="mt-3 grid gap-2">
+              {activeMissionZones.slice(0, 3).map((zone) => (
+                <div
+                  key={zone.id}
+                  className="flex items-center justify-between gap-3 rounded-md bg-slate-50 px-3 py-2"
+                >
+                  <div>
+                    <p className="text-sm font-black text-slate-950">{zone.name}</p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Min {money(zone.minimum_order_amount || 0)} |{" "}
+                      {zone.eta_window ||
+                        `${zone.eta_min_minutes || 0}-${zone.eta_max_minutes || 0} min`}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-black text-slate-700">
+                    {money(zone.delivery_fee || 0)}
+                  </span>
+                </div>
+              ))}
+              {!activeMissionZones.length && (
+                <p className="rounded-md bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                  No active delivery zone is ready.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 xl:grid-cols-[1.4fr_1fr]">
+          <div
+            data-testid="delivery-mission-priority-orders"
+            className="rounded-lg border border-white bg-white p-4 shadow-sm"
+          >
+            <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+              Priority Orders
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {missionPriorityOrders.slice(0, 4).map((order) => (
+                <article
+                  key={`mission-${order.id}`}
+                  data-testid={`delivery-mission-order-${order.id}`}
+                  className="rounded-md border border-slate-200 bg-slate-50 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-slate-950">Order #{order.id}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {order.customer_name || "Delivery customer"} | {order.delivery_zone || "Zone pending"}
+                      </p>
+                    </div>
+                    <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-slate-700">
+                      {missionOrderLabel(order)}
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-600">
+                    {order.next_action}
+                  </p>
+                  <p className="mt-2 text-xs font-bold text-slate-500">
+                    Fee {money(Number(order.delivery_fee || 0))} | {order.eta_window || "ETA pending"} |{" "}
+                    {money(order.total_amount || 0)}
+                  </p>
+                </article>
+              ))}
+              {!missionPriorityOrders.length && (
+                <p className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-4 text-sm font-semibold text-slate-500 md:col-span-2">
+                  No active delivery priority right now.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white bg-white p-4 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-wide text-gray-500">
+              Delivery Next Actions
+            </p>
+            <div className="mt-3 grid gap-2">
+              {(deliveryMission?.next_actions || ["Loading delivery next actions."]).map((action) => (
+                <p key={action} className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                  {action}
+                </p>
+              ))}
+            </div>
           </div>
         </div>
       </section>
