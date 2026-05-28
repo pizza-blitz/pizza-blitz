@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
   ArrowLeft,
+  CheckCircle2,
   Clock,
+  Flame,
   Loader2,
   Printer,
   ReceiptText,
@@ -65,6 +67,7 @@ export default function KitchenTicketPage() {
   const [order, setOrder] = useState<KitchenTicketOrder | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [busyStatus, setBusyStatus] = useState<"preparing" | "ready" | null>(null);
 
   const fulfillment = useMemo(
     () => titleCase(order?.fulfillment_type || order?.order_type),
@@ -74,6 +77,9 @@ export default function KitchenTicketPage() {
     () => order?.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0,
     [order?.items]
   );
+  const status = (order?.status || "").toLowerCase();
+  const canStartPreparing = Boolean(order && !["preparing", "ready", "closed", "cancelled"].includes(status));
+  const canMarkReady = Boolean(order && !["ready", "closed", "cancelled"].includes(status));
 
   useEffect(() => {
     fetchOrder();
@@ -91,6 +97,36 @@ export default function KitchenTicketPage() {
       setMessage(error instanceof Error ? error.message : "Could not load kitchen ticket.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const updateKitchenStatus = async (nextStatus: "preparing" | "ready") => {
+    if (!order) return;
+    setBusyStatus(nextStatus);
+    setMessage("");
+    try {
+      const response = await fetch(`${ORDERS_API}/${order.id}/status`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not update kitchen status.");
+      setOrder((current) =>
+        current
+          ? {
+              ...current,
+              ...data,
+              status: data.status || nextStatus,
+            }
+          : data
+      );
+      setMessage(`Order #${order.id} moved to ${titleCase(nextStatus)}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update kitchen status.");
+    } finally {
+      setBusyStatus(null);
     }
   };
 
@@ -122,8 +158,51 @@ export default function KitchenTicketPage() {
           </button>
         </div>
 
+        {order && (
+          <section
+            data-testid="kot-status-actions"
+            className="mb-5 rounded-lg border border-orange-400/20 bg-orange-500/10 p-4 print:hidden"
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-200/80">
+                  Kitchen Status
+                </p>
+                <h2
+                  data-testid="kot-status-value"
+                  className="mt-1 text-2xl font-black text-white"
+                >
+                  {titleCase(order.status)}
+                </h2>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  data-testid="kot-mark-preparing"
+                  type="button"
+                  onClick={() => updateKitchenStatus("preparing")}
+                  disabled={!canStartPreparing || busyStatus !== null}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-orange-300/30 bg-orange-500 px-4 py-3 text-sm font-black text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-zinc-500"
+                >
+                  {busyStatus === "preparing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Flame className="h-4 w-4" />}
+                  Start Preparing
+                </button>
+                <button
+                  data-testid="kot-mark-ready"
+                  type="button"
+                  onClick={() => updateKitchenStatus("ready")}
+                  disabled={!canMarkReady || busyStatus !== null}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-500 px-4 py-3 text-sm font-black text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-zinc-500"
+                >
+                  {busyStatus === "ready" ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Mark Ready
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
         {message && (
-          <div className="mb-4 rounded-md border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100 print:hidden">
+          <div className="mb-4 rounded-md border border-orange-400/20 bg-orange-500/10 px-4 py-3 text-sm font-semibold text-orange-100 print:hidden">
             {message}
           </div>
         )}
@@ -216,7 +295,7 @@ export default function KitchenTicketPage() {
             )}
 
             <footer className="mt-6 border-t border-zinc-200 pt-4 text-center text-xs font-black uppercase tracking-widest text-zinc-500">
-              Prepare accurately. Mark ready in Operations when complete.
+              Prepare accurately. Mark ready before handoff.
             </footer>
           </main>
         )}

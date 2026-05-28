@@ -188,10 +188,28 @@ async function main() {
     await page.getByText(firstItem.name, { exact: false }).waitFor({ timeout: 15000 });
     await page.getByTestId("kot-item-row").first().waitFor({ timeout: 15000 });
     await page.getByTestId("kot-print-command").waitFor({ timeout: 15000 });
+    await page.getByTestId("kot-status-actions").waitFor({ timeout: 15000 });
     await assertHealthyPage(page, "kitchen ticket page");
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-counter-kitchen-ticket.png"),
+      fullPage: true,
+    });
+
+    await page.getByTestId("kot-mark-preparing").click();
+    await page.getByText(new RegExp(`Order #${orderId} moved to Preparing`, "i")).waitFor({ timeout: 15000 });
+    await page.getByTestId("kot-status-value").getByText("Preparing", { exact: true }).waitFor({ timeout: 10000 });
+
+    await page.getByTestId("kot-mark-ready").click();
+    await page.getByText(new RegExp(`Order #${orderId} moved to Ready`, "i")).waitFor({ timeout: 15000 });
+    await page.getByTestId("kot-status-value").getByText("Ready", { exact: true }).waitFor({ timeout: 10000 });
+
+    const readyResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`, adminCookie);
+    assert(readyResult.response.ok, `Could not refetch ready kitchen-ticket order: ${JSON.stringify(readyResult.data)}`);
+    assert(readyResult.data.status === "ready", `Expected ready status, got ${readyResult.data.status}.`);
+
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-counter-kitchen-ticket-ready.png"),
       fullPage: true,
     });
 
