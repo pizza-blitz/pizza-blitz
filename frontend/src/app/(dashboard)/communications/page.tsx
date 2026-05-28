@@ -80,6 +80,16 @@ type QueueCampaign = {
   missing_count: number;
   queue_status: string;
   queue_label: string;
+  live_send_blockers?: string[];
+  provider_status?: {
+    provider: string;
+    configured: boolean;
+    enabled: boolean;
+    unsupported?: boolean;
+    missing_settings?: string[];
+    readiness_label?: string;
+    next_action?: string;
+  };
   can_dry_run: boolean;
   can_send: boolean;
   dry_run_count: number;
@@ -266,6 +276,33 @@ function cleanupHref(campaign: QueueCampaign) {
   return `/customers?segment=${encodeURIComponent(audience)}&source=campaign_cleanup&campaign=${campaign.promotion.id}`;
 }
 
+function liveGateChecks(campaign: QueueCampaign) {
+  return [
+    {
+      label: "Audience ready",
+      passed: campaign.ready_count > 0,
+      detail: `${numberFmt(campaign.ready_count)} send-ready contacts`,
+    },
+    {
+      label: "Dry-run proof",
+      passed: campaign.dry_run_count > 0,
+      detail: campaign.dry_run_count > 0 ? `${numberFmt(campaign.dry_run_count)} receipts` : "Missing proof",
+    },
+    {
+      label: "Provider configured",
+      passed: Boolean(campaign.provider_status?.configured),
+      detail: campaign.provider_status?.configured
+        ? `${campaign.provider_status.provider} configured`
+        : `${campaign.provider_status?.provider || campaign.promotion.channel} setup needed`,
+    },
+    {
+      label: "Not sent before",
+      passed: campaign.sent_count === 0,
+      detail: campaign.sent_count === 0 ? "No live send recorded" : `${numberFmt(campaign.sent_count)} sent`,
+    },
+  ];
+}
+
 function MetricCard({
   label,
   value,
@@ -302,6 +339,7 @@ export default function CommunicationsPage() {
   const [loading, setLoading] = useState(true);
   const [busyCampaignId, setBusyCampaignId] = useState<number | null>(null);
   const [reviewLoadingId, setReviewLoadingId] = useState<number | null>(null);
+  const [spotlightCampaignId, setSpotlightCampaignId] = useState<number | null>(null);
   const [dispatchReview, setDispatchReview] = useState<DispatchReview | null>(null);
   const [cleanupDrafts, setCleanupDrafts] = useState<Record<number, CleanupDraft>>({});
   const [savingContactId, setSavingContactId] = useState<number | null>(null);
@@ -344,6 +382,7 @@ export default function CommunicationsPage() {
   }, []);
 
   const runDryRun = async (campaign: QueueCampaign) => {
+    setSpotlightCampaignId(campaign.promotion.id);
     if (!campaign.can_dry_run) {
       setMessage(`Campaign ${campaign.promotion.name} needs send-ready contacts before dry-run proof.`);
       return;
@@ -378,6 +417,7 @@ export default function CommunicationsPage() {
   };
 
   const openDispatchReview = async (campaign: QueueCampaign) => {
+    setSpotlightCampaignId(campaign.promotion.id);
     setReviewLoadingId(campaign.promotion.id);
     setMessage("");
     try {
@@ -469,6 +509,17 @@ export default function CommunicationsPage() {
   }, [data]);
 
   const queueCampaigns = data?.queue.campaigns || [];
+  const visibleQueueCampaigns = useMemo(() => {
+    if (!spotlightCampaignId) return queueCampaigns.slice(0, 5);
+    const spotlight = queueCampaigns.find((campaign) => campaign.promotion.id === spotlightCampaignId);
+    if (!spotlight) return queueCampaigns.slice(0, 5);
+    return [
+      spotlight,
+      ...queueCampaigns
+        .filter((campaign) => campaign.promotion.id !== spotlightCampaignId)
+        .slice(0, 4),
+    ];
+  }, [queueCampaigns, spotlightCampaignId]);
   const recentEvents = data?.dispatch.recent_delivery_events || [];
   const bestCampaign = data?.performance.best_campaign;
 
@@ -652,7 +703,7 @@ export default function CommunicationsPage() {
               </span>
             </div>
             <div data-testid="communications-send-queue" className="space-y-3">
-              {queueCampaigns.slice(0, 5).map((campaign) => {
+              {visibleQueueCampaigns.map((campaign) => {
                 const Icon = channelIcon(campaign.promotion.channel);
                 return (
                   <article
@@ -688,6 +739,62 @@ export default function CommunicationsPage() {
                         <p className="font-black">{numberFmt(campaign.needs_attention_count)}</p>
                         <p className="text-[10px] font-bold uppercase text-gray-500">Fix</p>
                       </div>
+                    </div>
+                    <div
+                      data-testid={`communications-live-gate-${campaign.promotion.id}`}
+                      className={`mt-4 rounded-md border p-3 ${
+                        campaign.can_send
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-amber-200 bg-amber-50"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                            Live Send Gate
+                          </p>
+                          <p
+                            data-testid={`communications-live-gate-status-${campaign.promotion.id}`}
+                            className={`mt-1 text-sm font-black ${
+                              campaign.can_send ? "text-emerald-700" : "text-amber-700"
+                            }`}
+                          >
+                            {campaign.can_send ? "Live Ready" : "Live Send Locked"}
+                          </p>
+                        </div>
+                        <span className="rounded-md bg-white px-3 py-1 text-xs font-black text-gray-700">
+                          {liveGateChecks(campaign).filter((check) => check.passed).length}/4 passed
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {liveGateChecks(campaign).map((check) => (
+                          <div
+                            key={check.label}
+                            data-testid={`communications-live-gate-check-${campaign.promotion.id}-${check.label.toLowerCase().replace(/\s+/g, "-")}`}
+                            className="flex items-start gap-2 rounded-md bg-white/80 p-2"
+                          >
+                            {check.passed ? (
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                            ) : (
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            )}
+                            <div>
+                              <p className="text-xs font-black text-gray-900">
+                                {check.label}: {check.passed ? "Passed" : "Missing"}
+                              </p>
+                              <p className="mt-0.5 text-[11px] font-semibold text-gray-500">
+                                {check.detail}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {!campaign.can_send && (
+                        <p className="mt-3 text-xs font-bold text-amber-800">
+                          {(campaign.live_send_blockers || []).slice(0, 2).join(" · ") ||
+                            "Complete the gate before live sending."}
+                        </p>
+                      )}
                     </div>
                     <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <p className="text-sm font-semibold text-gray-600">{campaign.recommended_action}</p>

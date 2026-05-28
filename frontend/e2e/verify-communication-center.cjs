@@ -256,6 +256,16 @@ async function main() {
     assert(/provider readiness/i.test(bodyText), "Communications page missed provider readiness section.");
     assert(bodyText.includes(proof.name), `Communications page did not surface seeded campaign ${proof.name}.`);
 
+    await page.getByTestId(`communications-live-gate-${proof.campaignId}`).waitFor({ timeout: 60000 });
+    await page
+      .getByTestId(`communications-live-gate-status-${proof.campaignId}`)
+      .getByText(/Live Send Locked|Live Ready/i)
+      .waitFor({ timeout: 10000 });
+    const dryRunGateBefore = await page
+      .getByTestId(`communications-live-gate-check-${proof.campaignId}-dry-run-proof`)
+      .innerText();
+    assert(/missing/i.test(dryRunGateBefore), `Dry-run gate should start missing: ${dryRunGateBefore}`);
+
     await page.getByTestId(`communications-review-contacts-${proof.campaignId}`).waitFor({ timeout: 60000 });
     await page.getByTestId(`communications-review-contacts-${proof.campaignId}`).click();
     await page.getByTestId("communications-cleanup-review").waitFor({ timeout: 30000 });
@@ -285,6 +295,13 @@ async function main() {
     const dryRunResult = await waitForDryRunProof(proof.campaignId, adminCookie);
     assert(dryRunResult.dry_run_count > 0, "Communication center dry-run action did not record dry-run deliveries.");
     await page.getByTestId("communications-refresh").click();
+    await page
+      .getByTestId(`communications-live-gate-check-${proof.campaignId}-dry-run-proof`)
+      .getByText(/passed/i)
+      .waitFor({ timeout: 30000 });
+    const liveGateAfter = await page.getByTestId(`communications-live-gate-${proof.campaignId}`).innerText();
+    assert(/Live Ready|Live Send Locked/i.test(liveGateAfter), `Live gate did not show a final state: ${liveGateAfter}`);
+    assert(/Provider configured/i.test(liveGateAfter), `Live gate did not include provider configuration check: ${liveGateAfter}`);
     await page.getByTestId("communications-recent-events").getByText(/dry run/i).first().waitFor({ timeout: 30000 });
 
     await page.screenshot({
