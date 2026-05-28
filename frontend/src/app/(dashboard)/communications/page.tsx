@@ -226,6 +226,14 @@ function statusTone(value: string) {
   return "border-red-200 bg-red-50 text-red-700";
 }
 
+function cleanupHref(campaign: QueueCampaign) {
+  const audience =
+    campaign.promotion.audience === "all_customers"
+      ? "all"
+      : campaign.promotion.audience;
+  return `/customers?segment=${encodeURIComponent(audience)}&source=campaign_cleanup&campaign=${campaign.promotion.id}`;
+}
+
 function MetricCard({
   label,
   value,
@@ -260,6 +268,7 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 export default function CommunicationsPage() {
   const [data, setData] = useState<CommsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busyCampaignId, setBusyCampaignId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   const fetchData = async () => {
@@ -297,6 +306,40 @@ export default function CommunicationsPage() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const runDryRun = async (campaign: QueueCampaign) => {
+    if (!campaign.can_dry_run) {
+      setMessage(`Campaign ${campaign.promotion.name} needs send-ready contacts before dry-run proof.`);
+      return;
+    }
+
+    setBusyCampaignId(campaign.promotion.id);
+    setMessage("");
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/${campaign.promotion.id}/send`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dry_run: true,
+          limit: 50,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || `Could not run dry-run proof for ${campaign.promotion.name}.`);
+        return;
+      }
+      await fetchData();
+      setMessage(
+        `Dry-run proof recorded for ${campaign.promotion.name}: ${numberFmt(result.dry_run_count)} ready, ${numberFmt(result.skipped_count)} skipped.`
+      );
+    } catch {
+      setMessage(`Could not run dry-run proof for ${campaign.promotion.name}.`);
+    } finally {
+      setBusyCampaignId(null);
+    }
+  };
 
   const prioritySegments = useMemo(() => {
     if (!data?.segments?.segments) return [];
@@ -534,7 +577,28 @@ export default function CommunicationsPage() {
                         <p className="text-[10px] font-bold uppercase text-gray-500">Fix</p>
                       </div>
                     </div>
-                    <p className="mt-3 text-sm font-semibold text-gray-600">{campaign.recommended_action}</p>
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm font-semibold text-gray-600">{campaign.recommended_action}</p>
+                      <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                        <button
+                          data-testid={`communications-run-dry-run-${campaign.promotion.id}`}
+                          type="button"
+                          disabled={!campaign.can_dry_run || busyCampaignId === campaign.promotion.id}
+                          onClick={() => runDryRun(campaign)}
+                          className="inline-flex items-center justify-center gap-2 rounded-md bg-gray-950 px-3 py-2 text-xs font-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+                        >
+                          <Send className="h-4 w-4" />
+                          {busyCampaignId === campaign.promotion.id ? "Running" : "Run Dry Run"}
+                        </button>
+                        <Link
+                          data-testid={`communications-cleanup-${campaign.promotion.id}`}
+                          href={cleanupHref(campaign)}
+                          className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-black text-gray-800 hover:bg-gray-50"
+                        >
+                          <Users className="h-4 w-4" /> Cleanup
+                        </Link>
+                      </div>
+                    </div>
                   </article>
                 );
               })}

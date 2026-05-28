@@ -121,14 +121,6 @@ async function seedCommunicationProof(cookie) {
   assert(campaign.response.ok, `Could not create communication campaign: ${JSON.stringify(campaign.data)}`);
   const campaignId = campaign.data.promotion.id;
 
-  const dryRun = await adminJson(`/api/v1/restaurant/promotions/${campaignId}/send`, cookie, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dry_run: true, limit: 50 }),
-  });
-  assert(dryRun.response.ok, `Communication dry run failed: ${JSON.stringify(dryRun.data)}`);
-  assert(dryRun.data.dry_run_count > 0, "Communication dry run did not produce dry-run deliveries.");
-
   return { campaignId, name, code, contactPhone, contactEmail };
 }
 
@@ -218,7 +210,17 @@ async function main() {
     assert(/ready to send/i.test(bodyText), "Communications metrics did not include send queue status.");
     assert(/provider readiness/i.test(bodyText), "Communications page missed provider readiness section.");
     assert(bodyText.includes(proof.name), `Communications page did not surface seeded campaign ${proof.name}.`);
-    assert(bodyText.includes("dry run") || bodyText.includes("Dry"), "Communications page did not surface dry-run proof.");
+
+    await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).waitFor({ timeout: 60000 });
+    await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).click();
+    await page
+      .getByTestId("communications-message")
+      .getByText(/Dry-run proof recorded/i)
+      .waitFor({ timeout: 30000 });
+    const dryRunResult = await adminJson(`/api/v1/restaurant/promotions/${proof.campaignId}/deliveries`, adminCookie);
+    assert(dryRunResult.response.ok, `Could not fetch dry-run proof: ${JSON.stringify(dryRunResult.data)}`);
+    assert(dryRunResult.data.dry_run_count > 0, "Communication center dry-run action did not record dry-run deliveries.");
+    await page.getByTestId("communications-recent-events").getByText(/dry run/i).first().waitFor({ timeout: 30000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-communication-center.png"),
