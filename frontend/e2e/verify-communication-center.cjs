@@ -394,6 +394,26 @@ async function main() {
     await page.getByTestId("communications-next-action").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-performance").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-recent-events").waitFor({ timeout: 20000 });
+    await page.getByTestId("communications-delivery-recovery").waitFor({ timeout: 20000 });
+    const deliveryRecoveryText = await page.getByTestId("communications-delivery-recovery").innerText();
+    assert(/Delivery recovery/i.test(deliveryRecoveryText), "Delivery recovery panel title missing.");
+    assert(/Failed/i.test(deliveryRecoveryText), "Delivery recovery panel missed failed count.");
+    assert(/Skipped/i.test(deliveryRecoveryText), "Delivery recovery panel missed skipped count.");
+    const recoveryExportHref = await page.getByTestId("communications-delivery-recovery-export").getAttribute("href");
+    assert(
+      recoveryExportHref && /providers\/delivery-events\/export\.csv\?status=needs_attention/.test(recoveryExportHref),
+      "Delivery recovery export link missing needs-attention filter."
+    );
+    const missingDestinationExportHref = await page.getByTestId("communications-missing-destination-export").getAttribute("href");
+    assert(
+      missingDestinationExportHref && /reason=missing_destination/.test(missingDestinationExportHref),
+      "Delivery recovery panel missed contact-gap export."
+    );
+    const providerIssuesExportHref = await page.getByTestId("communications-provider-issues-export").getAttribute("href");
+    assert(
+      providerIssuesExportHref && /reason=provider/.test(providerIssuesExportHref),
+      "Delivery recovery panel missed provider-issue export."
+    );
 
     const bodyText = await page.locator("body").innerText();
     assert(/reachable/i.test(bodyText), "Communications metrics did not include reachable contact status.");
@@ -463,6 +483,15 @@ async function main() {
     assert(
       deliveryEventsExportHref && /providers\/delivery-events\/export\.csv/.test(deliveryEventsExportHref),
       "Delivery events export link missing CSV endpoint."
+    );
+    const deliveryRecoveryCsv = await adminText(
+      "/api/v1/restaurant/promotions/providers/delivery-events/export.csv?status=needs_attention",
+      adminCookie
+    );
+    assert(deliveryRecoveryCsv.response.ok, `Could not export recovery delivery CSV: ${deliveryRecoveryCsv.text}`);
+    assert(
+      deliveryRecoveryCsv.text.includes("id,promotion_id,promotion,code,attempted_at,channel"),
+      "Recovery delivery CSV header missing expected columns."
     );
 
     await page.screenshot({

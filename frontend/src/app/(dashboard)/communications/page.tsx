@@ -787,6 +787,8 @@ export default function CommunicationsPage() {
   }, [queueCampaigns, spotlightCampaignId]);
   const recentEvents = data?.dispatch.recent_delivery_events || [];
   const recentProviderTests = data?.dispatch.recent_provider_tests || [];
+  const deliveryRecovery = data?.dispatch.summary;
+  const recoveryNeededCount = deliveryRecovery?.needs_attention_count || 0;
   const bestCampaign = data?.performance.best_campaign;
   const whatsappChannel = data?.dispatch.channels.find((channel) => channel.channel === "whatsapp");
   const smsChannel = data?.dispatch.channels.find((channel) => channel.channel === "sms");
@@ -1411,6 +1413,66 @@ export default function CommunicationsPage() {
               ))}
               {!recentEvents.length && <EmptyState>No campaign delivery events have been recorded yet.</EmptyState>}
             </div>
+          </article>
+
+          <article data-testid="communications-delivery-recovery" className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                  Recovery Command
+                </p>
+                <h2 className="mt-2 text-xl font-black text-gray-950">Delivery recovery</h2>
+                <p className={`mt-1 text-sm font-black ${recoveryNeededCount ? "text-amber-700" : "text-emerald-700"}`}>
+                  {recoveryNeededCount
+                    ? `${numberFmt(recoveryNeededCount)} delivery events need attention`
+                    : "No delivery recovery needed"}
+                </p>
+              </div>
+              <AlertTriangle className={`h-6 w-6 ${recoveryNeededCount ? "text-amber-500" : "text-emerald-500"}`} />
+            </div>
+            <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-md bg-gray-50 p-3">
+                <p className="text-xl font-black">{numberFmt(deliveryRecovery?.failed_count)}</p>
+                <p className="text-xs font-bold text-gray-500">Failed</p>
+              </div>
+              <div className="rounded-md bg-gray-50 p-3">
+                <p className="text-xl font-black">{numberFmt(deliveryRecovery?.skipped_count)}</p>
+                <p className="text-xs font-bold text-gray-500">Skipped</p>
+              </div>
+              <div className="rounded-md bg-gray-50 p-3">
+                <p className="text-xl font-black">{numberFmt(deliveryRecovery?.provider_issue_count)}</p>
+                <p className="text-xs font-bold text-gray-500">Provider</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <a
+                data-testid="communications-delivery-recovery-export"
+                href={`${PROMOTIONS_API}/providers/delivery-events/export.csv?status=needs_attention`}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 hover:bg-amber-100"
+              >
+                <Download className="h-4 w-4" />
+                Recovery CSV
+              </a>
+              <a
+                data-testid="communications-missing-destination-export"
+                href={`${PROMOTIONS_API}/providers/delivery-events/export.csv?status=needs_attention&reason=missing_destination`}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-black text-gray-800 hover:bg-gray-50"
+              >
+                <Users className="h-4 w-4" />
+                Contact Gaps
+              </a>
+              <a
+                data-testid="communications-provider-issues-export"
+                href={`${PROMOTIONS_API}/providers/delivery-events/export.csv?status=needs_attention&reason=provider`}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs font-black text-gray-800 hover:bg-gray-50"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                Provider Issues
+              </a>
+            </div>
+            <p className="mt-3 text-xs font-semibold leading-5 text-gray-500">
+              Next action: separate customer cleanup from provider credential or delivery failures.
+            </p>
           </article>
 
           <article data-testid="communications-provider-test-audit" className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
