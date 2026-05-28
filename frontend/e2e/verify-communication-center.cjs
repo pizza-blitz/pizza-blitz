@@ -89,17 +89,37 @@ async function adminText(endpoint, cookie, options = {}) {
   return { response, text };
 }
 
-async function waitForDryRunProof(campaignId, cookie) {
+async function waitForDryRunProof(campaignId, cookie, previousDryRunCount = 0) {
   const startedAt = Date.now();
   let latest = null;
   while (Date.now() - startedAt < 90000) {
     const result = await adminJson(`/api/v1/restaurant/promotions/${campaignId}/deliveries`, cookie);
     assert(result.response.ok, `Could not fetch dry-run proof: ${JSON.stringify(result.data)}`);
     latest = result.data;
-    if (result.data.dry_run_count > 0) return result.data;
+    if (result.data.dry_run_count > previousDryRunCount) return result.data;
     await sleep(1500);
   }
-  throw new Error(`Communication center dry-run action did not record dry-run deliveries: ${JSON.stringify(latest)}`);
+  throw new Error(`Communication center dry-run action did not record new dry-run deliveries: ${JSON.stringify(latest)}`);
+}
+
+async function waitForCustomerDryRun(campaignId, cookie, customerEmail, knownDeliveryIds = new Set()) {
+  const startedAt = Date.now();
+  let latest = null;
+  while (Date.now() - startedAt < 90000) {
+    const result = await adminJson(`/api/v1/restaurant/promotions/${campaignId}/deliveries?limit=200`, cookie);
+    assert(result.response.ok, `Could not fetch customer dry-run proof: ${JSON.stringify(result.data)}`);
+    latest = result.data;
+    const delivery = (result.data.deliveries || []).find(
+      (row) =>
+        row.status === "dry_run" &&
+        row.dry_run === true &&
+        row.customer?.email === customerEmail &&
+        !knownDeliveryIds.has(row.id)
+    );
+    if (delivery) return delivery;
+    await sleep(1500);
+  }
+  throw new Error(`Recovery retry did not record a dry-run for ${customerEmail}: ${JSON.stringify(latest)}`);
 }
 
 async function seedCommunicationProof(cookie) {
@@ -430,6 +450,29 @@ async function main() {
       .getByTestId(`communications-live-gate-check-${proof.campaignId}-dry-run-proof`)
       .innerText();
     assert(/missing/i.test(dryRunGateBefore), `Dry-run gate should start missing: ${dryRunGateBefore}`);
+    const seededRecovery = await adminJson(`/api/v1/restaurant/promotions/${proof.campaignId}/send`, adminCookie, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        dry_run: true,
+        limit: 50,
+      }),
+    });
+    assert(seededRecovery.response.ok, `Could not seed skipped recovery delivery: ${JSON.stringify(seededRecovery.data)}`);
+    assert(
+      seededRecovery.data.skipped_count > 0,
+      `Seeded campaign did not create a skipped delivery for recovery: ${JSON.stringify(seededRecovery.data)}`
+    );
+    await page.getByTestId("communications-refresh").click();
+    await page.getByTestId(`communications-retry-recovery-${proof.campaignId}`).waitFor({ timeout: 90000 });
+    await page.waitForFunction(
+      (campaignId) => {
+        const button = document.querySelector(`[data-testid="communications-retry-recovery-${campaignId}"]`);
+        return button && !(button instanceof HTMLButtonElement && button.disabled);
+      },
+      proof.campaignId,
+      { timeout: 90000 }
+    );
 
     await page.getByTestId(`communications-review-contacts-${proof.campaignId}`).waitFor({ timeout: 60000 });
     await page.getByTestId(`communications-review-contacts-${proof.campaignId}`).click();
@@ -454,14 +497,35 @@ async function main() {
       `Cleanup email was not saved. Expected ${proof.repairedEmail}, got ${repairedCustomer?.email}.`
     );
     await page.getByTestId(`communications-cleanup-contact-${proof.missingCustomerId}`).getByText("Ready").waitFor({ timeout: 30000 });
+    await page.getByTestId(`communications-retry-recovery-${proof.campaignId}`).waitFor({ timeout: 30000 });
+    const beforeRecoveryRetry = await adminJson(`/api/v1/restaurant/promotions/${proof.campaignId}/deliveries?limit=200`, adminCookie);
+    assert(beforeRecoveryRetry.response.ok, `Could not precheck recovery retry proof: ${JSON.stringify(beforeRecoveryRetry.data)}`);
+    const knownRecoveryDeliveryIds = new Set(
+      (beforeRecoveryRetry.data.deliveries || [])
+        .filter((row) => row.status === "dry_run" && row.customer?.email === proof.repairedEmail)
+        .map((row) => row.id)
+    );
+    await page.getByTestId(`communications-retry-recovery-${proof.campaignId}`).click();
+    const recoveryRetryDelivery = await waitForCustomerDryRun(
+      proof.campaignId,
+      adminCookie,
+      proof.repairedEmail,
+      knownRecoveryDeliveryIds
+    );
+    assert(
+      recoveryRetryDelivery.customer?.email === proof.repairedEmail,
+      "Recovery retry did not record a new dry-run for the repaired customer."
+    );
 
     await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).waitFor({ timeout: 60000 });
     const beforeDryRun = await adminJson(`/api/v1/restaurant/promotions/${proof.campaignId}/deliveries`, adminCookie);
     assert(beforeDryRun.response.ok, `Could not precheck dry-run proof: ${JSON.stringify(beforeDryRun.data)}`);
-    assert(beforeDryRun.data.dry_run_count === 0, `Seeded campaign already had dry-runs before click: ${JSON.stringify(beforeDryRun.data)}`);
     await page.getByTestId(`communications-run-dry-run-${proof.campaignId}`).click();
-    const dryRunResult = await waitForDryRunProof(proof.campaignId, adminCookie);
-    assert(dryRunResult.dry_run_count > 0, "Communication center dry-run action did not record dry-run deliveries.");
+    const dryRunResult = await waitForDryRunProof(proof.campaignId, adminCookie, beforeDryRun.data.dry_run_count);
+    assert(
+      dryRunResult.dry_run_count > beforeDryRun.data.dry_run_count,
+      "Communication center dry-run action did not record new dry-run deliveries."
+    );
     await page.getByTestId("communications-refresh").click();
     await page
       .getByTestId(`communications-live-gate-check-${proof.campaignId}-dry-run-proof`)

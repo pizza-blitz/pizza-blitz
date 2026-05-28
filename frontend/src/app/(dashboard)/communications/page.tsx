@@ -554,6 +554,7 @@ export default function CommunicationsPage() {
   const [data, setData] = useState<CommsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyCampaignId, setBusyCampaignId] = useState<number | null>(null);
+  const [retryBusyCampaignId, setRetryBusyCampaignId] = useState<number | null>(null);
   const [reviewLoadingId, setReviewLoadingId] = useState<number | null>(null);
   const [spotlightCampaignId, setSpotlightCampaignId] = useState<number | null>(null);
   const [dispatchReview, setDispatchReview] = useState<DispatchReview | null>(null);
@@ -570,11 +571,11 @@ export default function CommunicationsPage() {
     setMessage("");
     try {
       const [customersRes, segmentsRes, queueRes, dispatchRes, performanceRes] = await Promise.all([
-        fetch(`${CUSTOMERS_API}/summary`, { credentials: "include" }),
-        fetch(`${CUSTOMERS_API}/segments/report`, { credentials: "include" }),
-        fetch(`${PROMOTIONS_API}/send/queue`, { credentials: "include" }),
-        fetch(`${PROMOTIONS_API}/providers/dispatch-control`, { credentials: "include" }),
-        fetch(`${PROMOTIONS_API}/performance`, { credentials: "include" }),
+        fetch(`${CUSTOMERS_API}/summary`, { credentials: "include", cache: "no-store" }),
+        fetch(`${CUSTOMERS_API}/segments/report`, { credentials: "include", cache: "no-store" }),
+        fetch(`${PROMOTIONS_API}/send/queue`, { credentials: "include", cache: "no-store" }),
+        fetch(`${PROMOTIONS_API}/providers/dispatch-control`, { credentials: "include", cache: "no-store" }),
+        fetch(`${PROMOTIONS_API}/performance`, { credentials: "include", cache: "no-store" }),
       ]);
       const responses = [customersRes, segmentsRes, queueRes, dispatchRes, performanceRes];
       const failed = responses.find((response) => !response.ok);
@@ -636,6 +637,38 @@ export default function CommunicationsPage() {
     }
   };
 
+  const runRecoveryDryRun = async (campaign: QueueCampaign) => {
+    setSpotlightCampaignId(campaign.promotion.id);
+    setRetryBusyCampaignId(campaign.promotion.id);
+    setMessage("");
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/${campaign.promotion.id}/deliveries/retry`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dry_run: true,
+          limit: 50,
+          status: "needs_attention",
+          reason: "all",
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || `Could not retry recovery for ${campaign.promotion.name}.`);
+        return;
+      }
+      await fetchData();
+      setMessage(
+        `Recovery dry-run recorded for ${campaign.promotion.name}: ${numberFmt(result.retried_customer_count)} retried, ${numberFmt(result.skipped_source_count)} skipped.`
+      );
+    } catch {
+      setMessage(`Could not retry recovery for ${campaign.promotion.name}.`);
+    } finally {
+      setRetryBusyCampaignId(null);
+    }
+  };
+
   const openDispatchReview = async (campaign: QueueCampaign) => {
     setSpotlightCampaignId(campaign.promotion.id);
     setReviewLoadingId(campaign.promotion.id);
@@ -643,6 +676,7 @@ export default function CommunicationsPage() {
     try {
       const response = await fetch(`${PROMOTIONS_API}/${campaign.promotion.id}/dispatch?limit=50`, {
         credentials: "include",
+        cache: "no-store",
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -1168,6 +1202,16 @@ export default function CommunicationsPage() {
                         >
                           <AlertTriangle className="h-4 w-4" />
                           {reviewLoadingId === campaign.promotion.id ? "Opening" : "Review"}
+                        </button>
+                        <button
+                          data-testid={`communications-retry-recovery-${campaign.promotion.id}`}
+                          type="button"
+                          disabled={retryBusyCampaignId === campaign.promotion.id}
+                          onClick={() => runRecoveryDryRun(campaign)}
+                          className="inline-flex items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${retryBusyCampaignId === campaign.promotion.id ? "animate-spin" : ""}`} />
+                          {retryBusyCampaignId === campaign.promotion.id ? "Retrying" : "Retry Recovery"}
                         </button>
                       </div>
                     </div>
