@@ -597,6 +597,113 @@ def _provider_credential_checks(channel: str, status: dict) -> list[dict]:
     ]
 
 
+def _provider_setup_steps(channel: str, status: dict) -> list[dict]:
+    setup_map = {
+        "whatsapp": [
+            (
+                "meta_access_token",
+                "Add Meta access token",
+                "WHATSAPP_ACCESS_TOKEN",
+                "Server-side token used for approved WhatsApp templates.",
+                "Add the Meta token in production environment variables.",
+            ),
+            (
+                "phone_number_id",
+                "Connect WhatsApp sender",
+                "WHATSAPP_PHONE_NUMBER_ID",
+                "Meta phone number ID for the sending account.",
+                "Copy the sender phone number ID from Meta Business settings.",
+            ),
+            (
+                "template_name",
+                "Confirm approved template",
+                "WHATSAPP_TEMPLATE_NAME",
+                "Template name must match an approved Meta WhatsApp template.",
+                "Add the approved template name before live WhatsApp broadcasts.",
+            ),
+            (
+                "send_switch",
+                "Enable live campaign switch",
+                "CAMPAIGN_SEND_ENABLED=true",
+                "Live sending remains blocked until the global switch is enabled.",
+                "Enable only after credentials and dry-run proof are verified.",
+            ),
+        ],
+        "sms": [
+            (
+                "twilio_account_sid",
+                "Add Twilio account SID",
+                "TWILIO_ACCOUNT_SID",
+                "Server-side account identifier for Twilio SMS.",
+                "Add the Twilio account SID in production environment variables.",
+            ),
+            (
+                "twilio_auth_token",
+                "Add Twilio auth token",
+                "TWILIO_AUTH_TOKEN",
+                "Secret token used by the backend for SMS delivery.",
+                "Add the Twilio auth token as a protected environment variable.",
+            ),
+            (
+                "twilio_sender",
+                "Choose SMS sender identity",
+                "TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID",
+                "A sender number or messaging service is required before SMS delivery.",
+                "Configure one approved sender identity for the store.",
+            ),
+            (
+                "send_switch",
+                "Enable live campaign switch",
+                "CAMPAIGN_SEND_ENABLED=true",
+                "Live sending remains blocked until the global switch is enabled.",
+                "Enable only after credentials and dry-run proof are verified.",
+            ),
+        ],
+        "email": [
+            (
+                "resend_api_key",
+                "Add Resend API key",
+                "RESEND_API_KEY",
+                "Server-only key used by the backend for email delivery.",
+                "Create a Resend API key and add it to production environment variables.",
+            ),
+            (
+                "resend_from_email",
+                "Verify sender email",
+                "RESEND_FROM_EMAIL",
+                "The from address must be a sender or domain verified in Resend.",
+                "Set the verified Pizza Blitz sender email before live campaigns.",
+            ),
+            (
+                "send_switch",
+                "Enable live campaign switch",
+                "CAMPAIGN_SEND_ENABLED=true",
+                "Live sending remains blocked until the global switch is enabled.",
+                "Enable only after the dry-run receipt and provider checks pass.",
+            ),
+        ],
+    }
+    missing = set(status.get("missing_settings") or [])
+    if channel == "whatsapp" and not settings.WHATSAPP_TEMPLATE_NAME:
+        missing.add("WHATSAPP_TEMPLATE_NAME")
+    unsupported = bool(status.get("unsupported"))
+    steps = []
+    for key, label, required_setting, detail, action in setup_map.get(channel, []):
+        missing_step = required_setting in missing or unsupported
+        steps.append(
+            {
+                "key": key,
+                "label": label,
+                "required_setting": required_setting,
+                "passed": not missing_step,
+                "status": "missing" if missing_step else "configured",
+                "detail": detail,
+                "action": action,
+            }
+        )
+    return steps
+
+
 def _provider_template_state(channel: str) -> dict:
     if channel == "whatsapp":
         if settings.WHATSAPP_TEMPLATE_NAME:
@@ -667,6 +774,7 @@ def _provider_readiness_status(channel: str) -> dict:
         **status,
         "readiness_label": readiness_label,
         "credential_checks": _provider_credential_checks(channel, status),
+        "setup_steps": _provider_setup_steps(channel, status),
         "template_status": template_state["status"],
         "template_label": template_state["label"],
         "template_detail": template_state["detail"],

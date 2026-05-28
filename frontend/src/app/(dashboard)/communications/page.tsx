@@ -155,6 +155,16 @@ type ActivationChecklistItem = {
   detail: string;
 };
 
+type ProviderSetupStep = {
+  key: string;
+  label: string;
+  required_setting: string;
+  passed: boolean;
+  status: string;
+  detail: string;
+  action: string;
+};
+
 type ChannelControl = {
   channel: "whatsapp" | "sms" | "email";
   activation_status: string;
@@ -166,6 +176,7 @@ type ChannelControl = {
     enabled: boolean;
     readiness_label?: string;
     next_action?: string;
+    setup_steps?: ProviderSetupStep[];
   };
   counts: {
     attempted_count: number;
@@ -538,6 +549,8 @@ export default function CommunicationsPage() {
   }, [queueCampaigns, spotlightCampaignId]);
   const recentEvents = data?.dispatch.recent_delivery_events || [];
   const bestCampaign = data?.performance.best_campaign;
+  const emailChannel = data?.dispatch.channels.find((channel) => channel.channel === "email");
+  const emailSetupSteps = emailChannel?.provider_status.setup_steps || [];
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 text-gray-950 sm:px-6 lg:px-8">
@@ -663,7 +676,7 @@ export default function CommunicationsPage() {
                         <p className="text-[10px] font-bold uppercase text-gray-500">Fix</p>
                       </div>
                     </div>
-                    <p className="mt-4 text-sm font-semibold leading-5 text-gray-600">
+                    <p className="mt-4 break-words text-sm font-semibold leading-5 text-gray-600">
                       {channel.blockers[0] || channel.next_action}
                     </p>
                     <div
@@ -690,11 +703,11 @@ export default function CommunicationsPage() {
                             ) : (
                               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                             )}
-                            <div>
+                            <div className="min-w-0">
                               <p className="text-xs font-black text-gray-900">
                                 {check.label}: {check.passed ? "Passed" : "Missing"}
                               </p>
-                              <p className="mt-0.5 text-[11px] font-semibold leading-4 text-gray-500">
+                              <p className="mt-0.5 break-words text-[11px] font-semibold leading-4 text-gray-500">
                                 {check.detail}
                               </p>
                             </div>
@@ -737,6 +750,66 @@ export default function CommunicationsPage() {
                 >
                   <Users className="h-4 w-4" /> Contact Cleanup
                 </Link>
+              </div>
+            </article>
+            <article
+              data-testid="email-provider-activation"
+              className="mt-4 rounded-md border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                    Email Provider
+                  </p>
+                  <h3 className="mt-1 text-lg font-black text-gray-950">
+                    Resend activation
+                  </h3>
+                </div>
+                <span
+                  className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-black ${
+                    emailChannel?.provider_status.configured
+                      ? statusTone("configured")
+                      : statusTone("setup_needed")
+                  }`}
+                >
+                  {emailChannel?.provider_status.configured ? "Ready" : "Setup Needed"}
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-semibold leading-5 text-gray-600">
+                Prepare the email channel for real customer campaigns while keeping all provider secrets server-side.
+              </p>
+              <div className="mt-4 divide-y divide-gray-100">
+                {emailSetupSteps.map((step) => (
+                  <div
+                    key={step.key}
+                    data-testid={`email-provider-step-${step.key}`}
+                    className="py-3 first:pt-0 last:pb-0"
+                  >
+                    <div className="flex items-start gap-2">
+                      {step.passed ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-gray-950">
+                          {step.label}: {step.passed ? "Configured" : "Missing"}
+                        </p>
+                        <code className="mt-1 block break-words rounded-sm bg-gray-50 px-2 py-1 text-[11px] font-black text-gray-700">
+                          {step.required_setting}
+                        </code>
+                        <p className="mt-2 text-xs font-semibold leading-5 text-gray-500">
+                          {step.action}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!emailSetupSteps.length ? (
+                  <p className="py-3 text-sm font-semibold text-gray-500">
+                    Email setup steps are loading.
+                  </p>
+                ) : null}
               </div>
             </article>
           </aside>

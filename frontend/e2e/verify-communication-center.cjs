@@ -231,6 +231,18 @@ async function main() {
     assert(/Provider credentials/i.test(labels), `${channel} activation checklist missed provider credentials.`);
     assert(/Dry-run proof/i.test(labels), `${channel} activation checklist missed dry-run proof.`);
   }
+  const emailControl = dispatchControl.data.channels.find((item) => item.channel === "email");
+  assert(emailControl, "Provider activation control missed email channel.");
+  assert(
+    Array.isArray(emailControl.provider_status?.setup_steps) && emailControl.provider_status.setup_steps.length >= 3,
+    "Email provider setup steps were missing from provider status."
+  );
+  const emailSetupText = emailControl.provider_status.setup_steps
+    .map((item) => `${item.label} ${item.required_setting} ${item.action}`)
+    .join(" | ");
+  assert(/RESEND_API_KEY/i.test(emailSetupText), "Email setup steps missed RESEND_API_KEY.");
+  assert(/RESEND_FROM_EMAIL/i.test(emailSetupText), "Email setup steps missed RESEND_FROM_EMAIL.");
+  assert(/CAMPAIGN_SEND_ENABLED=true/i.test(emailSetupText), "Email setup steps missed CAMPAIGN_SEND_ENABLED=true.");
   const proof = await seedCommunicationProof(adminCookie);
 
   const browser = await chromium.launch({ headless: true });
@@ -266,6 +278,12 @@ async function main() {
       assert(/Provider credentials/i.test(checklistText), `${channel} activation checklist missed provider credentials.`);
       assert(/Dry-run proof/i.test(checklistText), `${channel} activation checklist missed dry-run proof.`);
     }
+    await page.getByTestId("email-provider-activation").waitFor({ timeout: 20000 });
+    const emailActivationText = await page.getByTestId("email-provider-activation").innerText();
+    assert(/Resend activation/i.test(emailActivationText), "Email activation panel missed Resend activation title.");
+    assert(/RESEND_API_KEY/i.test(emailActivationText), "Email activation panel missed RESEND_API_KEY.");
+    assert(/RESEND_FROM_EMAIL/i.test(emailActivationText), "Email activation panel missed RESEND_FROM_EMAIL.");
+    assert(/CAMPAIGN_SEND_ENABLED=true/i.test(emailActivationText), "Email activation panel missed CAMPAIGN_SEND_ENABLED=true.");
     await page.getByTestId("communications-send-queue").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-segments").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-next-action").waitFor({ timeout: 20000 });
