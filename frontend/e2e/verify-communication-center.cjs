@@ -232,6 +232,7 @@ async function main() {
     assert(/Dry-run proof/i.test(labels), `${channel} activation checklist missed dry-run proof.`);
   }
   const providerSetupExpectations = {
+    whatsapp: ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_TEMPLATE_NAME", "CAMPAIGN_SEND_ENABLED=true"],
     sms: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID", "CAMPAIGN_SEND_ENABLED=true"],
     email: ["RESEND_API_KEY", "RESEND_FROM_EMAIL", "CAMPAIGN_SEND_ENABLED=true"],
   };
@@ -288,6 +289,13 @@ async function main() {
       assert(/Provider credentials/i.test(checklistText), `${channel} activation checklist missed provider credentials.`);
       assert(/Dry-run proof/i.test(checklistText), `${channel} activation checklist missed dry-run proof.`);
     }
+    await page.getByTestId("whatsapp-provider-activation").waitFor({ timeout: 20000 });
+    const whatsappActivationText = await page.getByTestId("whatsapp-provider-activation").innerText();
+    assert(/Meta WhatsApp activation/i.test(whatsappActivationText), "WhatsApp activation panel missed Meta WhatsApp activation title.");
+    assert(/WHATSAPP_ACCESS_TOKEN/i.test(whatsappActivationText), "WhatsApp activation panel missed WHATSAPP_ACCESS_TOKEN.");
+    assert(/WHATSAPP_PHONE_NUMBER_ID/i.test(whatsappActivationText), "WhatsApp activation panel missed WHATSAPP_PHONE_NUMBER_ID.");
+    assert(/WHATSAPP_TEMPLATE_NAME/i.test(whatsappActivationText), "WhatsApp activation panel missed WHATSAPP_TEMPLATE_NAME.");
+    assert(/CAMPAIGN_SEND_ENABLED=true/i.test(whatsappActivationText), "WhatsApp activation panel missed CAMPAIGN_SEND_ENABLED=true.");
     await page.getByTestId("sms-provider-activation").waitFor({ timeout: 20000 });
     const smsActivationText = await page.getByTestId("sms-provider-activation").innerText();
     assert(/Twilio activation/i.test(smsActivationText), "SMS activation panel missed Twilio activation title.");

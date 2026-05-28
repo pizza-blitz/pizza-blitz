@@ -628,6 +628,7 @@ export default function CommunicationsPage() {
   }, [queueCampaigns, spotlightCampaignId]);
   const recentEvents = data?.dispatch.recent_delivery_events || [];
   const bestCampaign = data?.performance.best_campaign;
+  const whatsappChannel = data?.dispatch.channels.find((channel) => channel.channel === "whatsapp");
   const smsChannel = data?.dispatch.channels.find((channel) => channel.channel === "sms");
   const emailChannel = data?.dispatch.channels.find((channel) => channel.channel === "email");
 
@@ -831,6 +832,13 @@ export default function CommunicationsPage() {
                 </Link>
               </div>
             </article>
+            <ProviderActivationCard
+              channel={whatsappChannel}
+              title="Meta WhatsApp activation"
+              eyebrow="WhatsApp Provider"
+              description="Prepare approved WhatsApp broadcasts with Meta credentials, sender ID, and template approval before customer sends."
+              testId="whatsapp-provider-activation"
+            />
             <ProviderActivationCard
               channel={smsChannel}
               title="Twilio activation"
