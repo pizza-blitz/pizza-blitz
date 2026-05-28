@@ -165,8 +165,26 @@ type ProviderSetupStep = {
   action: string;
 };
 
+type ProviderChannel = "whatsapp" | "sms" | "email";
+
+type ProviderTestDraft = {
+  recipient: string;
+  message_template: string;
+};
+
+type ProviderTestResult = {
+  status: string;
+  mode: string;
+  test_id: string;
+  channel: ProviderChannel;
+  recipient_masked?: string | null;
+  message_preview?: string | null;
+  queued: boolean;
+  live_send_blocked: boolean;
+};
+
 type ChannelControl = {
-  channel: "whatsapp" | "sms" | "email";
+  channel: ProviderChannel;
   activation_status: string;
   activation_checklist?: ActivationChecklistItem[];
   blockers: string[];
@@ -330,6 +348,24 @@ function activationProgress(channel: ChannelControl) {
   };
 }
 
+const DEFAULT_PROVIDER_TEST_TEMPLATE =
+  "Hi {name}, Pizza Blitz has {offer} for you. Use code {code} before {end_date}. Order here: {order_link}";
+
+const DEFAULT_PROVIDER_TEST_DRAFTS: Record<ProviderChannel, ProviderTestDraft> = {
+  whatsapp: {
+    recipient: "9876543210",
+    message_template: DEFAULT_PROVIDER_TEST_TEMPLATE,
+  },
+  sms: {
+    recipient: "9876543210",
+    message_template: DEFAULT_PROVIDER_TEST_TEMPLATE,
+  },
+  email: {
+    recipient: "test@example.com",
+    message_template: DEFAULT_PROVIDER_TEST_TEMPLATE,
+  },
+};
+
 function MetricCard({
   label,
   value,
@@ -367,12 +403,22 @@ function ProviderActivationCard({
   eyebrow,
   description,
   testId,
+  testDraft,
+  testResult,
+  testBusy,
+  onTestDraftChange,
+  onRunProviderTest,
 }: {
   channel?: ChannelControl;
   title: string;
   eyebrow: string;
   description: string;
   testId: string;
+  testDraft: ProviderTestDraft;
+  testResult?: ProviderTestResult;
+  testBusy: boolean;
+  onTestDraftChange: (patch: Partial<ProviderTestDraft>) => void;
+  onRunProviderTest: () => void;
 }) {
   const setupSteps = channel?.provider_status.setup_steps || [];
 
@@ -436,6 +482,59 @@ function ProviderActivationCard({
           </p>
         ) : null}
       </div>
+      <div
+        data-testid={`${testId}-safe-test`}
+        className="mt-5 rounded-md border border-gray-100 bg-gray-50 p-3"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+            Safe Test
+          </p>
+          <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-gray-700">
+            Dry Run
+          </span>
+        </div>
+        <label className="mt-3 block text-[11px] font-black uppercase tracking-widest text-gray-500">
+          Test recipient
+          <input
+            data-testid={`${testId}-test-recipient`}
+            value={testDraft.recipient}
+            onChange={(event) => onTestDraftChange({ recipient: event.target.value })}
+            className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-bold normal-case tracking-normal text-gray-900 outline-none focus:border-orange-400"
+          />
+        </label>
+        <label className="mt-3 block text-[11px] font-black uppercase tracking-widest text-gray-500">
+          Message template
+          <textarea
+            data-testid={`${testId}-test-message`}
+            value={testDraft.message_template}
+            onChange={(event) => onTestDraftChange({ message_template: event.target.value })}
+            rows={3}
+            className="mt-1 w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-gray-900 outline-none focus:border-orange-400"
+          />
+        </label>
+        <button
+          data-testid={`${testId}-run-test`}
+          onClick={onRunProviderTest}
+          disabled={testBusy}
+          className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-gray-950 px-3 py-2 text-sm font-black text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400"
+        >
+          <Send className="h-4 w-4" /> {testBusy ? "Generating" : "Generate Safe Test"}
+        </button>
+        {testResult ? (
+          <div
+            data-testid={`${testId}-test-result`}
+            className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-xs font-semibold leading-5 text-emerald-800"
+          >
+            <p className="font-black">Dry-run test generated</p>
+            <p>Recipient: {testResult.recipient_masked || "masked"}</p>
+            <p>No live send queued: {testResult.queued ? "Needs review" : "Confirmed"}</p>
+            <p className="mt-1 break-words text-emerald-700">
+              {testResult.message_preview}
+            </p>
+          </div>
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -449,6 +548,10 @@ export default function CommunicationsPage() {
   const [dispatchReview, setDispatchReview] = useState<DispatchReview | null>(null);
   const [cleanupDrafts, setCleanupDrafts] = useState<Record<number, CleanupDraft>>({});
   const [savingContactId, setSavingContactId] = useState<number | null>(null);
+  const [providerTestDrafts, setProviderTestDrafts] =
+    useState<Record<ProviderChannel, ProviderTestDraft>>(DEFAULT_PROVIDER_TEST_DRAFTS);
+  const [providerTestBusy, setProviderTestBusy] = useState<ProviderChannel | null>(null);
+  const [providerTestResults, setProviderTestResults] = useState<Partial<Record<ProviderChannel, ProviderTestResult>>>({});
   const [message, setMessage] = useState("");
 
   const fetchData = async () => {
@@ -563,6 +666,50 @@ export default function CommunicationsPage() {
         ...patch,
       },
     }));
+  };
+
+  const updateProviderTestDraft = (channel: ProviderChannel, patch: Partial<ProviderTestDraft>) => {
+    setProviderTestDrafts((current) => ({
+      ...current,
+      [channel]: {
+        ...current[channel],
+        ...patch,
+      },
+    }));
+  };
+
+  const runProviderTest = async (channel: ProviderChannel) => {
+    const draft = providerTestDrafts[channel];
+    setProviderTestBusy(channel);
+    setMessage("");
+    try {
+      const response = await fetch(`${PROMOTIONS_API}/providers/test-send`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel,
+          recipient: draft.recipient,
+          message_template: draft.message_template,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(result.detail || `Could not generate ${labelize(channel)} safe provider test.`);
+        return;
+      }
+      setProviderTestResults((current) => ({
+        ...current,
+        [channel]: result,
+      }));
+      setMessage(
+        `${labelize(channel)} safe provider test generated for ${result.recipient_masked || "masked recipient"}; no live send was queued.`
+      );
+    } catch {
+      setMessage(`Could not generate ${labelize(channel)} safe provider test.`);
+    } finally {
+      setProviderTestBusy(null);
+    }
   };
 
   const saveContactCleanup = async (contact: DispatchContact) => {
@@ -838,6 +985,11 @@ export default function CommunicationsPage() {
               eyebrow="WhatsApp Provider"
               description="Prepare approved WhatsApp broadcasts with Meta credentials, sender ID, and template approval before customer sends."
               testId="whatsapp-provider-activation"
+              testDraft={providerTestDrafts.whatsapp}
+              testResult={providerTestResults.whatsapp}
+              testBusy={providerTestBusy === "whatsapp"}
+              onTestDraftChange={(patch) => updateProviderTestDraft("whatsapp", patch)}
+              onRunProviderTest={() => runProviderTest("whatsapp")}
             />
             <ProviderActivationCard
               channel={smsChannel}
@@ -845,6 +997,11 @@ export default function CommunicationsPage() {
               eyebrow="SMS Provider"
               description="Prepare phone campaigns with a protected Twilio sender identity before any live customer SMS is allowed."
               testId="sms-provider-activation"
+              testDraft={providerTestDrafts.sms}
+              testResult={providerTestResults.sms}
+              testBusy={providerTestBusy === "sms"}
+              onTestDraftChange={(patch) => updateProviderTestDraft("sms", patch)}
+              onRunProviderTest={() => runProviderTest("sms")}
             />
             <ProviderActivationCard
               channel={emailChannel}
@@ -852,6 +1009,11 @@ export default function CommunicationsPage() {
               eyebrow="Email Provider"
               description="Prepare the email channel for real customer campaigns while keeping all provider secrets server-side."
               testId="email-provider-activation"
+              testDraft={providerTestDrafts.email}
+              testResult={providerTestResults.email}
+              testBusy={providerTestBusy === "email"}
+              onTestDraftChange={(patch) => updateProviderTestDraft("email", patch)}
+              onRunProviderTest={() => runProviderTest("email")}
             />
           </aside>
         </section>

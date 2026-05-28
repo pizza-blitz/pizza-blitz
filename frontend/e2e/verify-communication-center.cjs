@@ -309,6 +309,20 @@ async function main() {
     assert(/RESEND_API_KEY/i.test(emailActivationText), "Email activation panel missed RESEND_API_KEY.");
     assert(/RESEND_FROM_EMAIL/i.test(emailActivationText), "Email activation panel missed RESEND_FROM_EMAIL.");
     assert(/CAMPAIGN_SEND_ENABLED=true/i.test(emailActivationText), "Email activation panel missed CAMPAIGN_SEND_ENABLED=true.");
+    const safeProviderTests = [
+      { testId: "whatsapp-provider-activation", recipient: "9876543210" },
+      { testId: "sms-provider-activation", recipient: "9876543210" },
+      { testId: "email-provider-activation", recipient: "operator@example.com" },
+    ];
+    for (const safeTest of safeProviderTests) {
+      await page.getByTestId(`${safeTest.testId}-safe-test`).waitFor({ timeout: 20000 });
+      await page.getByTestId(`${safeTest.testId}-test-recipient`).fill(safeTest.recipient);
+      await page.getByTestId(`${safeTest.testId}-run-test`).click();
+      await page.getByTestId(`${safeTest.testId}-test-result`).waitFor({ timeout: 20000 });
+      const safeTestResult = await page.getByTestId(`${safeTest.testId}-test-result`).innerText();
+      assert(/Dry-run test generated/i.test(safeTestResult), `${safeTest.testId} did not show dry-run generation.`);
+      assert(/No live send queued: Confirmed/i.test(safeTestResult), `${safeTest.testId} did not confirm no live send was queued.`);
+    }
     await page.getByTestId("communications-send-queue").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-segments").waitFor({ timeout: 20000 });
     await page.getByTestId("communications-next-action").waitFor({ timeout: 20000 });
