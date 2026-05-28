@@ -215,7 +215,23 @@ async function main() {
 
     response = await page.goto(`${baseURL}/orders`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Counter POS return returned HTTP ${response?.status() || "no response"}.`);
-    await page.getByTestId(`counter-kitchen-ticket-${orderId}`).waitFor({ timeout: 20000 }).catch(() => undefined);
+    await page.getByTestId("counter-ready-handoff-panel").waitFor({ timeout: 20000 });
+    await page.getByTestId(`counter-ready-order-${orderId}`).waitFor({ timeout: 20000 });
+    const readyBillHref = await page.getByTestId(`counter-ready-bill-${orderId}`).getAttribute("href");
+    assert(readyBillHref === `/receipt/${orderId}`, `Expected ready bill href for order ${orderId}, got ${readyBillHref}.`);
+
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-counter-ready-handoff-panel.png"),
+      fullPage: true,
+    });
+
+    await page.getByTestId(`counter-ready-close-${orderId}`).click();
+    await page.getByText(new RegExp(`Order #${orderId} closed`, "i")).waitFor({ timeout: 20000 });
+
+    const closedResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`, adminCookie);
+    assert(closedResult.response.ok, `Could not refetch closed ready-handoff order: ${JSON.stringify(closedResult.data)}`);
+    assert(closedResult.data.status === "closed", `Expected closed status, got ${closedResult.data.status}.`);
+    assert(closedResult.data.payment_status === "paid", `Expected paid status, got ${closedResult.data.payment_status}.`);
     watch.assertClean("counter kitchen ticket proof");
   } finally {
     await browser.close();

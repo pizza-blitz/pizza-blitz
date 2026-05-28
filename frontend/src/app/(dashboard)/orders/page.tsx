@@ -402,6 +402,7 @@ export default function OrdersPage() {
   const unassignedDeliveryCount = deliveryOrders.filter(
     (order) => !order.delivery_assignment?.assigned_to
   ).length;
+  const readyCounterOrders = takeawayOrders.filter((order) => order.status === "ready");
   const readyToBillCount = openOrders.filter((order) => order.status === "ready").length;
   const paymentDueCount = openOrders.filter(
     (order) => order.payment_due || order.payment_status === "awaiting_payment"
@@ -1087,6 +1088,85 @@ export default function OrdersPage() {
             </p>
           </div>
         </div>
+      </section>
+
+      <section
+        data-testid="counter-ready-handoff-panel"
+        className="mb-6 rounded-xl border border-green-400/20 bg-green-500/10 p-4"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-green-200/80">
+              Ready To Bill
+            </p>
+            <h2 className="text-lg font-black text-white">
+              Kitchen-ready orders waiting at counter
+            </h2>
+          </div>
+          <span className="rounded-lg bg-green-500 px-3 py-2 text-sm font-black text-white">
+            {readyCounterOrders.length} ready
+          </span>
+        </div>
+
+        {readyCounterOrders.length > 0 ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {readyCounterOrders.slice(0, 4).map((order) => (
+              <article
+                key={`ready-counter-${order.id}`}
+                data-testid={`counter-ready-order-${order.id}`}
+                className="rounded-xl border border-white/10 bg-black/25 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xl font-black">Order #{order.id}</p>
+                    <p className="mt-1 text-xs font-semibold text-gray-400">
+                      {order.table_number ? `Table ${order.table_number}` : order.customer_name || "Counter pickup"}
+                    </p>
+                  </div>
+                  <span className="rounded-md bg-green-500/15 px-3 py-1 text-xs font-black uppercase text-green-200">
+                    Ready
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-gray-400">
+                  <span>{order.items.length} item types</span>
+                  <span>Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
+                  <span>{(order.payment_method || "cash").toUpperCase()}</span>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <Link
+                    data-testid={`counter-ready-kitchen-${order.id}`}
+                    href={`/kitchen-ticket/${order.id}`}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-orange-500/15 py-2 text-xs font-bold text-orange-200 hover:bg-orange-500/25"
+                  >
+                    <Utensils className="h-4 w-4" /> Kitchen
+                  </Link>
+                  <Link
+                    data-testid={`counter-ready-bill-${order.id}`}
+                    href={`/receipt/${order.id}`}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-white/5 py-2 text-xs font-bold text-gray-200 hover:bg-white/10"
+                  >
+                    <ReceiptText className="h-4 w-4" /> Bill
+                  </Link>
+                  <button
+                    data-testid={`counter-ready-close-${order.id}`}
+                    type="button"
+                    onClick={() => closeOrder(order)}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-green-500 px-3 py-2 text-xs font-black text-white hover:bg-green-600"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> Close
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div
+            data-testid="counter-ready-handoff-empty"
+            className="mt-4 rounded-xl border border-dashed border-white/10 p-5 text-center text-sm font-semibold text-gray-400"
+          >
+            No kitchen-ready counter orders yet.
+          </div>
+        )}
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
