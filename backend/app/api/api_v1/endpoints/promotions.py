@@ -1356,6 +1356,51 @@ def _delivery_dict(delivery: CampaignDelivery) -> dict:
         "attempted_at": delivery.attempted_at.isoformat() if delivery.attempted_at else None,
     }
 
+
+def _campaign_delivery_audit_csv(deliveries: list[CampaignDelivery]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "id",
+            "promotion_id",
+            "promotion",
+            "code",
+            "attempted_at",
+            "channel",
+            "provider",
+            "status",
+            "dry_run",
+            "recipient_masked",
+            "issue_reason",
+            "recovery_action",
+            "external_id",
+            "error",
+        ]
+    )
+    for delivery in deliveries:
+        promotion = delivery.promotion
+        writer.writerow(
+            [
+                delivery.id,
+                delivery.promotion_id,
+                promotion.name if promotion else "",
+                promotion.code if promotion else "",
+                delivery.attempted_at.isoformat() if delivery.attempted_at else "",
+                delivery.channel,
+                delivery.provider or "",
+                delivery.status,
+                "yes" if delivery.dry_run else "no",
+                _masked_destination(delivery.channel, delivery.destination) if delivery.destination else "",
+                _delivery_issue_reason(delivery),
+                _delivery_recovery_action(delivery),
+                delivery.external_id or "",
+                delivery.error or "",
+            ]
+        )
+    return output.getvalue()
+
+
 def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
     return {
         "attempted_count": len(deliveries),
@@ -2303,6 +2348,61 @@ def campaign_dispatch_control(
         "recent_delivery_events": [_delivery_proof_dict(delivery) for delivery in recent_deliveries],
         "recent_provider_tests": [_provider_test_run_dict(test_run) for test_run in recent_provider_tests],
     }
+
+
+@router.get("/providers/delivery-events/export.csv")
+def export_campaign_delivery_events_csv(
+    channel: str | None = Query(None),
+    status: str | None = Query(None),
+    reason: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    query = db.query(CampaignDelivery)
+    filename_parts = ["delivery_events"]
+
+    if channel:
+        normalized_channel = channel.strip().lower()
+        if normalized_channel not in VALID_CHANNELS:
+            raise HTTPException(status_code=422, detail="Unsupported delivery channel filter.")
+        query = query.filter(CampaignDelivery.channel == normalized_channel)
+        filename_parts.append(normalized_channel)
+
+    if status:
+        normalized_status = status.strip().lower()
+        if normalized_status == "needs_attention":
+            query = query.filter(CampaignDelivery.status.in_(["failed", "skipped"]))
+        elif normalized_status in {"sent", "dry_run", "failed", "skipped", "pending"}:
+            query = query.filter(CampaignDelivery.status == normalized_status)
+        else:
+            raise HTTPException(status_code=422, detail="Unsupported delivery status filter.")
+        filename_parts.append(normalized_status)
+
+    normalized_reason = reason.strip().lower() if reason else None
+    if normalized_reason:
+        if normalized_reason not in VALID_DELIVERY_REASON_FILTERS:
+            raise HTTPException(status_code=422, detail="Unsupported delivery reason filter.")
+        filename_parts.append(normalized_reason)
+
+    fetch_limit = limit if not normalized_reason else 5000
+    deliveries = (
+        query.order_by(CampaignDelivery.attempted_at.desc(), CampaignDelivery.id.desc())
+        .limit(fetch_limit)
+        .all()
+    )
+    if normalized_reason:
+        deliveries = [
+            delivery
+            for delivery in deliveries
+            if _delivery_issue_reason(delivery) == normalized_reason
+        ][:limit]
+
+    return StreamingResponse(
+        iter([_campaign_delivery_audit_csv(deliveries)]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={'_'.join(filename_parts)}.csv"},
+    )
 
 
 @router.get("/providers/test-runs/export.csv")

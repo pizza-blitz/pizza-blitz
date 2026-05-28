@@ -1377,7 +1377,17 @@ export default function CommunicationsPage() {
                 </p>
                 <h2 className="mt-2 text-xl font-black text-gray-950">Delivery events</h2>
               </div>
-              <Clock3 className="h-6 w-6 text-orange-500" />
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  data-testid="communications-delivery-events-export"
+                  href={`${PROMOTIONS_API}/providers/delivery-events/export.csv`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 hover:bg-orange-100"
+                >
+                  <Download className="h-4 w-4" />
+                  Export CSV
+                </a>
+                <Clock3 className="h-6 w-6 text-orange-500" />
+              </div>
             </div>
             <div className="mt-4 space-y-3">
               {recentEvents.slice(0, 5).map((event) => (

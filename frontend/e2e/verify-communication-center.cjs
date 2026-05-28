@@ -451,6 +451,19 @@ async function main() {
     assert(/Live Ready|Live Send Locked/i.test(liveGateAfter), `Live gate did not show a final state: ${liveGateAfter}`);
     assert(/Provider configured/i.test(liveGateAfter), `Live gate did not include provider configuration check: ${liveGateAfter}`);
     await page.getByTestId("communications-recent-events").getByText(/dry run/i).first().waitFor({ timeout: 30000 });
+    const deliveryEventsCsv = await adminText("/api/v1/restaurant/promotions/providers/delivery-events/export.csv", adminCookie);
+    assert(deliveryEventsCsv.response.ok, `Could not export delivery events CSV: ${deliveryEventsCsv.text}`);
+    assert(
+      deliveryEventsCsv.text.includes("id,promotion_id,promotion,code,attempted_at,channel"),
+      "Delivery events CSV header missing expected columns."
+    );
+    assert(deliveryEventsCsv.text.includes(proof.name), `Delivery events CSV missed seeded campaign ${proof.name}.`);
+    assert(deliveryEventsCsv.text.includes("dry_run"), "Delivery events CSV missed dry-run proof rows.");
+    const deliveryEventsExportHref = await page.getByTestId("communications-delivery-events-export").getAttribute("href");
+    assert(
+      deliveryEventsExportHref && /providers\/delivery-events\/export\.csv/.test(deliveryEventsExportHref),
+      "Delivery events export link missing CSV endpoint."
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-communication-center.png"),
