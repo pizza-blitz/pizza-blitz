@@ -231,18 +231,28 @@ async function main() {
     assert(/Provider credentials/i.test(labels), `${channel} activation checklist missed provider credentials.`);
     assert(/Dry-run proof/i.test(labels), `${channel} activation checklist missed dry-run proof.`);
   }
-  const emailControl = dispatchControl.data.channels.find((item) => item.channel === "email");
-  assert(emailControl, "Provider activation control missed email channel.");
-  assert(
-    Array.isArray(emailControl.provider_status?.setup_steps) && emailControl.provider_status.setup_steps.length >= 3,
-    "Email provider setup steps were missing from provider status."
-  );
-  const emailSetupText = emailControl.provider_status.setup_steps
-    .map((item) => `${item.label} ${item.required_setting} ${item.action}`)
-    .join(" | ");
-  assert(/RESEND_API_KEY/i.test(emailSetupText), "Email setup steps missed RESEND_API_KEY.");
-  assert(/RESEND_FROM_EMAIL/i.test(emailSetupText), "Email setup steps missed RESEND_FROM_EMAIL.");
-  assert(/CAMPAIGN_SEND_ENABLED=true/i.test(emailSetupText), "Email setup steps missed CAMPAIGN_SEND_ENABLED=true.");
+  const providerSetupExpectations = {
+    sms: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID", "CAMPAIGN_SEND_ENABLED=true"],
+    email: ["RESEND_API_KEY", "RESEND_FROM_EMAIL", "CAMPAIGN_SEND_ENABLED=true"],
+  };
+  for (const [channel, expectedSettings] of Object.entries(providerSetupExpectations)) {
+    const channelControl = dispatchControl.data.channels.find((item) => item.channel === channel);
+    assert(channelControl, `Provider activation control missed ${channel} channel.`);
+    assert(
+      Array.isArray(channelControl.provider_status?.setup_steps) &&
+        channelControl.provider_status.setup_steps.length >= expectedSettings.length,
+      `${channel} provider setup steps were missing from provider status.`
+    );
+    const setupText = channelControl.provider_status.setup_steps
+      .map((item) => `${item.label} ${item.required_setting} ${item.action}`)
+      .join(" | ");
+    for (const expectedSetting of expectedSettings) {
+      assert(
+        setupText.includes(expectedSetting),
+        `${channel} setup steps missed ${expectedSetting}.`
+      );
+    }
+  }
   const proof = await seedCommunicationProof(adminCookie);
 
   const browser = await chromium.launch({ headless: true });
@@ -278,6 +288,13 @@ async function main() {
       assert(/Provider credentials/i.test(checklistText), `${channel} activation checklist missed provider credentials.`);
       assert(/Dry-run proof/i.test(checklistText), `${channel} activation checklist missed dry-run proof.`);
     }
+    await page.getByTestId("sms-provider-activation").waitFor({ timeout: 20000 });
+    const smsActivationText = await page.getByTestId("sms-provider-activation").innerText();
+    assert(/Twilio activation/i.test(smsActivationText), "SMS activation panel missed Twilio activation title.");
+    assert(/TWILIO_ACCOUNT_SID/i.test(smsActivationText), "SMS activation panel missed TWILIO_ACCOUNT_SID.");
+    assert(/TWILIO_AUTH_TOKEN/i.test(smsActivationText), "SMS activation panel missed TWILIO_AUTH_TOKEN.");
+    assert(/TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID/i.test(smsActivationText), "SMS activation panel missed Twilio sender identity.");
+    assert(/CAMPAIGN_SEND_ENABLED=true/i.test(smsActivationText), "SMS activation panel missed CAMPAIGN_SEND_ENABLED=true.");
     await page.getByTestId("email-provider-activation").waitFor({ timeout: 20000 });
     const emailActivationText = await page.getByTestId("email-provider-activation").innerText();
     assert(/Resend activation/i.test(emailActivationText), "Email activation panel missed Resend activation title.");

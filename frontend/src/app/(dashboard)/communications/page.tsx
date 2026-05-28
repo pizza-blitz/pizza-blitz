@@ -361,6 +361,85 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ProviderActivationCard({
+  channel,
+  title,
+  eyebrow,
+  description,
+  testId,
+}: {
+  channel?: ChannelControl;
+  title: string;
+  eyebrow: string;
+  description: string;
+  testId: string;
+}) {
+  const setupSteps = channel?.provider_status.setup_steps || [];
+
+  return (
+    <article
+      data-testid={testId}
+      className="mt-4 rounded-md border border-gray-200 bg-white p-5 shadow-sm"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+            {eyebrow}
+          </p>
+          <h3 className="mt-1 text-lg font-black text-gray-950">
+            {title}
+          </h3>
+        </div>
+        <span
+          className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-black ${
+            channel?.provider_status.configured
+              ? statusTone("configured")
+              : statusTone("setup_needed")
+          }`}
+        >
+          {channel?.provider_status.configured ? "Ready" : "Setup Needed"}
+        </span>
+      </div>
+      <p className="mt-3 text-sm font-semibold leading-5 text-gray-600">
+        {description}
+      </p>
+      <div className="mt-4 divide-y divide-gray-100">
+        {setupSteps.map((step) => (
+          <div
+            key={step.key}
+            data-testid={`${testId}-step-${step.key}`}
+            className="py-3 first:pt-0 last:pb-0"
+          >
+            <div className="flex items-start gap-2">
+              {step.passed ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-black text-gray-950">
+                  {step.label}: {step.passed ? "Configured" : "Missing"}
+                </p>
+                <code className="mt-1 block break-words rounded-sm bg-gray-50 px-2 py-1 text-[11px] font-black text-gray-700">
+                  {step.required_setting}
+                </code>
+                <p className="mt-2 text-xs font-semibold leading-5 text-gray-500">
+                  {step.action}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+        {!setupSteps.length ? (
+          <p className="py-3 text-sm font-semibold text-gray-500">
+            Provider setup steps are loading.
+          </p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 export default function CommunicationsPage() {
   const [data, setData] = useState<CommsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -549,8 +628,8 @@ export default function CommunicationsPage() {
   }, [queueCampaigns, spotlightCampaignId]);
   const recentEvents = data?.dispatch.recent_delivery_events || [];
   const bestCampaign = data?.performance.best_campaign;
+  const smsChannel = data?.dispatch.channels.find((channel) => channel.channel === "sms");
   const emailChannel = data?.dispatch.channels.find((channel) => channel.channel === "email");
-  const emailSetupSteps = emailChannel?.provider_status.setup_steps || [];
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 text-gray-950 sm:px-6 lg:px-8">
@@ -752,66 +831,20 @@ export default function CommunicationsPage() {
                 </Link>
               </div>
             </article>
-            <article
-              data-testid="email-provider-activation"
-              className="mt-4 rounded-md border border-gray-200 bg-white p-5 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-widest text-gray-500">
-                    Email Provider
-                  </p>
-                  <h3 className="mt-1 text-lg font-black text-gray-950">
-                    Resend activation
-                  </h3>
-                </div>
-                <span
-                  className={`shrink-0 rounded-md border px-2 py-1 text-[11px] font-black ${
-                    emailChannel?.provider_status.configured
-                      ? statusTone("configured")
-                      : statusTone("setup_needed")
-                  }`}
-                >
-                  {emailChannel?.provider_status.configured ? "Ready" : "Setup Needed"}
-                </span>
-              </div>
-              <p className="mt-3 text-sm font-semibold leading-5 text-gray-600">
-                Prepare the email channel for real customer campaigns while keeping all provider secrets server-side.
-              </p>
-              <div className="mt-4 divide-y divide-gray-100">
-                {emailSetupSteps.map((step) => (
-                  <div
-                    key={step.key}
-                    data-testid={`email-provider-step-${step.key}`}
-                    className="py-3 first:pt-0 last:pb-0"
-                  >
-                    <div className="flex items-start gap-2">
-                      {step.passed ? (
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                      ) : (
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-gray-950">
-                          {step.label}: {step.passed ? "Configured" : "Missing"}
-                        </p>
-                        <code className="mt-1 block break-words rounded-sm bg-gray-50 px-2 py-1 text-[11px] font-black text-gray-700">
-                          {step.required_setting}
-                        </code>
-                        <p className="mt-2 text-xs font-semibold leading-5 text-gray-500">
-                          {step.action}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {!emailSetupSteps.length ? (
-                  <p className="py-3 text-sm font-semibold text-gray-500">
-                    Email setup steps are loading.
-                  </p>
-                ) : null}
-              </div>
-            </article>
+            <ProviderActivationCard
+              channel={smsChannel}
+              title="Twilio activation"
+              eyebrow="SMS Provider"
+              description="Prepare phone campaigns with a protected Twilio sender identity before any live customer SMS is allowed."
+              testId="sms-provider-activation"
+            />
+            <ProviderActivationCard
+              channel={emailChannel}
+              title="Resend activation"
+              eyebrow="Email Provider"
+              description="Prepare the email channel for real customer campaigns while keeping all provider secrets server-side."
+              testId="email-provider-activation"
+            />
           </aside>
         </section>
 
