@@ -443,7 +443,9 @@ export default function OrdersPage() {
   const unassignedDeliveryCount = deliveryOrders.filter(
     (order) => !order.delivery_assignment?.assigned_to
   ).length;
-  const readyCounterOrders = takeawayOrders.filter((order) => order.status === "ready");
+  const readyCounterOrders = takeawayOrders
+    .filter((order) => order.status === "ready")
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
   const readyToBillCount = openOrders.filter((order) => order.status === "ready").length;
   const paymentDueCount = openOrders.filter(
     (order) => order.payment_due || order.payment_status === "awaiting_payment"
@@ -1185,7 +1187,7 @@ export default function OrdersPage() {
 
         {readyCounterOrders.length > 0 ? (
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {readyCounterOrders.slice(0, 4).map((order) => (
+            {readyCounterOrders.slice(0, 8).map((order) => (
               <article
                 key={`ready-counter-${order.id}`}
                 data-testid={`counter-ready-order-${order.id}`}

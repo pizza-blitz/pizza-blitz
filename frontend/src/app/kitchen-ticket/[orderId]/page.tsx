@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -20,6 +20,8 @@ const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 type KitchenTicketItem = {
   name: string;
   quantity: number;
+  kitchen_station?: string | null;
+  kitchen_station_label?: string | null;
   selected_options?: {
     group_name?: string;
     option_name: string;
@@ -61,9 +63,38 @@ function optionSummary(option: NonNullable<KitchenTicketItem["selected_options"]
   return `${option.group_name || "Option"}: ${option.option_name}`;
 }
 
+function fallbackKitchenStation(item: KitchenTicketItem) {
+  const name = item.name.toLowerCase();
+  if (name.includes("pizza") || name.includes("bread")) {
+    return { key: "oven", label: "Oven Station" };
+  }
+  if (name.includes("fries") || name.includes("wing") || name.includes("starter")) {
+    return { key: "fryer", label: "Fryer / Sides" };
+  }
+  if (name.includes("drink") || name.includes("cola") || name.includes("dessert")) {
+    return { key: "cold", label: "Cold / Drinks" };
+  }
+  return { key: "prep", label: "Prep Station" };
+}
+
+function itemStation(item: KitchenTicketItem) {
+  const fallback = fallbackKitchenStation(item);
+  return {
+    key: item.kitchen_station || fallback.key,
+    label: item.kitchen_station_label || fallback.label,
+  };
+}
+
+function stationHref(orderId: string, stationKey: string) {
+  if (stationKey === "all") return `/kitchen-ticket/${orderId}`;
+  return `/kitchen-ticket/${orderId}?station=${encodeURIComponent(stationKey)}`;
+}
+
 export default function KitchenTicketPage() {
   const params = useParams<{ orderId: string }>();
+  const searchParams = useSearchParams();
   const orderId = params.orderId;
+  const activeStation = searchParams.get("station") || "all";
   const [order, setOrder] = useState<KitchenTicketOrder | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -77,6 +108,34 @@ export default function KitchenTicketPage() {
     () => order?.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || 0,
     [order?.items]
   );
+  const stationGroups = useMemo(() => {
+    const groups = new Map<string, { key: string; label: string; items: KitchenTicketItem[]; quantity: number }>();
+    for (const item of order?.items || []) {
+      const station = itemStation(item);
+      const current = groups.get(station.key) || {
+        key: station.key,
+        label: station.label,
+        items: [],
+        quantity: 0,
+      };
+      current.items.push(item);
+      current.quantity += Number(item.quantity || 0);
+      groups.set(station.key, current);
+    }
+    return Array.from(groups.values());
+  }, [order?.items]);
+  const visibleStationGroups = useMemo(
+    () =>
+      activeStation === "all"
+        ? stationGroups
+        : stationGroups.filter((group) => group.key === activeStation),
+    [activeStation, stationGroups]
+  );
+  const activeStationLabel =
+    activeStation === "all"
+      ? "All Stations"
+      : stationGroups.find((group) => group.key === activeStation)?.label || titleCase(activeStation);
+  const visibleItemsTotal = visibleStationGroups.reduce((sum, group) => sum + group.quantity, 0);
   const status = (order?.status || "").toLowerCase();
   const canStartPreparing = Boolean(order && !["preparing", "ready", "closed", "cancelled"].includes(status));
   const canMarkReady = Boolean(order && !["ready", "closed", "cancelled"].includes(status));
@@ -225,7 +284,9 @@ export default function KitchenTicketPage() {
                   <p className="text-xs font-black uppercase tracking-widest text-orange-600">
                     Pizza Blitz Kitchen
                   </p>
-                  <h1 className="mt-1 text-4xl font-black">KOT</h1>
+                  <h1 data-testid="kot-station-title" className="mt-1 text-4xl font-black">
+                    {activeStation === "all" ? "KOT" : `${activeStationLabel} KOT`}
+                  </h1>
                   <p className="mt-2 flex items-center gap-2 text-sm font-bold text-zinc-600">
                     <Clock className="h-4 w-4" /> {formatDate(order.created_at)}
                   </p>
@@ -245,6 +306,7 @@ export default function KitchenTicketPage() {
               <TicketInfo label="Table" value={order.table_number || "Counter"} />
               <TicketInfo label="Status" value={titleCase(order.status)} />
               <TicketInfo label="Items" value={`${totalItems}`} />
+              <TicketInfo label="Station View" value={`${activeStationLabel} (${visibleItemsTotal})`} />
               <TicketInfo label="Customer" value={order.customer_name || "Walk-in"} />
               <TicketInfo label="Phone" value={order.customer_phone || "Not provided"} />
               <TicketInfo label="Payment" value={titleCase(order.payment_method)} />
@@ -261,26 +323,89 @@ export default function KitchenTicketPage() {
               </section>
             )}
 
+            <section data-testid="kot-station-board" className="border-b border-zinc-200 py-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-zinc-500">
+                    Station Routing
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-zinc-700">
+                    Print the full KOT or isolate only the station lines for the current team.
+                  </p>
+                </div>
+                <Link
+                  data-testid="kot-station-filter-all"
+                  href={stationHref(orderId, "all")}
+                  className={`rounded-md px-3 py-2 text-xs font-black uppercase ${
+                    activeStation === "all" ? "bg-zinc-950 text-white" : "bg-zinc-100 text-zinc-700"
+                  }`}
+                >
+                  All Stations
+                </Link>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {stationGroups.map((group) => (
+                  <Link
+                    key={group.key}
+                    data-testid={`kot-station-filter-${group.key}`}
+                    href={stationHref(orderId, group.key)}
+                    className={`rounded-md border p-3 ${
+                      activeStation === group.key
+                        ? "border-orange-600 bg-orange-50 text-orange-900"
+                        : "border-zinc-200 bg-zinc-50 text-zinc-800"
+                    }`}
+                  >
+                    <p className="text-xs font-black uppercase tracking-widest">{group.label}</p>
+                    <p className="mt-1 text-2xl font-black">{group.quantity}x</p>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
             <section className="py-5">
               <div className="grid grid-cols-[72px_1fr] gap-3 border-b border-zinc-950 pb-2 text-xs font-black uppercase tracking-widest text-zinc-500">
                 <span>Qty</span>
                 <span>Kitchen Items</span>
               </div>
-              <div className="divide-y divide-zinc-200">
-                {order.items.map((item, index) => (
+              <div className="space-y-5">
+                {visibleStationGroups.map((group) => (
                   <div
-                    key={`${item.name}-${index}`}
-                    data-testid="kot-item-row"
-                    className="grid grid-cols-[72px_1fr] gap-3 py-4"
+                    key={group.key}
+                    data-testid={`kot-station-section-${group.key}`}
+                    className="rounded-md border border-zinc-200"
                   >
-                    <span className="text-3xl font-black">{item.quantity}x</span>
-                    <div>
-                      <p className="text-2xl font-black">{item.name}</p>
-                      {!!item.selected_options?.length && (
-                        <p className="mt-2 text-sm font-bold leading-6 text-zinc-600">
-                          {item.selected_options.map(optionSummary).join(" | ")}
-                        </p>
-                      )}
+                    <div className="flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+                      <p className="text-xs font-black uppercase tracking-widest text-zinc-600">{group.label}</p>
+                      <span className="rounded-full bg-zinc-950 px-3 py-1 text-xs font-black text-white">
+                        {group.quantity}x
+                      </span>
+                    </div>
+                    <div className="divide-y divide-zinc-200 px-4">
+                      {group.items.map((item, index) => {
+                        const station = itemStation(item);
+                        return (
+                          <div
+                            key={`${group.key}-${item.name}-${index}`}
+                            data-testid="kot-item-row"
+                            className="grid grid-cols-[72px_1fr] gap-3 py-4"
+                          >
+                            <span className="text-3xl font-black">{item.quantity}x</span>
+                            <div>
+                              <div className="flex flex-wrap items-start gap-2">
+                                <p className="text-2xl font-black">{item.name}</p>
+                                <span className="rounded-full bg-orange-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-orange-700">
+                                  {station.label}
+                                </span>
+                              </div>
+                              {!!item.selected_options?.length && (
+                                <p className="mt-2 text-sm font-bold leading-6 text-zinc-600">
+                                  {item.selected_options.map(optionSummary).join(" | ")}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

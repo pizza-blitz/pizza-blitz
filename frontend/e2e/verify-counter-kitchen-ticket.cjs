@@ -177,6 +177,8 @@ async function main() {
     assert(orderResult.response.ok, `Could not fetch kitchen-ticket order: ${JSON.stringify(orderResult.data)}`);
     const firstItem = orderResult.data.items?.[0];
     assert(firstItem?.name, `Kitchen-ticket order ${orderId} did not include items.`);
+    assert(firstItem.kitchen_station, `Kitchen-ticket order ${orderId} did not include station routing.`);
+    assert(firstItem.kitchen_station_label, `Kitchen-ticket order ${orderId} did not include a station label.`);
 
     const kotHref = await page.getByTestId("counter-post-order-kitchen-ticket").getAttribute("href");
     assert(kotHref === `/kitchen-ticket/${orderId}`, `Expected KOT href for order ${orderId}, got ${kotHref}.`);
@@ -187,12 +189,27 @@ async function main() {
     await page.getByText("KOT", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText(firstItem.name, { exact: false }).waitFor({ timeout: 15000 });
     await page.getByTestId("kot-item-row").first().waitFor({ timeout: 15000 });
+    await page.getByTestId("kot-station-board").waitFor({ timeout: 15000 });
+    await page.getByTestId(`kot-station-filter-${firstItem.kitchen_station}`).waitFor({ timeout: 15000 });
+    await page.getByTestId(`kot-station-section-${firstItem.kitchen_station}`).waitFor({ timeout: 15000 });
     await page.getByTestId("kot-print-command").waitFor({ timeout: 15000 });
     await page.getByTestId("kot-status-actions").waitFor({ timeout: 15000 });
     await assertHealthyPage(page, "kitchen ticket page");
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-counter-kitchen-ticket.png"),
+      fullPage: true,
+    });
+
+    await page.getByTestId(`kot-station-filter-${firstItem.kitchen_station}`).click();
+    await page.waitForURL(new RegExp(`/kitchen-ticket/${orderId}\\?station=${firstItem.kitchen_station}$`), { timeout: 15000 });
+    await page.getByTestId("kot-station-title").getByText(firstItem.kitchen_station_label, { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByTestId(`kot-station-section-${firstItem.kitchen_station}`).getByText(firstItem.name, { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByTestId("kot-station-filter-all").click();
+    await page.waitForURL(new RegExp(`/kitchen-ticket/${orderId}$`), { timeout: 15000 });
+
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-counter-kitchen-station-ticket.png"),
       fullPage: true,
     });
 

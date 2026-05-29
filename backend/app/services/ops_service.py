@@ -317,6 +317,13 @@ LAUNCH_CRITICAL_ROUTE_PROOFS = [
         "proof": "verify-counter-order-e2e.cjs",
     },
     {
+        "key": "kitchen_ticket",
+        "label": "Kitchen Station Ticket",
+        "route": "/kitchen-ticket/{orderId}",
+        "module_key": "kitchen_station_operations",
+        "proof": "verify-counter-kitchen-ticket.cjs",
+    },
+    {
         "key": "delivery_ops",
         "label": "Delivery Operations",
         "route": "/operations",
@@ -2554,6 +2561,7 @@ def _launch_module_readiness(
     order_count = _count(db, RestaurantOrder)
     open_orders = _count(db, RestaurantOrder, RestaurantOrder.status != "closed")
     paid_orders = _count(db, RestaurantOrder, RestaurantOrder.payment_status == "paid")
+    kitchen_station_metrics = _kitchen_station_metrics(db)
     active_zones = _count(db, DeliveryZone, DeliveryZone.is_active.is_(True))
     delivery_assignments = _count(db, DeliveryAssignment)
     customers = _count(db, Customer)
@@ -2584,6 +2592,12 @@ def _launch_module_readiness(
         + (35 if order_count else 0)
         + (15 if payment_status.get("provider") else 0)
         + (15 if paid_orders else 8)
+    )
+    kitchen_score = (
+        (35 if order_count else 0)
+        + (35 if kitchen_station_metrics["stationed_orders"] else 0)
+        + (20 if kitchen_station_metrics["station_count"] >= 2 else 10 if kitchen_station_metrics["station_count"] else 0)
+        + 10
     )
     delivery_score = (
         (70 if active_zones else 0)
@@ -2660,6 +2674,22 @@ def _launch_module_readiness(
             next_actions=[
                 "Run one complete pickup and delivery order before launch.",
                 "Connect the real payment provider when credentials are ready.",
+            ],
+        ),
+        _module(
+            key="kitchen_station_operations",
+            title="Kitchen Station Operations",
+            score=kitchen_score,
+            route="/kitchen-ticket/{orderId}",
+            detail="Counter orders now carry kitchen station routing so KOT views can split oven, sides, cold and prep work.",
+            metrics=[
+                {"label": "Stationed orders", "value": str(kitchen_station_metrics["stationed_orders"])},
+                {"label": "Stations seen", "value": str(kitchen_station_metrics["station_count"])},
+                {"label": "Routed lines", "value": str(kitchen_station_metrics["stationed_lines"])},
+            ],
+            next_actions=[
+                "Create one mixed counter order and print station-filtered KOT slips.",
+                "Confirm station names match the physical kitchen layout before launch.",
             ],
         ),
         _module(
@@ -2762,6 +2792,38 @@ def _launch_summary(modules: list[dict]) -> dict:
         "modules_blocked": blocked,
         "implementation_score": score,
         "next_actions": next_actions[:6],
+    }
+
+
+def _kitchen_station_metrics(db: Session) -> dict:
+    orders = (
+        db.query(RestaurantOrder)
+        .order_by(RestaurantOrder.created_at.desc())
+        .limit(250)
+        .all()
+    )
+    stations = set()
+    stationed_orders = 0
+    stationed_lines = 0
+
+    for order in orders:
+        order_has_station = False
+        for item in order.items or []:
+            if not isinstance(item, dict):
+                continue
+            station = item.get("kitchen_station")
+            if not station:
+                continue
+            stations.add(str(station))
+            stationed_lines += 1
+            order_has_station = True
+        if order_has_station:
+            stationed_orders += 1
+
+    return {
+        "station_count": len(stations),
+        "stationed_orders": stationed_orders,
+        "stationed_lines": stationed_lines,
     }
 
 

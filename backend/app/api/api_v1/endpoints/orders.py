@@ -1014,6 +1014,33 @@ def upsert_customer_from_order(
     customer.last_order_at = datetime.utcnow()
 
 
+KITCHEN_STATION_RULES = [
+    {
+        "key": "oven",
+        "label": "Oven Station",
+        "keywords": ["pizza", "garlic bread", "bread", "calzone", "pasta bake"],
+    },
+    {
+        "key": "fryer",
+        "label": "Fryer / Sides",
+        "keywords": ["fries", "nugget", "wing", "stick", "popper", "side", "starter"],
+    },
+    {
+        "key": "cold",
+        "label": "Cold / Drinks",
+        "keywords": ["drink", "beverage", "cola", "pepsi", "water", "shake", "dessert", "ice cream", "brownie"],
+    },
+]
+
+
+def kitchen_station_for_item(name: str, category: str | None = None) -> dict:
+    searchable = f"{category or ''} {name or ''}".strip().lower()
+    for rule in KITCHEN_STATION_RULES:
+        if any(keyword in searchable for keyword in rule["keywords"]):
+            return {"key": rule["key"], "label": rule["label"]}
+    return {"key": "prep", "label": "Prep Station"}
+
+
 def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dict]:
     normalized_items = []
     for item in order_items:
@@ -1032,10 +1059,14 @@ def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dic
                 menu_item,
                 item.selected_options or [],
             )
+            station = kitchen_station_for_item(menu_item.name, menu_item.category)
             normalized_items.append(
                 {
                     "menu_item_id": menu_item.id,
                     "name": menu_item.name,
+                    "category": menu_item.category,
+                    "kitchen_station": station["key"],
+                    "kitchen_station_label": station["label"],
                     "quantity": quantity,
                     "price": priced_item["unit_price"],
                     "base_price": priced_item["base_price"],
@@ -1052,9 +1083,12 @@ def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dic
             )
 
         fallback_price = round(float(item.price or 0), 2)
+        station = kitchen_station_for_item(item.name)
         normalized_items.append(
             {
                 "name": item.name,
+                "kitchen_station": station["key"],
+                "kitchen_station_label": station["label"],
                 "quantity": quantity,
                 "price": fallback_price,
                 "base_price": round(float(item.base_price or fallback_price), 2),
