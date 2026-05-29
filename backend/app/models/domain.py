@@ -285,6 +285,18 @@ class ShiftLog(Base):
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class StaffLeaveRequest(Base):
+    __tablename__ = "staff_leave_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    staff_name = Column(String, index=True, nullable=False)
+    leave_type = Column(String(30), index=True, nullable=False)
+    start_date = Column(Date, index=True, nullable=False)
+    end_date = Column(Date, index=True, nullable=False)
+    days = Column(Float, default=1.0)
+    status = Column(String(30), default="approved", index=True)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 class Vendor(Base):
     __tablename__ = "vendors"
     id = Column(Integer, primary_key=True, index=True)

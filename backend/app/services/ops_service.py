@@ -25,6 +25,8 @@ from app.models.domain import (
     RestaurantOrder,
     SocialPost,
     SocialPostDelivery,
+    ShiftLog,
+    StaffLeaveRequest,
 )
 from app.services.ad_campaign_service import ad_provider_status
 from app.services.campaign_dispatch_service import campaign_provider_status
@@ -329,6 +331,13 @@ LAUNCH_CRITICAL_ROUTE_PROOFS = [
         "route": "/operations",
         "module_key": "delivery_operations",
         "proof": "verify-delivery-order-e2e.cjs",
+    },
+    {
+        "key": "employee_attendance",
+        "label": "Employee Attendance",
+        "route": "/shifts",
+        "module_key": "employee_workforce",
+        "proof": "verify-employee-attendance-command.cjs",
     },
     {
         "key": "reports",
@@ -2574,6 +2583,7 @@ def _launch_module_readiness(
     ad_launches = _count(db, AdCampaignLaunch)
     daily_sales = _count(db, DailySales)
     successful_backups = _count(db, BackupRun, BackupRun.status == "success")
+    employee_metrics = _employee_attendance_metrics(db)
 
     security_score = _weighted_score([
         check_by_key["admin_password"],
@@ -2622,6 +2632,12 @@ def _launch_module_readiness(
         + (25 if order_count else 0)
         + (25 if backup_freshness["status"] == "pass" else 10)
         + 20
+    )
+    employee_score = (
+        (35 if employee_metrics["shift_count"] else 0)
+        + (25 if employee_metrics["leave_count"] else 10)
+        + (25 if employee_metrics["staff_count"] >= 2 else 10 if employee_metrics["staff_count"] else 0)
+        + (15 if employee_metrics["covered_role_count"] >= 2 else 5 if employee_metrics["covered_role_count"] else 0)
     )
     production_score = round(
         (_readiness_score(go_live_items) * 0.75)
@@ -2705,6 +2721,23 @@ def _launch_module_readiness(
             next_actions=[
                 "Confirm live delivery areas and minimum order rules.",
                 "Assign test delivery orders to staff and close the handoff loop.",
+            ],
+        ),
+        _module(
+            key="employee_workforce",
+            title="Employee Attendance And CL/PL",
+            score=employee_score,
+            route="/shifts",
+            detail="Staff shift roster, role coverage, attendance flags and CL/PL leave balances are now tracked together.",
+            metrics=[
+                {"label": "Shift logs", "value": str(employee_metrics["shift_count"])},
+                {"label": "Staff members", "value": str(employee_metrics["staff_count"])},
+                {"label": "Leave records", "value": str(employee_metrics["leave_count"])},
+                {"label": "Roles covered", "value": str(employee_metrics["covered_role_count"])},
+            ],
+            next_actions=[
+                "Log today's counter, kitchen, prep and delivery staff before opening.",
+                "Record CL/PL leave entries so payroll and coverage gaps stay visible.",
             ],
         ),
         _module(
@@ -2824,6 +2857,58 @@ def _kitchen_station_metrics(db: Session) -> dict:
         "station_count": len(stations),
         "stationed_orders": stationed_orders,
         "stationed_lines": stationed_lines,
+    }
+
+
+def _employee_role_key(role: Optional[str]) -> str:
+    normalized = (role or "").lower()
+    role_keywords = {
+        "counter": ["counter", "pos", "cashier", "front"],
+        "kitchen": ["chef", "kitchen", "oven", "cook"],
+        "prep": ["prep", "packing", "pack", "helper"],
+        "delivery": ["delivery", "rider", "driver"],
+    }
+    for key, keywords in role_keywords.items():
+        if any(keyword in normalized for keyword in keywords):
+            return key
+    return "general"
+
+
+def _employee_attendance_metrics(db: Session) -> dict:
+    shifts = (
+        db.query(ShiftLog)
+        .order_by(ShiftLog.date.desc(), ShiftLog.id.desc())
+        .limit(250)
+        .all()
+    )
+    leaves = (
+        db.query(StaffLeaveRequest)
+        .order_by(StaffLeaveRequest.start_date.desc(), StaffLeaveRequest.id.desc())
+        .limit(250)
+        .all()
+    )
+
+    staff_names = {
+        shift.staff_name.strip()
+        for shift in shifts
+        if shift.staff_name and shift.staff_name.strip()
+    }
+    staff_names.update(
+        leave.staff_name.strip()
+        for leave in leaves
+        if leave.staff_name and leave.staff_name.strip()
+    )
+    covered_roles = {
+        _employee_role_key(shift.role)
+        for shift in shifts
+        if _employee_role_key(shift.role) != "general"
+    }
+
+    return {
+        "shift_count": len(shifts),
+        "leave_count": len(leaves),
+        "staff_count": len(staff_names),
+        "covered_role_count": len(covered_roles),
     }
 
 
