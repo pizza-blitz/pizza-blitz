@@ -53,6 +53,7 @@ DEFAULT_TABLES = [
 
 ORDER_USAGE_NOTE_PREFIX = "Auto usage from order"
 PAYMENT_PROVIDER_ORDER = ("manual", "direct_bank", "cashfree", "razorpay")
+PAYMENT_PROOF_METHODS = {"upi", "card", "mixed", "direct_bank"}
 PAYMENT_GATEWAY_RUNBOOK = {
     "manual": {
         "label": "Manual fallback",
@@ -201,6 +202,7 @@ def serialize_order(order: RestaurantOrder) -> dict:
             (order.payment_method or "").lower() == "prepaid"
             and (order.payment_status or "").lower() != "paid"
         ),
+        "payment_proof_required": order_payment_proof_required(order),
         "can_close": not close_blockers,
         "close_blockers": close_blockers,
         "table_number": order.table_number,
@@ -570,7 +572,12 @@ def apply_order_payment(
     if (order.payment_status or "").lower() == "paid":
         return serialize_order(order), False
 
-    order.payment_method = "prepaid"
+    existing_payment_method = (order.payment_method or "").strip().lower()
+    order.payment_method = (
+        existing_payment_method
+        if existing_payment_method and existing_payment_method != "prepaid"
+        else "prepaid"
+    )
     order.payment_status = "paid"
     order.payment_provider = (provider or "manual").strip().lower() or "manual"
     order.payment_reference = (
@@ -698,6 +705,14 @@ def order_payment_due(order: RestaurantOrder) -> bool:
     )
 
 
+def order_payment_proof_required(order: RestaurantOrder) -> bool:
+    if order.status in {"cancelled", "closed"}:
+        return False
+    if (order.payment_status or "").lower() == "paid":
+        return False
+    return (order.payment_method or "").strip().lower() in PAYMENT_PROOF_METHODS
+
+
 def order_close_blockers(order: RestaurantOrder) -> list[str]:
     if order.status == "closed":
         return []
@@ -708,6 +723,8 @@ def order_close_blockers(order: RestaurantOrder) -> list[str]:
         blockers.append("kitchen not ready")
     if order_payment_due(order):
         blockers.append("payment due")
+    elif order_payment_proof_required(order):
+        blockers.append("payment proof required")
     metadata = order_metadata(order)
     if metadata["fulfillment_type"] == "delivery":
         assignment_status = (
@@ -727,6 +744,8 @@ def order_flow_stage(order: RestaurantOrder) -> str:
         return "closed"
     if order_payment_due(order):
         return "payment_due"
+    if order_payment_proof_required(order):
+        return "payment_proof_required"
     if order.status == "ready":
         return "ready_to_close"
     if order.status == "preparing":
@@ -737,13 +756,16 @@ def order_flow_stage(order: RestaurantOrder) -> str:
 def serialize_order_flow_row(order: RestaurantOrder, invoice_ids: set[int]) -> dict:
     metadata = order_metadata(order)
     payment_due = order_payment_due(order)
-    ready_to_close = order.status == "ready" and not payment_due
+    payment_proof_required = order_payment_proof_required(order)
+    ready_to_close = order.status == "ready" and not payment_due and not payment_proof_required
     customized = order_has_customization(order)
     stage = order_flow_stage(order)
     if ready_to_close:
         next_action = "Print receipt and close after customer handoff."
     elif payment_due:
         next_action = "Confirm prepaid payment before closing."
+    elif payment_proof_required:
+        next_action = "Add UPI/card/bank payment reference before closing."
     elif order.status == "open":
         next_action = "Move order to preparing when kitchen starts."
     elif order.status == "preparing":
@@ -767,6 +789,7 @@ def serialize_order_flow_row(order: RestaurantOrder, invoice_ids: set[int]) -> d
         "payment_status": order.payment_status,
         "payment_method": order.payment_method,
         "payment_due": payment_due,
+        "payment_proof_required": payment_proof_required,
         "ready_to_close": ready_to_close,
         "receipt_ready": order.id not in invoice_ids,
         "invoice_generated": order.id in invoice_ids,
@@ -1750,6 +1773,14 @@ def close_order(
             else (order.payment_method or "cash").strip().lower()
         ) or "cash"
         if (
+            requested_payment_method in PAYMENT_PROOF_METHODS
+            and (order.payment_status or "").lower() != "paid"
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Payment proof required before closing.",
+            )
+        if (
             (order.payment_method or "").lower() == "prepaid"
             and order.payment_status != "paid"
             and requested_payment_method == "prepaid"
@@ -2525,11 +2556,18 @@ def order_flow_readiness(
     ]
     ready_to_close_rows = [row for row in active_rows if row["ready_to_close"]]
     payment_due_rows = [row for row in active_rows if row["payment_due"]]
+    payment_proof_rows = [
+        row for row in active_rows if row.get("payment_proof_required")
+    ]
     customized_rows = [row for row in flow_rows if row["customized"]]
 
     next_actions: list[str] = []
     if payment_due_rows:
         next_actions.append(f"Confirm payment for {len(payment_due_rows)} prepaid order(s).")
+    if payment_proof_rows:
+        next_actions.append(
+            f"Add payment reference for {len(payment_proof_rows)} counter order(s)."
+        )
     if ready_to_close_rows:
         next_actions.append(f"Print receipt and close {len(ready_to_close_rows)} ready order(s).")
     preparing_count = sum(1 for row in active_rows if row["status"] == "preparing")
@@ -2551,6 +2589,7 @@ def order_flow_readiness(
             "ready_count": sum(1 for row in active_rows if row["status"] == "ready"),
             "ready_to_close_count": len(ready_to_close_rows),
             "payment_due_count": len(payment_due_rows),
+            "payment_proof_required_count": len(payment_proof_rows),
             "receipt_ready_count": sum(1 for row in active_rows if row["receipt_ready"]),
             "customized_line_count": sum(row["customized_line_count"] for row in customized_rows),
             "closed_count": sum(1 for row in flow_rows if row["status"] == "closed"),
@@ -2559,6 +2598,7 @@ def order_flow_readiness(
         "orders": flow_rows,
         "ready_to_close": ready_to_close_rows[:8],
         "payment_due": payment_due_rows[:8],
+        "payment_proof_required": payment_proof_rows[:8],
         "next_actions": next_actions,
     }
 

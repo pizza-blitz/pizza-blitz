@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CheckCircle2,
   Clock,
+  CreditCard,
   FileText,
   Globe2,
   MapPin,
@@ -167,6 +168,10 @@ type Order = {
   total_amount: number;
   payment_status: string;
   payment_method?: string | null;
+  payment_provider?: string | null;
+  payment_reference?: string | null;
+  payment_confirmed_at?: string | null;
+  payment_proof_required?: boolean;
   status: string;
   can_close?: boolean;
   close_blockers?: string[];
@@ -201,6 +206,7 @@ type PickupNotificationLog = {
 };
 
 const PICKUP_NOTIFICATION_LOG_KEY = "pizza-blitz-counter-pickup-notifications";
+const PAYMENT_PROOF_METHODS = new Set(["upi", "card", "mixed", "direct_bank"]);
 
 function optionSummary(option: NonNullable<Order["items"][number]["selected_options"]>[number]) {
   const delta = Number(option.price_delta || 0);
@@ -223,6 +229,31 @@ function pickupNotificationHref(order: Order) {
   const receiptUrl = `${origin}/receipt/${order.id}?phone=${encodeURIComponent(order.customer_phone || "")}`;
   const message = `Pizza Blitz update: Order #${order.id} is ready for pickup. Bill: ${receiptUrl}`;
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function normalizedPaymentMethod(order: Pick<Order, "payment_method">) {
+  return (order.payment_method || "cash").toLowerCase();
+}
+
+function needsPaymentProof(order: Order) {
+  if (order.payment_proof_required !== undefined) return order.payment_proof_required;
+  return (
+    order.payment_status !== "paid" &&
+    PAYMENT_PROOF_METHODS.has(normalizedPaymentMethod(order))
+  );
+}
+
+function paymentProviderForMethod(method: string) {
+  if (method === "upi" || method === "direct_bank") return "direct_bank";
+  return "manual";
+}
+
+function paymentReferencePlaceholder(order: Order) {
+  const method = normalizedPaymentMethod(order).toUpperCase();
+  if (method === "UPI" || method === "DIRECT_BANK") return "UPI / bank reference";
+  if (method === "CARD") return "Card approval / slip no.";
+  if (method === "MIXED") return "Cash + UPI/card proof";
+  return `${method} reference`;
 }
 
 function notificationTime(value: string) {
@@ -256,6 +287,8 @@ export default function OrdersPage() {
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
   const [busyDeliveryAction, setBusyDeliveryAction] = useState<string | null>(null);
+  const [paymentReferenceDrafts, setPaymentReferenceDrafts] = useState<Record<number, string>>({});
+  const [busyPaymentAction, setBusyPaymentAction] = useState<number | null>(null);
   const [pickupNotificationLog, setPickupNotificationLog] = useState<PickupNotificationLog[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
@@ -450,7 +483,10 @@ export default function OrdersPage() {
     .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
   const readyToBillCount = openOrders.filter((order) => order.status === "ready").length;
   const paymentDueCount = openOrders.filter(
-    (order) => order.payment_due || order.payment_status === "awaiting_payment"
+    (order) =>
+      order.payment_due ||
+      order.payment_status === "awaiting_payment" ||
+      needsPaymentProof(order)
   ).length;
   const voidedTodayCount = orders.filter((order) => order.status === "cancelled").length;
   const closedTotal = orders
@@ -472,6 +508,8 @@ export default function OrdersPage() {
     if (order.status !== "ready") blockers.push("kitchen not ready");
     if (order.payment_due || order.payment_status === "awaiting_payment") {
       blockers.push("payment due");
+    } else if (needsPaymentProof(order)) {
+      blockers.push("payment proof required");
     }
     if ((order.fulfillment_type || order.order_type) === "delivery") {
       const assignmentStatus = order.delivery_assignment?.status || "unassigned";
@@ -818,6 +856,44 @@ export default function OrdersPage() {
     await fetchData();
   };
 
+  const confirmCounterPayment = async (order: Order) => {
+    const reference = (paymentReferenceDrafts[order.id] || "").trim();
+    if (needsPaymentProof(order) && !reference) {
+      setMessage(`Add payment reference before closing order #${order.id}.`);
+      return;
+    }
+
+    const paymentMethod = normalizedPaymentMethod(order);
+    setBusyPaymentAction(order.id);
+    const response = await fetch(`${ORDERS_API}/${order.id}/payment-confirmation`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payment_provider: paymentProviderForMethod(paymentMethod),
+        payment_reference: reference || `${paymentMethod.toUpperCase()}-${order.id}`,
+        paid_amount: Number(order.total_amount || 0),
+      }),
+    });
+    const data = await response.json();
+    setBusyPaymentAction(null);
+
+    if (!response.ok) {
+      setMessage(data.detail || `Could not confirm payment for order #${order.id}.`);
+      return;
+    }
+
+    setPaymentReferenceDrafts((current) => {
+      const next = { ...current };
+      delete next[order.id];
+      return next;
+    });
+    setMessage(
+      `Payment confirmed for order #${order.id}${data.payment_reference ? ` (${data.payment_reference})` : ""}.`
+    );
+    await fetchData();
+  };
+
   const recordPickupNotification = (order: Order) => {
     const href = pickupNotificationHref(order);
     if (!href) return;
@@ -959,6 +1035,11 @@ export default function OrdersPage() {
         await fetchData();
         return;
       }
+      if (needsPaymentProof(order)) {
+        setMessage(`Delivery for order #${order.id} is delivered. Add payment proof before closing.`);
+        await fetchData();
+        return;
+      }
 
       const paymentMethod = order.payment_method || "cash";
       const closeResponse = await fetch(
@@ -1090,7 +1171,9 @@ export default function OrdersPage() {
                   : postOrderBusy
                   ? "Closing"
                   : lastCreatedCloseBlockers.length
-                  ? "Kitchen Pending"
+                  ? lastCreatedCloseBlockers.includes("payment proof required")
+                    ? "Payment Proof"
+                    : "Kitchen Pending"
                   : "Close & Paid"}
               </button>
               <button
@@ -1116,6 +1199,43 @@ export default function OrdersPage() {
             >
               Close blocked until {lastCreatedCloseBlockers.join(", ")}.
             </p>
+          )}
+          {lastCreatedOrderRow && needsPaymentProof(lastCreatedOrderRow) && (
+            <div
+              data-testid="counter-post-order-payment-proof"
+              className="mt-3 rounded-lg border border-sky-400/20 bg-sky-500/10 p-3"
+            >
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-sky-200">
+                <CreditCard className="h-4 w-4" /> Payment proof
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <input
+                  data-testid="counter-post-order-payment-reference"
+                  value={paymentReferenceDrafts[lastCreatedOrderRow.id] ?? ""}
+                  onChange={(event) =>
+                    setPaymentReferenceDrafts((current) => ({
+                      ...current,
+                      [lastCreatedOrderRow.id]: event.target.value,
+                    }))
+                  }
+                  placeholder={paymentReferencePlaceholder(lastCreatedOrderRow)}
+                  className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white outline-none placeholder:text-gray-500 focus:border-sky-300"
+                />
+                <button
+                  data-testid="counter-post-order-confirm-payment"
+                  type="button"
+                  onClick={() => confirmCounterPayment(lastCreatedOrderRow)}
+                  disabled={
+                    busyPaymentAction === lastCreatedOrderRow.id ||
+                    !(paymentReferenceDrafts[lastCreatedOrderRow.id] || "").trim()
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-black text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-gray-500"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {busyPaymentAction === lastCreatedOrderRow.id ? "Saving" : "Confirm Payment"}
+                </button>
+              </div>
+            </div>
           )}
         </section>
       )}
@@ -1242,6 +1362,7 @@ export default function OrdersPage() {
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {readyCounterOrders.slice(0, 8).map((order) => {
               const blockers = closeBlockersForOrder(order);
+              const proofRequired = needsPaymentProof(order);
               return (
                 <article
                   key={`ready-counter-${order.id}`}
@@ -1263,7 +1384,50 @@ export default function OrdersPage() {
                   <span>{order.items.length} item types</span>
                   <span>Rs {Math.round(order.total_amount || 0).toLocaleString()}</span>
                   <span>{(order.payment_method || "cash").toUpperCase()}</span>
+                  {order.payment_reference && <span>Ref {order.payment_reference}</span>}
                 </div>
+                {proofRequired && (
+                  <div
+                    data-testid={`counter-ready-payment-proof-${order.id}`}
+                    className="mt-4 rounded-lg border border-sky-400/20 bg-sky-500/10 p-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-sky-200">
+                        <CreditCard className="h-4 w-4" /> Collect payment proof
+                      </p>
+                      <span className="text-xs font-black text-sky-100">
+                        Rs {Math.round(order.total_amount || 0).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <input
+                        data-testid={`counter-ready-payment-reference-${order.id}`}
+                        value={paymentReferenceDrafts[order.id] ?? ""}
+                        onChange={(event) =>
+                          setPaymentReferenceDrafts((current) => ({
+                            ...current,
+                            [order.id]: event.target.value,
+                          }))
+                        }
+                        placeholder={paymentReferencePlaceholder(order)}
+                        className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white outline-none placeholder:text-gray-500 focus:border-sky-300"
+                      />
+                      <button
+                        data-testid={`counter-ready-confirm-payment-${order.id}`}
+                        type="button"
+                        onClick={() => confirmCounterPayment(order)}
+                        disabled={
+                          busyPaymentAction === order.id ||
+                          !(paymentReferenceDrafts[order.id] || "").trim()
+                        }
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-black text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-gray-500"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {busyPaymentAction === order.id ? "Saving" : "Confirm Payment"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Link
                     data-testid={`counter-ready-kitchen-${order.id}`}
@@ -1620,6 +1784,11 @@ export default function OrdersPage() {
                     {order.payment_due && (
                       <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300">
                         Payment due
+                      </span>
+                    )}
+                    {needsPaymentProof(order) && (
+                      <span className="rounded-full bg-sky-500/10 px-3 py-1 text-xs font-black text-sky-300">
+                        Proof needed
                       </span>
                     )}
                   </div>
