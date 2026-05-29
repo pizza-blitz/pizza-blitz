@@ -19,6 +19,7 @@ import { getApiUrl } from "@/lib/api";
 const SHIFTS_API = getApiUrl("/api/v1/restaurant/shifts/");
 const ATTENDANCE_API = getApiUrl("/api/v1/restaurant/shifts/attendance-command");
 const LEAVE_API = getApiUrl("/api/v1/restaurant/shifts/leave");
+const PAYROLL_API = getApiUrl("/api/v1/restaurant/shifts/payroll-preview");
 
 const roleOptions = ["Counter / POS", "Kitchen / Oven", "Prep / Packing", "Delivery Rider"];
 const leaveTypes = ["CL", "PL", "SL", "LOP"];
@@ -102,8 +103,49 @@ type AttendanceCommand = {
   next_actions: string[];
 };
 
+type PayrollRow = {
+  staff_name: string;
+  staff_key: string;
+  roles: string[];
+  present_days: number;
+  total_hours: number;
+  paid_leave_days: number;
+  lop_days: number;
+  cl_days: number;
+  pl_days: number;
+  sl_days: number;
+  payable_days: number;
+  unpaid_days: number;
+  short_shift_count: number;
+  late_start_count: number;
+  present_leave_conflict_count: number;
+  exception_count: number;
+};
+
+type PayrollPreview = {
+  start_date: string;
+  end_date: string;
+  summary: {
+    staff_count: number;
+    total_present_days: number;
+    total_paid_leave_days: number;
+    total_lop_days: number;
+    total_payable_days: number;
+    total_hours: number;
+    exception_count: number;
+  };
+  staff: PayrollRow[];
+  next_actions: string[];
+};
+
 function todayIso() {
   return new Date().toISOString().split("T")[0];
+}
+
+function monthStartIso(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return todayIso().slice(0, 8) + "01";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
 function statusClass(status: string) {
@@ -124,6 +166,7 @@ export default function ShiftLogPage() {
   const [shifts, setShifts] = useState<ShiftLog[]>([]);
   const [performance, setPerformance] = useState<StaffPerformance[]>([]);
   const [attendance, setAttendance] = useState<AttendanceCommand | null>(null);
+  const [payroll, setPayroll] = useState<PayrollPreview | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [shiftForm, setShiftForm] = useState({
@@ -152,14 +195,20 @@ export default function ShiftLogPage() {
     setLoading(true);
     setMessage("");
     try {
-      const [shiftRows, performanceRows, attendanceCommand] = await Promise.all([
+      const payrollParams = new URLSearchParams({
+        start_date: monthStartIso(shiftForm.date),
+        end_date: shiftForm.date,
+      });
+      const [shiftRows, performanceRows, attendanceCommand, payrollPreview] = await Promise.all([
         readJson<ShiftLog[]>(SHIFTS_API),
         readJson<StaffPerformance[]>(`${SHIFTS_API}performance`),
         readJson<AttendanceCommand>(`${ATTENDANCE_API}?target_date=${shiftForm.date}`),
+        readJson<PayrollPreview>(`${PAYROLL_API}?${payrollParams.toString()}`),
       ]);
       setShifts(shiftRows);
       setPerformance(performanceRows);
       setAttendance(attendanceCommand);
+      setPayroll(payrollPreview);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not refresh attendance.");
     } finally {
@@ -395,6 +444,109 @@ export default function ShiftLogPage() {
                   ) : null}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div
+            data-testid="employee-payroll-preview"
+            className="rounded-lg border border-white/10 bg-[#12161c] p-5"
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black">
+                  <ClipboardList className="h-5 w-5 text-emerald-300" />
+                  Payroll And Leave Settlement Preview
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Month-to-date worked hours, paid CL/PL/SL, unpaid LOP and settlement exceptions.
+                </p>
+              </div>
+              <span className="rounded-md border border-white/10 px-2 py-1 text-xs text-slate-400">
+                {payroll?.start_date || monthStartIso(shiftForm.date)} to {payroll?.end_date || shiftForm.date}
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                ["Staff", payroll?.summary.staff_count ?? 0],
+                ["Payable Days", payroll?.summary.total_payable_days ?? 0],
+                ["Hours", payroll?.summary.total_hours ?? 0],
+                ["Exceptions", payroll?.summary.exception_count ?? 0],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-md border border-white/10 bg-white/[0.035] p-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                    {label}
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-slate-100">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[780px] text-left text-sm">
+                <thead className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                  <tr>
+                    <th className="py-3">Staff</th>
+                    <th>Role</th>
+                    <th>Present</th>
+                    <th>Paid Leave</th>
+                    <th>LOP</th>
+                    <th>Hours</th>
+                    <th>Payable</th>
+                    <th>Flags</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {(payroll?.staff || []).map((row) => (
+                    <tr
+                      key={row.staff_key}
+                      data-testid={`payroll-row-${row.staff_key}`}
+                      className={row.exception_count ? "text-amber-100" : "text-slate-200"}
+                    >
+                      <td className="py-3 font-bold">{row.staff_name}</td>
+                      <td className="max-w-[180px] truncate text-slate-400">
+                        {row.roles.join(", ") || "Leave only"}
+                      </td>
+                      <td>{row.present_days}</td>
+                      <td>
+                        {row.paid_leave_days}
+                        <span className="ml-1 text-xs text-slate-500">
+                          CL {row.cl_days} / PL {row.pl_days}
+                        </span>
+                      </td>
+                      <td>{row.lop_days}</td>
+                      <td>{row.total_hours}</td>
+                      <td>{row.payable_days}</td>
+                      <td>
+                        {row.exception_count ? (
+                          <span className="rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-1 text-xs font-bold text-amber-100">
+                            {row.exception_count}
+                          </span>
+                        ) : (
+                          <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs font-bold text-emerald-100">
+                            clear
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {payroll && payroll.staff.length === 0 ? (
+                    <tr>
+                      <td className="py-4 text-slate-400" colSpan={8}>
+                        No payroll preview records yet.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            <div data-testid="payroll-next-actions" className="mt-4 grid gap-2 md:grid-cols-2">
+              {(payroll?.next_actions || ["Loading payroll preview."]).map((action) => (
+                <p key={action} className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-slate-300">
+                  {action}
+                </p>
+              ))}
             </div>
           </div>
         </section>

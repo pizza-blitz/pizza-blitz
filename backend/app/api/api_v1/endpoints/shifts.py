@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -127,6 +127,27 @@ def _shift_dict(shift: ShiftLog) -> dict:
 
 def _leave_days(start_date: date, end_date: date) -> float:
     return float((end_date - start_date).days + 1)
+
+
+def _date_range_days(start_date: date, end_date: date) -> int:
+    return (end_date - start_date).days + 1
+
+
+def _overlap_days(
+    start_date: date,
+    end_date: date,
+    period_start: date,
+    period_end: date,
+) -> float:
+    overlap_start = max(start_date, period_start)
+    overlap_end = min(end_date, period_end)
+    if overlap_end < overlap_start:
+        return 0.0
+    return float(_date_range_days(overlap_start, overlap_end))
+
+
+def _slug(value: str) -> str:
+    return "-".join((value or "staff").strip().lower().split()) or "staff"
 
 
 def _leave_dict(leave: StaffLeaveRequest) -> dict:
@@ -392,6 +413,169 @@ def shift_performance(db: Session = Depends(get_db)):
         })
 
     return sorted(performance, key=lambda row: row["avg_revenue_on_shift_days"], reverse=True)
+
+
+@router.get("/payroll-preview")
+def payroll_preview(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    today = date.today()
+    period_start = _parse_date(start_date) if start_date else today.replace(day=1)
+    period_end = _parse_date(end_date) if end_date else today
+    if period_end < period_start:
+        raise HTTPException(status_code=422, detail="Payroll end date cannot be before start date.")
+    if _date_range_days(period_start, period_end) > 62:
+        raise HTTPException(status_code=422, detail="Payroll preview can cover a maximum of 62 days.")
+
+    shifts = (
+        db.query(ShiftLog)
+        .filter(ShiftLog.date >= period_start, ShiftLog.date <= period_end)
+        .order_by(ShiftLog.staff_name.asc(), ShiftLog.date.asc(), ShiftLog.shift_start.asc())
+        .all()
+    )
+    leaves = (
+        db.query(StaffLeaveRequest)
+        .filter(
+            StaffLeaveRequest.end_date >= period_start,
+            StaffLeaveRequest.start_date <= period_end,
+            StaffLeaveRequest.status.in_(["planned", "approved"]),
+        )
+        .order_by(StaffLeaveRequest.staff_name.asc(), StaffLeaveRequest.start_date.asc())
+        .all()
+    )
+
+    rows: dict[str, dict] = {}
+
+    def staff_row(staff_name: str) -> dict:
+        clean_name = staff_name.strip() if staff_name and staff_name.strip() else "Unnamed Staff"
+        if clean_name not in rows:
+            rows[clean_name] = {
+                "staff_name": clean_name,
+                "staff_key": _slug(clean_name),
+                "roles": set(),
+                "present_dates": set(),
+                "total_hours": 0.0,
+                "paid_leave_days": 0.0,
+                "lop_days": 0.0,
+                "cl_days": 0.0,
+                "pl_days": 0.0,
+                "sl_days": 0.0,
+                "short_shift_count": 0,
+                "late_start_count": 0,
+                "present_leave_conflict_count": 0,
+            }
+        return rows[clean_name]
+
+    leave_dates_by_staff: dict[str, set[date]] = {}
+    for leave in leaves:
+        row = staff_row(leave.staff_name)
+        leave_days = _overlap_days(leave.start_date, leave.end_date, period_start, period_end)
+        leave_type = (leave.leave_type or "").upper()
+        if leave_type == "CL":
+            row["cl_days"] += leave_days
+            row["paid_leave_days"] += leave_days
+        elif leave_type == "PL":
+            row["pl_days"] += leave_days
+            row["paid_leave_days"] += leave_days
+        elif leave_type == "SL":
+            row["sl_days"] += leave_days
+            row["paid_leave_days"] += leave_days
+        elif leave_type == "LOP":
+            row["lop_days"] += leave_days
+
+        active_dates = leave_dates_by_staff.setdefault(row["staff_name"], set())
+        start = max(leave.start_date, period_start)
+        end = min(leave.end_date, period_end)
+        for offset in range(_date_range_days(start, end)):
+            active_dates.add(start + timedelta(days=offset))
+
+    for shift in shifts:
+        row = staff_row(shift.staff_name)
+        role_key = _role_key(shift.role)
+        row["roles"].add(_role_label(role_key))
+        row["present_dates"].add(shift.date)
+        hours = _shift_hours(shift)
+        row["total_hours"] += hours
+        if hours and hours < 6:
+            row["short_shift_count"] += 1
+
+        requirement = next((item for item in ROLE_REQUIREMENTS if item["key"] == role_key), None)
+        expected = _parse_minutes(requirement["expected_start"]) if requirement else None
+        actual = _parse_minutes(shift.shift_start)
+        if expected is not None and actual is not None and actual > expected + 15:
+            row["late_start_count"] += 1
+
+        if shift.date in leave_dates_by_staff.get(row["staff_name"], set()):
+            row["present_leave_conflict_count"] += 1
+
+    staff_rows = []
+    for row in rows.values():
+        present_days = float(len(row["present_dates"]))
+        payable_days = present_days + row["paid_leave_days"]
+        exception_count = (
+            row["short_shift_count"]
+            + row["late_start_count"]
+            + row["present_leave_conflict_count"]
+            + (1 if row["lop_days"] else 0)
+        )
+        staff_rows.append(
+            {
+                "staff_name": row["staff_name"],
+                "staff_key": row["staff_key"],
+                "roles": sorted(row["roles"]),
+                "present_days": present_days,
+                "total_hours": round(row["total_hours"], 2),
+                "paid_leave_days": round(row["paid_leave_days"], 2),
+                "lop_days": round(row["lop_days"], 2),
+                "cl_days": round(row["cl_days"], 2),
+                "pl_days": round(row["pl_days"], 2),
+                "sl_days": round(row["sl_days"], 2),
+                "payable_days": round(payable_days, 2),
+                "unpaid_days": round(row["lop_days"], 2),
+                "short_shift_count": row["short_shift_count"],
+                "late_start_count": row["late_start_count"],
+                "present_leave_conflict_count": row["present_leave_conflict_count"],
+                "exception_count": exception_count,
+            }
+        )
+
+    staff_rows.sort(
+        key=lambda item: (
+            -item["exception_count"],
+            item["staff_name"].lower(),
+        )
+    )
+    exception_count = sum(row["exception_count"] for row in staff_rows)
+    summary = {
+        "staff_count": len(staff_rows),
+        "total_present_days": round(sum(row["present_days"] for row in staff_rows), 2),
+        "total_paid_leave_days": round(sum(row["paid_leave_days"] for row in staff_rows), 2),
+        "total_lop_days": round(sum(row["lop_days"] for row in staff_rows), 2),
+        "total_payable_days": round(sum(row["payable_days"] for row in staff_rows), 2),
+        "total_hours": round(sum(row["total_hours"] for row in staff_rows), 2),
+        "exception_count": exception_count,
+    }
+    next_actions = []
+    if not staff_rows:
+        next_actions.append("Log shifts and CL/PL leave before running salary settlement.")
+    if summary["total_lop_days"]:
+        next_actions.append("Review unpaid LOP days before payroll approval.")
+    if any(row["present_leave_conflict_count"] for row in staff_rows):
+        next_actions.append("Resolve staff marked present and on leave for the same day.")
+    if any(row["short_shift_count"] or row["late_start_count"] for row in staff_rows):
+        next_actions.append("Confirm short shifts and late starts with the floor manager.")
+    if not next_actions:
+        next_actions.append("Payroll preview is ready for owner review.")
+
+    return {
+        "start_date": period_start.isoformat(),
+        "end_date": period_end.isoformat(),
+        "summary": summary,
+        "staff": staff_rows,
+        "next_actions": next_actions[:5],
+    }
 
 
 @router.get("/by-date/{target_date}")
