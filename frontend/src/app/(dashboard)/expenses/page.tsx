@@ -14,15 +14,26 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   Calendar,
+  CheckCircle2,
+  ClipboardCheck,
   IndianRupee,
   Loader2,
   Plus,
   Receipt,
+  RefreshCw,
   Save,
+  ShieldCheck,
   TrendingDown,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+
+const STATS_API = getApiUrl("/api/v1/restaurant/stats/dashboard-stats?period=30days");
+const TREND_API = getApiUrl("/api/v1/restaurant/stats/insights/profit-trend?months=6");
+const EXPENSES_API = getApiUrl("/api/v1/restaurant/expenses/expenses");
+const CATEGORIES_API = getApiUrl("/api/v1/restaurant/expenses/categories");
+const AUDIT_API = getApiUrl("/api/v1/restaurant/expenses/audit-command");
 
 type ExpenseCategory = {
   id: number;
@@ -35,31 +46,123 @@ type ExpenseRow = {
   date: string;
   category_id: number;
   amount: number;
-  description?: string;
+  description?: string | null;
+};
+
+type ExpenseStats = {
+  total_sales: number;
+  total_expense: number;
+  total_profit: number;
+  avg_daily_sale: number;
+  sales_growth: number;
+};
+
+type TrendRow = {
+  month: string;
+  total_sale: number;
+  total_expense: number;
+  profit: number;
+  margin_percent: number;
+};
+
+type AuditCheck = {
+  key: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+};
+
+type AuditCategory = {
+  category_id: number;
+  category: string;
+  amount: number;
+  count: number;
+  share_percent: number;
+};
+
+type DailyRisk = {
+  date: string;
+  sales: number;
+  expenses: number;
+  profit: number;
+  expense_ratio: number;
+  severity: "warn" | "fail";
+  reason: string;
+};
+
+type ExpenseAuditCommand = {
+  period: {
+    start_date: string;
+    end_date: string;
+    days: number;
+  };
+  overall: "pass" | "warn" | "fail";
+  readiness_score: number;
+  summary: {
+    total_sales: number;
+    sales_expenses: number;
+    ledger_total: number;
+    profit: number;
+    expense_ratio: number;
+    margin_percent: number;
+    ledger_variance: number;
+    ledger_variance_percent: number;
+    expense_count: number;
+    category_count: number;
+    risk_day_count: number;
+  };
+  checks: AuditCheck[];
+  category_breakdown: AuditCategory[];
+  daily_risks: DailyRisk[];
+  top_expenses: ExpenseRow[];
+  next_actions: string[];
 };
 
 const categoryColors = [
   "#EA580C",
   "#2563EB",
   "#10B981",
-  "#9333EA",
+  "#7C3AED",
   "#DC2626",
   "#0F766E",
   "#CA8A04",
   "#64748B",
 ];
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function money(value: number | string | undefined | null) {
+  return `Rs. ${Math.round(Number(value || 0)).toLocaleString()}`;
+}
+
+function statusClass(status: string) {
+  if (status === "pass") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "fail") return "border-red-200 bg-red-50 text-red-800";
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
+async function readJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { signal, credentials: "include", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
 export default function ExpenseTracker() {
-  const [expenseStats, setExpenseStats] = useState<any>(null);
-  const [trends, setTrends] = useState<any[]>([]);
+  const [expenseStats, setExpenseStats] = useState<ExpenseStats | null>(null);
+  const [trends, setTrends] = useState<TrendRow[]>([]);
   const [detailedExpenses, setDetailedExpenses] = useState<ExpenseRow[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [audit, setAudit] = useState<ExpenseAuditCommand | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 10),
+    date: todayIso(),
     category_id: "",
     amount: "",
     description: "",
@@ -69,6 +172,7 @@ export default function ExpenseTracker() {
     const controller = new AbortController();
     fetchExpenseData(controller.signal);
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const categoryById = useMemo(() => {
@@ -105,11 +209,12 @@ export default function ExpenseTracker() {
   const fetchExpenseData = async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
-      const [statsRes, trendRes, expenseRes, categoryRes] = await Promise.all([
-        fetch(getApiUrl("/api/v1/restaurant/stats/dashboard-stats?period=30days"), { signal }).then((r) => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/stats/insights/profit-trend?months=6"), { signal }).then((r) => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/expenses/expenses"), { signal }).then((r) => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/expenses/categories"), { signal }).then((r) => r.json()),
+      const [statsRes, trendRes, expenseRes, categoryRes, auditRes] = await Promise.all([
+        readJson<{ metrics: ExpenseStats }>(STATS_API, signal),
+        readJson<{ trend: TrendRow[] }>(TREND_API, signal),
+        readJson<ExpenseRow[]>(EXPENSES_API, signal),
+        readJson<ExpenseCategory[]>(CATEGORIES_API, signal),
+        readJson<ExpenseAuditCommand>(AUDIT_API, signal),
       ]);
 
       if (signal?.aborted) return;
@@ -117,13 +222,14 @@ export default function ExpenseTracker() {
       setTrends(trendRes.trend || []);
       setDetailedExpenses(expenseRes || []);
       setCategories(categoryRes || []);
+      setAudit(auditRes);
       if (!form.category_id && categoryRes?.length) {
         setForm((current) => ({ ...current, category_id: String(categoryRes[0].id) }));
       }
     } catch (error) {
       if (signal?.aborted) return;
       console.error("Failed to fetch expense data", error);
-      setMessage("Could not load expense data.");
+      setMessage("Could not load expense audit data.");
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false);
@@ -136,9 +242,10 @@ export default function ExpenseTracker() {
     setIsSubmitting(true);
     setMessage("");
     try {
-      const response = await fetch(getApiUrl("/api/v1/restaurant/expenses/expenses"), {
+      const response = await fetch(EXPENSES_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           date: `${form.date}T12:00:00`,
           category_id: Number(form.category_id),
@@ -149,10 +256,10 @@ export default function ExpenseTracker() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not save expense.");
 
-      setMessage(`Logged expense of Rs. ${Number(data.amount || 0).toLocaleString()}.`);
       setForm((current) => ({ ...current, amount: "", description: "" }));
       setShowForm(false);
       await fetchExpenseData();
+      setMessage(`Logged expense of ${money(data.amount)}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save expense.");
     } finally {
@@ -165,30 +272,42 @@ export default function ExpenseTracker() {
     : "0.0";
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-7 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter">Cost Intelligence</h1>
-          <p className="mt-1 font-medium text-gray-500">Track supplier bills, manual expenses, and cost allocation.</p>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-orange-600">Owner Audit</p>
+          <h1 className="mt-1 text-4xl font-black uppercase tracking-tighter text-gray-950">Cost Intelligence</h1>
+          <p className="mt-1 font-medium text-gray-500">Track supplier bills, manual expenses, category exposure and daily cost risk.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowForm((current) => !current)}
-          className="flex items-center rounded-xl bg-black px-6 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-orange-100 transition-colors hover:bg-orange-600"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Log Expense
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => fetchExpenseData()}
+            className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-black uppercase tracking-wide text-gray-700 shadow-sm hover:border-orange-300"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </button>
+          <button
+            data-testid="expense-log-toggle"
+            type="button"
+            onClick={() => setShowForm((current) => !current)}
+            className="inline-flex items-center rounded-lg bg-black px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-orange-100 transition-colors hover:bg-orange-600"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Log Expense
+          </button>
+        </div>
       </div>
 
       {message && (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
           {message}
         </div>
       )}
 
       {showForm && (
-        <form onSubmit={submitExpense} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+        <form onSubmit={submitExpense} className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase text-gray-400">Date</span>
@@ -196,16 +315,17 @@ export default function ExpenseTracker() {
                 type="date"
                 value={form.date}
                 onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
                 required
               />
             </label>
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase text-gray-400">Category</span>
               <select
+                data-testid="expense-category-select"
                 value={form.category_id}
                 onChange={(event) => setForm((current) => ({ ...current, category_id: event.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
                 required
               >
                 {categories.map((category) => (
@@ -216,12 +336,13 @@ export default function ExpenseTracker() {
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase text-gray-400">Amount</span>
               <input
+                data-testid="expense-amount-input"
                 type="number"
                 min="0"
                 step="0.01"
                 value={form.amount}
                 onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
                 placeholder="0"
                 required
               />
@@ -230,16 +351,18 @@ export default function ExpenseTracker() {
               <span className="text-xs font-bold uppercase text-gray-400">Description</span>
               <div className="flex gap-3">
                 <input
+                  data-testid="expense-description-input"
                   type="text"
                   value={form.description}
                   onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                  className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
+                  className="min-w-0 flex-1 rounded-md border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
                   placeholder="What was this for?"
                 />
                 <button
+                  data-testid="expense-save"
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center rounded-lg bg-orange-600 px-4 py-2 font-bold text-white hover:bg-orange-700 disabled:opacity-60"
+                  className="inline-flex items-center rounded-md bg-orange-600 px-4 py-2 font-bold text-white hover:bg-orange-700 disabled:opacity-60"
                 >
                   {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                   Save
@@ -253,12 +376,104 @@ export default function ExpenseTracker() {
       {isLoading ? (
         <div className="py-20 text-center">
           <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-orange-500" />
-          <p className="text-xs font-black uppercase tracking-widest text-gray-400">Loading cost data...</p>
+          <p className="text-xs font-black uppercase tracking-widest text-gray-400">Loading cost audit...</p>
         </div>
       ) : (
         <>
+          <section data-testid="expense-audit-command" className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+            <div className={`rounded-lg border p-5 ${statusClass(audit?.overall || "warn")}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-black uppercase">Audit Score</span>
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <p data-testid="expense-audit-readiness-score" className="mt-4 text-4xl font-black">
+                {audit?.readiness_score ?? 0}%
+              </p>
+              <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] opacity-80">
+                {audit?.overall || "loading"} cost control
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between text-gray-500">
+                <span className="text-sm font-black uppercase">Expense Ratio</span>
+                <TrendingDown className="h-5 w-5 text-red-500" />
+              </div>
+              <p className="mt-4 text-4xl font-black text-gray-950">{audit?.summary.expense_ratio ?? 0}%</p>
+              <p className="mt-2 text-sm font-semibold text-gray-500">Margin {audit?.summary.margin_percent ?? 0}%</p>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between text-gray-500">
+                <span className="text-sm font-black uppercase">Ledger Variance</span>
+                <ClipboardCheck className="h-5 w-5 text-blue-600" />
+              </div>
+              <p data-testid="expense-ledger-variance" className="mt-4 text-3xl font-black text-gray-950">
+                {money(audit?.summary.ledger_variance)}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-gray-500">{audit?.summary.ledger_variance_percent ?? 0}% variance</p>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between text-gray-500">
+                <span className="text-sm font-black uppercase">Risk Days</span>
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+              </div>
+              <p data-testid="expense-risk-days" className="mt-4 text-4xl font-black text-gray-950">
+                {audit?.summary.risk_day_count ?? 0}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-gray-500">Last {audit?.period.days ?? 30} days</p>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+            <div className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-black uppercase text-gray-950">Audit Checks</h2>
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">What needs owner attention</p>
+                </div>
+                <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+              </div>
+              <div data-testid="expense-audit-checks" className="grid gap-3 md:grid-cols-2">
+                {(audit?.checks || []).map((check) => (
+                  <div key={check.key} className={`rounded-md border p-4 ${statusClass(check.status)}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-black">{check.label}</p>
+                      <span className="rounded-md bg-white/70 px-2 py-1 text-xs font-black uppercase">{check.status}</span>
+                    </div>
+                    <p className="mt-2 text-sm font-medium opacity-80">{check.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-black uppercase text-gray-950">Daily Risk Queue</h2>
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-400">High burn or missing cost days</p>
+                </div>
+                <AlertTriangle className="h-6 w-6 text-amber-500" />
+              </div>
+              <div className="max-h-[280px] space-y-3 overflow-y-auto pr-1">
+                {(audit?.daily_risks || []).map((risk) => (
+                  <div key={`${risk.date}-${risk.reason}`} className={`rounded-md border p-4 ${statusClass(risk.severity)}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-black">{new Date(risk.date).toLocaleDateString()}</p>
+                      <span className="text-sm font-black">{risk.expense_ratio}%</span>
+                    </div>
+                    <p className="mt-1 text-sm font-medium opacity-80">{risk.reason}</p>
+                  </div>
+                ))}
+                {audit && audit.daily_risks.length === 0 ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                    No cost risk days in the selected period.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm lg:col-span-2">
+            <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm lg:col-span-2">
               <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xl font-black uppercase tracking-tight text-gray-900">Burn Velocity</h3>
@@ -280,8 +495,8 @@ export default function ExpenseTracker() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
                     <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: "bold" }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: "bold" }} tickFormatter={(v) => `Rs. ${v / 1000}k`} />
-                    <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 16px 40px -20px rgb(0 0 0 / 0.35)" }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#9ca3af", fontWeight: "bold" }} tickFormatter={(v) => `Rs. ${Number(v) / 1000}k`} />
+                    <Tooltip contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 16px 40px -20px rgb(0 0 0 / 0.35)" }} />
                     <Area type="monotone" dataKey="total_sale" stroke="#EA580C" strokeWidth={4} fill="url(#colorRev)" />
                     <Area type="monotone" dataKey="total_expense" stroke="#EF4444" strokeWidth={4} fill="none" strokeDasharray="10 10" />
                   </AreaChart>
@@ -289,7 +504,7 @@ export default function ExpenseTracker() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
               <h3 className="mb-6 text-xs font-black uppercase tracking-[0.2em] text-gray-400">Allocation Map</h3>
               <div className="h-56">
                 {categoryTotals.length ? (
@@ -300,46 +515,51 @@ export default function ExpenseTracker() {
                           <Cell key={entry.id} fill={entry.color} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => `Rs. ${Number(value).toLocaleString()}`} />
+                      <Tooltip formatter={(value) => money(Number(value))} />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex h-full items-center justify-center text-sm font-semibold text-gray-400">No expenses yet.</div>
                 )}
               </div>
-              <div className="mt-6 space-y-3">
-                {categoryTotals.slice(0, 5).map((category) => (
-                  <div key={category.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-                    <div className="flex items-center">
-                      <span className="mr-3 h-3 w-3 rounded-full" style={{ backgroundColor: category.color }} />
-                      <span className="text-xs font-black uppercase text-gray-500">{category.name}</span>
+              <div data-testid="expense-category-breakdown" className="mt-6 space-y-3">
+                {(audit?.category_breakdown || categoryTotals.slice(0, 5)).slice(0, 5).map((category, index) => {
+                  const name = "category" in category ? category.category : category.name;
+                  const value = "amount" in category ? category.amount : category.value;
+                  const id = "category_id" in category ? category.category_id : category.id;
+                  return (
+                    <div key={`${id}-${name}`} className="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                      <div className="flex items-center">
+                        <span className="mr-3 h-3 w-3 rounded-full" style={{ backgroundColor: categoryColors[index % categoryColors.length] }} />
+                        <span className="text-xs font-black uppercase text-gray-500">{name}</span>
+                      </div>
+                      <span className="text-sm font-black text-gray-900">{money(value)}</span>
                     </div>
-                    <span className="text-sm font-black text-gray-900">Rs. {Math.round(category.value).toLocaleString()}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="rounded-xl bg-red-600 p-6 text-white shadow-xl shadow-red-100">
+            <div className="rounded-lg bg-red-600 p-6 text-white shadow-xl shadow-red-100">
               <TrendingDown className="mb-4 h-7 w-7 opacity-80" />
               <p className="mb-1 text-xs font-black uppercase tracking-widest text-red-100">Monthly Burn</p>
-              <h4 className="text-3xl font-black">Rs. {Number(expenseStats?.total_expense || 0).toLocaleString()}</h4>
+              <h4 className="text-3xl font-black">{money(expenseStats?.total_expense)}</h4>
             </div>
-            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
               <IndianRupee className="mb-4 h-7 w-7 text-orange-600" />
               <p className="mb-1 text-xs font-black uppercase tracking-widest text-gray-400">Expense Ledger</p>
-              <h4 className="text-3xl font-black text-gray-900">Rs. {ledgerTotal.toLocaleString()}</h4>
+              <h4 className="text-3xl font-black text-gray-900">{money(ledgerTotal)}</h4>
             </div>
-            <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+            <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm">
               <Calendar className="mb-4 h-7 w-7 text-green-600" />
               <p className="mb-1 text-xs font-black uppercase tracking-widest text-gray-400">Profit Efficiency</p>
               <h4 className="text-3xl font-black text-gray-900">{marginPercent}%</h4>
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 p-6">
               <div>
                 <h3 className="text-xl font-black uppercase tracking-tight text-gray-900">Expenditure Ledger</h3>
@@ -369,7 +589,7 @@ export default function ExpenseTracker() {
                             {categoryById[expense.category_id]?.name || `Category ${expense.category_id}`}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-right text-sm font-black text-red-500">Rs. {Number(expense.amount || 0).toLocaleString()}</td>
+                        <td className="px-6 py-4 text-right text-sm font-black text-red-500">{money(expense.amount)}</td>
                         <td className="px-6 py-4 text-sm italic text-gray-500">{expense.description || "No description"}</td>
                       </tr>
                     ))

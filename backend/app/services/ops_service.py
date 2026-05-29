@@ -18,6 +18,8 @@ from app.models.domain import (
     DailySales,
     DeliveryAssignment,
     DeliveryZone,
+    Expense,
+    ExpenseCategory,
     MenuCustomizationGroup,
     MenuCustomizationOption,
     MenuItem,
@@ -338,6 +340,13 @@ LAUNCH_CRITICAL_ROUTE_PROOFS = [
         "route": "/shifts",
         "module_key": "employee_workforce",
         "proof": "verify-employee-attendance-command.cjs",
+    },
+    {
+        "key": "expense_audit",
+        "label": "Expense Audit",
+        "route": "/expenses",
+        "module_key": "expense_audit",
+        "proof": "verify-expense-audit-command.cjs",
     },
     {
         "key": "reports",
@@ -2582,6 +2591,7 @@ def _launch_module_readiness(
     ad_campaigns = _count(db, AdCampaign)
     ad_launches = _count(db, AdCampaignLaunch)
     daily_sales = _count(db, DailySales)
+    expense_metrics = _expense_audit_metrics(db)
     successful_backups = _count(db, BackupRun, BackupRun.status == "success")
     employee_metrics = _employee_attendance_metrics(db)
 
@@ -2638,6 +2648,12 @@ def _launch_module_readiness(
         + (25 if employee_metrics["leave_count"] else 10)
         + (25 if employee_metrics["staff_count"] >= 2 else 10 if employee_metrics["staff_count"] else 0)
         + (15 if employee_metrics["covered_role_count"] >= 2 else 5 if employee_metrics["covered_role_count"] else 0)
+    )
+    expense_score = (
+        (30 if expense_metrics["expense_count"] else 15 if expense_metrics["expense_signal_days"] else 0)
+        + (25 if expense_metrics["category_count"] >= 5 else 10 if expense_metrics["category_count"] else 0)
+        + (25 if expense_metrics["expense_signal_days"] else 0)
+        + (20 if expense_metrics["high_risk_days"] == 0 else 10)
     )
     production_score = round(
         (_readiness_score(go_live_items) * 0.75)
@@ -2738,6 +2754,23 @@ def _launch_module_readiness(
             next_actions=[
                 "Log today's counter, kitchen, prep and delivery staff before opening.",
                 "Record CL/PL leave entries so payroll and coverage gaps stay visible.",
+            ],
+        ),
+        _module(
+            key="expense_audit",
+            title="Expense Audit And Cost Control",
+            score=expense_score,
+            route="/expenses",
+            detail="Owner can audit expense ratio, manual ledger variance, category exposure, and daily cost risks.",
+            metrics=[
+                {"label": "Manual expenses", "value": str(expense_metrics["expense_count"])},
+                {"label": "Cost categories", "value": str(expense_metrics["category_count"])},
+                {"label": "Expense days", "value": str(expense_metrics["expense_signal_days"])},
+                {"label": "High-risk days", "value": str(expense_metrics["high_risk_days"])},
+            ],
+            next_actions=[
+                "Log supplier, utility, rent, staff and marketing costs against categories.",
+                "Review expense audit variance between imported sales data and manual expense ledger.",
             ],
         ),
         _module(
@@ -2909,6 +2942,44 @@ def _employee_attendance_metrics(db: Session) -> dict:
         "leave_count": len(leaves),
         "staff_count": len(staff_names),
         "covered_role_count": len(covered_roles),
+    }
+
+
+def _expense_audit_metrics(db: Session) -> dict:
+    today = datetime.utcnow().date()
+    start_date = today - timedelta(days=29)
+    expenses = (
+        db.query(Expense)
+        .filter(Expense.date >= datetime.combine(start_date, datetime.min.time()))
+        .order_by(Expense.date.desc(), Expense.id.desc())
+        .limit(250)
+        .all()
+    )
+    category_count = _count(db, ExpenseCategory, ExpenseCategory.is_active.is_(True))
+    daily_rows = (
+        db.query(DailySales)
+        .filter(DailySales.date >= start_date, DailySales.date <= today)
+        .all()
+    )
+    expense_signal_days = sum(
+        1
+        for row in daily_rows
+        if float(row.total_expense or 0) > 0
+    )
+    high_risk_days = 0
+    for row in daily_rows:
+        sale = float(row.total_sale or 0)
+        expense = float(row.total_expense or 0)
+        if sale > 0 and expense / sale > 0.75:
+            high_risk_days += 1
+        elif sale == 0 and expense > 0:
+            high_risk_days += 1
+
+    return {
+        "expense_count": len(expenses),
+        "category_count": category_count,
+        "expense_signal_days": expense_signal_days,
+        "high_risk_days": high_risk_days,
     }
 
 
