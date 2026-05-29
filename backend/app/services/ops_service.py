@@ -686,6 +686,14 @@ def readiness_report(db: Session) -> dict:
         backup_freshness=backup_freshness,
         go_live_items=go_live_items,
     )
+    restaurant_ready_audit = _restaurant_ready_audit(
+        modules=module_readiness,
+        payment_status=payment_status,
+        payment_providers=payment_providers,
+        backup_freshness=backup_freshness,
+        restore_rehearsal=restore_rehearsal,
+        go_live_items=go_live_items,
+    )
     launch_blockers = [item for item in go_live_items if item["status"] == "fail"]
     setup_actions = [
         item
@@ -738,6 +746,7 @@ def readiness_report(db: Session) -> dict:
         "go_live_sections": go_live_sections,
         "launch_summary": _launch_summary(module_readiness),
         "module_readiness": module_readiness,
+        "restaurant_ready_audit": restaurant_ready_audit,
         "overall": overall,
         "failed_checks": failed,
         "warning_checks": warnings,
@@ -2902,6 +2911,229 @@ def _launch_summary(modules: list[dict]) -> dict:
         "modules_attention": attention,
         "modules_blocked": blocked,
         "implementation_score": score,
+        "next_actions": next_actions[:6],
+    }
+
+
+def _restaurant_ready_audit(
+    *,
+    modules: list[dict],
+    payment_status: dict,
+    payment_providers: list[dict],
+    backup_freshness: dict,
+    restore_rehearsal: dict,
+    go_live_items: list[dict],
+) -> dict:
+    module_by_key = {module["key"]: module for module in modules}
+
+    def module_requirement(
+        *,
+        key: str,
+        module_key: str,
+        label: str,
+        route: str,
+        next_action: str,
+        evidence: str | None = None,
+        score_adjustment: int = 0,
+    ) -> dict:
+        module = module_by_key.get(module_key, {})
+        score = max(0, min(100, int(module.get("score", 0)) + score_adjustment))
+        status = _module_status(score)
+        return {
+            "key": key,
+            "label": label,
+            "status": status,
+            "score": score,
+            "route": route or module.get("route", "/ops"),
+            "evidence": evidence or module.get("detail") or "No live evidence has been recorded yet.",
+            "next_action": next_action,
+        }
+
+    security_module = module_by_key.get("security_foundation", {})
+    production_module = module_by_key.get("production_operations", {})
+    security_score = int(security_module.get("score", 0))
+    production_score = int(production_module.get("score", 0))
+    backup_ready = backup_freshness.get("status") == "pass"
+    restore_ready = restore_rehearsal.get("status") == "pass"
+    owner_score = round(
+        (security_score * 0.35)
+        + (production_score * 0.35)
+        + (15 if backup_ready else 5)
+        + (15 if restore_ready else 5)
+    )
+    if owner_score >= 85 and backup_ready and restore_ready:
+        owner_status = "pass"
+    elif owner_score >= 45 or backup_ready:
+        owner_status = "warn"
+    else:
+        owner_status = "fail"
+
+    selected_provider = payment_status.get("provider", "manual")
+    settlement_providers = [
+        provider
+        for provider in payment_providers
+        if provider.get("provider") in {"direct_bank", "cashfree", "razorpay"}
+    ]
+    active_payment_ready = (
+        selected_provider in {"direct_bank", "cashfree", "razorpay"}
+        and payment_status.get("checkout_configured")
+        and payment_status.get("webhook_configured")
+    )
+    configured_settlement = next(
+        (
+            provider
+            for provider in settlement_providers
+            if provider.get("checkout_configured") and provider.get("webhook_configured")
+        ),
+        None,
+    )
+    if active_payment_ready:
+        payment_score = 100
+        payment_status_value = "pass"
+        payment_evidence = f"{selected_provider} checkout and payment confirmation are configured."
+        payment_next_action = "Run one live Rs. 1 or provider-sandbox payment proof before customer launch."
+    elif configured_settlement:
+        payment_score = 75
+        payment_status_value = "warn"
+        payment_evidence = (
+            f"{configured_settlement['provider']} looks configured, but the active provider is {selected_provider}."
+        )
+        payment_next_action = f"Set PAYMENT_PROVIDER={configured_settlement['provider']} and run checkout plus webhook proof."
+    elif selected_provider == "manual":
+        payment_score = 45
+        payment_status_value = "warn"
+        payment_evidence = "Manual payment proof exists, but real customer launch still needs Direct Bank, Cashfree, or Razorpay."
+        payment_next_action = "Choose Direct Bank for staff-verified UPI/bank transfer or Cashfree/Razorpay for gateway checkout."
+    else:
+        missing = sorted({
+            *payment_status.get("missing_checkout_settings", []),
+            *payment_status.get("missing_webhook_settings", []),
+        })
+        payment_score = 35
+        payment_status_value = "fail"
+        payment_evidence = f"{selected_provider} is selected but missing: {', '.join(missing) or 'provider settings'}."
+        payment_next_action = "Add the missing provider settings in Vercel/Supabase and rerun payment readiness proof."
+
+    go_live_score = _readiness_score(go_live_items)
+    requirements = [
+        {
+            "key": "owner_admin_production_controls",
+            "label": "Owner/Admin And Production Controls",
+            "status": owner_status,
+            "score": owner_score,
+            "route": "/ops",
+            "evidence": (
+                f"Security foundation is {security_score}% and production operations are {production_score}%. "
+                f"Backup: {backup_freshness.get('status', 'warn')}; restore: {restore_rehearsal.get('status', 'warn')}."
+            ),
+            "next_action": (
+                "Record real restore rehearsal proof."
+                if not restore_ready
+                else "Keep admin credentials, Vercel secrets, and backup evidence current."
+            ),
+        },
+        module_requirement(
+            key="product_catalog_customization",
+            module_key="product_catalog",
+            label="Product Catalog, Sizes, Toppings And Add-ons",
+            route="/menu",
+            next_action="Finish real menu pricing, images, combos, and all required topping/add-on groups.",
+        ),
+        module_requirement(
+            key="counter_pos_order_taking",
+            module_key="ordering_flow",
+            label="Counter POS Order Taking",
+            route="/counter",
+            next_action="Run one real walk-in/takeaway bill through Quick Counter during counter practice.",
+            evidence="Quick Counter is available for fast staff order taking and uses the live menu/order flow.",
+        ),
+        module_requirement(
+            key="customer_website_ordering",
+            module_key="ordering_flow",
+            label="Customer Website Ordering And Checkout",
+            route="/order",
+            next_action="Run one public customer order from catalog to checkout, receipt, and tracking.",
+        ),
+        module_requirement(
+            key="kitchen_station_kot",
+            module_key="kitchen_station_operations",
+            label="Kitchen Station And KOT Flow",
+            route="/orders",
+            next_action="Create a mixed pizza/sides/drink order and confirm station-specific KOT slips.",
+        ),
+        module_requirement(
+            key="delivery_zones_assignment",
+            module_key="delivery_operations",
+            label="Delivery Charges, Zones And Assignment",
+            route="/operations",
+            next_action="Confirm zones, delivery charges, ETA rules, and delivery staff assignment with real addresses.",
+        ),
+        {
+            "key": "payment_settlement",
+            "label": "Cashfree / Direct Bank Payment Settlement",
+            "status": payment_status_value,
+            "score": payment_score,
+            "route": "/settings",
+            "evidence": payment_evidence,
+            "next_action": payment_next_action,
+        },
+        module_requirement(
+            key="employee_attendance_leave",
+            module_key="employee_workforce",
+            label="Employee Attendance, CL/PL And Role Coverage",
+            route="/shifts",
+            next_action="Enter today's counter, kitchen, prep and delivery shifts plus any CL/PL leave.",
+        ),
+        module_requirement(
+            key="expense_reporting_audit",
+            module_key="expense_audit",
+            label="Expense Audit, Reporting And Cost Control",
+            route="/expenses",
+            next_action="Load real supplier, rent, salary, utility and marketing costs for owner review.",
+        ),
+        {
+            **module_requirement(
+                key="marketing_crm_growth",
+                module_key="marketing_crm",
+                label="Customer CRM, Offers, Social And Ads",
+                route="/promotions",
+                next_action="Connect live WhatsApp/SMS/email and social/ad provider credentials when accounts are ready.",
+            ),
+            "score": round(
+                (
+                    int(module_by_key.get("marketing_crm", {}).get("score", 0))
+                    + int(module_by_key.get("growth_publishing", {}).get("score", 0))
+                )
+                / 2
+            ),
+        },
+    ]
+    for requirement in requirements:
+        requirement["status"] = (
+            requirement["status"]
+            if requirement["key"] in {"owner_admin_production_controls", "payment_settlement"}
+            else _module_status(int(requirement["score"]))
+        )
+
+    ready = sum(1 for item in requirements if item["status"] == "pass")
+    attention = sum(1 for item in requirements if item["status"] == "warn")
+    blocked = sum(1 for item in requirements if item["status"] == "fail")
+    score = round((sum(item["score"] for item in requirements) + go_live_score) / (len(requirements) + 1))
+    status = "pass" if blocked == 0 and attention == 0 and score >= 90 else "warn" if blocked == 0 else "fail"
+    next_actions = [item["next_action"] for item in requirements if item["status"] != "pass"]
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "status": status,
+        "score": score,
+        "summary": {
+            "requirements_total": len(requirements),
+            "requirements_ready": ready,
+            "requirements_attention": attention,
+            "requirements_blocked": blocked,
+            "target": "100% restaurant-ready",
+        },
+        "requirements": requirements,
         "next_actions": next_actions[:6],
     }
 

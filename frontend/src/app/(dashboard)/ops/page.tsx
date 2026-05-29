@@ -124,6 +124,31 @@ type LaunchSummary = {
   next_actions: string[];
 };
 
+type RestaurantReadyRequirement = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  score: number;
+  route: string;
+  evidence: string;
+  next_action: string;
+};
+
+type RestaurantReadyAudit = {
+  generated_at: string;
+  status: CheckStatus;
+  score: number;
+  summary: {
+    requirements_total: number;
+    requirements_ready: number;
+    requirements_attention: number;
+    requirements_blocked: number;
+    target: string;
+  };
+  requirements: RestaurantReadyRequirement[];
+  next_actions: string[];
+};
+
 type EnvironmentVariable = {
   name: string;
   required: boolean;
@@ -173,6 +198,7 @@ type Readiness = {
   go_live_sections: GoLiveSection[];
   launch_summary?: LaunchSummary;
   module_readiness?: LaunchModule[];
+  restaurant_ready_audit?: RestaurantReadyAudit;
   overall: "ready" | "attention" | "blocked";
   failed_checks: number;
   warning_checks: number;
@@ -735,6 +761,10 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {readiness?.restaurant_ready_audit ? (
+        <RestaurantReadyAuditPanel audit={readiness.restaurant_ready_audit} />
+      ) : null}
 
       {credentialActivation ? <CredentialActivationCommand report={credentialActivation} /> : null}
 
@@ -2526,6 +2556,82 @@ function ReadinessStep({ step }: { step: ProductionDatabaseStep }) {
       </div>
       <p className="text-sm leading-6 text-gray-400">{step.detail}</p>
     </div>
+  );
+}
+
+function RestaurantReadyAuditPanel({ audit }: { audit: RestaurantReadyAudit }) {
+  return (
+    <section data-testid="restaurant-ready-audit" className="mb-8 rounded-xl border border-emerald-500/10 bg-[#101412] p-6">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-300">Restaurant Ready Audit</p>
+          <h2 className="mt-2 text-2xl font-black">100% Restaurant Readiness Tracker</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">
+            Owner, counter, kitchen, delivery, staff, payments, marketing and production readiness in one view.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-center md:grid-cols-4">
+          <SummaryPill label="Score" value={`${audit.score}%`} />
+          <SummaryPill label="Ready" value={`${audit.summary.requirements_ready}`} />
+          <SummaryPill label="Attention" value={`${audit.summary.requirements_attention}`} />
+          <SummaryPill label="Blocked" value={`${audit.summary.requirements_blocked}`} />
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-5">
+        {audit.requirements.map((requirement) => (
+          <div
+            key={requirement.key}
+            data-testid={`restaurant-ready-${requirement.key}`}
+            className="flex min-h-[240px] flex-col rounded-xl border border-white/5 bg-black/25 p-4"
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-300">
+                <ListChecks className="h-5 w-5" />
+              </div>
+              <StatusBadge status={requirement.status} />
+            </div>
+            <p className="text-base font-black leading-6 text-white">{requirement.label}</p>
+            <p className="mt-3 text-sm leading-6 text-gray-500">{requirement.evidence}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-white/5 bg-[#111113] p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Score</p>
+                <p className="mt-1 text-xl font-black text-emerald-300">{requirement.score}%</p>
+              </div>
+              <div className="rounded-lg border border-white/5 bg-[#111113] p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Route</p>
+                <p className="mt-1 truncate text-sm font-black text-gray-200">{requirement.route}</p>
+              </div>
+            </div>
+            <p className="mt-auto pt-4 text-sm font-bold leading-6 text-gray-300">{requirement.next_action}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-emerald-300" />
+            <h3 className="font-black text-emerald-100">Next Restaurant Readiness Actions</h3>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(audit.status)}`}>
+            {audit.summary.target}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {(audit.next_actions || []).map((action) => (
+            <p key={action} className="rounded-lg bg-black/25 px-3 py-2 text-sm font-bold text-emerald-50">
+              {action}
+            </p>
+          ))}
+          {!audit.next_actions?.length && (
+            <p className="rounded-lg bg-black/25 px-3 py-2 text-sm font-bold text-emerald-50">
+              All tracked restaurant readiness items are green.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
