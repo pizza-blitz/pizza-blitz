@@ -48,6 +48,7 @@ DEFAULT_SECRET_VALUES = {
 }
 
 PAYMENT_PROVIDER_ORDER = ("manual", "direct_bank", "cashfree", "razorpay")
+BACKUP_PROOF_TYPES = {"managed_snapshot", "pg_dump"}
 
 ENVIRONMENT_VARIABLE_GROUPS = [
     {
@@ -652,6 +653,7 @@ def readiness_report(db: Session) -> dict:
     payment_status = payment_provider_status()
     payment_providers = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
     backup_freshness = _backup_freshness(db)
+    restore_rehearsal = _restore_rehearsal_status(db)
     checks = [
         _database_check(db),
         _database_persistence_check(environment),
@@ -710,9 +712,11 @@ def readiness_report(db: Session) -> dict:
         "environment_manifest": environment_manifest,
         "environment_summary": environment_summary,
         "backup_freshness": backup_freshness,
+        "restore_rehearsal": restore_rehearsal,
         "production_database_plan": _production_database_plan(
             environment=environment,
             backup_freshness=backup_freshness,
+            restore_rehearsal=restore_rehearsal,
         ),
         "environment_security_plan": _environment_security_plan(
             environment=environment,
@@ -2168,7 +2172,7 @@ def credential_activation_report(db: Session) -> dict:
     }
 
 
-def _production_database_plan(*, environment: str, backup_freshness: dict) -> dict:
+def _production_database_plan(*, environment: str, backup_freshness: dict, restore_rehearsal: dict) -> dict:
     backend = database_backend()
     current_path = sqlite_database_path()
     managed_database_ready = backend not in {"sqlite", "unknown"}
@@ -2246,8 +2250,9 @@ def _production_database_plan(*, environment: str, backup_freshness: dict) -> di
             {
                 "key": "restore_rehearsal",
                 "label": "Restore rehearsal",
-                "status": "warn",
-                "detail": "Restore a backup into a clean database and run the admin/order/report smoke proof before public launch.",
+                "status": restore_rehearsal.get("status", "warn"),
+                "detail": restore_rehearsal.get("detail")
+                or "Restore a backup into a clean database and run the admin/order/report smoke proof before public launch.",
             },
             {
                 "key": "rollback_window",
@@ -3120,6 +3125,35 @@ def create_database_backup(db: Session) -> dict:
     return _backup_run_dict(run)
 
 
+def record_managed_backup_proof(
+    db: Session,
+    *,
+    proof_type: str,
+    reference: str,
+    notes: str | None = None,
+    size_bytes: int | None = None,
+) -> dict:
+    clean_type = proof_type.strip().lower()
+    if clean_type not in {"managed_snapshot", "pg_dump", "restore_rehearsal"}:
+        raise ValueError("Proof type must be managed_snapshot, pg_dump, or restore_rehearsal.")
+    clean_reference = reference.strip()
+    if len(clean_reference) < 6:
+        raise ValueError("Proof reference must be at least 6 characters.")
+
+    run = BackupRun(
+        backup_type=clean_type,
+        status="success",
+        file_path=clean_reference,
+        size_bytes=max(int(size_bytes or 0), 0),
+        database_backend=database_backend(),
+        error=(notes or "").strip() or None,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return _backup_run_dict(run)
+
+
 def _database_check(db: Session) -> dict:
     try:
         db.execute(text("select 1"))
@@ -3313,6 +3347,7 @@ def _backup_freshness(db: Session) -> dict:
     latest_success = (
         db.query(BackupRun)
         .filter(BackupRun.status == "success")
+        .filter(BackupRun.backup_type.in_(["sqlite", *BACKUP_PROOF_TYPES]))
         .order_by(BackupRun.created_at.desc(), BackupRun.id.desc())
         .first()
     )
@@ -3336,6 +3371,37 @@ def _backup_freshness(db: Session) -> dict:
         "status": "pass",
         "latest_backup_at": latest_success.created_at.isoformat(),
         "detail": "Latest successful backup is inside the retention window.",
+    }
+
+
+def _restore_rehearsal_status(db: Session) -> dict:
+    latest_success = (
+        db.query(BackupRun)
+        .filter(BackupRun.status == "success")
+        .filter(BackupRun.backup_type == "restore_rehearsal")
+        .order_by(BackupRun.created_at.desc(), BackupRun.id.desc())
+        .first()
+    )
+    if not latest_success or not latest_success.created_at:
+        return {
+            "status": "warn",
+            "latest_restore_at": None,
+            "detail": "No restore rehearsal proof is recorded yet.",
+        }
+
+    age = datetime.utcnow() - latest_success.created_at
+    max_age = timedelta(days=max(settings.BACKUP_RETENTION_DAYS, 1))
+    if age > max_age:
+        return {
+            "status": "warn",
+            "latest_restore_at": latest_success.created_at.isoformat(),
+            "detail": f"Latest restore rehearsal is older than {settings.BACKUP_RETENTION_DAYS} days.",
+        }
+
+    return {
+        "status": "pass",
+        "latest_restore_at": latest_success.created_at.isoformat(),
+        "detail": "Latest restore rehearsal proof is inside the retention window.",
     }
 
 

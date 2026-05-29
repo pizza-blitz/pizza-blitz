@@ -158,6 +158,11 @@ type Readiness = {
     latest_backup_at?: string | null;
     detail: string;
   };
+  restore_rehearsal?: {
+    status: CheckStatus;
+    latest_restore_at?: string | null;
+    detail: string;
+  };
   payment?: PaymentStatus;
   readiness_score: number;
   production_database_plan?: ProductionDatabasePlan;
@@ -564,6 +569,10 @@ export default function ProductionOpsPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
+  const [recordingBackupProof, setRecordingBackupProof] = useState(false);
+  const [backupProofType, setBackupProofType] = useState("managed_snapshot");
+  const [backupProofReference, setBackupProofReference] = useState("");
+  const [backupProofNotes, setBackupProofNotes] = useState("");
 
   const latestBackup = useMemo(() => backups[0] || null, [backups]);
 
@@ -629,6 +638,35 @@ export default function ProductionOpsPage() {
     );
     await fetchOps();
     setCreatingBackup(false);
+  };
+
+  const recordBackupProof = async () => {
+    const reference = backupProofReference.trim();
+    if (reference.length < 6) {
+      setMessage("Backup proof reference must be at least 6 characters.");
+      return;
+    }
+    setRecordingBackupProof(true);
+    const response = await fetchWithAuth(`${OPS_API}/backups/proof`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        proof_type: backupProofType,
+        reference,
+        notes: backupProofNotes.trim() || null,
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.detail || "Backup proof could not be recorded.");
+      setRecordingBackupProof(false);
+      return;
+    }
+    setBackupProofReference("");
+    setBackupProofNotes("");
+    setMessage(`Recorded ${data.backup.backup_type.replaceAll("_", " ")} proof.`);
+    await fetchOps();
+    setRecordingBackupProof(false);
   };
 
   return (
@@ -816,6 +854,9 @@ export default function ProductionOpsPage() {
               </p>
               <p className="mt-2 text-sm leading-6 text-green-100/80">
                 {readiness.backup_freshness?.detail || "Backup freshness is loading."}
+              </p>
+              <p className="mt-2 text-xs font-bold text-green-100/70">
+                Restore: {readiness.restore_rehearsal?.status || "checking"}
               </p>
             </div>
           </div>
@@ -1015,6 +1056,42 @@ export default function ProductionOpsPage() {
               <span className="rounded-full bg-black/30 px-3 py-1 text-xs font-black uppercase tracking-widest text-gray-500">
                 {backups.length} runs
               </span>
+            </div>
+            <div className="mb-5 rounded-xl border border-orange-500/15 bg-orange-500/10 p-4">
+              <p className="mb-3 text-xs font-black uppercase tracking-widest text-orange-200">
+                Managed Backup Proof
+              </p>
+              <div className="grid gap-3">
+                <select
+                  value={backupProofType}
+                  onChange={(event) => setBackupProofType(event.target.value)}
+                  className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
+                >
+                  <option value="managed_snapshot">Managed snapshot</option>
+                  <option value="pg_dump">pg_dump export</option>
+                  <option value="restore_rehearsal">Restore rehearsal</option>
+                </select>
+                <input
+                  value={backupProofReference}
+                  onChange={(event) => setBackupProofReference(event.target.value)}
+                  className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
+                  placeholder="Snapshot/export/restore proof reference"
+                />
+                <textarea
+                  value={backupProofNotes}
+                  onChange={(event) => setBackupProofNotes(event.target.value)}
+                  className="min-h-20 rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
+                  placeholder="Owner note, restore target, or verification result"
+                />
+                <button
+                  type="button"
+                  onClick={recordBackupProof}
+                  disabled={recordingBackupProof || backupProofReference.trim().length < 6}
+                  className="rounded-md bg-orange-500 px-4 py-3 text-sm font-black text-black hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {recordingBackupProof ? "Recording Proof" : "Record Proof"}
+                </button>
+              </div>
             </div>
             <div className="space-y-3">
               {backups.map((backup) => (

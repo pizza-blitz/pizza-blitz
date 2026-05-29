@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
@@ -13,9 +14,17 @@ from app.services.ops_service import (
     live_environment_report,
     production_launch_report,
     readiness_report,
+    record_managed_backup_proof,
 )
 
 router = APIRouter()
+
+
+class ManagedBackupProofRequest(BaseModel):
+    proof_type: str = Field(pattern="^(managed_snapshot|pg_dump|restore_rehearsal)$")
+    reference: str = Field(min_length=6, max_length=500)
+    notes: str | None = Field(default=None, max_length=1000)
+    size_bytes: int | None = Field(default=None, ge=0)
 
 
 @router.get("/readiness")
@@ -97,3 +106,22 @@ def create_backup(
     session: dict = Depends(require_roles("admin")),
 ):
     return {"backup": create_database_backup(db)}
+
+
+@router.post("/backups/proof")
+def record_backup_proof(
+    payload: ManagedBackupProofRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    try:
+        backup = record_managed_backup_proof(
+            db,
+            proof_type=payload.proof_type,
+            reference=payload.reference,
+            notes=payload.notes,
+            size_bytes=payload.size_bytes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"backup": backup}
