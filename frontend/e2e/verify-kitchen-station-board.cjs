@@ -186,6 +186,27 @@ async function main() {
     assert(stationKeys.has(station), `Created order #${orderId} missed ${station} station routing.`);
   });
 
+  const stationCommandResult = await apiJson("/api/v1/restaurant/orders/station-command", adminCookie);
+  assert(
+    stationCommandResult.response.ok,
+    `Station command API failed: ${JSON.stringify(stationCommandResult.data)}`
+  );
+  assert(
+    stationCommandResult.data.summary?.routed_line_count >= 3,
+    `Station command did not count routed lines: ${JSON.stringify(stationCommandResult.data.summary)}`
+  );
+  for (const station of ["oven", "fryer", "cold"]) {
+    const commandStation = (stationCommandResult.data.stations || []).find((entry) => entry.key === station);
+    assert(commandStation, `Station command missed ${station}.`);
+    const commandOrder = (commandStation.orders || []).find((entry) => Number(entry.order_id) === orderId);
+    assert(commandOrder, `Station command ${station} missed order #${orderId}.`);
+    assert(commandOrder.lines?.length > 0, `Station command ${station} order #${orderId} had no lines.`);
+    assert(
+      commandOrder.lines.every((line) => line.routing_source === "saved"),
+      `Station command ${station} did not use saved routing for order #${orderId}.`
+    );
+  }
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     baseURL,
@@ -204,9 +225,13 @@ async function main() {
     assert(response && response.ok(), `Operations page returned HTTP ${response?.status() || "no response"}.`);
     await page.getByRole("heading", { name: "Kitchen Operations" }).waitFor({ timeout: 15000 });
     await page.getByTestId("kitchen-station-board").waitFor({ timeout: 20000 });
+    await page.getByTestId("kitchen-station-command").waitFor({ timeout: 20000 });
+    await page.getByTestId("station-command-status").getByText(/station|line|blocker|rush|handoff|clear/i).waitFor({ timeout: 15000 });
     await assertHealthyPage(page, "kitchen station board page");
 
     for (const station of ["oven", "fryer", "cold"]) {
+      await page.getByTestId(`station-command-station-${station}`).waitFor({ timeout: 15000 });
+      await page.getByTestId(`station-command-order-${station}-${orderId}`).waitFor({ timeout: 15000 });
       await page.getByTestId(`kitchen-station-${station}`).waitFor({ timeout: 15000 });
       await waitForStationOrder(page, station, orderId);
       await page.getByTestId(`kitchen-station-lines-${station}-${orderId}`).waitFor({ timeout: 15000 });

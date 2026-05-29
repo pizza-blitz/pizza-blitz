@@ -24,6 +24,7 @@ import { getApiUrl } from "@/lib/api";
 
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
+const STATION_COMMAND_API = getApiUrl("/api/v1/restaurant/orders/station-command");
 
 type OrderItem = {
   name: string;
@@ -190,6 +191,90 @@ type OrderFlowReadiness = {
   next_actions: string[];
 };
 
+type StationCommandLine = {
+  line_id: string;
+  order_id: number;
+  station_key: string;
+  station_label: string;
+  routing_source: string;
+  name: string;
+  quantity: number;
+  selected_options?: {
+    group_name?: string;
+    option_name?: string;
+    price_delta?: number;
+  }[];
+  option_count: number;
+  status: string;
+  order_type: string;
+  fulfillment_type?: string | null;
+  table_number?: string | null;
+  customer_name?: string | null;
+  payment_status: string;
+  created_at?: string | null;
+  age_minutes: number;
+  sla_minutes: number;
+  priority: string;
+  next_action: string;
+  ticket_url: string;
+};
+
+type StationCommandOrder = {
+  order_id: number;
+  status: string;
+  order_type: string;
+  fulfillment_type?: string | null;
+  table_number?: string | null;
+  customer_name?: string | null;
+  payment_status: string;
+  created_at?: string | null;
+  age_minutes: number;
+  priority: string;
+  line_count: number;
+  item_quantity: number;
+  lines: StationCommandLine[];
+  ticket_url: string;
+};
+
+type StationCommandStation = {
+  key: string;
+  label: string;
+  sla_minutes: number;
+  active_order_count: number;
+  line_count: number;
+  item_quantity: number;
+  over_sla_count: number;
+  ready_line_count: number;
+  preparing_line_count: number;
+  next_action: string;
+  orders: StationCommandOrder[];
+};
+
+type StationCommand = {
+  generated_at?: string;
+  summary: {
+    active_order_count: number;
+    station_count: number;
+    active_station_count: number;
+    routed_line_count: number;
+    unrouted_line_count: number;
+    over_sla_count: number;
+    ready_line_count: number;
+    preparing_line_count: number;
+    oldest_age_minutes: number;
+    overall_status: string;
+    next_action: string;
+  };
+  controls: {
+    label: string;
+    status: string;
+    count: number;
+    detail: string;
+  }[];
+  stations: StationCommandStation[];
+  next_actions: string[];
+};
+
 const filters = [
   { id: "active", label: "Active" },
   { id: "open", label: "New" },
@@ -328,6 +413,35 @@ function deliveryControlClass(status: string) {
   return "border-emerald-200 bg-emerald-50 text-emerald-800";
 }
 
+function stationPriorityClass(priority: string) {
+  if (priority === "rush") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (priority === "watch") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (priority === "ready") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (priority === "cooking") return "border-sky-200 bg-sky-50 text-sky-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function stationControlClass(status: string) {
+  if (status === "rush") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (status === "watch") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (status === "ready") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function stationLineSummary(line: StationCommandLine) {
+  const optionNames = (line.selected_options || [])
+    .map((option) => {
+      const group = option.group_name ? `${option.group_name}: ` : "";
+      const delta = Number(option.price_delta || 0);
+      const suffix = delta > 0 ? ` +Rs ${delta}` : "";
+      return `${group}${option.option_name || "Option"}${suffix}`;
+    })
+    .filter(Boolean);
+  return optionNames.length
+    ? `${line.quantity}x ${line.name} (${optionNames.join(", ")})`
+    : `${line.quantity}x ${line.name}`;
+}
+
 function readableStatus(status?: string | null) {
   return (status || "stable").replaceAll("_", " ");
 }
@@ -375,6 +489,7 @@ export default function OperationsPage() {
   const [deliveryQueueSummary, setDeliveryQueueSummary] = useState<DeliveryQueueSummary | null>(null);
   const [deliveryMission, setDeliveryMission] = useState<DeliveryMissionControl | null>(null);
   const [orderFlow, setOrderFlow] = useState<OrderFlowReadiness | null>(null);
+  const [stationCommand, setStationCommand] = useState<StationCommand | null>(null);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
 
@@ -658,6 +773,19 @@ export default function OperationsPage() {
     summary.routedOrderCount = orderIds.size;
     return summary;
   }, [kitchenStationBoard]);
+  const stationSummaryMetrics = stationCommand
+    ? [
+        ["Active Stations", stationCommand.summary.active_station_count],
+        ["Routed Lines", stationCommand.summary.routed_line_count],
+        ["Over SLA", stationCommand.summary.over_sla_count],
+        ["Oldest Ticket", `${stationCommand.summary.oldest_age_minutes} min`],
+      ]
+    : [
+        ["Active Stations", kitchenStationSummary.activeStationCount],
+        ["Routed Orders", kitchenStationSummary.routedOrderCount],
+        ["Station Lines", kitchenStationSummary.lineCount],
+        ["Items Qty", kitchenStationSummary.itemQuantity],
+      ];
 
   useEffect(() => {
     fetchOrders();
@@ -673,7 +801,7 @@ export default function OperationsPage() {
           return {};
         }
       };
-      const [response, queueResponse, flowResponse, missionResponse] = await Promise.all([
+      const [response, queueResponse, flowResponse, missionResponse, stationResponse] = await Promise.all([
         fetch(`${ORDERS_API}/today`, {
           cache: "no-store",
           credentials: "include",
@@ -690,11 +818,16 @@ export default function OperationsPage() {
           cache: "no-store",
           credentials: "include",
         }),
+        fetch(STATION_COMMAND_API, {
+          cache: "no-store",
+          credentials: "include",
+        }),
       ]);
       const data = await readJson(response);
       const queueData = await readJson(queueResponse);
       const flowData = await readJson(flowResponse);
       const missionData = await readJson(missionResponse);
+      const stationData = await readJson(stationResponse);
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
 
       const optionalWarnings = [
@@ -707,6 +840,9 @@ export default function OperationsPage() {
         !missionResponse.ok
           ? missionData.detail || "Delivery mission control is temporarily unavailable."
           : "",
+        !stationResponse.ok
+          ? stationData.detail || "Kitchen station command is temporarily unavailable."
+          : "",
       ].filter(Boolean);
 
       const queueOrders = queueResponse.ok ? queueData.orders || [] : [];
@@ -716,6 +852,7 @@ export default function OperationsPage() {
       setDeliveryQueueSummary(queueResponse.ok ? queueData.summary || null : null);
       setDeliveryMission(missionResponse.ok ? missionData || null : null);
       setOrderFlow(flowResponse.ok ? flowData || null : null);
+      setStationCommand(stationResponse.ok ? stationData || null : null);
       setLastRefreshedAt(
         new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
       );
@@ -1148,12 +1285,7 @@ export default function OperationsPage() {
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              ["Active Stations", kitchenStationSummary.activeStationCount],
-              ["Routed Orders", kitchenStationSummary.routedOrderCount],
-              ["Station Lines", kitchenStationSummary.lineCount],
-              ["Items Qty", kitchenStationSummary.itemQuantity],
-            ].map(([label, value]) => (
+            {stationSummaryMetrics.map(([label, value]) => (
               <div
                 key={label}
                 className="rounded-lg border border-slate-200 bg-slate-50 p-3"
@@ -1164,6 +1296,139 @@ export default function OperationsPage() {
                 <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
               </div>
             ))}
+          </div>
+
+          <div
+            data-testid="kitchen-station-command"
+            className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-wide text-gray-500">
+                  Backend station command
+                </p>
+                <h4
+                  data-testid="station-command-status"
+                  className="mt-1 text-base font-black text-gray-950"
+                >
+                  {stationCommand
+                    ? stationCommand.summary.next_action
+                    : "Using browser station fallback until command API responds."}
+                </h4>
+              </div>
+              <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-gray-700 shadow-sm">
+                {stationCommand ? readableStatus(stationCommand.summary.overall_status) : "fallback"}
+              </span>
+            </div>
+
+            {stationCommand && (
+              <>
+                <div className="mt-3 grid gap-2 md:grid-cols-3">
+                  {stationCommand.controls.map((control) => (
+                    <div
+                      key={control.label}
+                      className={`rounded-md border px-3 py-2 ${stationControlClass(control.status)}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-black uppercase tracking-wide">
+                          {control.label}
+                        </p>
+                        <span className="text-sm font-black">{control.count}</span>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold leading-5 opacity-80">
+                        {control.detail}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid gap-3 xl:grid-cols-4">
+                  {stationCommand.stations.map((station) => (
+                    <div
+                      key={station.key}
+                      data-testid={`station-command-station-${station.key}`}
+                      className="rounded-lg border border-white bg-white p-3 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-black uppercase tracking-wide text-gray-950">
+                            {station.label}
+                          </h5>
+                          <p className="mt-1 text-xs font-semibold text-gray-500">
+                            SLA {station.sla_minutes} min | {station.line_count} line
+                            {station.line_count === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">
+                          {station.active_order_count}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs font-bold leading-5 text-gray-600">
+                        {station.next_action}
+                      </p>
+
+                      <div className="mt-3 space-y-2">
+                        {station.orders.slice(0, 3).map((order) => (
+                          <div
+                            key={`${station.key}-${order.order_id}`}
+                            data-testid={`station-command-order-${station.key}-${order.order_id}`}
+                            className="rounded-md border border-slate-100 bg-slate-50 p-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-black text-gray-950">
+                                  #{order.order_id}
+                                </p>
+                                <p className="text-[11px] font-bold uppercase text-gray-500">
+                                  {order.table_number
+                                    ? `Table ${order.table_number}`
+                                    : order.fulfillment_type || order.order_type}
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-md border px-2 py-1 text-[11px] font-black ${stationPriorityClass(order.priority)}`}
+                              >
+                                {readableStatus(order.priority)}
+                              </span>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {order.lines.slice(0, 3).map((line) => (
+                                <p
+                                  key={line.line_id}
+                                  data-testid={`station-command-line-${line.line_id}`}
+                                  className="text-xs font-semibold leading-5 text-gray-700"
+                                >
+                                  {stationLineSummary(line)}
+                                </p>
+                              ))}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <span className="rounded-md bg-white px-2 py-1 text-[11px] font-black text-slate-700">
+                                {order.age_minutes} min
+                              </span>
+                              <span className={`rounded-md border px-2 py-1 text-[11px] font-black ${paymentClass(order.payment_status)}`}>
+                                {readableStatus(order.payment_status)}
+                              </span>
+                              <Link
+                                href={order.ticket_url}
+                                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700 hover:bg-slate-50"
+                              >
+                                KOT
+                              </Link>
+                            </div>
+                          </div>
+                        ))}
+                        {!station.orders.length && (
+                          <p className="rounded-md border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs font-bold text-slate-500">
+                            Clear.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="mt-4 grid gap-3 xl:grid-cols-4">

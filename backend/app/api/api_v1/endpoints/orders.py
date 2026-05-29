@@ -1049,26 +1049,330 @@ KITCHEN_STATION_RULES = [
         "key": "oven",
         "label": "Oven Station",
         "keywords": ["pizza", "garlic bread", "bread", "calzone", "pasta bake"],
+        "sla_minutes": 12,
     },
     {
         "key": "fryer",
         "label": "Fryer / Sides",
         "keywords": ["fries", "nugget", "wing", "stick", "popper", "side", "starter"],
+        "sla_minutes": 8,
     },
     {
         "key": "cold",
         "label": "Cold / Drinks",
         "keywords": ["drink", "beverage", "cola", "pepsi", "water", "shake", "dessert", "ice cream", "brownie"],
+        "sla_minutes": 5,
+    },
+    {
+        "key": "prep",
+        "label": "Prep Station",
+        "keywords": ["sandwich", "burger", "wrap", "packing", "prep"],
+        "sla_minutes": 10,
     },
 ]
+
+
+def normalize_station_key(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    normalized = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "-"
+        for char in text
+    ).strip("-")
+    return normalized or "prep"
+
+
+def kitchen_station_config_for_key(key: str | None, label: str | None = None) -> dict:
+    normalized_key = normalize_station_key(key)
+    for rule in KITCHEN_STATION_RULES:
+        if rule["key"] == normalized_key:
+            return {
+                "key": rule["key"],
+                "label": label or rule["label"],
+                "sla_minutes": int(rule["sla_minutes"]),
+            }
+    return {
+        "key": normalized_key,
+        "label": label or normalized_key.replace("-", " ").replace("_", " ").title(),
+        "sla_minutes": 10,
+    }
 
 
 def kitchen_station_for_item(name: str, category: str | None = None) -> dict:
     searchable = f"{category or ''} {name or ''}".strip().lower()
     for rule in KITCHEN_STATION_RULES:
         if any(keyword in searchable for keyword in rule["keywords"]):
-            return {"key": rule["key"], "label": rule["label"]}
-    return {"key": "prep", "label": "Prep Station"}
+            return kitchen_station_config_for_key(rule["key"])
+    return kitchen_station_config_for_key("prep")
+
+
+def kitchen_station_for_saved_item(item: dict) -> dict:
+    raw_key = item.get("kitchen_station")
+    raw_label = item.get("kitchen_station_label")
+    if raw_key:
+        station = kitchen_station_config_for_key(str(raw_key), str(raw_label) if raw_label else None)
+        station["routing_source"] = "saved"
+        return station
+
+    station = kitchen_station_for_item(
+        str(item.get("name") or ""),
+        str(item.get("category") or "") if item.get("category") else None,
+    )
+    station["routing_source"] = "inferred"
+    return station
+
+
+def order_age_minutes(order: RestaurantOrder) -> int:
+    created_at = order.created_at
+    if created_at is None:
+        created_at = datetime.combine(order.date or date.today(), datetime.min.time())
+    if created_at.tzinfo is not None:
+        created_at = created_at.replace(tzinfo=None)
+    return max(int((datetime.utcnow() - created_at).total_seconds() // 60), 0)
+
+
+def station_line_priority(order: RestaurantOrder, age_minutes: int, sla_minutes: int) -> str:
+    if order.status == "ready":
+        return "ready"
+    if age_minutes > sla_minutes:
+        return "rush"
+    if age_minutes >= max(sla_minutes - 3, 1):
+        return "watch"
+    if order.status == "preparing":
+        return "cooking"
+    return "new"
+
+
+def station_line_next_action(order: RestaurantOrder, priority: str) -> str:
+    if order.status == "ready":
+        return "Handoff to counter for bill or pickup."
+    if priority == "rush":
+        return "Past station SLA. Push this line now."
+    if priority == "watch":
+        return "Close to SLA. Keep this ticket visible."
+    if order.status == "preparing":
+        return "Finish station prep and mark ready."
+    return "Start station prep."
+
+
+def serialize_station_line(order: RestaurantOrder, item: dict, line_index: int) -> dict:
+    station = kitchen_station_for_saved_item(item)
+    age_minutes = order_age_minutes(order)
+    sla_minutes = int(station["sla_minutes"])
+    priority = station_line_priority(order, age_minutes, sla_minutes)
+    selected_options = item.get("selected_options") or []
+    if not isinstance(selected_options, list):
+        selected_options = []
+    return {
+        "line_id": f"{order.id}-{line_index}",
+        "order_id": order.id,
+        "station_key": station["key"],
+        "station_label": station["label"],
+        "routing_source": station["routing_source"],
+        "name": str(item.get("name") or "Item"),
+        "quantity": int(item.get("quantity") or 0),
+        "selected_options": selected_options,
+        "option_count": len(selected_options),
+        "status": order.status,
+        "order_type": order.order_type,
+        "fulfillment_type": order_metadata(order)["fulfillment_type"],
+        "table_number": order.table_number,
+        "customer_name": order.customer_name,
+        "payment_status": order.payment_status,
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+        "age_minutes": age_minutes,
+        "sla_minutes": sla_minutes,
+        "priority": priority,
+        "next_action": station_line_next_action(order, priority),
+        "ticket_url": f"/kitchen-ticket/{order.id}?station={station['key']}",
+    }
+
+
+def build_station_command_report(db: Session) -> dict:
+    station_map: dict[str, dict] = {}
+    for rule in KITCHEN_STATION_RULES:
+        station_map[rule["key"]] = {
+            "key": rule["key"],
+            "label": rule["label"],
+            "sla_minutes": int(rule["sla_minutes"]),
+            "orders": [],
+            "_order_index": {},
+        }
+
+    active_orders = (
+        db.query(RestaurantOrder)
+        .filter(
+            RestaurantOrder.date == date.today(),
+            RestaurantOrder.status.notin_(["closed", "cancelled"]),
+        )
+        .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
+        .all()
+    )
+
+    unrouted_line_count = 0
+    routed_line_count = 0
+    oldest_age_minutes = 0
+
+    for order in active_orders:
+        oldest_age_minutes = max(oldest_age_minutes, order_age_minutes(order))
+        for line_index, item in enumerate(order.items or []):
+            if not isinstance(item, dict):
+                unrouted_line_count += 1
+                continue
+
+            if not item.get("kitchen_station"):
+                unrouted_line_count += 1
+
+            line = serialize_station_line(order, item, line_index)
+            station_key = line["station_key"]
+            if station_key not in station_map:
+                station_map[station_key] = {
+                    "key": station_key,
+                    "label": line["station_label"],
+                    "sla_minutes": line["sla_minutes"],
+                    "orders": [],
+                    "_order_index": {},
+                }
+
+            station = station_map[station_key]
+            order_index = station["_order_index"]
+            if order.id not in order_index:
+                order_entry = {
+                    "order_id": order.id,
+                    "status": order.status,
+                    "order_type": order.order_type,
+                    "fulfillment_type": line["fulfillment_type"],
+                    "table_number": order.table_number,
+                    "customer_name": order.customer_name,
+                    "payment_status": order.payment_status,
+                    "created_at": order.created_at.isoformat() if order.created_at else None,
+                    "age_minutes": line["age_minutes"],
+                    "priority": line["priority"],
+                    "line_count": 0,
+                    "item_quantity": 0,
+                    "lines": [],
+                    "ticket_url": f"/kitchen-ticket/{order.id}?station={station_key}",
+                }
+                order_index[order.id] = order_entry
+                station["orders"].append(order_entry)
+
+            order_entry = order_index[order.id]
+            order_entry["lines"].append(line)
+            order_entry["line_count"] += 1
+            order_entry["item_quantity"] += line["quantity"]
+            if line["priority"] in {"rush", "watch"}:
+                order_entry["priority"] = line["priority"]
+            routed_line_count += 1
+
+    priority_rank = {"rush": 0, "watch": 1, "new": 2, "cooking": 3, "ready": 4}
+    station_summaries = []
+    over_sla_count = 0
+    ready_line_count = 0
+    preparing_line_count = 0
+    active_station_count = 0
+
+    for station in station_map.values():
+        station["orders"].sort(
+            key=lambda row: (
+                priority_rank.get(row["priority"], 9),
+                row["age_minutes"] * -1,
+                row["order_id"],
+            )
+        )
+        lines = [
+            line
+            for order_entry in station["orders"]
+            for line in order_entry["lines"]
+        ]
+        station_over_sla = sum(1 for line in lines if line["priority"] == "rush")
+        station_ready = sum(1 for line in lines if line["status"] == "ready")
+        station_preparing = sum(1 for line in lines if line["status"] == "preparing")
+        station_line_count = len(lines)
+        station_quantity = sum(line["quantity"] for line in lines)
+        if station_line_count:
+            active_station_count += 1
+
+        if station_over_sla:
+            next_action = f"Rush {station_over_sla} over-SLA line(s)."
+        elif station_preparing:
+            next_action = f"Finish {station_preparing} preparing line(s)."
+        elif station_ready:
+            next_action = f"Handoff {station_ready} ready line(s)."
+        elif station_line_count:
+            next_action = "Start new station tickets."
+        else:
+            next_action = "Station clear."
+
+        over_sla_count += station_over_sla
+        ready_line_count += station_ready
+        preparing_line_count += station_preparing
+        station.pop("_order_index", None)
+        station.update(
+            {
+                "active_order_count": len(station["orders"]),
+                "line_count": station_line_count,
+                "item_quantity": station_quantity,
+                "over_sla_count": station_over_sla,
+                "ready_line_count": station_ready,
+                "preparing_line_count": station_preparing,
+                "next_action": next_action,
+            }
+        )
+        station_summaries.append(station)
+
+    if unrouted_line_count:
+        overall_status = "routing_review"
+        next_action = f"Review {unrouted_line_count} line(s) with inferred station routing."
+    elif over_sla_count:
+        overall_status = "rush"
+        next_action = f"Rush {over_sla_count} station line(s) past SLA."
+    elif preparing_line_count:
+        overall_status = "cooking"
+        next_action = f"Finish {preparing_line_count} line(s) currently preparing."
+    elif ready_line_count:
+        overall_status = "handoff"
+        next_action = f"Handoff {ready_line_count} ready station line(s)."
+    else:
+        overall_status = "clear"
+        next_action = "No active kitchen station blockers."
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "active_order_count": len(active_orders),
+            "station_count": len(station_summaries),
+            "active_station_count": active_station_count,
+            "routed_line_count": routed_line_count,
+            "unrouted_line_count": unrouted_line_count,
+            "over_sla_count": over_sla_count,
+            "ready_line_count": ready_line_count,
+            "preparing_line_count": preparing_line_count,
+            "oldest_age_minutes": oldest_age_minutes,
+            "overall_status": overall_status,
+            "next_action": next_action,
+        },
+        "controls": [
+            {
+                "label": "Routing Proof",
+                "status": "watch" if unrouted_line_count else "clear",
+                "count": unrouted_line_count,
+                "detail": "Every active line must carry or infer a kitchen station.",
+            },
+            {
+                "label": "SLA Watch",
+                "status": "rush" if over_sla_count else "clear",
+                "count": over_sla_count,
+                "detail": "Station lines older than their prep SLA.",
+            },
+            {
+                "label": "Ready Handoff",
+                "status": "ready" if ready_line_count else "clear",
+                "count": ready_line_count,
+                "detail": "Ready lines waiting for counter handoff.",
+            },
+        ],
+        "stations": station_summaries,
+        "next_actions": [next_action],
+    }
 
 
 def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dict]:
@@ -2078,6 +2382,15 @@ def order_flow_readiness(
         "payment_due": payment_due_rows[:8],
         "next_actions": next_actions,
     }
+
+
+@router.get("/station-command")
+def kitchen_station_command(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    return build_station_command_report(db)
 
 
 @router.get("/customer-history/{phone}")
