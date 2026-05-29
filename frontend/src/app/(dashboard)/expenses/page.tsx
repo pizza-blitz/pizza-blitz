@@ -45,8 +45,17 @@ type ExpenseRow = {
   id: number;
   date: string;
   category_id: number;
+  category?: string;
   amount: number;
   description?: string | null;
+  receipt_photo_url?: string | null;
+};
+
+type ExpenseApprovalQueueItem = ExpenseRow & {
+  severity: "warn" | "fail";
+  approval_status: string;
+  reasons: string[];
+  next_action: string;
 };
 
 type ExpenseStats = {
@@ -110,10 +119,15 @@ type ExpenseAuditCommand = {
     expense_count: number;
     category_count: number;
     risk_day_count: number;
+    approval_queue_count: number;
+    missing_receipt_count: number;
+    high_value_receipt_gap_count: number;
+    duplicate_candidate_count: number;
   };
   checks: AuditCheck[];
   category_breakdown: AuditCategory[];
   daily_risks: DailyRisk[];
+  approval_queue: ExpenseApprovalQueueItem[];
   top_expenses: ExpenseRow[];
   next_actions: string[];
 };
@@ -469,6 +483,79 @@ export default function ExpenseTracker() {
                   </div>
                 ) : null}
               </div>
+            </div>
+          </section>
+
+          <section
+            data-testid="expense-approval-queue"
+            className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm"
+          >
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black uppercase text-gray-950">Owner Approval Queue</h2>
+                <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
+                  Missing receipts, high-value proof gaps and duplicate-looking expenses
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-md bg-amber-50 px-3 py-2">
+                  <p className="text-lg font-black text-amber-800">
+                    {audit?.summary.missing_receipt_count ?? 0}
+                  </p>
+                  <p className="text-[10px] font-black uppercase text-amber-700">Receipt Gaps</p>
+                </div>
+                <div className="rounded-md bg-red-50 px-3 py-2">
+                  <p className="text-lg font-black text-red-800">
+                    {audit?.summary.high_value_receipt_gap_count ?? 0}
+                  </p>
+                  <p className="text-[10px] font-black uppercase text-red-700">High Value</p>
+                </div>
+                <div className="rounded-md bg-slate-100 px-3 py-2">
+                  <p className="text-lg font-black text-slate-900">
+                    {audit?.summary.duplicate_candidate_count ?? 0}
+                  </p>
+                  <p className="text-[10px] font-black uppercase text-slate-600">Duplicates</p>
+                </div>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {(audit?.approval_queue || []).map((item) => (
+                <article
+                  key={`approval-${item.id}`}
+                  data-testid={`expense-approval-item-${item.id}`}
+                  className={`rounded-md border p-4 ${statusClass(item.severity)}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black text-gray-950">{money(item.amount)}</p>
+                      <p className="mt-1 text-xs font-bold uppercase opacity-70">
+                        {item.category || categoryById[item.category_id]?.name || `Category ${item.category_id}`}
+                      </p>
+                    </div>
+                    <span className="rounded-md bg-white/70 px-2 py-1 text-xs font-black uppercase">
+                      {item.approval_status.replaceAll("_", " ")}
+                    </span>
+                  </div>
+                  <p className="mt-3 line-clamp-2 text-sm font-semibold opacity-90">
+                    {item.description || "No description"}
+                  </p>
+                  <div className="mt-3 space-y-1">
+                    {item.reasons.map((reason) => (
+                      <p key={`${item.id}-${reason}`} className="text-xs font-bold opacity-80">
+                        {reason}
+                      </p>
+                    ))}
+                  </div>
+                  <p className="mt-3 rounded-md bg-white/70 px-3 py-2 text-xs font-bold opacity-80">
+                    {item.next_action}
+                  </p>
+                </article>
+              ))}
+              {audit && audit.approval_queue.length === 0 ? (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">
+                  No receipt or approval gaps in the selected period.
+                </div>
+              ) : null}
             </div>
           </section>
 

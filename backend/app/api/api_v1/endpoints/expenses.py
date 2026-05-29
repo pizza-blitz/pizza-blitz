@@ -90,6 +90,10 @@ def _expense_row(expense: Expense, category_by_id: dict[int, ExpenseCategory]) -
     }
 
 
+def _receipt_missing(expense: Expense) -> bool:
+    return not (expense.receipt_photo_url or "").strip()
+
+
 @router.get("/audit-command")
 def expense_audit_command(
     days: int = Query(default=30, ge=7, le=365),
@@ -151,6 +155,57 @@ def expense_audit_command(
         row["share_percent"] = round((amount / ledger_total) * 100, 2) if ledger_total else 0.0
         category_breakdown.append(row)
     category_breakdown.sort(key=lambda item: item["amount"], reverse=True)
+
+    duplicate_keys: dict[tuple, int] = {}
+    for expense in expenses:
+        key = (
+            expense.date.date().isoformat() if expense.date else "",
+            int(expense.category_id or 0),
+            round(float(expense.amount or 0), 2),
+            (expense.description or "").strip().lower(),
+        )
+        duplicate_keys[key] = duplicate_keys.get(key, 0) + 1
+
+    approval_queue = []
+    missing_receipt_count = 0
+    high_value_receipt_gap_count = 0
+    duplicate_candidate_count = 0
+    for expense in expenses:
+        amount = float(expense.amount or 0)
+        missing_receipt = _receipt_missing(expense)
+        high_value_receipt_gap = amount >= 1000 and missing_receipt
+        duplicate_key = (
+            expense.date.date().isoformat() if expense.date else "",
+            int(expense.category_id or 0),
+            round(amount, 2),
+            (expense.description or "").strip().lower(),
+        )
+        duplicate_candidate = duplicate_keys.get(duplicate_key, 0) > 1
+        if missing_receipt:
+            missing_receipt_count += 1
+        if high_value_receipt_gap:
+            high_value_receipt_gap_count += 1
+        if duplicate_candidate:
+            duplicate_candidate_count += 1
+        if not (missing_receipt or high_value_receipt_gap or duplicate_candidate):
+            continue
+
+        reasons = []
+        if high_value_receipt_gap:
+            reasons.append("High-value expense needs receipt proof.")
+        elif missing_receipt:
+            reasons.append("Receipt proof is missing.")
+        if duplicate_candidate:
+            reasons.append("Possible duplicate expense entry.")
+        approval_queue.append(
+            {
+                **_expense_row(expense, category_by_id),
+                "severity": "fail" if high_value_receipt_gap or duplicate_candidate else "warn",
+                "approval_status": "needs_review",
+                "reasons": reasons,
+                "next_action": "Attach receipt or owner approval note before month close.",
+            }
+        )
 
     daily_risks = []
     expense_days = {expense.date.date() for expense in expenses if expense.date}
@@ -216,6 +271,12 @@ def expense_audit_command(
             "status": "fail" if any(item["severity"] == "fail" for item in daily_risks) else "warn" if daily_risks else "pass",
             "detail": f"{len(daily_risks)} day(s) need cost review.",
         },
+        {
+            "key": "receipt_approval_control",
+            "label": "Receipt approval control",
+            "status": "fail" if high_value_receipt_gap_count or duplicate_candidate_count else "warn" if missing_receipt_count else "pass",
+            "detail": f"{missing_receipt_count} receipt gap(s), {high_value_receipt_gap_count} high-value gap(s), {duplicate_candidate_count} duplicate candidate(s).",
+        },
     ]
     score_weights = {"pass": 1.0, "warn": 0.5, "fail": 0.0}
     readiness_score = round(
@@ -243,10 +304,15 @@ def expense_audit_command(
             "expense_count": len(expenses),
             "category_count": len(categories),
             "risk_day_count": len(daily_risks),
+            "approval_queue_count": len(approval_queue),
+            "missing_receipt_count": missing_receipt_count,
+            "high_value_receipt_gap_count": high_value_receipt_gap_count,
+            "duplicate_candidate_count": duplicate_candidate_count,
         },
         "checks": checks,
         "category_breakdown": category_breakdown[:8],
         "daily_risks": daily_risks[-12:],
+        "approval_queue": approval_queue[:20],
         "top_expenses": [_expense_row(expense, category_by_id) for expense in expenses[:8]],
         "next_actions": [
             check["detail"]
