@@ -32,6 +32,7 @@ type OrderItem = {
   price: number;
   kitchen_station?: string | null;
   kitchen_station_label?: string | null;
+  station_status?: string | null;
   selected_options?: {
     group_name: string;
     option_name: string;
@@ -368,6 +369,19 @@ function kitchenStationLabel(item: OrderItem) {
   return item.kitchen_station_label || configuredStation?.label || key.replaceAll("-", " ");
 }
 
+function itemStationStatus(item: OrderItem, order: Order) {
+  const rawStatus = (item.station_status || "").toString().trim().toLowerCase();
+  if (["open", "preparing", "ready"].includes(rawStatus)) return rawStatus;
+  if (["open", "preparing", "ready"].includes(order.status)) return order.status;
+  return "open";
+}
+
+function aggregateStationStatus(statuses: string[]) {
+  if (statuses.length > 0 && statuses.every((status) => status === "ready")) return "ready";
+  if (statuses.some((status) => status === "preparing" || status === "ready")) return "preparing";
+  return "open";
+}
+
 function isDeliveryOrder(order: Order) {
   return (order.fulfillment_type || order.order_type) === "delivery";
 }
@@ -696,6 +710,7 @@ export default function OperationsPage() {
           items: OrderItem[];
           lineCount: number;
           quantity: number;
+          stationStatus: string;
         }[];
       }
     >();
@@ -707,7 +722,7 @@ export default function OperationsPage() {
     activeOrders.forEach((order) => {
       const groupedItems = new Map<
         string,
-        { label: string; items: OrderItem[]; quantity: number }
+        { label: string; items: OrderItem[]; quantity: number; statuses: string[] }
       >();
 
       (order.items || []).forEach((item) => {
@@ -718,9 +733,11 @@ export default function OperationsPage() {
             label: kitchenStationLabel(item),
             items: [],
             quantity: 0,
+            statuses: [],
           };
         group.items.push(item);
         group.quantity += Number(item.quantity || 0);
+        group.statuses.push(itemStationStatus(item, order));
         groupedItems.set(key, group);
       });
 
@@ -733,6 +750,7 @@ export default function OperationsPage() {
           items: group.items,
           lineCount: group.items.length,
           quantity: group.quantity,
+          stationStatus: aggregateStationStatus(group.statuses),
         });
       });
     });
@@ -741,8 +759,8 @@ export default function OperationsPage() {
       ...station,
       orders: [...station.orders].sort((left, right) => {
         const statusDelta =
-          (kitchenStatusPriority[left.order.status] ?? 9) -
-          (kitchenStatusPriority[right.order.status] ?? 9);
+          (kitchenStatusPriority[left.stationStatus] ?? 9) -
+          (kitchenStatusPriority[right.stationStatus] ?? 9);
         if (statusDelta !== 0) return statusDelta;
         const leftTime = left.order.created_at ? new Date(left.order.created_at).getTime() : 0;
         const rightTime = right.order.created_at ? new Date(right.order.created_at).getTime() : 0;
@@ -947,6 +965,39 @@ export default function OperationsPage() {
       await fetchOrders({ preserveMessage: true });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not move order.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const updateStationStatus = async (
+    orderId: number,
+    stationKey: string,
+    stationLabel: string,
+    status: "open" | "preparing" | "ready"
+  ) => {
+    const actionKey = `${orderId}-${stationKey}-${status}`;
+    setBusyAction(actionKey);
+    try {
+      const response = await fetch(
+        `${ORDERS_API}/${orderId}/stations/${encodeURIComponent(stationKey)}/status`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not move station.");
+      setMessage(
+        `${stationLabel} for order #${orderId} moved to ${status}. Order is now ${readableStatus(
+          data.order_status
+        )}.`
+      );
+      await fetchOrders({ preserveMessage: true });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not move station.");
     } finally {
       setBusyAction(null);
     }
@@ -1482,8 +1533,8 @@ export default function OperationsPage() {
                                   : order.fulfillment_type || order.order_type}
                               </p>
                             </div>
-                            <span className={`rounded-md border px-2 py-1 text-xs font-black ${statusClass(order.status)}`}>
-                              {order.status}
+                            <span className={`rounded-md border px-2 py-1 text-xs font-black ${statusClass(entry.stationStatus)}`}>
+                              {entry.stationStatus}
                             </span>
                           </div>
 
@@ -1518,27 +1569,32 @@ export default function OperationsPage() {
                             >
                               KOT
                             </Link>
-                            {order.status === "open" && (
+                            {entry.stationStatus === "open" && (
                               <button
                                 data-testid={`kitchen-station-start-${station.key}-${order.id}`}
-                                onClick={() => updateStatus(order, "preparing")}
-                                disabled={busyAction === `${order.id}-preparing`}
+                                onClick={() => updateStationStatus(order.id, station.key, station.label, "preparing")}
+                                disabled={busyAction === `${order.id}-${station.key}-preparing`}
                                 className="h-10 rounded-md bg-sky-600 px-3 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
                               >
                                 Start
                               </button>
                             )}
-                            {order.status === "preparing" && (
+                            {entry.stationStatus === "preparing" && (
                               <button
                                 data-testid={`kitchen-station-ready-${station.key}-${order.id}`}
-                                onClick={() => updateStatus(order, "ready")}
-                                disabled={busyAction === `${order.id}-ready`}
+                                onClick={() => updateStationStatus(order.id, station.key, station.label, "ready")}
+                                disabled={busyAction === `${order.id}-${station.key}-ready`}
                                 className="h-10 rounded-md bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50"
                               >
                                 Ready
                               </button>
                             )}
-                            {order.status === "ready" && (
+                            {entry.stationStatus === "ready" && order.status !== "ready" && (
+                              <span className="flex h-10 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-black text-emerald-700">
+                                Station Ready
+                              </span>
+                            )}
+                            {entry.stationStatus === "ready" && order.status === "ready" && (
                               <Link
                                 href={`/receipt/${order.id}`}
                                 className="flex h-10 items-center justify-center rounded-md bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700"

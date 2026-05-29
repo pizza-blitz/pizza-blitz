@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles, session_from_request
@@ -137,6 +138,10 @@ class ProviderPaymentVerification(BaseModel):
 
 
 class OrderStatusUpdate(BaseModel):
+    status: str
+
+
+class StationStatusUpdate(BaseModel):
     status: str
 
 
@@ -1130,26 +1135,52 @@ def order_age_minutes(order: RestaurantOrder) -> int:
     return max(int((datetime.utcnow() - created_at).total_seconds() // 60), 0)
 
 
-def station_line_priority(order: RestaurantOrder, age_minutes: int, sla_minutes: int) -> str:
-    if order.status == "ready":
+def station_line_priority(status: str, age_minutes: int, sla_minutes: int) -> str:
+    if status == "ready":
         return "ready"
     if age_minutes > sla_minutes:
         return "rush"
     if age_minutes >= max(sla_minutes - 3, 1):
         return "watch"
-    if order.status == "preparing":
+    if status == "preparing":
         return "cooking"
     return "new"
 
 
-def station_line_next_action(order: RestaurantOrder, priority: str) -> str:
-    if order.status == "ready":
+def station_item_status(item: dict, order: RestaurantOrder) -> str:
+    raw_status = str(item.get("station_status") or "").strip().lower()
+    if raw_status in {"open", "preparing", "ready"}:
+        return raw_status
+    if order.status in {"open", "preparing", "ready"}:
+        return order.status
+    return "open"
+
+
+def aggregate_station_statuses(statuses: list[str]) -> str:
+    if statuses and all(status == "ready" for status in statuses):
+        return "ready"
+    if any(status in {"preparing", "ready"} for status in statuses):
+        return "preparing"
+    return "open"
+
+
+def aggregate_order_station_status(order: RestaurantOrder, items: list[dict] | None = None) -> str:
+    line_statuses = [
+        station_item_status(item, order)
+        for item in (items if items is not None else order.items or [])
+        if isinstance(item, dict) and int(item.get("quantity") or 0) > 0
+    ]
+    return aggregate_station_statuses(line_statuses)
+
+
+def station_line_next_action(status: str, priority: str) -> str:
+    if status == "ready":
         return "Handoff to counter for bill or pickup."
     if priority == "rush":
         return "Past station SLA. Push this line now."
     if priority == "watch":
         return "Close to SLA. Keep this ticket visible."
-    if order.status == "preparing":
+    if status == "preparing":
         return "Finish station prep and mark ready."
     return "Start station prep."
 
@@ -1158,7 +1189,8 @@ def serialize_station_line(order: RestaurantOrder, item: dict, line_index: int) 
     station = kitchen_station_for_saved_item(item)
     age_minutes = order_age_minutes(order)
     sla_minutes = int(station["sla_minutes"])
-    priority = station_line_priority(order, age_minutes, sla_minutes)
+    status = station_item_status(item, order)
+    priority = station_line_priority(status, age_minutes, sla_minutes)
     selected_options = item.get("selected_options") or []
     if not isinstance(selected_options, list):
         selected_options = []
@@ -1172,7 +1204,8 @@ def serialize_station_line(order: RestaurantOrder, item: dict, line_index: int) 
         "quantity": int(item.get("quantity") or 0),
         "selected_options": selected_options,
         "option_count": len(selected_options),
-        "status": order.status,
+        "status": status,
+        "order_status": order.status,
         "order_type": order.order_type,
         "fulfillment_type": order_metadata(order)["fulfillment_type"],
         "table_number": order.table_number,
@@ -1182,7 +1215,7 @@ def serialize_station_line(order: RestaurantOrder, item: dict, line_index: int) 
         "age_minutes": age_minutes,
         "sla_minutes": sla_minutes,
         "priority": priority,
-        "next_action": station_line_next_action(order, priority),
+        "next_action": station_line_next_action(status, priority),
         "ticket_url": f"/kitchen-ticket/{order.id}?station={station['key']}",
     }
 
@@ -1271,6 +1304,17 @@ def build_station_command_report(db: Session) -> dict:
     active_station_count = 0
 
     for station in station_map.values():
+        for order_entry in station["orders"]:
+            line_statuses = [line["status"] for line in order_entry["lines"]]
+            order_entry["status"] = aggregate_station_statuses(line_statuses)
+            if all(line["priority"] == "ready" for line in order_entry["lines"]):
+                order_entry["priority"] = "ready"
+            elif any(line["priority"] == "rush" for line in order_entry["lines"]):
+                order_entry["priority"] = "rush"
+            elif any(line["priority"] == "watch" for line in order_entry["lines"]):
+                order_entry["priority"] = "watch"
+            elif any(line["status"] == "preparing" for line in order_entry["lines"]):
+                order_entry["priority"] = "cooking"
         station["orders"].sort(
             key=lambda row: (
                 priority_rank.get(row["priority"], 9),
@@ -1401,6 +1445,7 @@ def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dic
                     "category": menu_item.category,
                     "kitchen_station": station["key"],
                     "kitchen_station_label": station["label"],
+                    "station_status": "open",
                     "quantity": quantity,
                     "price": priced_item["unit_price"],
                     "base_price": priced_item["base_price"],
@@ -1423,6 +1468,7 @@ def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dic
                 "name": item.name,
                 "kitchen_station": station["key"],
                 "kitchen_station_label": station["label"],
+                "station_status": "open",
                 "quantity": quantity,
                 "price": fallback_price,
                 "base_price": round(float(item.base_price or fallback_price), 2),
@@ -1761,7 +1807,24 @@ def update_order_status(
             detail=f"Status must be one of: {', '.join(sorted(allowed_statuses))}.",
         )
 
+    updated_at = datetime.utcnow().isoformat()
+    updated_items = []
+    for item in order.items or []:
+        if not isinstance(item, dict):
+            updated_items.append(item)
+            continue
+        next_item = dict(item)
+        next_item["station_status"] = status
+        next_item["station_status_updated_at"] = updated_at
+        if status == "preparing" and not next_item.get("station_started_at"):
+            next_item["station_started_at"] = updated_at
+        if status == "ready":
+            next_item["station_ready_at"] = updated_at
+        updated_items.append(next_item)
+
+    order.items = updated_items
     order.status = status
+    flag_modified(order, "items")
     db.commit()
     db.refresh(order)
     record_operational_audit_event(
@@ -1776,6 +1839,90 @@ def update_order_status(
         metadata={"status": status, "source": order_metadata(order).get("source")},
     )
     return serialize_order(order)
+
+
+@router.patch("/{order_id}/stations/{station_key}/status")
+def update_order_station_status(
+    order_id: int,
+    station_key: str,
+    payload: StationStatusUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "closed":
+        raise HTTPException(status_code=409, detail="Closed orders cannot be moved.")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Cancelled orders cannot be moved.")
+
+    status = payload.status.strip().lower()
+    allowed_statuses = {"open", "preparing", "ready"}
+    if status not in allowed_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Station status must be one of: {', '.join(sorted(allowed_statuses))}.",
+        )
+
+    normalized_station_key = normalize_station_key(station_key)
+    updated_items = []
+    matched_line_count = 0
+    updated_at = datetime.utcnow().isoformat()
+    for item in order.items or []:
+        if not isinstance(item, dict):
+            updated_items.append(item)
+            continue
+
+        station = kitchen_station_for_saved_item(item)
+        next_item = dict(item)
+        if station["key"] == normalized_station_key:
+            next_item["station_status"] = status
+            next_item["station_status_updated_at"] = updated_at
+            if status == "preparing" and not next_item.get("station_started_at"):
+                next_item["station_started_at"] = updated_at
+            if status == "ready":
+                next_item["station_ready_at"] = updated_at
+            matched_line_count += 1
+        updated_items.append(next_item)
+
+    if matched_line_count == 0:
+        raise HTTPException(status_code=404, detail="No order lines found for this kitchen station.")
+
+    previous_status = order.status
+    order.items = updated_items
+    order.status = aggregate_order_station_status(order, updated_items)
+    flag_modified(order, "items")
+    db.commit()
+    db.refresh(order)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="order",
+        action="order_station_status_update",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"Order #{order.id} station {normalized_station_key} moved to {status}.",
+        metadata={
+            "station_key": normalized_station_key,
+            "station_status": status,
+            "line_count": matched_line_count,
+            "previous_order_status": previous_status,
+            "order_status": order.status,
+            "source": order_metadata(order).get("source"),
+        },
+    )
+    return {
+        "order": serialize_order(order),
+        "station": {
+            "key": normalized_station_key,
+            "status": status,
+            "line_count": matched_line_count,
+        },
+        "order_status": order.status,
+    }
 
 
 @router.post("/{order_id}/payment-session")

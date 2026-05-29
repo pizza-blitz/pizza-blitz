@@ -22,6 +22,7 @@ type KitchenTicketItem = {
   quantity: number;
   kitchen_station?: string | null;
   kitchen_station_label?: string | null;
+  station_status?: string | null;
   selected_options?: {
     group_name?: string;
     option_name: string;
@@ -85,6 +86,19 @@ function itemStation(item: KitchenTicketItem) {
   };
 }
 
+function itemStationStatus(item: KitchenTicketItem, orderStatus: string) {
+  const rawStatus = (item.station_status || "").toString().trim().toLowerCase();
+  if (["open", "preparing", "ready"].includes(rawStatus)) return rawStatus;
+  if (["open", "preparing", "ready"].includes(orderStatus)) return orderStatus;
+  return "open";
+}
+
+function aggregateStationStatus(statuses: string[]) {
+  if (statuses.length > 0 && statuses.every((status) => status === "ready")) return "ready";
+  if (statuses.some((status) => status === "preparing" || status === "ready")) return "preparing";
+  return "open";
+}
+
 function stationHref(orderId: string, stationKey: string) {
   if (stationKey === "all") return `/kitchen-ticket/${orderId}`;
   return `/kitchen-ticket/${orderId}?station=${encodeURIComponent(stationKey)}`;
@@ -137,8 +151,26 @@ export default function KitchenTicketPage() {
       : stationGroups.find((group) => group.key === activeStation)?.label || titleCase(activeStation);
   const visibleItemsTotal = visibleStationGroups.reduce((sum, group) => sum + group.quantity, 0);
   const status = (order?.status || "").toLowerCase();
-  const canStartPreparing = Boolean(order && !["preparing", "ready", "closed", "cancelled"].includes(status));
-  const canMarkReady = Boolean(order && !["ready", "closed", "cancelled"].includes(status));
+  const activeStationStatus = useMemo(() => {
+    if (!order) return "open";
+    if (activeStation === "all") return status || "open";
+    const stationStatuses = visibleStationGroups.flatMap((group) =>
+      group.items.map((item) => itemStationStatus(item, status))
+    );
+    return aggregateStationStatus(stationStatuses);
+  }, [activeStation, order, status, visibleStationGroups]);
+  const canStartPreparing = Boolean(
+    order &&
+      !["closed", "cancelled"].includes(status) &&
+      (activeStation === "all"
+        ? !["preparing", "ready"].includes(status)
+        : activeStationStatus === "open")
+  );
+  const canMarkReady = Boolean(
+    order &&
+      !["closed", "cancelled"].includes(status) &&
+      (activeStation === "all" ? status !== "ready" : activeStationStatus !== "ready")
+  );
 
   useEffect(() => {
     fetchOrder();
@@ -164,24 +196,35 @@ export default function KitchenTicketPage() {
     setBusyStatus(nextStatus);
     setMessage("");
     try {
-      const response = await fetch(`${ORDERS_API}/${order.id}/status`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
+      const stationScoped = activeStation !== "all";
+      const response = await fetch(
+        stationScoped
+          ? `${ORDERS_API}/${order.id}/stations/${encodeURIComponent(activeStation)}/status`
+          : `${ORDERS_API}/${order.id}/status`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        }
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not update kitchen status.");
+      const nextOrder = data.order || data;
       setOrder((current) =>
         current
           ? {
               ...current,
-              ...data,
-              status: data.status || nextStatus,
+              ...nextOrder,
+              status: nextOrder.status || data.order_status || nextStatus,
             }
-          : data
+          : nextOrder
       );
-      setMessage(`Order #${order.id} moved to ${titleCase(nextStatus)}.`);
+      setMessage(
+        stationScoped
+          ? `${activeStationLabel} for order #${order.id} moved to ${titleCase(nextStatus)}.`
+          : `Order #${order.id} moved to ${titleCase(nextStatus)}.`
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not update kitchen status.");
     } finally {

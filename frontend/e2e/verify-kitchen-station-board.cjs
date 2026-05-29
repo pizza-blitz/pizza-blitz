@@ -248,15 +248,39 @@ async function main() {
     });
 
     await page.getByTestId(`kitchen-station-start-oven-${orderId}`).click();
-    await page.getByText(new RegExp(`Order #${orderId} moved to preparing`, "i")).waitFor({ timeout: 15000 });
+    await page.getByText(new RegExp(`Oven Station for order #${orderId} moved to preparing`, "i")).waitFor({ timeout: 15000 });
     await page.getByTestId(`kitchen-station-ready-oven-${orderId}`).waitFor({ timeout: 15000 });
 
     await page.getByTestId(`kitchen-station-ready-oven-${orderId}`).click();
-    await page.getByText(new RegExp(`Order #${orderId} moved to ready`, "i")).waitFor({ timeout: 15000 });
+    await page.getByText(new RegExp(`Oven Station for order #${orderId} moved to ready`, "i")).waitFor({ timeout: 15000 });
+
+    const partialResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`, adminCookie);
+    assert(partialResult.response.ok, `Could not refetch partial station order: ${JSON.stringify(partialResult.data)}`);
+    assert(
+      partialResult.data.status === "preparing",
+      `Expected order to stay preparing until all stations are ready, got ${partialResult.data.status}.`
+    );
+    const partialStatuses = new Map((partialResult.data.items || []).map((item) => [item.kitchen_station, item.station_status]));
+    assert(partialStatuses.get("oven") === "ready", `Expected oven ready, got ${partialStatuses.get("oven")}.`);
+    assert(partialStatuses.get("fryer") !== "ready", "Fryer should not become ready when oven is marked ready.");
+    assert(partialStatuses.get("cold") !== "ready", "Cold station should not become ready when oven is marked ready.");
+
+    for (const station of ["fryer", "cold"]) {
+      const stationReady = await apiJson(`/api/v1/restaurant/orders/${orderId}/stations/${station}/status`, adminCookie, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      });
+      assert(stationReady.response.ok, `Could not mark ${station} ready: ${JSON.stringify(stationReady.data)}`);
+    }
 
     const readyResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`, adminCookie);
     assert(readyResult.response.ok, `Could not refetch station-board order: ${JSON.stringify(readyResult.data)}`);
-    assert(readyResult.data.status === "ready", `Expected station-board order ready, got ${readyResult.data.status}.`);
+    assert(readyResult.data.status === "ready", `Expected station-board order ready after all stations, got ${readyResult.data.status}.`);
+    assert(
+      (readyResult.data.items || []).every((item) => item.station_status === "ready"),
+      "Every station line should be ready when the order becomes ready."
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-kitchen-station-board-ready.png"),
