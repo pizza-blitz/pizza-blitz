@@ -666,6 +666,13 @@ export default function OperationsPage() {
   const fetchOrders = async (options?: { preserveMessage?: boolean; silent?: boolean }) => {
     if (!options?.silent) setIsLoading(true);
     try {
+      const readJson = async (request: Response) => {
+        try {
+          return await request.json();
+        } catch {
+          return {};
+        }
+      };
       const [response, queueResponse, flowResponse, missionResponse] = await Promise.all([
         fetch(`${ORDERS_API}/today`, {
           cache: "no-store",
@@ -684,22 +691,31 @@ export default function OperationsPage() {
           credentials: "include",
         }),
       ]);
-      const data = await response.json();
-      const queueData = await queueResponse.json();
-      const flowData = await flowResponse.json();
-      const missionData = await missionResponse.json();
+      const data = await readJson(response);
+      const queueData = await readJson(queueResponse);
+      const flowData = await readJson(flowResponse);
+      const missionData = await readJson(missionResponse);
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
-      if (!queueResponse.ok) throw new Error(queueData.detail || "Could not load delivery queue.");
-      if (!flowResponse.ok) throw new Error(flowData.detail || "Could not load order flow.");
-      if (!missionResponse.ok) throw new Error(missionData.detail || "Could not load delivery mission control.");
 
-      const queueOrders = queueData.orders || [];
+      const optionalWarnings = [
+        !queueResponse.ok
+          ? queueData.detail || "Delivery queue is temporarily unavailable."
+          : "",
+        !flowResponse.ok
+          ? flowData.detail || "Order flow readiness is temporarily unavailable."
+          : "",
+        !missionResponse.ok
+          ? missionData.detail || "Delivery mission control is temporarily unavailable."
+          : "",
+      ].filter(Boolean);
+
+      const queueOrders = queueResponse.ok ? queueData.orders || [] : [];
       const queueById = new Map<number, any>(
         queueOrders.map((order: any) => [order.id, order])
       );
-      setDeliveryQueueSummary(queueData.summary || null);
-      setDeliveryMission(missionData || null);
-      setOrderFlow(flowData || null);
+      setDeliveryQueueSummary(queueResponse.ok ? queueData.summary || null : null);
+      setDeliveryMission(missionResponse.ok ? missionData || null : null);
+      setOrderFlow(flowResponse.ok ? flowData || null : null);
       setLastRefreshedAt(
         new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
       );
@@ -755,7 +771,13 @@ export default function OperationsPage() {
       setOrders(
         [...mergedOrders, ...queueOnlyOrders].sort((left, right) => right.id - left.id)
       );
-      if (!options?.preserveMessage) setMessage("");
+      if (!options?.preserveMessage) {
+        setMessage(
+          optionalWarnings.length
+            ? `Kitchen queue loaded. ${optionalWarnings.join(" ")}`
+            : ""
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load orders.");
     } finally {

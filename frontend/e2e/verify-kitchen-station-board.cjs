@@ -118,6 +118,38 @@ async function assertHealthyPage(page, label) {
   assert(health.bodyOverflow <= 8, `${label} has body-level horizontal overflow of ${health.bodyOverflow}px.`);
 }
 
+async function waitForStationOrder(page, station, orderId) {
+  const testId = `kitchen-station-order-${station}-${orderId}`;
+  let lastVisibleCards = "";
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const target = page.getByTestId(testId);
+    if ((await target.count()) > 0) {
+      await target.waitFor({ timeout: 10000 });
+      return;
+    }
+
+    lastVisibleCards = await page
+      .locator('[data-testid^="kitchen-station-order-"]')
+      .evaluateAll((nodes) =>
+        nodes
+          .slice(0, 12)
+          .map((node) => node.getAttribute("data-testid"))
+          .filter(Boolean)
+          .join(", ")
+      )
+      .catch(() => "");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.getByTestId("kitchen-station-board").waitFor({ timeout: 20000 });
+    await page.waitForLoadState("networkidle", { timeout: 7000 }).catch(() => undefined);
+  }
+
+  throw new Error(
+    `Station ${station} did not show order #${orderId}. Visible station cards: ${lastVisibleCards || "none"}.`
+  );
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(`${apiURL}/health`, "restaurant API");
@@ -176,7 +208,7 @@ async function main() {
 
     for (const station of ["oven", "fryer", "cold"]) {
       await page.getByTestId(`kitchen-station-${station}`).waitFor({ timeout: 15000 });
-      await page.getByTestId(`kitchen-station-order-${station}-${orderId}`).waitFor({ timeout: 15000 });
+      await waitForStationOrder(page, station, orderId);
       await page.getByTestId(`kitchen-station-lines-${station}-${orderId}`).waitFor({ timeout: 15000 });
       const ticketHref = await page.getByTestId(`kitchen-station-ticket-${station}-${orderId}`).getAttribute("href");
       assert(
