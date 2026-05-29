@@ -231,7 +231,6 @@ export default function PublicOrderPage() {
   const [message, setMessage] = useState("");
   const [orderId, setOrderId] = useState<number | null>(null);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
-  const [paymentReference, setPaymentReference] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
@@ -904,7 +903,6 @@ export default function PublicOrderPage() {
       setCoupon(null);
       setCouponCode("");
       setQueuedCouponCode("");
-      setPaymentReference(paymentReferenceValue);
       setPendingPayment({
         orderId,
         total: Number(data.total || 0),
@@ -918,7 +916,11 @@ export default function PublicOrderPage() {
         sessionStatus: paymentSession.status,
         message: paymentSession.message,
       });
-      setMessage(`Order #${orderId} created. Confirm prepaid payment to mark it paid.`);
+      setMessage(
+        paymentSession.provider === "manual"
+          ? `Order #${orderId} created. Payment is pending until the store team verifies it.`
+          : `Order #${orderId} created. Continue to online payment.`
+      );
     } else {
       const orderId = Number(data.order_id);
       setOrderId(orderId);
@@ -929,31 +931,6 @@ export default function PublicOrderPage() {
       setPendingPayment(null);
       setMessage(`Order #${orderId} placed. Estimated ${eta}.`);
     }
-  };
-
-  const confirmPayment = async () => {
-    if (!pendingPayment) return;
-
-    setIsConfirmingPayment(true);
-    const response = await fetch(`${ORDER_API}${pendingPayment.orderId}/payment-confirmation`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        payment_provider: pendingPayment.provider,
-        payment_reference: paymentReference || pendingPayment.reference,
-        paid_amount: pendingPayment.total,
-      }),
-    });
-    const data = await response.json();
-    setIsConfirmingPayment(false);
-
-    if (!response.ok) {
-      setMessage(data.detail || "Payment could not be confirmed.");
-      return;
-    }
-
-    setPendingPayment(null);
-    setMessage(`Payment confirmed for order #${data.id}. Estimated ${eta}.`);
   };
 
   const startGatewayPayment = async () => {
@@ -1497,22 +1474,10 @@ export default function PublicOrderPage() {
                   </a>
                 )}
                 {(pendingPayment.provider === "manual" || pendingPayment.sessionStatus !== "ready") && (
-                  <>
-                    <input
-                      value={paymentReference}
-                      onChange={(event) => setPaymentReference(event.target.value)}
-                      className="mt-3 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-600"
-                      placeholder="Payment reference"
-                    />
-                    <button
-                      type="button"
-                      onClick={confirmPayment}
-                      disabled={isConfirmingPayment}
-                      className="mt-3 w-full rounded-md bg-amber-600 px-4 py-3 text-sm font-black text-white hover:bg-amber-700 disabled:bg-slate-300"
-                    >
-                      {isConfirmingPayment ? "Confirming" : "Confirm Payment"}
-                    </button>
-                  </>
+                  <div className="mt-3 rounded-md border border-amber-200 bg-white p-3 text-sm font-semibold leading-6 text-amber-900">
+                    Payment is waiting for store verification. Keep this order number and any UPI, bank, or gateway
+                    reference ready for the counter team.
+                  </div>
                 )}
               </div>
             )}

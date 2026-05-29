@@ -1704,6 +1704,7 @@ def confirm_order_payment(
     order_id: int,
     payload: PaymentConfirmation,
     db: Session = Depends(get_db),
+    _session: dict = Depends(require_roles("admin", "staff")),
 ):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
@@ -2024,6 +2025,7 @@ def confirm_tracked_order_payment(
     order_id: int,
     payload: TrackedPaymentConfirmation,
     db: Session = Depends(get_db),
+    _session: dict = Depends(require_roles("admin", "staff")),
 ):
     normalized_phone = payload.phone.strip()
     if not normalized_phone:
