@@ -3,11 +3,12 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Phone, ShoppingBag } from "lucide-react";
+import { Phone, ReceiptText, ShoppingBag } from "lucide-react";
 
 export default function CustomerLoginPage() {
   const router = useRouter();
   const [phone, setPhone] = useState("");
+  const [orderId, setOrderId] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -19,7 +20,7 @@ export default function CustomerLoginPage() {
     const response = await fetch("/api/customer-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, order_id: orderId }),
     });
     const data = await response.json().catch(() => ({}));
     setIsSubmitting(false);
@@ -59,9 +60,9 @@ export default function CustomerLoginPage() {
           <p className="text-sm font-black uppercase tracking-widest text-red-700">
             My orders
           </p>
-          <h2 className="mt-2 text-3xl font-black">Sign in with your order phone.</h2>
+          <h2 className="mt-2 text-3xl font-black">Sign in with your order details.</h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            Use the phone number you entered during checkout to view your saved order history.
+            Use the phone number and a recent order ID from your receipt to view saved order history.
           </p>
 
           {message && (
@@ -76,6 +77,18 @@ export default function CustomerLoginPage() {
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
               placeholder="Phone number"
+              required
+              className="w-full outline-none"
+            />
+          </label>
+
+          <label className="mt-3 flex items-center gap-3 rounded-md border border-slate-300 px-3 py-3 focus-within:border-red-600">
+            <ReceiptText className="h-4 w-4 text-slate-400" />
+            <input
+              value={orderId}
+              onChange={(event) => setOrderId(event.target.value)}
+              placeholder="Recent order ID"
+              inputMode="numeric"
               required
               className="w-full outline-none"
             />

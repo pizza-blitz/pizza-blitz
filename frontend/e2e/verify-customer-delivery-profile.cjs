@@ -144,9 +144,9 @@ async function seedDeliveryOrder() {
   return { address, item, orderId: Number(orderResult.data.order_id), phone, quantity, zone };
 }
 
-async function signInAsCustomer(context, phone) {
+async function signInAsCustomer(context, phone, orderId) {
   const response = await context.request.post(`${baseURL}/api/customer-session`, {
-    data: { phone },
+    data: { phone, order_id: orderId },
   });
   assert(response.ok(), `Customer session failed: ${await response.text()}`);
 }
@@ -171,7 +171,7 @@ async function main() {
   const watch = createBrowserWatch(page);
 
   try {
-    await signInAsCustomer(context, seeded.phone);
+    await signInAsCustomer(context, seeded.phone, seeded.orderId);
 
     let response = await page.goto(`${baseURL}/account`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Account page returned HTTP ${response?.status() || "no response"}.`);

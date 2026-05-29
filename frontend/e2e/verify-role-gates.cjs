@@ -125,10 +125,29 @@ async function customerLogin() {
   const order = await orderResponse.json();
   assert(orderResponse.ok, `Could not create customer proof order: ${JSON.stringify(order)}`);
 
-  const response = await fetch(`${baseURL}/api/customer-session`, {
+  const phoneOnlyResponse = await fetch(`${baseURL}/api/customer-session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ phone }),
+  });
+  assert(
+    phoneOnlyResponse.status === 422,
+    `Phone-only customer login should require order proof, received ${phoneOnlyResponse.status}.`
+  );
+  const wrongOrderResponse = await fetch(`${baseURL}/api/customer-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, order_id: Number(order.order_id || 0) + 999999 }),
+  });
+  assert(
+    wrongOrderResponse.status === 401,
+    `Wrong customer order proof should be rejected, received ${wrongOrderResponse.status}.`
+  );
+
+  const response = await fetch(`${baseURL}/api/customer-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, order_id: order.order_id }),
   });
   const data = await response.json();
   assert(response.ok, `Customer login failed: ${JSON.stringify(data)}`);
@@ -409,9 +428,10 @@ async function main() {
     "admin ops readiness"
   );
   const readiness = await adminReadiness.json();
+  const providerNames = new Set((readiness.payment_providers || []).map((provider) => provider.provider));
   assert(
-    Array.isArray(readiness.payment_providers) && readiness.payment_providers.length === 3,
-    "Admin readiness did not include all payment providers."
+    ["manual", "direct_bank", "cashfree", "razorpay"].every((provider) => providerNames.has(provider)),
+    `Admin readiness did not include all payment providers: ${Array.from(providerNames).join(", ")}.`
   );
 
   await assertStatus(

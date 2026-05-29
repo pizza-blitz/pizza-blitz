@@ -695,7 +695,7 @@ export default function PublicOrderPage() {
     return () => window.clearTimeout(quoteTimer);
   }, [address, orderType, selectedDeliveryZoneId, subtotal]);
 
-  const saveCustomerSession = async () => {
+  const saveCustomerSession = async (nextOrderId: number) => {
     if (!customerPhone.trim()) return;
     await fetch("/api/customer-session", {
       method: "POST",
@@ -704,6 +704,7 @@ export default function PublicOrderPage() {
         name: customerName,
         phone: customerPhone,
         email: customerEmail || null,
+        order_id: nextOrderId,
       }),
     }).catch(() => undefined);
   };
@@ -907,9 +908,10 @@ export default function PublicOrderPage() {
         opt_in_marketing: optInMarketing,
       })
     );
-    await saveCustomerSession();
+    const createdOrderId = Number(data.order_id);
+    await saveCustomerSession(createdOrderId);
     if (paymentMethod === "prepaid") {
-      const orderId = Number(data.order_id);
+      const orderId = createdOrderId;
       const sessionResponse = await fetch(`${ORDER_API}${orderId}/payment-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -953,7 +955,7 @@ export default function PublicOrderPage() {
           : `Order #${orderId} created. Continue to online payment.`
       );
     } else {
-      const orderId = Number(data.order_id);
+      const orderId = createdOrderId;
       setOrderId(orderId);
       setCart([]);
       setCoupon(null);

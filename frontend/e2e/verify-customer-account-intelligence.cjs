@@ -94,9 +94,9 @@ function createBrowserWatch(page) {
   };
 }
 
-async function signInAsCustomer(context, phone) {
+async function signInAsCustomer(context, phone, orderId) {
   const response = await context.request.post(`${baseURL}/api/customer-session`, {
-    data: { phone },
+    data: { phone, order_id: orderId },
   });
   assert(response.ok(), `Customer session failed: ${await response.text()}`);
 
@@ -192,7 +192,7 @@ async function main() {
     ],
     "Customer intelligence proof one"
   );
-  await seedOrder(
+  const proofOrderId = await seedOrder(
     phone,
     [
       { name: "Margherita Pizza (R)", quantity: 1, price: 199 },
@@ -210,7 +210,7 @@ async function main() {
   const watch = createBrowserWatch(page);
 
   try {
-    await signInAsCustomer(context, phone);
+    await signInAsCustomer(context, phone, proofOrderId);
     await assertAccountPage(page, watch);
   } finally {
     await browser.close();

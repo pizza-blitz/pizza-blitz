@@ -97,13 +97,6 @@ function createBrowserWatch(page) {
   };
 }
 
-async function signInAsCustomer(context, phone) {
-  const response = await context.request.post(`${baseURL}/api/customer-session`, {
-    data: { phone },
-  });
-  assert(response.ok(), `Customer session failed: ${await response.text()}`);
-}
-
 async function assertUpdatedHistory(phone, expectedEmail) {
   const { response, data } = await apiJson(`/api/v1/restaurant/orders/customer-history/${encodeURIComponent(phone)}`);
   assert(response.ok, `Customer history failed after profile save: ${JSON.stringify(data)}`);
@@ -130,8 +123,25 @@ async function main() {
   const watch = createBrowserWatch(page);
 
   try {
-    await signInAsCustomer(context, phone);
-    const response = await page.goto(`${baseURL}/account`, { waitUntil: "domcontentloaded" });
+    let response = await page.goto(`${baseURL}/account/login`, { waitUntil: "domcontentloaded" });
+    assert(response && response.ok(), `Customer login returned HTTP ${response?.status() || "no response"}.`);
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
+    await page.getByPlaceholder("Phone number").fill(phone);
+    await page.getByPlaceholder("Recent order ID").fill(String(orderId));
+    const loginResponsePromise = page.waitForResponse(
+      (apiResponse) =>
+        apiResponse.url().includes("/api/customer-session") &&
+        apiResponse.request().method() === "POST",
+      { timeout: 15000 }
+    );
+    await page.getByRole("button", { name: /View My Orders/i }).click();
+    response = await loginResponsePromise;
+    assert(response.ok(), `Customer login proof failed: ${await response.text()}`);
+    await page.waitForURL(/\/account(?:\?|$)/, { timeout: 15000 }).catch(async () => {
+      await page.goto(`${baseURL}/account`, { waitUntil: "domcontentloaded" });
+    });
+
+    response = await page.goto(`${baseURL}/account`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Customer account returned HTTP ${response?.status() || "no response"}.`);
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
 

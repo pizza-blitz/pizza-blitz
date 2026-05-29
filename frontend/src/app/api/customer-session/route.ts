@@ -41,9 +41,18 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
   const phone = String(payload.phone || "").trim();
+  const proofOrderId = Number(
+    String(payload.order_id || payload.orderId || payload.last_order_id || "").trim()
+  );
   if (!phone) {
     return NextResponse.json(
       { detail: "Phone number is required." },
+      { status: 422 }
+    );
+  }
+  if (!Number.isInteger(proofOrderId) || proofOrderId <= 0) {
+    return NextResponse.json(
+      { detail: "Recent order ID is required to open customer order history." },
       { status: 422 }
     );
   }
@@ -57,6 +66,16 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { detail: history.detail || "No customer profile found for this phone number." },
       { status: historyResponse.status }
+    );
+  }
+
+  const matchedOrder = Array.isArray(history.orders)
+    ? history.orders.find((order: { id?: number }) => Number(order.id) === proofOrderId)
+    : null;
+  if (!matchedOrder) {
+    return NextResponse.json(
+      { detail: "Phone number and recent order ID do not match." },
+      { status: 401 }
     );
   }
 
