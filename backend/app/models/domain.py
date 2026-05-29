@@ -136,6 +136,23 @@ class StaffCredential(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login_at = Column(DateTime, nullable=True)
 
+class OperationalAuditEvent(Base):
+    __tablename__ = "operational_audit_events"
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String(80), index=True, nullable=False)
+    action = Column(String(120), index=True, nullable=False)
+    resource_type = Column(String(80), index=True, nullable=False)
+    resource_id = Column(String(120), nullable=True)
+    status = Column(String(40), index=True, default="success")
+    actor_role = Column(String(40), index=True, nullable=True)
+    actor_subject = Column(String(160), nullable=True)
+    actor_display_name = Column(String(160), nullable=True)
+    detail = Column(String, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    ip_address = Column(String(80), nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 class Promotion(Base):
     __tablename__ = "promotions"
     id = Column(Integer, primary_key=True, index=True)

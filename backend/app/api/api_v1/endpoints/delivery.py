@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from app.services.delivery_service import (
     seed_default_delivery_zones,
     serialize_delivery_zone,
 )
+from app.services.operational_audit_service import record_operational_audit_event
 
 
 router = APIRouter()
@@ -417,10 +418,10 @@ def list_delivery_zones(db: Session = Depends(get_db)):
 @router.post("/zones")
 def create_delivery_zone(
     payload: DeliveryZoneCreate,
+    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin")),
 ):
-    del session
     ensure_delivery_zones(db)
     name = payload.name.strip()
     if not name:
@@ -442,6 +443,22 @@ def create_delivery_zone(
     db.add(zone)
     db.commit()
     db.refresh(zone)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="delivery",
+        action="delivery_zone_create",
+        resource_type="delivery_zone",
+        resource_id=zone.id,
+        detail=f"Delivery zone {zone.name} created.",
+        metadata={
+            "delivery_fee": round(float(zone.delivery_fee or 0), 2),
+            "minimum_order_amount": round(float(zone.minimum_order_amount or 0), 2),
+            "keyword_count": len(zone.keywords or []),
+            "is_active": bool(zone.is_active),
+        },
+    )
     return serialize_delivery_zone(zone)
 
 
@@ -573,6 +590,7 @@ def delivery_mission_control(
 def update_delivery_zone(
     zone_id: int,
     payload: DeliveryZoneUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin")),
 ):
@@ -612,16 +630,32 @@ def update_delivery_zone(
 
     db.commit()
     db.refresh(zone)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="delivery",
+        action="delivery_zone_update",
+        resource_type="delivery_zone",
+        resource_id=zone.id,
+        detail=f"Delivery zone {zone.name} updated.",
+        metadata={
+            "delivery_fee": round(float(zone.delivery_fee or 0), 2),
+            "minimum_order_amount": round(float(zone.minimum_order_amount or 0), 2),
+            "eta_window": f"{zone.eta_min_minutes}-{zone.eta_max_minutes} min",
+            "is_active": bool(zone.is_active),
+        },
+    )
     return serialize_delivery_zone(zone)
 
 
 @router.delete("/zones/{zone_id}")
 def archive_delivery_zone(
     zone_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin")),
 ):
-    del session
     ensure_delivery_zones(db)
     zone = db.query(DeliveryZone).filter(DeliveryZone.id == zone_id).first()
     if zone is None:
@@ -637,14 +671,37 @@ def archive_delivery_zone(
         zone.is_active = False
         db.commit()
         db.refresh(zone)
+        record_operational_audit_event(
+            db,
+            session=session,
+            request=request,
+            event_type="delivery",
+            action="delivery_zone_archive",
+            resource_type="delivery_zone",
+            resource_id=zone.id,
+            detail=f"Delivery zone {zone.name} archived.",
+            metadata={"reason": "Zone has delivery history."},
+        )
         return {
             "status": "archived",
             "reason": "Zone has delivery history, so it was deactivated instead of deleted.",
             "zone": serialize_delivery_zone(zone),
         }
 
+    zone_name = zone.name
     db.delete(zone)
     db.commit()
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="delivery",
+        action="delivery_zone_delete",
+        resource_type="delivery_zone",
+        resource_id=zone_id,
+        detail=f"Delivery zone {zone_name} deleted.",
+        metadata={"reason": "Zone had no delivery history."},
+    )
     return {
         "status": "deleted",
         "zone_id": zone_id,
@@ -708,6 +765,7 @@ def delivery_queue(
 def update_delivery_assignment(
     order_id: int,
     payload: DeliveryAssignmentUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
@@ -762,6 +820,22 @@ def update_delivery_assignment(
 
     db.commit()
     db.refresh(assignment)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="delivery",
+        action="delivery_assignment_update",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"Delivery assignment for order #{order.id} moved to {status}.",
+        metadata={
+            "assignment_id": assignment.id,
+            "status": assignment.status,
+            "assigned_to_present": bool(assignment.assigned_to),
+            "zone_id": assignment.zone_id,
+        },
+    )
     return {
         "assignment": serialize_delivery_assignment(assignment),
         "order_status": order.status,

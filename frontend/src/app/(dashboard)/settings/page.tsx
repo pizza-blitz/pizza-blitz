@@ -33,6 +33,7 @@ const paymentStaffWebhookApi = (provider: StaffSettlementProvider) =>
   getApiUrl(`/api/v1/restaurant/orders/payments/webhook/${provider}`);
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
 const STAFF_CREDENTIAL_API = getApiUrl('/api/v1/auth/staff/credential');
+const OPERATIONAL_AUDIT_API = getApiUrl('/api/v1/restaurant/ops/audit-events');
 
 type StaffSettlementProvider = "manual" | "direct_bank";
 
@@ -122,6 +123,40 @@ type StaffCredentialDraft = {
   display_name: string;
   password: string;
   is_active: boolean;
+};
+
+type OperationalAuditEvent = {
+  id: number;
+  event_type: string;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  status: string;
+  actor_role?: string | null;
+  actor_subject?: string | null;
+  actor_display_name?: string | null;
+  detail?: string | null;
+  metadata?: Record<string, unknown>;
+  ip_address?: string | null;
+  created_at?: string | null;
+  is_sensitive: boolean;
+};
+
+type OperationalAuditReport = {
+  generated_at: string;
+  summary: {
+    total_event_count: number;
+    last_24h_count: number;
+    sensitive_event_count: number;
+    visible_event_count: number;
+    actor_role_counts: Record<string, number>;
+    event_type_counts: Record<string, number>;
+    latest_event_at?: string | null;
+    latest_sensitive_at?: string | null;
+    status: string;
+  };
+  controls: SecurityControl[];
+  events: OperationalAuditEvent[];
 };
 
 type DeliveryZone = {
@@ -460,6 +495,9 @@ const emptyStaffCredentialDraft: StaffCredentialDraft = {
 export default function Settings() {
   const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
   const [isSecurityLoading, setIsSecurityLoading] = useState(true);
+  const [operationalAudit, setOperationalAudit] = useState<OperationalAuditReport | null>(null);
+  const [isAuditLoading, setIsAuditLoading] = useState(true);
+  const [auditMessage, setAuditMessage] = useState("");
   const [staffCredential, setStaffCredential] = useState<StaffCredentialStatus | null>(null);
   const [staffCredentialDraft, setStaffCredentialDraft] =
     useState<StaffCredentialDraft>(emptyStaffCredentialDraft);
@@ -537,6 +575,31 @@ export default function Settings() {
     }
   };
 
+  const loadOperationalAudit = async () => {
+    setIsAuditLoading(true);
+    setAuditMessage("");
+    try {
+      const response = await fetch(`${OPERATIONAL_AUDIT_API}?limit=12`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Operational audit API failed.");
+      }
+      setOperationalAudit(data as OperationalAuditReport);
+    } catch (error) {
+      setOperationalAudit(null);
+      setAuditMessage(
+        error instanceof Error
+          ? error.message
+          : "Operational audit trail is unavailable right now."
+      );
+    } finally {
+      setIsAuditLoading(false);
+    }
+  };
+
   const saveStaffCredential = async () => {
     setIsSavingStaffCredential(true);
     setStaffCredentialMessage("");
@@ -554,6 +617,7 @@ export default function Settings() {
       setStaffCredential(data as StaffCredentialStatus);
       setStaffCredentialDraft((current) => ({ ...current, password: "" }));
       setStaffCredentialMessage("Counter staff credential saved and ready for staff login.");
+      await loadOperationalAudit();
     } catch (error) {
       setStaffCredentialMessage(error instanceof Error ? error.message : "Could not save staff credential.");
     } finally {
@@ -670,6 +734,7 @@ export default function Settings() {
     if (isMounted) {
       void loadDeliveryZones();
       void loadStaffCredential();
+      void loadOperationalAudit();
     }
 
     loadPaymentReadiness();
@@ -707,6 +772,8 @@ export default function Settings() {
   const paymentReconciliationControls = paymentReconciliation?.controls || [];
   const paymentProviderBreakdown = paymentReconciliation?.provider_breakdown || [];
   const deliveryEconomicsSummary = deliveryEconomics?.summary;
+  const operationalAuditEvents = operationalAudit?.events || [];
+  const operationalAuditSummary = operationalAudit?.summary;
 
   const updateDeliveryDraft = (zoneId: number, updates: Partial<DeliveryZone>) => {
     setDeliveryDrafts((current) => ({
@@ -762,6 +829,7 @@ export default function Settings() {
       setNewDeliveryZone(emptyDeliveryZoneDraft);
       setDeliveryMessage(`${data.name} delivery zone added.`);
       await loadDeliveryZones();
+      await loadOperationalAudit();
     } catch {
       setDeliveryMessage("Delivery zone API is not available right now.");
     } finally {
@@ -804,6 +872,7 @@ export default function Settings() {
       }));
       setDeliveryMessage(`${data.name} delivery rules saved.`);
       await loadDeliveryEconomics();
+      await loadOperationalAudit();
     } catch {
       setDeliveryMessage("Delivery zone API is not available right now.");
     } finally {
@@ -831,6 +900,7 @@ export default function Settings() {
           : `${zoneName} delivery zone archived because it has delivery history.`
       );
       await loadDeliveryZones();
+      await loadOperationalAudit();
     } catch {
       setDeliveryMessage("Delivery zone API is not available right now.");
     } finally {
@@ -902,6 +972,7 @@ export default function Settings() {
       }
       setWebhookResult(data);
       await loadPaymentReadiness();
+      await loadOperationalAudit();
       setPaymentMessage(
         data.status === "processed"
           ? `Order #${data.order?.id || orderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
@@ -1363,6 +1434,149 @@ export default function Settings() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div
+              data-testid="operational-audit-trail"
+              className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-slate-700" />
+                    <h4 className="font-black text-gray-950">Operational Audit Trail</h4>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-gray-600">
+                    Sensitive admin, counter, delivery, payment and backup actions are captured for owner review.
+                  </p>
+                </div>
+                <button
+                  onClick={loadOperationalAudit}
+                  disabled={isAuditLoading}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-black uppercase text-slate-700 hover:border-slate-300 disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isAuditLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </button>
+              </div>
+
+              {isAuditLoading ? (
+                <div className="mt-4 rounded-lg border border-white bg-white/80 p-4 text-sm font-semibold text-gray-500">
+                  Loading operational audit trail...
+                </div>
+              ) : operationalAudit ? (
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div className="rounded-lg border border-white bg-white p-4">
+                      <p className="text-xs font-black uppercase text-gray-500">Total events</p>
+                      <p data-testid="audit-total-count" className="mt-2 text-2xl font-black text-gray-950">
+                        {operationalAuditSummary?.total_event_count || 0}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-white bg-white p-4">
+                      <p className="text-xs font-black uppercase text-gray-500">Last 24h</p>
+                      <p data-testid="audit-last-24h-count" className="mt-2 text-2xl font-black text-gray-950">
+                        {operationalAuditSummary?.last_24h_count || 0}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-white bg-white p-4">
+                      <p className="text-xs font-black uppercase text-gray-500">Sensitive</p>
+                      <p data-testid="audit-sensitive-count" className="mt-2 text-2xl font-black text-gray-950">
+                        {operationalAuditSummary?.sensitive_event_count || 0}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-white bg-white p-4">
+                      <p className="text-xs font-black uppercase text-gray-500">Latest event</p>
+                      <p className="mt-2 text-sm font-black text-gray-950">
+                        {formatTimestamp(operationalAuditSummary?.latest_event_at)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                    {operationalAudit.controls.map((control) => (
+                      <div key={control.name} className="rounded-lg border border-white bg-white/80 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-black text-gray-900">{control.name}</p>
+                          <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">
+                            {control.status}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm leading-5 text-gray-600">{control.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div data-testid="audit-event-list" className="overflow-hidden rounded-lg border border-white bg-white">
+                    <div className="grid grid-cols-12 bg-slate-100 px-4 py-3 text-xs font-black uppercase text-slate-500">
+                      <div className="col-span-3">Event</div>
+                      <div className="col-span-3">Actor</div>
+                      <div className="col-span-3">Resource</div>
+                      <div className="col-span-3">Time</div>
+                    </div>
+                    {operationalAuditEvents.length ? (
+                      operationalAuditEvents.map((event, index) => (
+                        <div
+                          key={event.id}
+                          data-testid={index === 0 ? "audit-latest-event" : undefined}
+                          className="grid grid-cols-12 gap-2 border-t border-slate-100 px-4 py-3 text-sm"
+                        >
+                          <div className="col-span-12 md:col-span-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`rounded-md px-2 py-1 text-xs font-black uppercase ${
+                                  event.is_sensitive
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-700"
+                                }`}
+                              >
+                                {event.event_type}
+                              </span>
+                              <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-black text-green-700">
+                                {event.status}
+                              </span>
+                            </div>
+                            <p className="mt-2 font-black capitalize text-gray-900">
+                              {event.action.replace(/_/g, " ")}
+                            </p>
+                            {event.detail && (
+                              <p className="mt-1 text-sm leading-5 text-gray-600">{event.detail}</p>
+                            )}
+                          </div>
+                          <div className="col-span-6 md:col-span-3">
+                            <p className="font-bold text-gray-900">
+                              {event.actor_display_name || event.actor_subject || "System"}
+                            </p>
+                            <p className="mt-1 text-xs font-black uppercase text-slate-500">
+                              {event.actor_role || "system"}
+                            </p>
+                          </div>
+                          <div className="col-span-6 md:col-span-3">
+                            <p className="font-mono text-xs font-bold text-gray-700">
+                              {event.resource_type}
+                              {event.resource_id ? ` #${event.resource_id}` : ""}
+                            </p>
+                          </div>
+                          <div className="col-span-12 md:col-span-3">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                              <Clock className="h-4 w-4 text-slate-400" />
+                              {formatTimestamp(event.created_at)}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="border-t border-slate-100 px-4 py-5 text-sm font-semibold text-gray-500">
+                        No operational events recorded yet. The next credential, order, payment, delivery or backup action will appear here.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-amber-100 bg-white p-4 text-sm font-semibold text-amber-700">
+                  {auditMessage || "Operational audit trail is unavailable right now."}
+                </div>
+              )}
             </div>
 
             <div className="overflow-hidden rounded-lg border border-gray-100">

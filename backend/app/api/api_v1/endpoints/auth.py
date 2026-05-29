@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_session, get_db, require_roles
 from app.core.config import settings
 from app.models.domain import Customer
+from app.services.operational_audit_service import record_operational_audit_event
 from app.services.auth_service import (
     create_access_token,
     has_managed_staff_credentials,
@@ -105,8 +106,9 @@ def staff_credential_status(
 @router.post("/staff/credential")
 def save_staff_credential(
     payload: StaffCredentialRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_roles("admin")),
 ):
     staff_id = payload.id.strip()
     password = payload.password
@@ -123,6 +125,21 @@ def save_staff_credential(
         password=password,
         display_name=payload.display_name or "Counter Staff",
         is_active=payload.is_active,
+    )
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="credential",
+        action="staff_credential_upsert",
+        resource_type="staff_credential",
+        resource_id=credential.staff_id,
+        detail=f"Counter staff credential saved for {credential.staff_id}.",
+        metadata={
+            "is_active": bool(credential.is_active),
+            "must_rotate": bool(credential.must_rotate),
+            "display_name": credential.display_name,
+        },
     )
     return {
         "configured": bool(credential.is_active),

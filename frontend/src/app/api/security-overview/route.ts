@@ -282,6 +282,11 @@ export async function GET(request: Request) {
         status: "Automated",
         detail: "Browser/API proof checks anonymous, admin, staff and customer access boundaries.",
       },
+      {
+        name: "Operational audit trail",
+        status: "Visible",
+        detail: "Settings shows the latest credential, payment, order, delivery and backup control events for owner review.",
+      },
     ],
     hardening,
   });

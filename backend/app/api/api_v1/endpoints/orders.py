@@ -26,6 +26,7 @@ from app.services.menu_customization_service import (
     calculate_customized_item_price,
     find_menu_item_for_order,
 )
+from app.services.operational_audit_service import record_operational_audit_event
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -1268,6 +1269,7 @@ def create_order(order: OrderCreate, db: Session = Depends(get_db)):
 def cancel_order(
     order_id: int,
     payload: CancelOrderRequest,
+    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
@@ -1317,6 +1319,23 @@ def cancel_order(
 
     db.commit()
     db.refresh(order)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="order",
+        action="order_cancel",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        status="refund_due" if refund_required else "voided",
+        detail=f"Order #{order.id} cancelled: {reason}",
+        metadata={
+            "payment_status": order.payment_status,
+            "refund_required": refund_required,
+            "customer_phone_present": bool(order.customer_phone),
+            "total_amount": round(float(order.total_amount or 0), 2),
+        },
+    )
     return {
         "status": "cancelled",
         "payment_status": order.payment_status,
@@ -1330,6 +1349,7 @@ def cancel_order(
 @router.patch("/{order_id}/close")
 def close_order(
     order_id: int,
+    request: Request,
     payment_method: Optional[str] = None,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
@@ -1391,6 +1411,21 @@ def close_order(
             db.add(daily)
 
     db.commit()
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="order",
+        action="order_close",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"Order #{order.id} closed with {order.payment_method or 'cash'} payment.",
+        metadata={
+            "payment_method": order.payment_method,
+            "total_amount": round(float(order.total_amount or 0), 2),
+            "inventory_usage_count": len(inventory_usage),
+        },
+    )
     return {
         "status": "closed",
         "total_collected": order.total_amount,
@@ -1402,6 +1437,7 @@ def close_order(
 def update_order_status(
     order_id: int,
     payload: OrderStatusUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
@@ -1424,6 +1460,17 @@ def update_order_status(
     order.status = status
     db.commit()
     db.refresh(order)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="order",
+        action="order_status_update",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"Order #{order.id} moved to {status}.",
+        metadata={"status": status, "source": order_metadata(order).get("source")},
+    )
     return serialize_order(order)
 
 
@@ -1732,8 +1779,9 @@ def payment_reconciliation(
 def confirm_order_payment(
     order_id: int,
     payload: PaymentConfirmation,
+    request: Request,
     db: Session = Depends(get_db),
-    _session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
@@ -1745,6 +1793,21 @@ def confirm_order_payment(
         provider=payload.payment_provider,
         reference=payload.payment_reference or f"PB-PAY-{order.id}",
         paid_amount=payload.paid_amount,
+    )
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="payment",
+        action="payment_confirmation",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"Payment confirmed for order #{order.id}.",
+        metadata={
+            "provider": payload.payment_provider,
+            "payment_status": payment_order.get("payment_status"),
+            "paid_amount": payload.paid_amount,
+        },
     )
     return payment_order
 
@@ -1803,9 +1866,10 @@ async def process_payment_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    actor_session = None
     if provider.strip().lower() in {"manual", "direct_bank"}:
-        session = session_from_request(request)
-        if session["role"] not in {"admin", "staff"}:
+        actor_session = session_from_request(request)
+        if actor_session["role"] not in {"admin", "staff"}:
             raise HTTPException(
                 status_code=403,
                 detail="Manual or direct bank payment confirmation requires an admin or staff session.",
@@ -1865,6 +1929,22 @@ async def process_payment_webhook(
         order,
         event,
         action="processed" if changed else "already_paid",
+    )
+    record_operational_audit_event(
+        db,
+        session=actor_session,
+        request=request,
+        event_type="payment",
+        action="payment_webhook_processed" if changed else "payment_webhook_already_paid",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"{event['provider']} payment webhook recorded for order #{order.id}.",
+        metadata={
+            "provider": event["provider"],
+            "payment_event_audit_id": audit_event.id,
+            "payment_status": payment_order.get("payment_status"),
+            "event_type": event["event_type"],
+        },
     )
     return {
         "status": "processed" if changed else "already_paid",
