@@ -1,12 +1,13 @@
 from datetime import date, timedelta
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales, ShiftLog, StaffLeaveRequest
+from app.services.operational_audit_service import record_operational_audit_event
 
 router = APIRouter()
 
@@ -63,6 +64,11 @@ class LeaveEntry(BaseModel):
     start_date: str
     end_date: Optional[str] = None
     status: Literal["planned", "approved", "rejected", "cancelled"] = "approved"
+    reason: Optional[str] = None
+
+
+class LeaveStatusUpdate(BaseModel):
+    status: Literal["planned", "approved", "rejected", "cancelled"]
     reason: Optional[str] = None
 
 
@@ -165,7 +171,12 @@ def _leave_dict(leave: StaffLeaveRequest) -> dict:
 
 
 @router.post("/")
-def log_shift(entry: ShiftEntry, db: Session = Depends(get_db)):
+def log_shift(
+    entry: ShiftEntry,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     shift = ShiftLog(
         date=_parse_date(entry.date),
         staff_name=entry.staff_name,
@@ -177,11 +188,30 @@ def log_shift(entry: ShiftEntry, db: Session = Depends(get_db)):
     db.add(shift)
     db.commit()
     db.refresh(shift)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="employee",
+        action="shift_log_create",
+        resource_type="shift_log",
+        resource_id=shift.id,
+        detail=f"Shift logged for {shift.staff_name} on {shift.date.isoformat()}.",
+        metadata={
+            "staff_name": shift.staff_name,
+            "role": shift.role,
+            "hours": _shift_hours(shift),
+        },
+    )
     return {"status": "logged", "shift": _shift_dict(shift), "staff": entry.staff_name}
 
 
 @router.get("/")
-def get_shifts(db: Session = Depends(get_db)):
+def get_shifts(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
     shifts = (
         db.query(ShiftLog)
         .order_by(ShiftLog.date.desc(), ShiftLog.shift_start.asc())
@@ -192,7 +222,12 @@ def get_shifts(db: Session = Depends(get_db)):
 
 
 @router.post("/leave")
-def log_leave(entry: LeaveEntry, db: Session = Depends(get_db)):
+def log_leave(
+    entry: LeaveEntry,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
     start_date = _parse_date(entry.start_date)
     end_date = _parse_date(entry.end_date or entry.start_date)
     if end_date < start_date:
@@ -210,11 +245,33 @@ def log_leave(entry: LeaveEntry, db: Session = Depends(get_db)):
     db.add(leave)
     db.commit()
     db.refresh(leave)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="employee",
+        action="leave_request_log",
+        resource_type="staff_leave_request",
+        resource_id=leave.id,
+        status=leave.status,
+        detail=f"{leave.leave_type} leave logged for {leave.staff_name}.",
+        metadata={
+            "staff_name": leave.staff_name,
+            "leave_type": leave.leave_type,
+            "days": float(leave.days or 0),
+            "start_date": leave.start_date.isoformat(),
+            "end_date": leave.end_date.isoformat(),
+        },
+    )
     return {"status": "logged", "leave": _leave_dict(leave)}
 
 
 @router.get("/leave")
-def get_leave(db: Session = Depends(get_db)):
+def get_leave(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
     leaves = (
         db.query(StaffLeaveRequest)
         .order_by(StaffLeaveRequest.start_date.desc(), StaffLeaveRequest.id.desc())
@@ -224,11 +281,52 @@ def get_leave(db: Session = Depends(get_db)):
     return [_leave_dict(leave) for leave in leaves]
 
 
+@router.patch("/leave/{leave_id}/status")
+def update_leave_status(
+    leave_id: int,
+    payload: LeaveStatusUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    leave = db.query(StaffLeaveRequest).filter(StaffLeaveRequest.id == leave_id).first()
+    if leave is None:
+        raise HTTPException(status_code=404, detail="Leave request not found.")
+
+    previous_status = leave.status
+    leave.status = payload.status
+    if payload.reason is not None:
+        leave.reason = payload.reason.strip() or leave.reason
+    db.commit()
+    db.refresh(leave)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="employee",
+        action="leave_status_update",
+        resource_type="staff_leave_request",
+        resource_id=leave.id,
+        status=leave.status,
+        detail=f"{leave.leave_type} leave for {leave.staff_name} moved from {previous_status} to {leave.status}.",
+        metadata={
+            "staff_name": leave.staff_name,
+            "leave_type": leave.leave_type,
+            "previous_status": previous_status,
+            "new_status": leave.status,
+            "days": float(leave.days or 0),
+        },
+    )
+    return {"status": "updated", "leave": _leave_dict(leave)}
+
+
 @router.get("/attendance-command")
 def attendance_command(
     target_date: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
+    del session
     working_date = _parse_date(target_date) if target_date else date.today()
     shifts = (
         db.query(ShiftLog)
@@ -387,7 +485,11 @@ def attendance_command(
 
 
 @router.get("/performance")
-def shift_performance(db: Session = Depends(get_db)):
+def shift_performance(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
     shifts = db.query(ShiftLog).all()
     if not shifts:
         return []
@@ -420,7 +522,9 @@ def payroll_preview(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
 ):
+    del session
     today = date.today()
     period_start = _parse_date(start_date) if start_date else today.replace(day=1)
     period_end = _parse_date(end_date) if end_date else today
@@ -579,7 +683,12 @@ def payroll_preview(
 
 
 @router.get("/by-date/{target_date}")
-def shifts_by_date(target_date: str, db: Session = Depends(get_db)):
+def shifts_by_date(
+    target_date: str,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
     parsed_date = _parse_date(target_date)
     shifts = (
         db.query(ShiftLog)

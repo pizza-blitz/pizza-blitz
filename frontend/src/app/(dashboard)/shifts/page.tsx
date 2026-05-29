@@ -164,6 +164,7 @@ async function readJson<T>(url: string): Promise<T> {
 
 export default function ShiftLogPage() {
   const [shifts, setShifts] = useState<ShiftLog[]>([]);
+  const [leaveRows, setLeaveRows] = useState<LeaveRecord[]>([]);
   const [performance, setPerformance] = useState<StaffPerformance[]>([]);
   const [attendance, setAttendance] = useState<AttendanceCommand | null>(null);
   const [payroll, setPayroll] = useState<PayrollPreview | null>(null);
@@ -199,13 +200,15 @@ export default function ShiftLogPage() {
         start_date: monthStartIso(shiftForm.date),
         end_date: shiftForm.date,
       });
-      const [shiftRows, performanceRows, attendanceCommand, payrollPreview] = await Promise.all([
+      const [shiftRows, leaveRecords, performanceRows, attendanceCommand, payrollPreview] = await Promise.all([
         readJson<ShiftLog[]>(SHIFTS_API),
+        readJson<LeaveRecord[]>(LEAVE_API),
         readJson<StaffPerformance[]>(`${SHIFTS_API}performance`),
         readJson<AttendanceCommand>(`${ATTENDANCE_API}?target_date=${shiftForm.date}`),
         readJson<PayrollPreview>(`${PAYROLL_API}?${payrollParams.toString()}`),
       ]);
       setShifts(shiftRows);
+      setLeaveRows(leaveRecords);
       setPerformance(performanceRows);
       setAttendance(attendanceCommand);
       setPayroll(payrollPreview);
@@ -257,7 +260,32 @@ export default function ShiftLogPage() {
     setMessage("Leave logged.");
   };
 
+  const updateLeaveStatus = async (leave: LeaveRecord, status: "approved" | "rejected" | "cancelled") => {
+    setMessage("");
+    const response = await fetch(`${LEAVE_API}/${leave.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        status,
+        reason:
+          status === "approved"
+            ? "Owner approved from employee software."
+            : "Owner updated from employee software.",
+      }),
+    });
+    if (!response.ok) {
+      setMessage(`Leave ${status} failed: ${response.status}`);
+      return;
+    }
+    await fetchData();
+    setMessage(`Leave ${status}.`);
+  };
+
   const summary = attendance?.summary;
+  const leaveApprovalRows = leaveRows
+    .filter((leave) => ["planned", "approved"].includes(leave.status))
+    .slice(0, 8);
 
   return (
     <div className="min-h-screen bg-[#0b0d10] p-6 text-slate-100 md:p-8">
@@ -676,6 +704,86 @@ export default function ShiftLogPage() {
                 Log Leave
               </button>
             </form>
+          </div>
+
+          <div
+            data-testid="employee-leave-approval-queue"
+            className="rounded-lg border border-white/10 bg-[#12161c] p-5"
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-black">
+                  <ClipboardList className="h-5 w-5 text-cyan-300" />
+                  Leave Approval Queue
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  Planned and approved CL/PL/SL/LOP entries stay reviewable before payroll.
+                </p>
+              </div>
+              <span className="rounded-md border border-white/10 px-2 py-1 text-xs font-bold text-slate-400">
+                {leaveApprovalRows.length} open
+              </span>
+            </div>
+            <div className="space-y-3">
+              {leaveApprovalRows.map((leave) => (
+                <div
+                  key={leave.id}
+                  data-testid={`leave-approval-${leave.id}`}
+                  className="rounded-md border border-white/10 bg-white/[0.035] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-slate-100">{leave.staff_name}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {leave.leave_type} - {leave.start_date} to {leave.end_date} - {leave.days} day(s)
+                      </p>
+                      {leave.reason ? (
+                        <p className="mt-2 text-sm text-slate-300">{leave.reason}</p>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`rounded-md border px-2 py-1 text-xs font-bold ${
+                        leave.status === "approved"
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                      }`}
+                    >
+                      {leave.status}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      data-testid={`leave-approve-${leave.id}`}
+                      onClick={() => updateLeaveStatus(leave, "approved")}
+                      className="rounded-md bg-emerald-500 px-3 py-2 text-xs font-black text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                      disabled={leave.status === "approved"}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateLeaveStatus(leave, "rejected")}
+                      className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-black text-rose-100 hover:bg-rose-500/20"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateLeaveStatus(leave, "cancelled")}
+                      className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-slate-200 hover:bg-white/[0.08]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {leaveApprovalRows.length === 0 ? (
+                <div className="rounded-md border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                  No leave approvals are waiting for the selected period.
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="rounded-lg border border-white/10 bg-[#12161c] p-5">

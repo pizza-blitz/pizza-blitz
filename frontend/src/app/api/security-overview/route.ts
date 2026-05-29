@@ -141,7 +141,7 @@ export async function GET(request: Request) {
     {
       name: "Backend API Role Gates",
       status: "Configured",
-      detail: "Operations readiness, backups, order status, invoices, delivery assignment, and delivery-zone edits now require signed admin or staff sessions.",
+      detail: "Operations readiness, backups, order status, invoices, delivery assignment, employee attendance/payroll, and delivery-zone edits now require signed admin or staff sessions.",
     },
     {
       name: "Manual Payment Webhook",

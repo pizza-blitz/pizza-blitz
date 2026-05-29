@@ -14,6 +14,7 @@ SENSITIVE_EVENT_TYPES = {
     "campaign",
     "credential",
     "delivery",
+    "employee",
     "expense",
     "order",
     "payment",

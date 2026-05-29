@@ -114,12 +114,50 @@ async function seedAttendance(cookie, targetDate) {
   });
   assert(leave.response.ok, `Leave seed failed: ${JSON.stringify(leave.data)}`);
 
+  const plannedLeave = await adminJson("/api/v1/restaurant/shifts/leave", cookie, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      staff_name: `Attendance Planned Leave ${suffix}`,
+      leave_type: "PL",
+      start_date: targetDate,
+      end_date: targetDate,
+      status: "planned",
+      reason: "E2E leave approval proof",
+    }),
+  });
+  assert(plannedLeave.response.ok, `Planned leave seed failed: ${JSON.stringify(plannedLeave.data)}`);
+
+  const approvedLeave = await adminJson(
+    `/api/v1/restaurant/shifts/leave/${plannedLeave.data.leave.id}/status`,
+    cookie,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "approved",
+        reason: "E2E owner approval proof",
+      }),
+    }
+  );
+  assert(approvedLeave.response.ok, `Leave approval failed: ${JSON.stringify(approvedLeave.data)}`);
+
   const command = await adminJson(`/api/v1/restaurant/shifts/attendance-command?target_date=${targetDate}`, cookie);
   assert(command.response.ok, `Attendance command failed: ${JSON.stringify(command.data)}`);
   assert(command.data.readiness_score >= 90, `Expected attendance readiness >= 90, got ${command.data.readiness_score}.`);
   assert(command.data.summary.roles_covered >= 4, "Attendance command did not cover all required roles.");
   assert(command.data.summary.leave_count >= 1, "Attendance command did not include active leave.");
-  return suffix;
+  const audit = await adminJson("/api/v1/restaurant/ops/audit-events?limit=20", cookie);
+  assert(audit.response.ok, `Audit events failed: ${JSON.stringify(audit.data)}`);
+  assert(
+    audit.data.events?.some((event) => event.event_type === "employee" && event.action === "leave_status_update"),
+    "Employee leave approval did not reach the operational audit trail."
+  );
+  return {
+    suffix,
+    plannedLeaveId: plannedLeave.data.leave.id,
+    plannedLeaveName: plannedLeave.data.leave.staff_name,
+  };
 }
 
 function createBrowserWatch(page) {
@@ -172,7 +210,7 @@ async function waitForCoverageBoard(page) {
   throw new Error("Attendance coverage board did not settle with four roles and score >= 90.");
 }
 
-async function verifyBrowser(targetDate) {
+async function verifyBrowser(targetDate, proof) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     baseURL,
@@ -197,13 +235,16 @@ async function verifyBrowser(targetDate) {
 
     assert(score >= 90, `Browser attendance score was too low: ${score}.`);
 
-    const browserLeaveName = `Browser Leave Proof ${Date.now().toString().slice(-5)}`;
+    const browserLeaveName = `Browser Planned Leave ${Date.now().toString().slice(-5)}`;
     await page.getByTestId("leave-staff-name").fill(browserLeaveName);
     await page.getByTestId("leave-type").selectOption("PL");
+    await page.locator('[data-testid="employee-leave-form"] select').nth(1).selectOption("planned");
     await page.getByTestId("leave-start-date").fill(targetDate);
     await page.getByTestId("leave-submit").click();
     await page.getByText("Leave logged.", { exact: true }).waitFor({ timeout: 20000 });
-    await page.getByText(browserLeaveName, { exact: false }).waitFor({ timeout: 20000 });
+    const leaveApprovalQueue = page.getByTestId("employee-leave-approval-queue");
+    await leaveApprovalQueue.waitFor({ timeout: 20000 });
+    await leaveApprovalQueue.getByText(browserLeaveName, { exact: false }).waitFor({ timeout: 20000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-employee-attendance-command.png"),
@@ -219,11 +260,15 @@ async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(`${apiURL}/health`, "restaurant API");
   await waitForHttp(`${baseURL}/login`, "restaurant portal");
+  const anonymousShift = await fetch(`${apiURL}/api/v1/restaurant/shifts/`, { cache: "no-store" });
+  assert(anonymousShift.status === 401, `Anonymous shift API should be blocked, got ${anonymousShift.status}.`);
+  const anonymousPayroll = await fetch(`${apiURL}/api/v1/restaurant/shifts/payroll-preview`, { cache: "no-store" });
+  assert(anonymousPayroll.status === 401, `Anonymous payroll API should be blocked, got ${anonymousPayroll.status}.`);
   const targetDate = todayIso();
   const cookie = await portalLogin();
-  const suffix = await seedAttendance(cookie, targetDate);
-  await verifyBrowser(targetDate);
-  console.log(`Employee attendance command proof passed for ${targetDate} with seed ${suffix}.`);
+  const proof = await seedAttendance(cookie, targetDate);
+  await verifyBrowser(targetDate, proof);
+  console.log(`Employee attendance command proof passed for ${targetDate} with seed ${proof.suffix}.`);
 }
 
 main().catch((error) => {
