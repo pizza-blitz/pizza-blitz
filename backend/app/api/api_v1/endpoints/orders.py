@@ -606,6 +606,8 @@ def serialize_payment_queue_order(order: RestaurantOrder) -> dict:
         "payment_provider": order.payment_provider,
         "payment_session_id": order.payment_session_id,
         "payment_reference": order.payment_reference,
+        "payment_proof_required": order_payment_proof_required(order),
+        "close_blockers": order_close_blockers(order),
         "payment_confirmed_at": (
             order.payment_confirmed_at.isoformat()
             if order.payment_confirmed_at
@@ -810,6 +812,7 @@ def payment_production_next_actions(
     *,
     active_provider: dict,
     awaiting_settlement_count: int,
+    payment_proof_required_count: int = 0,
 ) -> list[str]:
     actions: list[str] = []
     provider = active_provider["provider"]
@@ -824,6 +827,10 @@ def payment_production_next_actions(
     if awaiting_settlement_count:
         actions.append(
             f"Settle {awaiting_settlement_count} prepaid order(s) through a verified webhook or admin proof."
+        )
+    if payment_proof_required_count:
+        actions.append(
+            f"Collect payment reference proof for {payment_proof_required_count} counter order(s)."
         )
     if not actions:
         actions.append("Run a low-value live checkout and compare the provider payout report.")
@@ -2054,6 +2061,19 @@ def payment_production_readiness(
         .limit(8)
         .all()
     )
+    payment_proof_query = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.payment_method.in_(list(PAYMENT_PROOF_METHODS)))
+        .filter(RestaurantOrder.payment_status != "paid")
+        .filter(~RestaurantOrder.status.in_(["closed", "cancelled"]))
+    )
+    payment_proof_required_count = payment_proof_query.count()
+    payment_proof_required = (
+        payment_proof_query
+        .order_by(RestaurantOrder.created_at.desc(), RestaurantOrder.id.desc())
+        .limit(8)
+        .all()
+    )
 
     paid_today_query = db.query(RestaurantOrder).filter(
         RestaurantOrder.date == date.today(),
@@ -2072,6 +2092,10 @@ def payment_production_readiness(
         sum(float(order.total_amount or 0) for order in awaiting_query.all()),
         2,
     )
+    payment_proof_required_total = round(
+        sum(float(order.total_amount or 0) for order in payment_proof_query.all()),
+        2,
+    )
     paid_today_total = round(
         sum(float(order.total_amount or 0) for order in paid_today_orders),
         2,
@@ -2087,7 +2111,8 @@ def payment_production_readiness(
         and active_provider["webhook_configured"]
     )
     live_gateway_ready = gateway_ready and active_provider["provider"] != "manual"
-    settlement_clear = awaiting_settlement_count == 0
+    counter_proof_clear = payment_proof_required_count == 0
+    settlement_clear = awaiting_settlement_count == 0 and counter_proof_clear
     if live_gateway_ready and settlement_clear:
         production_status = "live_ready"
     elif gateway_ready:
@@ -2103,8 +2128,11 @@ def payment_production_readiness(
             "gateway_ready": gateway_ready,
             "live_gateway_ready": live_gateway_ready,
             "settlement_clear": settlement_clear,
+            "counter_proof_clear": counter_proof_clear,
             "awaiting_settlement_count": awaiting_settlement_count,
             "awaiting_settlement_total": awaiting_settlement_total,
+            "payment_proof_required_count": payment_proof_required_count,
+            "payment_proof_required_total": payment_proof_required_total,
             "paid_today_count": len(paid_today_orders),
             "paid_today_total": paid_today_total,
             "provider_ready_count": provider_ready_count,
@@ -2116,6 +2144,10 @@ def payment_production_readiness(
                 serialize_payment_queue_order(order)
                 for order in awaiting_settlement
             ],
+            "payment_proof_required": [
+                serialize_payment_queue_order(order)
+                for order in payment_proof_required
+            ],
             "recent_paid": [
                 serialize_payment_queue_order(order)
                 for order in recent_paid
@@ -2124,6 +2156,7 @@ def payment_production_readiness(
         "next_actions": payment_production_next_actions(
             active_provider=active_provider,
             awaiting_settlement_count=awaiting_settlement_count,
+            payment_proof_required_count=payment_proof_required_count,
         ),
     }
 

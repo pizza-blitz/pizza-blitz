@@ -280,6 +280,8 @@ type PaymentQueueOrder = {
   payment_provider?: string | null;
   payment_session_id?: string | null;
   payment_reference?: string | null;
+  payment_proof_required?: boolean;
+  close_blockers?: string[];
   payment_confirmed_at?: string | null;
   created_at?: string | null;
 };
@@ -292,8 +294,11 @@ type PaymentProductionReadiness = {
     gateway_ready: boolean;
     live_gateway_ready: boolean;
     settlement_clear: boolean;
+    counter_proof_clear: boolean;
     awaiting_settlement_count: number;
     awaiting_settlement_total: number;
+    payment_proof_required_count: number;
+    payment_proof_required_total: number;
     paid_today_count: number;
     paid_today_total: number;
     provider_ready_count: number;
@@ -302,6 +307,7 @@ type PaymentProductionReadiness = {
   };
   queues: {
     awaiting_settlement: PaymentQueueOrder[];
+    payment_proof_required: PaymentQueueOrder[];
     recent_paid: PaymentQueueOrder[];
   };
   next_actions: string[];
@@ -767,6 +773,7 @@ export default function Settings() {
   const gatewayActivationControls = paymentGatewayActivation?.controls || [];
   const paymentReconciliationSummary = paymentReconciliation?.summary;
   const awaitingSettlement = paymentProduction?.queues.awaiting_settlement || [];
+  const paymentProofRequired = paymentProduction?.queues.payment_proof_required || [];
   const recentPaidSettlements = paymentProduction?.queues.recent_paid || [];
   const recentPaymentEvents = paymentReconciliation?.recent_events || [];
   const paymentReconciliationControls = paymentReconciliation?.controls || [];
@@ -944,7 +951,7 @@ export default function Settings() {
   const sendStaffSettlementWebhook = async () => {
     const orderId = Number(webhookOrderId);
     if (!Number.isInteger(orderId) || orderId <= 0) {
-      setPaymentMessage("Enter a valid prepaid order ID before recording settlement.");
+      setPaymentMessage("Enter a valid order ID before recording settlement.");
       return;
     }
 
@@ -1948,7 +1955,7 @@ export default function Settings() {
                     <div>
                       <p className="font-black text-gray-900">Payment Production Control</p>
                       <p className="text-sm text-emerald-900">
-                        Provider setup, unsettled prepaid orders, and recent settlements in one operator view.
+                        Provider setup, counter proof gaps, unsettled prepaid orders, and recent settlements in one operator view.
                       </p>
                     </div>
                   </div>
@@ -1969,7 +1976,7 @@ export default function Settings() {
                   </span>
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
                   <div className="rounded-lg border border-emerald-100 bg-white p-4">
                     <p className="text-xs font-black uppercase text-gray-500">Settlement Queue</p>
                     <p className="mt-2 text-2xl font-black text-gray-900">
@@ -1977,6 +1984,18 @@ export default function Settings() {
                     </p>
                     <p className="text-xs font-semibold text-gray-500">
                       {formatMoney(paymentProductionSummary.awaiting_settlement_total)} waiting
+                    </p>
+                  </div>
+                  <div
+                    data-testid="payment-counter-proof-metric"
+                    className="rounded-lg border border-emerald-100 bg-white p-4"
+                  >
+                    <p className="text-xs font-black uppercase text-gray-500">Counter Proof</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {paymentProductionSummary.payment_proof_required_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">
+                      {formatMoney(paymentProductionSummary.payment_proof_required_total)} needs reference
                     </p>
                   </div>
                   <div className="rounded-lg border border-emerald-100 bg-white p-4">
@@ -2059,6 +2078,64 @@ export default function Settings() {
                           No prepaid orders are waiting for settlement.
                         </div>
                       )}
+                    </div>
+                    <div
+                      data-testid="payment-counter-proof-queue"
+                      className="mt-5 border-t border-gray-100 pt-4"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-black text-gray-900">Counter Proof Queue</p>
+                          <p className="text-sm text-gray-500">
+                            UPI, card, mixed, or direct-bank counter orders missing payment reference.
+                          </p>
+                        </div>
+                        <span className="rounded-md bg-sky-50 px-2.5 py-1 text-xs font-black text-sky-700">
+                          {paymentProductionSummary.counter_proof_clear ? "Clear" : "Proof needed"}
+                        </span>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {paymentProofRequired.length ? (
+                          paymentProofRequired.map((order) => (
+                            <div
+                              key={`proof-${order.id}`}
+                              data-testid={`payment-counter-proof-order-${order.id}`}
+                              className="grid grid-cols-1 gap-3 rounded-md border border-sky-100 bg-sky-50 p-3 md:grid-cols-[1fr_auto]"
+                            >
+                              <div>
+                                <p className="font-black text-gray-900">
+                                  Order #{order.id} - {order.customer_name || "Counter customer"}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-gray-600">
+                                  {formatMoney(order.total_amount)} - {(order.payment_method || "counter").toUpperCase()} - {order.close_blockers?.join(", ") || "payment proof required"}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setWebhookOrderId(String(order.id));
+                                  setWebhookProvider(
+                                    order.payment_method === "upi" || order.payment_method === "direct_bank"
+                                      ? "direct_bank"
+                                      : "manual"
+                                  );
+                                  setWebhookReference(
+                                    `${(order.payment_method || "COUNTER").toUpperCase()}-PROOF-${order.id}-${Date.now()}`
+                                  );
+                                  setPaymentMessage(`Order #${order.id} loaded into the staff settlement tester.`);
+                                }}
+                                className="inline-flex items-center justify-center gap-2 rounded-md bg-sky-700 px-4 py-2 text-xs font-black text-white hover:bg-sky-800"
+                              >
+                                <CircleDollarSign className="h-3.5 w-3.5" />
+                                Load Proof #{order.id}
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-md border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
+                            No counter payment proof is waiting.
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -2287,7 +2364,7 @@ export default function Settings() {
                   <div>
                     <p className="font-black text-gray-900">Staff Settlement Tester</p>
                     <p className="text-sm text-gray-500">
-                      Record manual or direct-bank paid proof for a prepaid order before a third-party gateway is active.
+                      Record manual or direct-bank paid proof for prepaid checkout or counter UPI/card orders.
                     </p>
                   </div>
                 </div>
@@ -2314,7 +2391,7 @@ export default function Settings() {
                     onChange={(event) => setWebhookOrderId(event.target.value)}
                     data-testid="staff-settlement-order-id"
                     className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-emerald-500"
-                    placeholder="Prepaid order ID"
+                    placeholder="Order ID"
                   />
                   <input
                     value={webhookReference}
