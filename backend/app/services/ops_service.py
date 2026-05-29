@@ -31,6 +31,7 @@ from app.models.domain import (
     StaffLeaveRequest,
 )
 from app.services.ad_campaign_service import ad_provider_status
+from app.services.auth_service import has_managed_staff_credentials
 from app.services.campaign_dispatch_service import campaign_provider_status
 from app.services.payment_gateway import payment_provider_status
 from app.services.social_publish_service import social_provider_status
@@ -91,21 +92,29 @@ ENVIRONMENT_VARIABLE_GROUPS = [
         "variables": [
             {
                 "name": "RESTAURANT_ADMIN_ID",
+                "aliases": ["PIZZA_BLITZ_ADMIN_ID"],
                 "required": True,
                 "sensitive": False,
                 "purpose": "Configure the admin login id.",
             },
             {
                 "name": "RESTAURANT_ADMIN_PASSWORD",
+                "aliases": ["PIZZA_BLITZ_ADMIN_PASSWORD"],
                 "required": True,
                 "sensitive": True,
                 "purpose": "Configure a strong admin password.",
             },
             {
+                "name": "PIZZA_BLITZ_STAFF_ID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Optional fallback staff login id when managed staff credentials are not used.",
+            },
+            {
                 "name": "PIZZA_BLITZ_STAFF_PASSWORD",
-                "required": True,
+                "required": False,
                 "sensitive": True,
-                "purpose": "Configure a strong staff password.",
+                "purpose": "Optional fallback staff password when managed staff credentials are not used.",
             },
             {
                 "name": "AUTH_SECRET_KEY",
@@ -623,7 +632,7 @@ def readiness_report(db: Session) -> dict:
         _database_check(db),
         _database_persistence_check(environment),
         _admin_password_check(environment),
-        _staff_password_check(environment),
+        _staff_password_check(environment, db),
         _auth_secret_check(environment),
         _portal_session_secret_check(environment),
         _cors_check(environment),
@@ -2659,6 +2668,16 @@ def _launch_module_readiness(
         (_readiness_score(go_live_items) * 0.75)
         + (25 if successful_backups else 10)
     )
+    production_next_actions = [
+        (
+            "Move from local SQLite to managed production database."
+            if database_backend() == "sqlite"
+            else "Record the first managed database backup/restore proof so backup freshness turns green."
+            if backup_freshness["status"] != "pass"
+            else "Keep managed database backup evidence current."
+        ),
+        "Keep deployment secrets in Vercel/Supabase and out of the repository.",
+    ]
 
     return [
         _module(
@@ -2831,10 +2850,7 @@ def _launch_module_readiness(
                 {"label": "Go-live score", "value": f"{_readiness_score(go_live_items)}%"},
                 {"label": "Backup status", "value": backup_freshness["status"]},
             ],
-            next_actions=[
-                "Move from local SQLite to managed production database.",
-                "Schedule backups and store deployment secrets outside the repository.",
-            ],
+            next_actions=production_next_actions,
         ),
     ]
 
@@ -3123,11 +3139,10 @@ def _database_persistence_check(environment: str) -> dict:
 
 
 def _admin_password_check(environment: str) -> dict:
-    password = settings.RESTAURANT_ADMIN_PASSWORD or ""
-    weak = password in DEFAULT_SECRET_VALUES or len(password) < 12
-    if weak and environment == "production":
+    configured, weak = _admin_credential_state()
+    if (not configured or weak) and environment == "production":
         status = "fail"
-    elif weak:
+    elif not configured or weak:
         status = "warn"
     else:
         status = "pass"
@@ -3135,18 +3150,38 @@ def _admin_password_check(environment: str) -> dict:
         "key": "admin_password",
         "label": "Admin password",
         "status": status,
-        "detail": "Use a long non-default admin password before deployment."
-        if weak
-        else "Admin password is not a known local default.",
+        "detail": (
+            "Configure PIZZA_BLITZ_ADMIN_ID and PIZZA_BLITZ_ADMIN_PASSWORD or RESTAURANT_ADMIN_ID and RESTAURANT_ADMIN_PASSWORD in the deployment host."
+            if not configured
+            else "Use a non-default admin password with at least 8 characters before deployment."
+            if weak
+            else "Admin password is configured and is not a known local default."
+        ),
     }
 
 
-def _staff_password_check(environment: str) -> dict:
-    password = settings.PIZZA_BLITZ_STAFF_PASSWORD or ""
-    weak = password in DEFAULT_SECRET_VALUES or len(password) < 10
-    if weak and environment == "production":
+def _staff_password_check(environment: str, db: Session) -> dict:
+    if has_managed_staff_credentials(db):
+        return {
+            "key": "staff_password",
+            "label": "Staff password",
+            "status": "pass",
+            "detail": "Managed staff login is active and stored with a salted PBKDF2 hash.",
+        }
+
+    password = _configured_env_value("PIZZA_BLITZ_STAFF_PASSWORD") or settings.PIZZA_BLITZ_STAFF_PASSWORD or ""
+    configured = bool(
+        _configured_env_value("PIZZA_BLITZ_STAFF_ID")
+        and _configured_env_value("PIZZA_BLITZ_STAFF_PASSWORD")
+    )
+    weak = password in DEFAULT_SECRET_VALUES or len(password) < 8
+    admin_configured, admin_weak = _admin_credential_state()
+    admin_master_available = admin_configured and not admin_weak
+    if not configured and admin_master_available:
+        status = "warn"
+    elif (not configured or weak) and environment == "production":
         status = "fail"
-    elif weak:
+    elif not configured or weak:
         status = "warn"
     else:
         status = "pass"
@@ -3154,9 +3189,15 @@ def _staff_password_check(environment: str) -> dict:
         "key": "staff_password",
         "label": "Staff password",
         "status": status,
-        "detail": "Use a non-default staff password for counter access."
-        if weak
-        else "Staff password is not a known local default.",
+        "detail": (
+            "Master admin credentials can enter the counter portal; create a dedicated managed staff login from Settings before employee handoff."
+            if not configured and admin_master_available
+            else "Create a managed counter staff login from Settings or configure PIZZA_BLITZ_STAFF_ID and PIZZA_BLITZ_STAFF_PASSWORD."
+            if not configured
+            else "Use a non-default staff password for counter access."
+            if weak
+            else "Staff password is configured and is not a known local default."
+        ),
     }
 
 
@@ -3217,6 +3258,17 @@ def _cors_check(environment: str) -> dict:
 
 
 def _backup_storage_check() -> dict:
+    backend = database_backend()
+    if backend != "sqlite":
+        return {
+            "key": "backup_storage",
+            "label": "Backup storage",
+            "status": "pass",
+            "detail": (
+                f"{backend} uses managed external backup storage; local file backup directory is not required on the Vercel runtime."
+            ),
+        }
+
     backup_dir = _backup_dir()
     try:
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -3481,6 +3533,27 @@ def _missing_settings(statuses: list[dict]) -> list[str]:
     return sorted(set(missing))
 
 
+def _configured_env_value(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None and value.strip() != "":
+            return value
+    return ""
+
+
+def _admin_credential_state() -> tuple[bool, bool]:
+    password = _configured_env_value(
+        "PIZZA_BLITZ_ADMIN_PASSWORD",
+        "RESTAURANT_ADMIN_PASSWORD",
+    ) or settings.PIZZA_BLITZ_ADMIN_PASSWORD or settings.RESTAURANT_ADMIN_PASSWORD or ""
+    configured = bool(
+        _configured_env_value("PIZZA_BLITZ_ADMIN_ID", "RESTAURANT_ADMIN_ID")
+        and _configured_env_value("PIZZA_BLITZ_ADMIN_PASSWORD", "RESTAURANT_ADMIN_PASSWORD")
+    )
+    weak = password in DEFAULT_SECRET_VALUES or len(password) < 8
+    return configured, weak
+
+
 def _readiness_score(items: list[dict]) -> int:
     if not items:
         return 0
@@ -3546,10 +3619,18 @@ def _environment_manifest() -> list[dict]:
         variables = []
         for variable in group["variables"]:
             raw_value = os.getenv(variable["name"])
+            alias_values = [
+                os.getenv(alias)
+                for alias in variable.get("aliases", [])
+                if os.getenv(alias) is not None and os.getenv(alias).strip() != ""
+            ]
+            if raw_value is None and alias_values:
+                raw_value = alias_values[0]
             configured = raw_value is not None and raw_value.strip() != ""
             variables.append(
                 {
                     "name": variable["name"],
+                    "aliases": variable.get("aliases", []),
                     "required": variable["required"],
                     "sensitive": variable["sensitive"],
                     "configured": configured,

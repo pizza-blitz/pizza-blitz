@@ -23,7 +23,16 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const OPS_API = getApiUrl("/api/v1/restaurant/ops");
-const fetchWithAuth = (url: string, init?: RequestInit) => fetch(url, { ...init, credentials: "include" });
+const OPS_FETCH_TIMEOUT_MS = 25000;
+const fetchWithAuth = (url: string, init?: RequestInit) => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), OPS_FETCH_TIMEOUT_MS);
+  return fetch(url, {
+    ...init,
+    credentials: "include",
+    signal: init?.signal || controller.signal,
+  }).finally(() => window.clearTimeout(timeout));
+};
 
 type CheckStatus = "pass" | "warn" | "fail";
 
@@ -564,54 +573,41 @@ export default function ProductionOpsPage() {
 
   const fetchOps = async () => {
     setLoading(true);
-    const [
-      readinessResponse,
-      credentialActivationResponse,
-      liveEnvironmentResponse,
-      productionLaunchResponse,
-      betaDeliveryResponse,
-      finalAcceptanceResponse,
-      launchCandidateResponse,
-      dataQualityResponse,
-      backupResponse,
-    ] = await Promise.all([
-      fetchWithAuth(`${OPS_API}/readiness`),
-      fetchWithAuth(`${OPS_API}/credential-activation`),
-      fetchWithAuth(`${OPS_API}/live-environment`),
-      fetchWithAuth(`${OPS_API}/production-launch`),
-      fetchWithAuth(`${OPS_API}/beta-delivery`),
-      fetchWithAuth(`${OPS_API}/final-acceptance`),
-      fetchWithAuth(`${OPS_API}/launch-candidate`),
-      fetchWithAuth(`${OPS_API}/data-quality`),
-      fetchWithAuth(`${OPS_API}/backups`),
+    setMessage("");
+    const delayedSections: string[] = [];
+    const loadSection = async (
+      label: string,
+      request: Promise<Response>,
+      onData: (data: any) => void
+    ) => {
+      try {
+        const response = await request;
+        if (!response.ok) {
+          delayedSections.push(label);
+          return;
+        }
+        onData(await response.json());
+      } catch {
+        delayedSections.push(label);
+      }
+    };
+
+    await Promise.all([
+      loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), setReadiness),
+      loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), setCredentialActivation),
+      loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), setLiveEnvironment),
+      loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), setProductionLaunch),
+      loadSection("beta delivery", fetchWithAuth(`${OPS_API}/beta-delivery`), setBetaDelivery),
+      loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance),
+      loadSection("launch candidate", fetchWithAuth(`${OPS_API}/launch-candidate`), setLaunchCandidate),
+      loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), setDataQuality),
+      loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups(data.backups || [])),
     ]);
-    if (readinessResponse.ok) {
-      setReadiness(await readinessResponse.json());
-    }
-    if (credentialActivationResponse.ok) {
-      setCredentialActivation(await credentialActivationResponse.json());
-    }
-    if (liveEnvironmentResponse.ok) {
-      setLiveEnvironment(await liveEnvironmentResponse.json());
-    }
-    if (productionLaunchResponse.ok) {
-      setProductionLaunch(await productionLaunchResponse.json());
-    }
-    if (betaDeliveryResponse.ok) {
-      setBetaDelivery(await betaDeliveryResponse.json());
-    }
-    if (finalAcceptanceResponse.ok) {
-      setFinalAcceptance(await finalAcceptanceResponse.json());
-    }
-    if (launchCandidateResponse.ok) {
-      setLaunchCandidate(await launchCandidateResponse.json());
-    }
-    if (dataQualityResponse.ok) {
-      setDataQuality(await dataQualityResponse.json());
-    }
-    if (backupResponse.ok) {
-      const data = await backupResponse.json();
-      setBackups(data.backups || []);
+    if (delayedSections.length) {
+      setMessage(
+        `Loaded available Ops sections. Still warming: ${delayedSections
+          .join(", ")}.`
+      );
     }
     setLoading(false);
   };
