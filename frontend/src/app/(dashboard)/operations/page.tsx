@@ -29,6 +29,8 @@ type OrderItem = {
   name: string;
   quantity: number;
   price: number;
+  kitchen_station?: string | null;
+  kitchen_station_label?: string | null;
   selected_options?: {
     group_name: string;
     option_name: string;
@@ -202,6 +204,19 @@ const filters = [
 
 const riderPresets = ["Ravi Rider", "Anita Rider", "Mohan Rider", "Backup Rider"];
 
+const defaultKitchenStations = [
+  { key: "oven", label: "Oven Station" },
+  { key: "fryer", label: "Fryer / Sides" },
+  { key: "cold", label: "Cold / Drinks" },
+  { key: "prep", label: "Prep Station" },
+];
+
+const kitchenStatusPriority: Record<string, number> = {
+  open: 0,
+  preparing: 1,
+  ready: 2,
+};
+
 function money(value: number | string | null | undefined) {
   const numeric = Number(value || 0);
   return `Rs ${Math.round(Number.isFinite(numeric) ? numeric : 0).toLocaleString()}`;
@@ -255,6 +270,17 @@ function itemSummary(item: OrderItem) {
   return optionNames.length
     ? `${item.quantity}x ${item.name} (${optionNames.join(", ")})`
     : `${item.quantity}x ${item.name}`;
+}
+
+function kitchenStationKey(item: OrderItem) {
+  const rawKey = (item.kitchen_station || "prep").toString().trim().toLowerCase();
+  return rawKey.replace(/[^a-z0-9_-]/g, "-") || "prep";
+}
+
+function kitchenStationLabel(item: OrderItem) {
+  const key = kitchenStationKey(item);
+  const configuredStation = defaultKitchenStations.find((station) => station.key === key);
+  return item.kitchen_station_label || configuredStation?.label || key.replaceAll("-", " ");
 }
 
 function isDeliveryOrder(order: Order) {
@@ -544,6 +570,94 @@ export default function OperationsPage() {
       ).length,
     };
   }, [activeOrders, deliveryOrders]);
+  const kitchenStationBoard = useMemo(() => {
+    const stationMap = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        orders: {
+          order: Order;
+          items: OrderItem[];
+          lineCount: number;
+          quantity: number;
+        }[];
+      }
+    >();
+
+    defaultKitchenStations.forEach((station) => {
+      stationMap.set(station.key, { ...station, orders: [] });
+    });
+
+    activeOrders.forEach((order) => {
+      const groupedItems = new Map<
+        string,
+        { label: string; items: OrderItem[]; quantity: number }
+      >();
+
+      (order.items || []).forEach((item) => {
+        const key = kitchenStationKey(item);
+        const group =
+          groupedItems.get(key) ||
+          {
+            label: kitchenStationLabel(item),
+            items: [],
+            quantity: 0,
+          };
+        group.items.push(item);
+        group.quantity += Number(item.quantity || 0);
+        groupedItems.set(key, group);
+      });
+
+      groupedItems.forEach((group, key) => {
+        if (!stationMap.has(key)) {
+          stationMap.set(key, { key, label: group.label, orders: [] });
+        }
+        stationMap.get(key)?.orders.push({
+          order,
+          items: group.items,
+          lineCount: group.items.length,
+          quantity: group.quantity,
+        });
+      });
+    });
+
+    return Array.from(stationMap.values()).map((station) => ({
+      ...station,
+      orders: [...station.orders].sort((left, right) => {
+        const statusDelta =
+          (kitchenStatusPriority[left.order.status] ?? 9) -
+          (kitchenStatusPriority[right.order.status] ?? 9);
+        if (statusDelta !== 0) return statusDelta;
+        const leftTime = left.order.created_at ? new Date(left.order.created_at).getTime() : 0;
+        const rightTime = right.order.created_at ? new Date(right.order.created_at).getTime() : 0;
+        return rightTime - leftTime;
+      }),
+    }));
+  }, [activeOrders]);
+  const kitchenStationSummary = useMemo(() => {
+    const orderIds = new Set<number>();
+    const summary = {
+      activeStationCount: 0,
+      routedOrderCount: 0,
+      lineCount: 0,
+      itemQuantity: 0,
+      urgentOrderCount: 0,
+    };
+
+    kitchenStationBoard.forEach((station) => {
+      if (station.orders.length > 0) summary.activeStationCount += 1;
+      station.orders.forEach((entry) => {
+        orderIds.add(entry.order.id);
+        summary.lineCount += entry.lineCount;
+        summary.itemQuantity += entry.quantity;
+        if (entry.order.status === "open") summary.urgentOrderCount += 1;
+      });
+    });
+
+    summary.routedOrderCount = orderIds.size;
+    return summary;
+  }, [kitchenStationBoard]);
 
   useEffect(() => {
     fetchOrders();
@@ -987,6 +1101,184 @@ export default function OperationsPage() {
             <TimerReset className="h-4 w-4" />
             Auto {autoRefresh ? "On" : "Off"}
           </button>
+        </div>
+
+        <div
+          data-testid="kitchen-station-board"
+          className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Utensils className="h-5 w-5 text-gray-800" />
+                <h3 className="text-lg font-black text-gray-950">Station Kitchen Board</h3>
+              </div>
+              <p className="mt-1 text-sm text-gray-500">
+                Every live order line is routed to the station that has to cook or pack it.
+              </p>
+            </div>
+            <Link
+              href="/orders"
+              className="inline-flex h-10 items-center justify-center rounded-md border border-gray-200 px-3 text-sm font-black text-gray-700 hover:bg-gray-50"
+            >
+              Counter POS
+            </Link>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Active Stations", kitchenStationSummary.activeStationCount],
+              ["Routed Orders", kitchenStationSummary.routedOrderCount],
+              ["Station Lines", kitchenStationSummary.lineCount],
+              ["Items Qty", kitchenStationSummary.itemQuantity],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+              >
+                <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                  {label}
+                </p>
+                <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-4">
+            {kitchenStationBoard.map((station) => {
+              const stationLineCount = station.orders.reduce(
+                (sum, entry) => sum + entry.lineCount,
+                0
+              );
+              const stationQuantity = station.orders.reduce(
+                (sum, entry) => sum + entry.quantity,
+                0
+              );
+              return (
+                <div
+                  key={station.key}
+                  data-testid={`kitchen-station-${station.key}`}
+                  className="min-h-64 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-wide text-slate-950">
+                        {station.label}
+                      </h4>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {stationLineCount} line{stationLineCount === 1 ? "" : "s"} |{" "}
+                        {stationQuantity} item{stationQuantity === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <span className="rounded-md bg-white px-2 py-1 text-xs font-black text-slate-800 shadow-sm">
+                      {station.orders.length}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 space-y-3">
+                    {station.orders.slice(0, 5).map((entry) => {
+                      const order = entry.order;
+                      return (
+                        <article
+                          key={`${station.key}-${order.id}`}
+                          data-testid={`kitchen-station-order-${station.key}-${order.id}`}
+                          className="rounded-lg border border-white bg-white p-3 shadow-sm"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-base font-black text-gray-950">
+                                #{order.id}
+                              </p>
+                              <p className="mt-0.5 text-xs font-bold uppercase text-gray-500">
+                                {order.table_number
+                                  ? `Table ${order.table_number}`
+                                  : order.fulfillment_type || order.order_type}
+                              </p>
+                            </div>
+                            <span className={`rounded-md border px-2 py-1 text-xs font-black ${statusClass(order.status)}`}>
+                              {order.status}
+                            </span>
+                          </div>
+
+                          <div
+                            data-testid={`kitchen-station-lines-${station.key}-${order.id}`}
+                            className="mt-3 space-y-1"
+                          >
+                            {entry.items.map((item, index) => (
+                              <p
+                                key={`${station.key}-${order.id}-${item.name}-${index}`}
+                                className="text-sm font-semibold leading-5 text-gray-700"
+                              >
+                                {itemSummary(item)}
+                              </p>
+                            ))}
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-700">
+                              {ageLabel(order.created_at)}
+                            </span>
+                            <span className={`rounded-md border px-2 py-1 text-xs font-black ${paymentClass(order.payment_status)}`}>
+                              {order.payment_status.replaceAll("_", " ")}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <Link
+                              data-testid={`kitchen-station-ticket-${station.key}-${order.id}`}
+                              href={`/kitchen-ticket/${order.id}?station=${station.key}`}
+                              className="flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:bg-slate-50"
+                            >
+                              KOT
+                            </Link>
+                            {order.status === "open" && (
+                              <button
+                                data-testid={`kitchen-station-start-${station.key}-${order.id}`}
+                                onClick={() => updateStatus(order, "preparing")}
+                                disabled={busyAction === `${order.id}-preparing`}
+                                className="h-10 rounded-md bg-sky-600 px-3 text-sm font-black text-white hover:bg-sky-700 disabled:opacity-50"
+                              >
+                                Start
+                              </button>
+                            )}
+                            {order.status === "preparing" && (
+                              <button
+                                data-testid={`kitchen-station-ready-${station.key}-${order.id}`}
+                                onClick={() => updateStatus(order, "ready")}
+                                disabled={busyAction === `${order.id}-ready`}
+                                className="h-10 rounded-md bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                Ready
+                              </button>
+                            )}
+                            {order.status === "ready" && (
+                              <Link
+                                href={`/receipt/${order.id}`}
+                                className="flex h-10 items-center justify-center rounded-md bg-emerald-600 px-3 text-sm font-black text-white hover:bg-emerald-700"
+                              >
+                                Bill
+                              </Link>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                    {station.orders.length > 5 && (
+                      <p className="rounded-md bg-white px-3 py-2 text-xs font-black text-slate-600">
+                        +{station.orders.length - 5} more station order
+                        {station.orders.length - 5 === 1 ? "" : "s"}
+                      </p>
+                    )}
+                    {!station.orders.length && (
+                      <div className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-5 text-center text-sm font-semibold text-slate-500">
+                        Clear.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="grid gap-4 xl:grid-cols-5">
