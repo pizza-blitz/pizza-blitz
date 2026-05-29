@@ -167,6 +167,11 @@ type ReorderDraft = {
     email?: string;
     opt_in_marketing?: boolean;
   };
+  fulfillment?: {
+    order_type?: string;
+    delivery_address?: string;
+    delivery_zone?: string;
+  };
   items?: { name?: string; quantity?: number; selected_options?: SelectedOption[] }[];
   source_order_id?: number;
 };
@@ -231,6 +236,7 @@ export default function PublicOrderPage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [optInMarketing, setOptInMarketing] = useState(true);
   const [address, setAddress] = useState("");
+  const [reorderDeliveryZoneName, setReorderDeliveryZoneName] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [queuedCouponCode, setQueuedCouponCode] = useState("");
   const [coupon, setCoupon] = useState<CouponResult | null>(null);
@@ -292,6 +298,18 @@ export default function PublicOrderPage() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!reorderDeliveryZoneName || !deliveryZones.length) return;
+    const normalizedZone = reorderDeliveryZoneName.trim().toLowerCase();
+    const matchedZone = deliveryZones.find(
+      (zone) => zone.name.trim().toLowerCase() === normalizedZone
+    );
+    if (matchedZone) {
+      setSelectedDeliveryZoneId(matchedZone.id);
+    }
+    setReorderDeliveryZoneName("");
+  }, [deliveryZones, reorderDeliveryZoneName]);
 
   useEffect(() => {
     const checkoutElement = checkoutRef.current;
@@ -432,6 +450,11 @@ export default function PublicOrderPage() {
         setCustomerEmail(draft.customer.email || "");
         setOptInMarketing(draft.customer.opt_in_marketing ?? true);
       }
+      if (draft.fulfillment?.order_type === "delivery" || draft.fulfillment?.delivery_address) {
+        setOrderType("delivery");
+        setAddress(draft.fulfillment.delivery_address || "");
+        setReorderDeliveryZoneName(draft.fulfillment.delivery_zone || "");
+      }
 
       const nextCart = (draft.items || [])
         .map((draftItem) => {
@@ -478,7 +501,9 @@ export default function PublicOrderPage() {
       setMessage(
         `Loaded ${nextCart.length} item${nextCart.length === 1 ? "" : "s"} from order #${
           draft.source_order_id || "history"
-        }${missingCount ? `; ${missingCount} unavailable item${missingCount === 1 ? "" : "s"} skipped` : ""}.`
+        }${draft.fulfillment?.delivery_address ? " with saved delivery address" : ""}${
+          missingCount ? `; ${missingCount} unavailable item${missingCount === 1 ? "" : "s"} skipped` : ""
+        }.`
       );
     } catch {
       setMessage("Could not load previous order.");

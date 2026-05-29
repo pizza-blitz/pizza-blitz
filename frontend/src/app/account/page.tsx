@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock,
   History,
+  MapPin,
   Mail,
   Phone,
   ReceiptText,
@@ -28,6 +29,10 @@ type Order = {
   id: number;
   date?: string | null;
   order_type: string;
+  fulfillment_type?: string | null;
+  delivery_address?: string | null;
+  delivery_zone?: string | null;
+  delivery_fee?: number;
   items: {
     name: string;
     quantity: number;
@@ -73,8 +78,18 @@ type CustomerHistory = {
     total_spend: number;
     last_order_at?: string | null;
   };
+  delivery_profile?: DeliveryProfile | null;
   loyalty_summary?: LoyaltySummary;
   orders: Order[];
+};
+
+type DeliveryProfile = {
+  source_order_id?: number | null;
+  address: string;
+  zone?: string | null;
+  delivery_fee?: number;
+  eta_window?: string | null;
+  last_used_at?: string | null;
 };
 
 type ProfileDraft = {
@@ -195,7 +210,11 @@ export default function CustomerAccountPage() {
     setProfileMessage("Profile and consent preferences saved.");
   };
 
-  const saveReorderDraft = (items: ReorderItem[], sourceOrderId?: number) => {
+  const saveReorderDraft = (
+    items: ReorderItem[],
+    sourceOrderId?: number,
+    deliveryProfile?: DeliveryProfile | null
+  ) => {
     if (!history) return;
     window.localStorage.setItem(
       REORDER_STORAGE_KEY,
@@ -211,6 +230,13 @@ export default function CustomerAccountPage() {
           quantity: item.quantity || 1,
           selected_options: item.selected_options || [],
         })),
+        fulfillment: deliveryProfile
+          ? {
+              order_type: "delivery",
+              delivery_address: deliveryProfile.address,
+              delivery_zone: deliveryProfile.zone || "",
+            }
+          : undefined,
         source_order_id: sourceOrderId,
       })
     );
@@ -218,12 +244,23 @@ export default function CustomerAccountPage() {
   };
 
   const reorder = (order: Order) => {
-    saveReorderDraft(order.items, order.id);
+    const deliveryProfile =
+      order.delivery_address
+        ? {
+            source_order_id: order.id,
+            address: order.delivery_address,
+            zone: order.delivery_zone || "",
+            delivery_fee: order.delivery_fee || 0,
+            eta_window: undefined,
+            last_used_at: order.created_at || null,
+          }
+        : null;
+    saveReorderDraft(order.items, order.id, deliveryProfile);
   };
 
   const reorderRecommended = () => {
     if (!history?.loyalty_summary?.recommended_reorder?.length) return;
-    saveReorderDraft(history.loyalty_summary.recommended_reorder);
+    saveReorderDraft(history.loyalty_summary.recommended_reorder, undefined, history.delivery_profile);
   };
 
   return (
@@ -316,6 +353,47 @@ export default function CustomerAccountPage() {
                 value={`Rs ${Math.round(history.customer.total_spend || 0).toLocaleString()}`}
               />
             </div>
+
+            {history.delivery_profile && (
+              <section
+                data-testid="customer-delivery-profile"
+                className="mb-6 rounded-lg border border-emerald-100 bg-white p-5 shadow-sm"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-widest text-emerald-700">
+                      Saved Delivery Profile
+                    </p>
+                    <h2 className="mt-1 flex items-start gap-2 text-2xl font-black">
+                      <MapPin className="mt-1 h-5 w-5 shrink-0 text-emerald-700" />
+                      {history.delivery_profile.address}
+                    </h2>
+                    <p className="mt-2 text-sm font-semibold text-slate-600">
+                      {history.delivery_profile.zone || "Delivery zone saved"} | Rs {Math.round(history.delivery_profile.delivery_fee || 0)} fee | {history.delivery_profile.eta_window || "ETA from checkout"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveReorderDraft(
+                        history.loyalty_summary?.recommended_reorder?.length
+                          ? history.loyalty_summary.recommended_reorder
+                          : history.orders[0]?.items || [],
+                        history.delivery_profile?.source_order_id || undefined,
+                        history.delivery_profile
+                      )
+                    }
+                    disabled={
+                      !history.loyalty_summary?.recommended_reorder?.length &&
+                      !history.orders[0]?.items?.length
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    <ShoppingBag className="h-4 w-4" /> Order To This Address
+                  </button>
+                </div>
+              </section>
+            )}
 
             {history.loyalty_summary && (
               <section className="mb-6 rounded-lg border border-red-100 bg-white p-5 shadow-sm">

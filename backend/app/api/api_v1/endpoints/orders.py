@@ -507,6 +507,29 @@ def customer_history_insights(orders: list[RestaurantOrder], customer: Optional[
     }
 
 
+def customer_delivery_profile(orders: list[RestaurantOrder]) -> Optional[dict]:
+    for order in orders:
+        metadata = order_metadata(order)
+        address = metadata.get("delivery_address")
+        is_delivery = (
+            str(metadata.get("fulfillment_type") or "").lower() == "delivery"
+            or str(order.order_type or "").lower() == "delivery"
+            or bool(address)
+        )
+        if not is_delivery or not address:
+            continue
+
+        return {
+            "source_order_id": order.id,
+            "address": address,
+            "zone": metadata.get("delivery_zone"),
+            "delivery_fee": metadata.get("delivery_fee") or 0,
+            "eta_window": order_eta_window(order),
+            "last_used_at": order.created_at.isoformat() if order.created_at else None,
+        }
+    return None
+
+
 def order_next_action(order: RestaurantOrder) -> str:
     if order.status == "cancelled":
         return "Order cancelled. No sales or inventory were posted."
@@ -2009,6 +2032,7 @@ def customer_order_history(phone: str, db: Session = Depends(get_db)):
             "last_order_at": customer.last_order_at.isoformat() if customer and customer.last_order_at else None,
         },
         "loyalty_summary": customer_history_insights(orders, customer),
+        "delivery_profile": customer_delivery_profile(orders),
         "orders": [serialize_order(order) for order in orders],
     }
 

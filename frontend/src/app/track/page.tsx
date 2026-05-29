@@ -188,6 +188,14 @@ export default function TrackOrderPage() {
           phone: order.customer_phone || phone,
           opt_in_marketing: true,
         },
+        fulfillment:
+          isDeliveryOrder && order.delivery_address
+            ? {
+                order_type: "delivery",
+                delivery_address: order.delivery_address,
+                delivery_zone: order.delivery_zone || "",
+              }
+            : undefined,
         items: order.items.map((item) => ({
           name: item.name,
           quantity: item.quantity,
