@@ -29,6 +29,8 @@ const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
 const PAYMENT_GATEWAY_ACTIVATION_API = getApiUrl('/api/v1/restaurant/orders/payments/gateway-activation');
 const PAYMENT_RECONCILIATION_API = getApiUrl('/api/v1/restaurant/orders/payments/reconciliation');
+const CASH_DRAWER_COMMAND_API = getApiUrl('/api/v1/restaurant/orders/cash-drawer/command');
+const CASH_DRAWER_CLOSE_API = getApiUrl('/api/v1/restaurant/orders/cash-drawer/close');
 const paymentStaffWebhookApi = (provider: StaffSettlementProvider) =>
   getApiUrl(`/api/v1/restaurant/orders/payments/webhook/${provider}`);
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
@@ -417,6 +419,73 @@ type PaymentWebhookResult = {
   };
 };
 
+type CashDrawerMethodTotal = {
+  method: "cash" | "upi" | "card" | "mixed" | "prepaid" | "other";
+  label: string;
+  order_count: number;
+  expected_amount: number;
+};
+
+type CashDrawerOrder = {
+  id: number;
+  customer_name?: string | null;
+  order_type?: string | null;
+  total_amount: number;
+  payment_method?: string | null;
+  payment_provider?: string | null;
+  payment_reference?: string | null;
+  closed_at?: string | null;
+};
+
+type CashDrawerCommand = {
+  generated_at: string;
+  date: string;
+  summary: {
+    drawer_status: string;
+    expected_cash_total: number;
+    expected_digital_total: number;
+    expected_total: number;
+    closed_paid_order_count: number;
+    active_order_count: number;
+    open_blocker_count: number;
+    payment_due_count: number;
+    payment_proof_required_count: number;
+    ready_unclosed_count: number;
+    orders_after_latest_close_count: number;
+    latest_variance_total: number;
+    next_action: string;
+  };
+  method_totals: CashDrawerMethodTotal[];
+  open_blockers: PaymentQueueOrder[];
+  recent_closed_orders: CashDrawerOrder[];
+  latest_close?: OperationalAuditEvent | null;
+  next_actions: string[];
+};
+
+type CashDrawerCloseResult = {
+  status: string;
+  message: string;
+  expected_totals: Record<string, number>;
+  counted_totals: Record<string, number>;
+  variance_totals: Record<string, number>;
+  expected_total: number;
+  counted_total: number;
+  variance_total: number;
+  audit: OperationalAuditEvent;
+  command: CashDrawerCommand;
+};
+
+type CashDrawerDraft = {
+  counted_cash: string;
+  counted_upi: string;
+  counted_card: string;
+  counted_mixed: string;
+  counted_prepaid: string;
+  counted_other: string;
+  closed_by: string;
+  notes: string;
+};
+
 type SheetSyncResult = {
   rows_found: number;
   rows_imported: number;
@@ -432,6 +501,14 @@ type SheetSyncResult = {
 
 const formatMoney = (value?: number | null) =>
   `Rs ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
+
+const cashDrawerStatusClass = (status?: string) => {
+  if (status === "balanced") return "bg-green-100 text-green-700";
+  if (status === "ready_to_close") return "bg-blue-100 text-blue-700";
+  if (status === "variance_review") return "bg-amber-100 text-amber-700";
+  if (status === "orders_open") return "bg-red-100 text-red-700";
+  return "bg-gray-100 text-gray-700";
+};
 
 const paymentEventActionClass = (action?: string) => {
   if (action === "processed") return "bg-green-100 text-green-700";
@@ -498,6 +575,17 @@ const emptyStaffCredentialDraft: StaffCredentialDraft = {
   is_active: true,
 };
 
+const emptyCashDrawerDraft: CashDrawerDraft = {
+  counted_cash: "",
+  counted_upi: "",
+  counted_card: "",
+  counted_mixed: "",
+  counted_prepaid: "",
+  counted_other: "",
+  closed_by: "",
+  notes: "",
+};
+
 export default function Settings() {
   const [securityOverview, setSecurityOverview] = useState<SecurityOverview | null>(null);
   const [isSecurityLoading, setIsSecurityLoading] = useState(true);
@@ -515,6 +603,10 @@ export default function Settings() {
   const [paymentGatewayActivation, setPaymentGatewayActivation] =
     useState<PaymentGatewayActivation | null>(null);
   const [paymentReconciliation, setPaymentReconciliation] = useState<PaymentReconciliation | null>(null);
+  const [cashDrawerCommand, setCashDrawerCommand] = useState<CashDrawerCommand | null>(null);
+  const [cashDrawerDraft, setCashDrawerDraft] = useState<CashDrawerDraft>(emptyCashDrawerDraft);
+  const [cashDrawerResult, setCashDrawerResult] = useState<CashDrawerCloseResult | null>(null);
+  const [isClosingCashDrawer, setIsClosingCashDrawer] = useState(false);
   const [isPaymentLoading, setIsPaymentLoading] = useState(true);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [webhookOrderId, setWebhookOrderId] = useState("");
@@ -631,6 +723,33 @@ export default function Settings() {
     }
   };
 
+  const expectedCashDrawerAmount = (command: CashDrawerCommand | null, method: CashDrawerMethodTotal["method"]) =>
+    command?.method_totals.find((row) => row.method === method)?.expected_amount || 0;
+
+  const seedCashDrawerDraft = (command: CashDrawerCommand | null) => {
+    if (!command) return;
+    setCashDrawerDraft((current) => {
+      const hasManualEntry = [
+        current.counted_cash,
+        current.counted_upi,
+        current.counted_card,
+        current.counted_mixed,
+        current.counted_prepaid,
+        current.counted_other,
+      ].some((value) => value.trim().length > 0);
+      if (hasManualEntry) return current;
+      return {
+        ...current,
+        counted_cash: String(expectedCashDrawerAmount(command, "cash")),
+        counted_upi: String(expectedCashDrawerAmount(command, "upi")),
+        counted_card: String(expectedCashDrawerAmount(command, "card")),
+        counted_mixed: String(expectedCashDrawerAmount(command, "mixed")),
+        counted_prepaid: String(expectedCashDrawerAmount(command, "prepaid")),
+        counted_other: String(expectedCashDrawerAmount(command, "other")),
+      };
+    });
+  };
+
   const loadPaymentReadiness = async () => {
     setIsPaymentLoading(true);
     try {
@@ -639,17 +758,21 @@ export default function Settings() {
         productionData,
         gatewayActivationData,
         reconciliationData,
+        cashDrawerData,
       ] = await Promise.all([
         fetchPaymentJson<PaymentReadiness>(PAYMENT_READINESS_API),
         fetchPaymentJson<PaymentProductionReadiness>(PAYMENT_PRODUCTION_API),
         fetchPaymentJson<PaymentGatewayActivation>(PAYMENT_GATEWAY_ACTIVATION_API),
         fetchPaymentJson<PaymentReconciliation>(PAYMENT_RECONCILIATION_API),
+        fetchPaymentJson<CashDrawerCommand>(CASH_DRAWER_COMMAND_API),
       ]);
       setPaymentReadiness(readinessData);
       setPaymentProduction(productionData);
       setPaymentGatewayActivation(gatewayActivationData);
       setPaymentReconciliation(reconciliationData);
-      if (!readinessData && !productionData && !gatewayActivationData && !reconciliationData) {
+      setCashDrawerCommand(cashDrawerData);
+      seedCashDrawerDraft(cashDrawerData);
+      if (!readinessData && !productionData && !gatewayActivationData && !reconciliationData && !cashDrawerData) {
         setPaymentMessage("Payment readiness API is not available right now.");
       } else if (paymentMessage === "Payment readiness API is not available right now.") {
         setPaymentMessage("");
@@ -659,6 +782,7 @@ export default function Settings() {
       setPaymentProduction(null);
       setPaymentGatewayActivation(null);
       setPaymentReconciliation(null);
+      setCashDrawerCommand(null);
       setPaymentMessage("Payment readiness API is not available right now.");
     } finally {
       setIsPaymentLoading(false);
@@ -781,6 +905,11 @@ export default function Settings() {
   const deliveryEconomicsSummary = deliveryEconomics?.summary;
   const operationalAuditEvents = operationalAudit?.events || [];
   const operationalAuditSummary = operationalAudit?.summary;
+  const cashDrawerSummary = cashDrawerCommand?.summary;
+  const cashDrawerMethodTotals = cashDrawerCommand?.method_totals || [];
+  const cashDrawerRecentClosedOrders = cashDrawerCommand?.recent_closed_orders || [];
+  const cashDrawerOpenBlockers = cashDrawerCommand?.open_blockers || [];
+  const latestCashDrawerClose = cashDrawerCommand?.latest_close;
 
   const updateDeliveryDraft = (zoneId: number, updates: Partial<DeliveryZone>) => {
     setDeliveryDrafts((current) => ({
@@ -991,6 +1120,48 @@ export default function Settings() {
       setPaymentMessage("Staff settlement proof API is not available right now.");
     } finally {
       setIsSendingWebhook(false);
+    }
+  };
+
+  const closeCashDrawer = async () => {
+    setIsClosingCashDrawer(true);
+    setCashDrawerResult(null);
+    setPaymentMessage("");
+    const numericValue = (value: string) => Number(value || 0);
+    try {
+      const response = await fetch(CASH_DRAWER_CLOSE_API, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          counted_cash: numericValue(cashDrawerDraft.counted_cash),
+          counted_upi: numericValue(cashDrawerDraft.counted_upi),
+          counted_card: numericValue(cashDrawerDraft.counted_card),
+          counted_mixed: numericValue(cashDrawerDraft.counted_mixed),
+          counted_prepaid: numericValue(cashDrawerDraft.counted_prepaid),
+          counted_other: numericValue(cashDrawerDraft.counted_other),
+          closed_by: cashDrawerDraft.closed_by.trim() || undefined,
+          notes: cashDrawerDraft.notes.trim() || undefined,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setPaymentMessage(data.detail || "Cash drawer close failed.");
+        return;
+      }
+      const result = data as CashDrawerCloseResult;
+      setCashDrawerResult(result);
+      setCashDrawerCommand(result.command);
+      setPaymentMessage(
+        result.status === "balanced"
+          ? "Cash drawer closed and balanced."
+          : `Cash drawer closed with status: ${result.status.replace("_", " ")}.`
+      );
+      await loadOperationalAudit();
+    } catch {
+      setPaymentMessage("Cash drawer API is not available right now.");
+    } finally {
+      setIsClosingCashDrawer(false);
     }
   };
 
@@ -2173,6 +2344,286 @@ export default function Settings() {
                           </p>
                         )}
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {cashDrawerSummary && (
+              <div
+                data-testid="cash-drawer-command"
+                className="rounded-lg border border-violet-100 bg-violet-50 p-4"
+              >
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-white p-2 text-violet-700">
+                      <CircleDollarSign className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-black text-gray-900">Cash Drawer / Shift Close</p>
+                      <p className="text-sm text-violet-900">
+                        Compare expected paid order totals with actual counter handover before closing today.
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    data-testid="cash-drawer-status"
+                    className={`inline-flex rounded-md px-3 py-2 text-xs font-black uppercase ${cashDrawerStatusClass(cashDrawerSummary.drawer_status)}`}
+                  >
+                    {cashDrawerSummary.drawer_status.replace("_", " ")}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <div
+                    data-testid="cash-drawer-expected-cash"
+                    className="rounded-lg border border-violet-100 bg-white p-4"
+                  >
+                    <p className="text-xs font-black uppercase text-gray-500">Expected Cash</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {formatMoney(cashDrawerSummary.expected_cash_total)}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">cash handover</p>
+                  </div>
+                  <div
+                    data-testid="cash-drawer-expected-digital"
+                    className="rounded-lg border border-violet-100 bg-white p-4"
+                  >
+                    <p className="text-xs font-black uppercase text-gray-500">Expected Digital</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {formatMoney(cashDrawerSummary.expected_digital_total)}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">UPI, card, prepaid</p>
+                  </div>
+                  <div className="rounded-lg border border-violet-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Closed Orders</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {cashDrawerSummary.closed_paid_order_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">
+                      {formatMoney(cashDrawerSummary.expected_total)} expected total
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-violet-100 bg-white p-4">
+                    <p className="text-xs font-black uppercase text-gray-500">Open Blockers</p>
+                    <p className="mt-2 text-2xl font-black text-gray-900">
+                      {cashDrawerSummary.open_blocker_count}
+                    </p>
+                    <p className="text-xs font-semibold text-gray-500">
+                      {cashDrawerSummary.payment_due_count} due, {cashDrawerSummary.payment_proof_required_count} proof
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+                  <div className="rounded-lg border border-violet-100 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-black text-gray-900">Expected Method Split</p>
+                        <p className="text-sm text-gray-500">
+                          Generated from today's closed paid orders.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={loadPaymentReadiness}
+                        disabled={isPaymentLoading}
+                        className="inline-flex items-center justify-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 disabled:opacity-60"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${isPaymentLoading ? "animate-spin" : ""}`} />
+                        Refresh
+                      </button>
+                    </div>
+                    <div data-testid="cash-drawer-method-totals" className="mt-4 space-y-2">
+                      {cashDrawerMethodTotals.map((row) => (
+                        <div
+                          key={row.method}
+                          className="grid grid-cols-[1fr_auto] gap-3 rounded-md bg-gray-50 px-3 py-2 text-sm"
+                        >
+                          <div>
+                            <p className="font-black text-gray-900">{row.label}</p>
+                            <p className="text-xs font-semibold text-gray-500">
+                              {row.order_count} order{row.order_count === 1 ? "" : "s"}
+                            </p>
+                          </div>
+                          <p className="font-black text-gray-900">{formatMoney(row.expected_amount)}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 border-t border-gray-100 pt-4">
+                      <p className="font-black text-gray-900">Latest Drawer Close</p>
+                      {latestCashDrawerClose ? (
+                        <div
+                          data-testid="cash-drawer-latest-close"
+                          className="mt-3 rounded-md bg-violet-50 px-3 py-2 text-sm font-semibold text-gray-700"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-black text-gray-900">
+                              {latestCashDrawerClose.status.replace("_", " ")}
+                            </span>
+                            <span>{formatTimestamp(latestCashDrawerClose.created_at)}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Variance: {formatMoney(cashDrawerSummary.latest_variance_total)}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
+                          No drawer close has been recorded today.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-violet-100 bg-white p-4">
+                    <p className="font-black text-gray-900">Count & Close Drawer</p>
+                    <p className="mt-1 text-sm text-gray-500">{cashDrawerSummary.next_action}</p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {([
+                        { key: "counted_cash", method: "cash", label: "Cash Counted", testId: "cash-drawer-counted-cash" },
+                        { key: "counted_upi", method: "upi", label: "UPI Counted", testId: "cash-drawer-counted-upi" },
+                        { key: "counted_card", method: "card", label: "Card Counted", testId: "cash-drawer-counted-card" },
+                        { key: "counted_mixed", method: "mixed", label: "Mixed Counted", testId: "cash-drawer-counted-mixed" },
+                        { key: "counted_prepaid", method: "prepaid", label: "Prepaid Counted", testId: "cash-drawer-counted-prepaid" },
+                        { key: "counted_other", method: "other", label: "Other Counted", testId: "cash-drawer-counted-other" },
+                      ] as const).map((field) => (
+                        <label key={field.key} className="block text-sm font-bold text-gray-700">
+                          {field.label}
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            data-testid={field.testId}
+                            value={cashDrawerDraft[field.key]}
+                            onChange={(event) =>
+                              setCashDrawerDraft((current) => ({
+                                ...current,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                            className="mt-2 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                            placeholder={`Expected ${formatMoney(expectedCashDrawerAmount(cashDrawerCommand, field.method))}`}
+                          />
+                        </label>
+                      ))}
+                      <label className="block text-sm font-bold text-gray-700 md:col-span-2">
+                        Closed By
+                        <input
+                          data-testid="cash-drawer-closed-by"
+                          value={cashDrawerDraft.closed_by}
+                          onChange={(event) =>
+                            setCashDrawerDraft((current) => ({
+                              ...current,
+                              closed_by: event.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                          placeholder="Manager or cashier name"
+                        />
+                      </label>
+                      <label className="block text-sm font-bold text-gray-700 md:col-span-2">
+                        Shift Close Notes
+                        <textarea
+                          data-testid="cash-drawer-notes"
+                          rows={3}
+                          value={cashDrawerDraft.notes}
+                          onChange={(event) =>
+                            setCashDrawerDraft((current) => ({
+                              ...current,
+                              notes: event.target.value,
+                            }))
+                          }
+                          className="mt-2 w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                          placeholder="Optional variance or handover note"
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="cash-drawer-close"
+                      onClick={closeCashDrawer}
+                      disabled={isClosingCashDrawer}
+                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-violet-700 px-5 py-3 text-sm font-black text-white hover:bg-violet-800 disabled:bg-gray-300"
+                    >
+                      <ClipboardCheck className="h-4 w-4" />
+                      {isClosingCashDrawer ? "Closing Drawer" : "Close Cash Drawer"}
+                    </button>
+
+                    {cashDrawerResult && (
+                      <div
+                        data-testid="cash-drawer-close-result"
+                        className={`mt-4 rounded-md px-4 py-3 text-sm font-semibold ${
+                          cashDrawerResult.status === "balanced"
+                            ? "bg-green-50 text-green-800"
+                            : "bg-amber-50 text-amber-800"
+                        }`}
+                      >
+                        <p className="font-black">
+                          {cashDrawerResult.message}
+                        </p>
+                        <p className="mt-1">
+                          Counted {formatMoney(cashDrawerResult.counted_total)} against {formatMoney(cashDrawerResult.expected_total)}.
+                          Variance {formatMoney(cashDrawerResult.variance_total)}.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr]">
+                  <div className="rounded-lg border border-violet-100 bg-white p-4">
+                    <p className="font-black text-gray-900">Recent Closed Orders</p>
+                    <div className="mt-3 space-y-2">
+                      {cashDrawerRecentClosedOrders.length ? (
+                        cashDrawerRecentClosedOrders.slice(0, 5).map((order) => (
+                          <div
+                            key={`drawer-order-${order.id}`}
+                            className="grid grid-cols-[1fr_auto] gap-3 rounded-md bg-gray-50 px-3 py-2 text-sm"
+                          >
+                            <div>
+                              <p className="font-black text-gray-900">
+                                Order #{order.id} - {order.customer_name || "Counter customer"}
+                              </p>
+                              <p className="text-xs font-semibold text-gray-500">
+                                {(order.payment_method || "cash").toUpperCase()} - {order.payment_reference || "no reference"}
+                              </p>
+                            </div>
+                            <p className="font-black text-gray-900">{formatMoney(order.total_amount)}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="rounded-md bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
+                          Closed paid orders will appear here.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-violet-100 bg-white p-4">
+                    <p className="font-black text-gray-900">Open Drawer Blockers</p>
+                    <div className="mt-3 space-y-2">
+                      {cashDrawerOpenBlockers.length ? (
+                        cashDrawerOpenBlockers.slice(0, 5).map((order) => (
+                          <div
+                            key={`drawer-blocker-${order.id}`}
+                            className="rounded-md bg-red-50 px-3 py-2 text-sm"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-black text-gray-900">Order #{order.id}</p>
+                              <p className="font-black text-red-700">{formatMoney(order.total_amount)}</p>
+                            </div>
+                            <p className="mt-1 text-xs font-semibold text-gray-600">
+                              {order.close_blockers?.join(", ") || order.payment_status || "open"}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="rounded-md bg-green-50 px-3 py-2 text-sm font-semibold text-green-800">
+                          No open order blockers for drawer close.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>

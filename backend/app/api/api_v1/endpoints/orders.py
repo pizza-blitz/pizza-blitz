@@ -17,6 +17,7 @@ from app.models.domain import (
     InventoryItem,
     InventoryTransaction,
     Invoice,
+    OperationalAuditEvent,
     PaymentEventAudit,
     Promotion,
     Recipe,
@@ -27,7 +28,10 @@ from app.services.menu_customization_service import (
     calculate_customized_item_price,
     find_menu_item_for_order,
 )
-from app.services.operational_audit_service import record_operational_audit_event
+from app.services.operational_audit_service import (
+    record_operational_audit_event,
+    serialize_operational_audit_event,
+)
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -144,6 +148,17 @@ class OrderStatusUpdate(BaseModel):
 
 class StationStatusUpdate(BaseModel):
     status: str
+
+
+class CashDrawerCloseRequest(BaseModel):
+    counted_cash: float = Field(default=0.0, ge=0)
+    counted_upi: float = Field(default=0.0, ge=0)
+    counted_card: float = Field(default=0.0, ge=0)
+    counted_mixed: float = Field(default=0.0, ge=0)
+    counted_prepaid: float = Field(default=0.0, ge=0)
+    counted_other: float = Field(default=0.0, ge=0)
+    closed_by: Optional[str] = Field(default=None, max_length=120)
+    notes: Optional[str] = Field(default=None, max_length=1000)
 
 
 def ensure_default_tables(db: Session) -> None:
@@ -645,6 +660,178 @@ def serialize_payment_event(event: PaymentEventAudit) -> dict:
         "duplicate_count": int(event.duplicate_count or 0),
         "received_at": event.received_at.isoformat() if event.received_at else None,
         "last_seen_at": event.last_seen_at.isoformat() if event.last_seen_at else None,
+    }
+
+
+CASH_DRAWER_METHOD_LABELS = {
+    "cash": "Cash",
+    "upi": "UPI / Direct Bank",
+    "card": "Card",
+    "mixed": "Mixed",
+    "prepaid": "Prepaid Gateway",
+    "other": "Other",
+}
+
+
+def money(value: float | int | None) -> float:
+    return round(float(value or 0), 2)
+
+
+def cash_drawer_method(order: RestaurantOrder) -> str:
+    method = (order.payment_method or "cash").strip().lower()
+    provider = (order.payment_provider or "").strip().lower()
+    if method == "cash":
+        return "cash"
+    if method in {"upi", "direct_bank"} or provider == "direct_bank":
+        return "upi"
+    if method == "card":
+        return "card"
+    if method == "mixed":
+        return "mixed"
+    if method == "prepaid":
+        return "prepaid"
+    return "other"
+
+
+def serialize_cash_drawer_order(order: RestaurantOrder) -> dict:
+    return {
+        "id": order.id,
+        "customer_name": order.customer_name,
+        "order_type": order.order_type,
+        "total_amount": money(order.total_amount),
+        "payment_method": order.payment_method,
+        "payment_provider": order.payment_provider,
+        "payment_reference": order.payment_reference,
+        "closed_at": order.closed_at.isoformat() if order.closed_at else None,
+    }
+
+
+def latest_cash_drawer_close(db: Session, drawer_date: date) -> OperationalAuditEvent | None:
+    return (
+        db.query(OperationalAuditEvent)
+        .filter(OperationalAuditEvent.event_type == "cash_drawer")
+        .filter(OperationalAuditEvent.action == "cash_drawer_close")
+        .filter(OperationalAuditEvent.resource_id == drawer_date.isoformat())
+        .order_by(OperationalAuditEvent.created_at.desc(), OperationalAuditEvent.id.desc())
+        .first()
+    )
+
+
+def cash_drawer_command_payload(db: Session, drawer_date: date | None = None) -> dict:
+    drawer_date = drawer_date or date.today()
+    today_orders = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.date == drawer_date)
+        .order_by(RestaurantOrder.created_at.desc(), RestaurantOrder.id.desc())
+        .all()
+    )
+    closed_paid_orders = [
+        order
+        for order in today_orders
+        if order.status == "closed" and (order.payment_status or "").lower() == "paid"
+    ]
+    active_orders = [
+        order
+        for order in today_orders
+        if order.status not in {"closed", "cancelled"}
+    ]
+
+    method_totals = {
+        method: {
+            "method": method,
+            "label": label,
+            "order_count": 0,
+            "expected_amount": 0.0,
+        }
+        for method, label in CASH_DRAWER_METHOD_LABELS.items()
+    }
+    for order in closed_paid_orders:
+        method = cash_drawer_method(order)
+        method_totals[method]["order_count"] += 1
+        method_totals[method]["expected_amount"] = money(
+            method_totals[method]["expected_amount"] + money(order.total_amount)
+        )
+
+    method_rows = list(method_totals.values())
+    expected_cash_total = method_totals["cash"]["expected_amount"]
+    expected_total = money(sum(row["expected_amount"] for row in method_rows))
+    expected_digital_total = money(expected_total - expected_cash_total)
+    latest_close = latest_cash_drawer_close(db, drawer_date)
+    orders_after_close_count = 0
+    if latest_close and latest_close.created_at:
+        orders_after_close_count = sum(
+            1
+            for order in closed_paid_orders
+            if order.closed_at and order.closed_at > latest_close.created_at
+        )
+
+    payment_due_orders = [order for order in active_orders if order_payment_due(order)]
+    proof_required_orders = [
+        order for order in active_orders if order_payment_proof_required(order)
+    ]
+    ready_unclosed_orders = [order for order in active_orders if order.status == "ready"]
+    blocker_count = len(active_orders)
+
+    latest_variance = 0.0
+    if latest_close and isinstance(latest_close.metadata_json, dict):
+        latest_variance = money(
+            (latest_close.metadata_json.get("variance_totals") or {}).get("total")
+        )
+
+    if blocker_count:
+        drawer_status = "orders_open"
+        next_action = "Finish, settle, or cancel open orders before final drawer close."
+    elif latest_close and orders_after_close_count == 0:
+        drawer_status = "balanced" if abs(latest_variance) < 0.01 else "variance_review"
+        next_action = (
+            "Drawer is balanced for today."
+            if drawer_status == "balanced"
+            else "Review the latest drawer variance and add a manager note."
+        )
+    elif closed_paid_orders:
+        drawer_status = "ready_to_close"
+        next_action = "Count cash, UPI, card, mixed and prepaid totals, then close the drawer."
+    else:
+        drawer_status = "no_sales"
+        next_action = "No closed paid orders are available for drawer close yet."
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "date": drawer_date.isoformat(),
+        "summary": {
+            "drawer_status": drawer_status,
+            "expected_cash_total": expected_cash_total,
+            "expected_digital_total": expected_digital_total,
+            "expected_total": expected_total,
+            "closed_paid_order_count": len(closed_paid_orders),
+            "active_order_count": len(active_orders),
+            "open_blocker_count": blocker_count,
+            "payment_due_count": len(payment_due_orders),
+            "payment_proof_required_count": len(proof_required_orders),
+            "ready_unclosed_count": len(ready_unclosed_orders),
+            "orders_after_latest_close_count": orders_after_close_count,
+            "latest_variance_total": latest_variance,
+            "next_action": next_action,
+        },
+        "method_totals": method_rows,
+        "open_blockers": [
+            serialize_payment_queue_order(order)
+            for order in active_orders[:8]
+        ],
+        "recent_closed_orders": [
+            serialize_cash_drawer_order(order)
+            for order in sorted(
+                closed_paid_orders,
+                key=lambda row: (row.closed_at or row.created_at or datetime.min, row.id),
+                reverse=True,
+            )[:8]
+        ],
+        "latest_close": (
+            serialize_operational_audit_event(latest_close)
+            if latest_close
+            else None
+        ),
+        "next_actions": [next_action],
     }
 
 
@@ -2319,6 +2506,93 @@ def payment_reconciliation(
                 "detail": "Processed, already-paid and ignored events remain visible for owner reconciliation.",
             },
         ],
+    }
+
+
+@router.get("/cash-drawer/command")
+def cash_drawer_command(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    return cash_drawer_command_payload(db)
+
+
+@router.post("/cash-drawer/close")
+def close_cash_drawer(
+    payload: CashDrawerCloseRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    drawer_date = date.today()
+    command = cash_drawer_command_payload(db, drawer_date)
+    method_expected = {
+        row["method"]: money(row["expected_amount"])
+        for row in command["method_totals"]
+    }
+    counted_totals = {
+        "cash": money(payload.counted_cash),
+        "upi": money(payload.counted_upi),
+        "card": money(payload.counted_card),
+        "mixed": money(payload.counted_mixed),
+        "prepaid": money(payload.counted_prepaid),
+        "other": money(payload.counted_other),
+    }
+    variance_totals = {
+        method: money(counted_totals.get(method, 0) - method_expected.get(method, 0))
+        for method in CASH_DRAWER_METHOD_LABELS
+    }
+    counted_total = money(sum(counted_totals.values()))
+    expected_total = money(command["summary"]["expected_total"])
+    variance_total = money(counted_total - expected_total)
+    variance_totals["total"] = variance_total
+
+    if command["summary"]["open_blocker_count"]:
+        status = "open_orders"
+        detail = "Cash drawer close recorded while open order blockers still exist."
+    elif abs(variance_total) < 0.01:
+        status = "balanced"
+        detail = "Cash drawer closed and balanced against closed paid orders."
+    else:
+        status = "variance_review"
+        detail = "Cash drawer closed with a variance that needs manager review."
+
+    event = record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="cash_drawer",
+        action="cash_drawer_close",
+        resource_type="cash_drawer",
+        resource_id=drawer_date.isoformat(),
+        status=status,
+        detail=detail,
+        metadata={
+            "date": drawer_date.isoformat(),
+            "closed_by": payload.closed_by or session.get("display_name") or session.get("sub"),
+            "notes": payload.notes,
+            "expected_totals": method_expected,
+            "counted_totals": counted_totals,
+            "variance_totals": variance_totals,
+            "expected_total": expected_total,
+            "counted_total": counted_total,
+            "open_blocker_count": command["summary"]["open_blocker_count"],
+            "closed_paid_order_count": command["summary"]["closed_paid_order_count"],
+        },
+    )
+    updated_command = cash_drawer_command_payload(db, drawer_date)
+    return {
+        "status": status,
+        "message": detail,
+        "expected_totals": method_expected,
+        "counted_totals": counted_totals,
+        "variance_totals": variance_totals,
+        "expected_total": expected_total,
+        "counted_total": counted_total,
+        "variance_total": variance_total,
+        "audit": serialize_operational_audit_event(event),
+        "command": updated_command,
     }
 
 

@@ -12,6 +12,7 @@ SENSITIVE_EVENT_TYPES = {
     "ad",
     "backup",
     "campaign",
+    "cash_drawer",
     "credential",
     "delivery",
     "employee",
