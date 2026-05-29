@@ -634,6 +634,19 @@ type CampaignReturnState = {
   campaignId: number | null;
 };
 
+type LaunchSupervisorStatus = "ready" | "watching" | "blocked" | "pending";
+
+type LaunchSupervisorStep = {
+  key: string;
+  label: string;
+  status: LaunchSupervisorStatus;
+  metric: string;
+  detail: string;
+  action: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
 const audienceOptions: { value: AudienceKey; label: string }[] = [
   { value: "marketing_opt_in", label: "Marketing Opt-in" },
   { value: "all_customers", label: "All Customers" },
@@ -821,6 +834,101 @@ export default function PromotionsPage() {
   const selectedSocialHandoff = performance?.social.latest_post || null;
   const selectedAdHandoff = performance?.ads.latest_campaign || null;
   const launchBundleReadyCount = [selectedSocialHandoff, selectedAdHandoff].filter(Boolean).length;
+  const selectedSendQueueRow = selectedPromotion
+    ? sendQueueRows.find((row) => row.promotion.id === selectedPromotion.id) || null
+    : null;
+  const selectedReadyCount = dispatch?.send_ready_count ?? selectedSendQueueRow?.ready_count ?? 0;
+  const selectedMissingCount = dispatch?.missing_destination_count ?? selectedSendQueueRow?.missing_count ?? 0;
+  const sendGateStatus: LaunchSupervisorStatus = selectedSendQueueRow?.can_send
+    ? "ready"
+    : selectedSendQueueRow?.can_dry_run || (deliveryHistory?.dry_run_count || 0) > 0
+    ? "watching"
+    : dispatch?.provider_status?.configured || selectedReadyCount > 0
+    ? "pending"
+    : "blocked";
+  const socialSupervisorStatus: LaunchSupervisorStatus = selectedSocialHandoff
+    ? "ready"
+    : socialReadiness?.schedule.eligible_count
+    ? "pending"
+    : "blocked";
+  const adSupervisorStatus: LaunchSupervisorStatus = selectedAdHandoff
+    ? "ready"
+    : adLaunchReadiness?.ready_count
+    ? "pending"
+    : "blocked";
+  const measurementSupervisorStatus: LaunchSupervisorStatus = performance?.redemptions.count
+    ? "ready"
+    : performance
+    ? "watching"
+    : "pending";
+  const launchSupervisorSteps: LaunchSupervisorStep[] = selectedPromotion
+    ? [
+        {
+          key: "send",
+          label: "Customer Send Gate",
+          status: sendGateStatus,
+          metric: `${selectedReadyCount} ready / ${selectedMissingCount} missing`,
+          detail:
+            selectedSendQueueRow?.recommended_action ||
+            dispatch?.provider_status?.next_action ||
+            "Run the dry-run proof before sending this campaign to customers.",
+          action: "Review send queue",
+          href: `/promotions?campaign=${selectedPromotion.id}`,
+          icon: Send,
+        },
+        {
+          key: "social",
+          label: "Social Draft",
+          status: socialSupervisorStatus,
+          metric: selectedSocialHandoff
+            ? `Post #${selectedSocialHandoff.id}`
+            : `${socialReadiness?.schedule.eligible_count || 0} due-ready`,
+          detail: selectedSocialHandoff
+            ? `${formatPlatforms(selectedSocialHandoff.platforms)} draft is ready for publishing.`
+            : "Build the launch bundle to prepare Facebook and Instagram copy.",
+          action: "Open social",
+          href: performance?.social.latest_post_id
+            ? `/social?post=${performance.social.latest_post_id}`
+            : "/social",
+          icon: Share2,
+        },
+        {
+          key: "ad",
+          label: "Meta Ad Handoff",
+          status: adSupervisorStatus,
+          metric: selectedAdHandoff
+            ? `Ad #${selectedAdHandoff.id}`
+            : `${adLaunchReadiness?.ready_count || 0} preflight-ready`,
+          detail: selectedAdHandoff
+            ? `${formatPlatforms(selectedAdHandoff.platforms)} sales ad is staged with ${formatRupees(
+                selectedAdHandoff.daily_budget || selectedAdHandoff.lifetime_budget
+              )} budget.`
+            : adLaunchReadiness?.provider_status.next_action ||
+              "Build the launch bundle to create the Meta ad handoff.",
+          action: "Open ads",
+          href: performance?.ads.latest_campaign_id
+            ? `/ads?campaign=${performance.ads.latest_campaign_id}`
+            : "/ads",
+          icon: Target,
+        },
+        {
+          key: "measurement",
+          label: "Measurement",
+          status: measurementSupervisorStatus,
+          metric: `${performance?.redemptions.count || 0} orders / ${formatRupees(
+            performance?.redemptions.revenue || 0
+          )}`,
+          detail:
+            performance?.redemptions.count
+              ? "Coupon orders are already rolling into campaign performance."
+              : "Redemptions, ad spend and ROAS will update here after customers use the coupon.",
+          action: "Open reports",
+          href: "/reports",
+          icon: Megaphone,
+        },
+      ]
+    : [];
+  const launchSupervisorReadyCount = launchSupervisorSteps.filter((step) => step.status === "ready").length;
   const bestCampaign = performanceRollup?.best_campaign || null;
   const comparisonRows = performanceRollup?.campaigns.slice(0, 6) || [];
   const hygieneChannels = channelOptions.map((option) => option.value);
@@ -2892,6 +3000,52 @@ export default function PromotionsPage() {
                 </section>
 
                 <section
+                  data-testid="promotion-launch-supervisor"
+                  className="mb-6 rounded-xl border border-white/5 bg-black/25 p-5"
+                >
+                  <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-widest text-green-300">
+                        Launch Supervisor
+                      </p>
+                      <h3 className="mt-1 text-lg font-black">Selected campaign action status</h3>
+                      <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-gray-500">
+                        Track the customer send gate, public social draft, Meta ad handoff and coupon measurement from one place.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span
+                        data-testid="launch-supervisor-score"
+                        className={`rounded-full px-3 py-1 text-xs font-black uppercase ${checkRatioClass(
+                          launchSupervisorReadyCount,
+                          launchSupervisorSteps.length || 1
+                        )}`}
+                      >
+                        {launchSupervisorReadyCount}/{launchSupervisorSteps.length || 4} clear
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fetchCampaignDetails(selectedPromotion.id);
+                          fetchPerformanceRollup();
+                          fetchSendQueue();
+                          fetchMarketingLiveReadiness();
+                        }}
+                        className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-xs font-black uppercase text-white hover:bg-white/15"
+                      >
+                        <RefreshCw className="h-4 w-4" /> Refresh Status
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {launchSupervisorSteps.map((step) => (
+                      <LaunchSupervisorCard key={step.key} step={step} />
+                    ))}
+                  </div>
+                </section>
+
+                <section
                   data-testid="campaign-schedule-panel"
                   className="mb-6 rounded-xl border border-orange-500/10 bg-black/25 p-5"
                 >
@@ -3900,6 +4054,59 @@ function HandoffCard({
       </a>
     </div>
   );
+}
+
+function LaunchSupervisorCard({ step }: { step: LaunchSupervisorStep }) {
+  const Icon = step.icon;
+  return (
+    <div
+      data-testid={`launch-supervisor-${step.key}`}
+      className="rounded-lg border border-white/5 bg-white/[0.03] p-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${launchSupervisorIconClass(step.status)}`}>
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-widest text-gray-600">{step.label}</p>
+            <p className="mt-1 break-words text-sm font-black leading-5 text-white">{step.metric}</p>
+          </div>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ${launchSupervisorStatusClass(step.status)}`}>
+          {launchSupervisorStatusLabel(step.status)}
+        </span>
+      </div>
+      <p className="mt-3 min-h-14 break-words text-xs font-semibold leading-5 text-gray-500">{step.detail}</p>
+      <Link
+        href={step.href}
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15"
+      >
+        {step.action} <ExternalLink className="h-3.5 w-3.5" />
+      </Link>
+    </div>
+  );
+}
+
+function launchSupervisorStatusLabel(status: LaunchSupervisorStatus) {
+  if (status === "ready") return "clear";
+  if (status === "watching") return "tracking";
+  if (status === "blocked") return "blocked";
+  return "pending";
+}
+
+function launchSupervisorStatusClass(status: LaunchSupervisorStatus) {
+  if (status === "ready") return "bg-green-500/15 text-green-300";
+  if (status === "watching") return "bg-blue-500/15 text-blue-300";
+  if (status === "blocked") return "bg-yellow-500/15 text-yellow-300";
+  return "bg-white/10 text-gray-300";
+}
+
+function launchSupervisorIconClass(status: LaunchSupervisorStatus) {
+  if (status === "ready") return "bg-green-500/10 text-green-300";
+  if (status === "watching") return "bg-blue-500/10 text-blue-300";
+  if (status === "blocked") return "bg-yellow-500/10 text-yellow-300";
+  return "bg-white/10 text-gray-300";
 }
 
 function formatPlatforms(platforms?: string[]) {

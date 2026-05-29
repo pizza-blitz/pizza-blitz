@@ -126,6 +126,7 @@ async function waitForCampaignSelection(page, campaign) {
     try {
       await page.locator("h2", { hasText: campaign.name }).first().waitFor({ timeout: 20000 });
       await page.getByTestId("promotion-launch-bundle").waitFor({ timeout: 20000 });
+      await page.getByTestId("promotion-launch-supervisor").waitFor({ timeout: 20000 });
       return;
     } catch {
       lastText = await page.evaluate(() => document.body.innerText.slice(0, 2200)).catch(() => "");
@@ -187,6 +188,10 @@ async function proveLaunchBundle(campaign, cookie) {
     await waitForCampaignSelection(page, campaign);
     await page.getByTestId("launch-bundle-social-card").getByText("pending").waitFor({ timeout: 30000 });
     await page.getByTestId("launch-bundle-ad-card").getByText("pending").waitFor({ timeout: 30000 });
+    const pendingSocialSupervisor = await page.getByTestId("launch-supervisor-social").textContent();
+    const pendingAdSupervisor = await page.getByTestId("launch-supervisor-ad").textContent();
+    assert(/Build the launch bundle/i.test(pendingSocialSupervisor || ""), "Launch supervisor did not flag social handoff as pending.");
+    assert(/Build the launch bundle/i.test(pendingAdSupervisor || ""), "Launch supervisor did not flag ad handoff as pending.");
 
     await page.getByTestId("create-launch-bundle-button").click();
     await page.getByText(/Launch bundle ready/i).waitFor({ timeout: 45000 });
@@ -194,6 +199,20 @@ async function proveLaunchBundle(campaign, cookie) {
     const bundle = await waitForLaunchBundle(campaign.id, cookie);
     await page.getByTestId("launch-bundle-social-card").getByText(`#${bundle.social.latest_post_id}`).waitFor({ timeout: 30000 });
     await page.getByTestId("launch-bundle-ad-card").getByText(/budget/i).waitFor({ timeout: 30000 });
+    await page.getByTestId("launch-supervisor-social").waitFor({ state: "attached", timeout: 30000 });
+    await page.getByTestId("launch-supervisor-ad").waitFor({ state: "attached", timeout: 30000 });
+    const readySocialSupervisor = await page.getByTestId("launch-supervisor-social").textContent();
+    const readyAdSupervisor = await page.getByTestId("launch-supervisor-ad").textContent();
+    assert(
+      (readySocialSupervisor || "").includes(`Post #${bundle.social.latest_post_id}`),
+      `Launch supervisor missed social post #${bundle.social.latest_post_id}.`
+    );
+    assert(
+      (readyAdSupervisor || "").includes(`Ad #${bundle.ads.latest_campaign_id}`),
+      `Launch supervisor missed ad campaign #${bundle.ads.latest_campaign_id}.`
+    );
+    const supervisorScore = await page.getByTestId("launch-supervisor-score").innerText();
+    assert(/^[2-4]\/4 clear/i.test(supervisorScore), `Launch supervisor score did not include created handoffs: ${supervisorScore}`);
 
     const socialHref = await page.getByTestId("launch-bundle-social-link").getAttribute("href");
     const adHref = await page.getByTestId("launch-bundle-ad-link").getAttribute("href");
@@ -222,6 +241,10 @@ async function proveLaunchBundle(campaign, cookie) {
 
     await page.getByTestId("promotion-launch-bundle").screenshot({
       path: path.join(artifactsDir, "visible-promotion-launch-bundle.png"),
+    });
+    await page.getByTestId("promotion-launch-supervisor").scrollIntoViewIfNeeded();
+    await page.getByTestId("promotion-launch-supervisor").screenshot({
+      path: path.join(artifactsDir, "visible-promotion-launch-supervisor.png"),
     });
     watch.assertClean("promotion launch bundle");
   } finally {
