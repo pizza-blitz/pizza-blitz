@@ -177,15 +177,34 @@ async function main() {
     const receiptHref = await page.getByTestId("counter-post-order-receipt").getAttribute("href");
     assert(receiptHref === `/receipt/${orderId}`, `Expected receipt href for order ${orderId}, got ${receiptHref}.`);
     await page.getByTestId("counter-post-order-close").waitFor({ timeout: 10000 });
+    await page.getByTestId("counter-post-order-close-blockers").getByText(/kitchen not ready/i).waitFor({ timeout: 10000 });
+    assert(
+      await page.getByTestId("counter-post-order-close").isDisabled(),
+      "Post-order close should stay disabled until kitchen marks the order ready."
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-counter-post-order-panel.png"),
       fullPage: true,
     });
 
-    await page.getByTestId("counter-post-order-close").click();
-    await page.getByText(new RegExp(`Order #${orderId} closed and payment marked paid`, "i")).waitFor({ timeout: 20000 });
-    await page.getByTestId("counter-post-order-close").getByText("Closed", { exact: true }).waitFor({ timeout: 15000 });
+    const blockedClose = await apiJson(`/api/v1/restaurant/orders/${orderId}/close?payment_method=cash`, adminCookie, {
+      method: "PATCH",
+    });
+    assert(blockedClose.response.status === 409, `Unready close returned ${blockedClose.response.status}.`);
+    assert(/kitchen not ready/i.test(blockedClose.data.detail || ""), `Unexpected close blocker: ${JSON.stringify(blockedClose.data)}`);
+
+    const readyResult = await apiJson(`/api/v1/restaurant/orders/${orderId}/status`, adminCookie, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "ready" }),
+    });
+    assert(readyResult.response.ok, `Could not mark post-order ready: ${JSON.stringify(readyResult.data)}`);
+
+    const closedResult = await apiJson(`/api/v1/restaurant/orders/${orderId}/close?payment_method=cash`, adminCookie, {
+      method: "PATCH",
+    });
+    assert(closedResult.response.ok, `Could not close ready post-order: ${JSON.stringify(closedResult.data)}`);
 
     const orderResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`, adminCookie);
     assert(orderResult.response.ok, `Could not fetch closed post-order: ${JSON.stringify(orderResult.data)}`);

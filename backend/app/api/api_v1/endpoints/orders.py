@@ -185,6 +185,7 @@ def serialize_invoice(invoice: Invoice) -> dict:
 def serialize_order(order: RestaurantOrder) -> dict:
     metadata = order_metadata(order)
     assignment = order.delivery_assignment
+    close_blockers = order_close_blockers(order)
     return {
         "id": order.id,
         "date": order.date.isoformat() if order.date else None,
@@ -200,6 +201,8 @@ def serialize_order(order: RestaurantOrder) -> dict:
             (order.payment_method or "").lower() == "prepaid"
             and (order.payment_status or "").lower() != "paid"
         ),
+        "can_close": not close_blockers,
+        "close_blockers": close_blockers,
         "table_number": order.table_number,
         "customer_name": order.customer_name,
         "customer_phone": order.customer_phone,
@@ -693,6 +696,28 @@ def order_payment_due(order: RestaurantOrder) -> bool:
         (order.payment_method or "").lower() == "prepaid"
         and (order.payment_status or "").lower() != "paid"
     )
+
+
+def order_close_blockers(order: RestaurantOrder) -> list[str]:
+    if order.status == "closed":
+        return []
+    blockers: list[str] = []
+    if order.status == "cancelled":
+        blockers.append("cancelled")
+    if order.status != "ready":
+        blockers.append("kitchen not ready")
+    if order_payment_due(order):
+        blockers.append("payment due")
+    metadata = order_metadata(order)
+    if metadata["fulfillment_type"] == "delivery":
+        assignment_status = (
+            (order.delivery_assignment.status or "").lower()
+            if order.delivery_assignment
+            else "unassigned"
+        )
+        if assignment_status != "delivered":
+            blockers.append("delivery not completed")
+    return blockers
 
 
 def order_flow_stage(order: RestaurantOrder) -> str:
@@ -1712,6 +1737,13 @@ def close_order(
 
     inventory_usage = []
     if order.status != "closed":
+        close_blockers = order_close_blockers(order)
+        if close_blockers:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Order cannot be closed yet: {', '.join(close_blockers)}.",
+            )
+
         requested_payment_method = (
             payment_method.strip().lower()
             if payment_method

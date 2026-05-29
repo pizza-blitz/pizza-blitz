@@ -168,6 +168,8 @@ type Order = {
   payment_status: string;
   payment_method?: string | null;
   status: string;
+  can_close?: boolean;
+  close_blockers?: string[];
   created_at?: string | null;
 };
 
@@ -454,6 +456,29 @@ export default function OrdersPage() {
   const closedTotal = orders
     .filter((order) => order.status === "closed")
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
+  const lastCreatedOrderRow = lastCreatedOrder
+    ? orders.find((order) => order.id === lastCreatedOrder.id)
+    : null;
+  const lastCreatedCloseBlockers =
+    lastCreatedOrder?.status === "closed"
+      ? []
+      : lastCreatedOrderRow?.close_blockers || ["kitchen not ready"];
+
+  const closeBlockersForOrder = (order: Order) => {
+    if (order.status === "closed") return [];
+    if (order.close_blockers?.length) return order.close_blockers;
+    const blockers: string[] = [];
+    if (order.status === "cancelled") blockers.push("cancelled");
+    if (order.status !== "ready") blockers.push("kitchen not ready");
+    if (order.payment_due || order.payment_status === "awaiting_payment") {
+      blockers.push("payment due");
+    }
+    if ((order.fulfillment_type || order.order_type) === "delivery") {
+      const assignmentStatus = order.delivery_assignment?.status || "unassigned";
+      if (assignmentStatus !== "delivered") blockers.push("delivery not completed");
+    }
+    return blockers;
+  };
 
   useEffect(() => {
     setIsHydrated(true);
@@ -768,6 +793,11 @@ export default function OrdersPage() {
   };
 
   const closeOrder = async (order: Order) => {
+    const blockers = closeBlockersForOrder(order);
+    if (blockers.length) {
+      setMessage(`Order #${order.id} cannot close yet: ${blockers.join(", ")}.`);
+      return;
+    }
     const paymentMethod = order.payment_method || "cash";
     const response = await fetch(
       `${ORDERS_API}/${order.id}/close?payment_method=${encodeURIComponent(paymentMethod)}`,
@@ -814,6 +844,10 @@ export default function OrdersPage() {
 
   const closeLastCreatedOrder = async () => {
     if (!lastCreatedOrder || lastCreatedOrder.status === "closed") return;
+    if (lastCreatedCloseBlockers.length) {
+      setMessage(`Order #${lastCreatedOrder.id} cannot close yet: ${lastCreatedCloseBlockers.join(", ")}.`);
+      return;
+    }
     setPostOrderBusy(true);
     const response = await fetch(
       `${ORDERS_API}/${lastCreatedOrder.id}/close?payment_method=${encodeURIComponent(lastCreatedOrder.paymentMethod || "cash")}`,
@@ -1042,11 +1076,22 @@ export default function OrdersPage() {
                 data-testid="counter-post-order-close"
                 type="button"
                 onClick={closeLastCreatedOrder}
-                disabled={lastCreatedOrder.isDelivery || lastCreatedOrder.status === "closed" || postOrderBusy}
+                disabled={
+                  lastCreatedOrder.isDelivery ||
+                  lastCreatedOrder.status === "closed" ||
+                  postOrderBusy ||
+                  lastCreatedCloseBlockers.length > 0
+                }
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-500 px-4 py-3 text-sm font-black text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-gray-500"
               >
                 <CheckCircle2 className="h-4 w-4" />
-                {lastCreatedOrder.status === "closed" ? "Closed" : postOrderBusy ? "Closing" : "Close & Paid"}
+                {lastCreatedOrder.status === "closed"
+                  ? "Closed"
+                  : postOrderBusy
+                  ? "Closing"
+                  : lastCreatedCloseBlockers.length
+                  ? "Kitchen Pending"
+                  : "Close & Paid"}
               </button>
               <button
                 data-testid="counter-post-order-next-express"
@@ -1062,6 +1107,14 @@ export default function OrdersPage() {
           {lastCreatedOrder.isDelivery && (
             <p className="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs font-semibold text-emerald-50/80">
               Delivery orders close from Delivery Handoff after rider completion.
+            </p>
+          )}
+          {!lastCreatedOrder.isDelivery && lastCreatedCloseBlockers.length > 0 && (
+            <p
+              data-testid="counter-post-order-close-blockers"
+              className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100"
+            >
+              Close blocked until {lastCreatedCloseBlockers.join(", ")}.
             </p>
           )}
         </section>
@@ -1187,12 +1240,14 @@ export default function OrdersPage() {
 
         {readyCounterOrders.length > 0 ? (
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {readyCounterOrders.slice(0, 8).map((order) => (
-              <article
-                key={`ready-counter-${order.id}`}
-                data-testid={`counter-ready-order-${order.id}`}
-                className="rounded-xl border border-white/10 bg-black/25 p-4"
-              >
+            {readyCounterOrders.slice(0, 8).map((order) => {
+              const blockers = closeBlockersForOrder(order);
+              return (
+                <article
+                  key={`ready-counter-${order.id}`}
+                  data-testid={`counter-ready-order-${order.id}`}
+                  className="rounded-xl border border-white/10 bg-black/25 p-4"
+                >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xl font-black">Order #{order.id}</p>
@@ -1247,13 +1302,23 @@ export default function OrdersPage() {
                     data-testid={`counter-ready-close-${order.id}`}
                     type="button"
                     onClick={() => closeOrder(order)}
-                    className="flex items-center justify-center gap-2 rounded-lg bg-green-500 px-3 py-2 text-xs font-black text-white hover:bg-green-600"
+                    disabled={blockers.length > 0}
+                    className="flex items-center justify-center gap-2 rounded-lg bg-green-500 px-3 py-2 text-xs font-black text-white hover:bg-green-600 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-gray-500"
                   >
                     <CheckCircle2 className="h-4 w-4" /> Close
                   </button>
                 </div>
+                {blockers.length > 0 && (
+                  <p
+                    data-testid={`counter-ready-close-blockers-${order.id}`}
+                    className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100"
+                  >
+                    Close blocked until {blockers.join(", ")}.
+                  </p>
+                )}
               </article>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div
@@ -1486,12 +1551,14 @@ export default function OrdersPage() {
               <span className="text-xs font-bold text-gray-500">{orders.length} total</span>
             </div>
             <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
-              {orders.map((order) => (
-                <div
-                  key={order.id}
-                  data-testid={`counter-order-card-${order.id}`}
-                  className="rounded-xl border border-white/5 bg-black/25 p-4"
-                >
+              {orders.map((order) => {
+                const blockers = closeBlockersForOrder(order);
+                return (
+                  <div
+                    key={order.id}
+                    data-testid={`counter-order-card-${order.id}`}
+                    className="rounded-xl border border-white/5 bg-black/25 p-4"
+                  >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-black">Order #{order.id}</p>
@@ -1586,10 +1653,10 @@ export default function OrdersPage() {
                     <button
                       data-testid={`counter-close-${order.id}`}
                       onClick={() => closeOrder(order)}
-                      disabled={["closed", "cancelled"].includes(order.status)}
+                      disabled={["closed", "cancelled"].includes(order.status) || blockers.length > 0}
                       className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-green-500/15 py-2 text-xs font-bold text-green-300 hover:bg-green-500/25 disabled:opacity-40"
                     >
-                      <CheckCircle2 className="h-4 w-4" /> Close
+                      <CheckCircle2 className="h-4 w-4" /> {blockers.length ? "Close Blocked" : "Close"}
                     </button>
                     <button
                       data-testid={`counter-void-${order.id}`}
@@ -1600,8 +1667,17 @@ export default function OrdersPage() {
                       <X className="h-4 w-4" /> Void Order
                     </button>
                   </div>
+                  {!!blockers.length && !["closed", "cancelled"].includes(order.status) && (
+                    <p
+                      data-testid={`counter-close-blockers-${order.id}`}
+                      className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100"
+                    >
+                      Close blocked until {blockers.join(", ")}.
+                    </p>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               {!orders.length && (
                 <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-gray-500">
                   No orders yet today.
