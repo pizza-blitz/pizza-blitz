@@ -104,6 +104,26 @@ type DeploymentPipelinePlan = {
   blockers: string[];
 };
 
+type RestoreRehearsalCommand = {
+  status: CheckStatus;
+  summary: {
+    backup_status: CheckStatus;
+    restore_status: CheckStatus;
+    evidence_ready: boolean;
+    requirements_total: number;
+    requirements_ready: number;
+    retention_days: number;
+  };
+  detail: string;
+  evidence_requirements: ProductionDatabaseStep[];
+  last_proof?: BackupRun | null;
+  recorder: {
+    proof_type: string;
+    reference_hint: string;
+    notes_template: string[];
+  };
+};
+
 type LaunchModule = {
   key: string;
   title: string;
@@ -193,6 +213,7 @@ type Readiness = {
   production_database_plan?: ProductionDatabasePlan;
   environment_security_plan?: EnvironmentSecurityPlan;
   deployment_pipeline_plan?: DeploymentPipelinePlan;
+  restore_rehearsal_command?: RestoreRehearsalCommand;
   launch_blockers: GoLiveItem[];
   setup_actions: GoLiveItem[];
   go_live_sections: GoLiveSection[];
@@ -790,6 +811,10 @@ export default function ProductionOpsPage() {
 
       {readiness?.deployment_pipeline_plan ? (
         <DeploymentPipelineCommand plan={readiness.deployment_pipeline_plan} />
+      ) : null}
+
+      {readiness?.restore_rehearsal_command ? (
+        <RestoreRehearsalCommandPanel command={readiness.restore_rehearsal_command} />
       ) : null}
 
       {readiness?.module_readiness?.length ? (
@@ -2556,6 +2581,78 @@ function ReadinessStep({ step }: { step: ProductionDatabaseStep }) {
       </div>
       <p className="text-sm leading-6 text-gray-400">{step.detail}</p>
     </div>
+  );
+}
+
+function RestoreRehearsalCommandPanel({ command }: { command: RestoreRehearsalCommand }) {
+  return (
+    <section
+      data-testid="restore-rehearsal-proof-command"
+      className="mb-8 rounded-xl border border-cyan-500/20 bg-[#101417] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-300">Backup / Restore Proof</p>
+          <h2 className="mt-2 text-2xl font-black">Restore Rehearsal Command</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{command.detail}</p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(command.status)}`}>
+          <HardDrive className="h-3.5 w-3.5" />
+          {command.status}
+        </span>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <SummaryPill label="Backup" value={command.summary.backup_status} />
+        <SummaryPill label="Restore" value={command.summary.restore_status} />
+        <SummaryPill label="Evidence" value={`${command.summary.requirements_ready}/${command.summary.requirements_total}`} />
+        <SummaryPill label="Retention" value={`${command.summary.retention_days}d`} />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-5">
+        {command.evidence_requirements.map((step) => (
+          <ReadinessStep key={step.key} step={step} />
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-cyan-300" />
+            <h3 className="font-black text-cyan-50">Proof Notes Template</h3>
+          </div>
+          <p className="mb-3 text-xs font-bold leading-5 text-gray-500">
+            Use proof type <span className="font-mono text-cyan-100">{command.recorder.proof_type}</span> in Backup History.
+            Reference hint: <span className="font-mono text-cyan-100">{command.recorder.reference_hint}</span>.
+          </p>
+          <div className="space-y-2">
+            {command.recorder.notes_template.map((line) => (
+              <p key={line} className="rounded-lg bg-white/5 px-3 py-2 text-sm font-bold leading-6 text-gray-300">
+                {line}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Database className="h-5 w-5 text-cyan-300" />
+            <h3 className="font-black text-cyan-50">Latest Restore Proof</h3>
+          </div>
+          {command.last_proof ? (
+            <div className="space-y-3 text-sm font-semibold text-gray-300">
+              <Detail label="Reference" value={command.last_proof.file_path || "No reference"} />
+              <Detail label="Recorded" value={command.last_proof.created_at ? new Date(command.last_proof.created_at).toLocaleString() : "No time"} />
+              <Detail label="Backend" value={command.last_proof.database_backend || "unknown"} />
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-white/10 p-5 text-sm font-bold leading-6 text-gray-500">
+              No restore rehearsal proof is recorded. Run a clean database restore and record the evidence in Backup History.
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

@@ -49,6 +49,39 @@ DEFAULT_SECRET_VALUES = {
 
 PAYMENT_PROVIDER_ORDER = ("manual", "direct_bank", "cashfree", "razorpay")
 BACKUP_PROOF_TYPES = {"managed_snapshot", "pg_dump"}
+RESTORE_REHEARSAL_EVIDENCE_REQUIREMENTS = [
+    {
+        "key": "source_backup",
+        "label": "Source backup or snapshot",
+        "detail": "Use a recent managed snapshot or pg_dump export as the restore source.",
+    },
+    {
+        "key": "clean_restore_target",
+        "label": "Clean restore target",
+        "detail": "Restore into a separate clean database, not over the live production database.",
+    },
+    {
+        "key": "admin_login_smoke",
+        "label": "Admin login smoke",
+        "detail": "Sign in as the master admin and open Dashboard, Ops, Reports and Settings.",
+    },
+    {
+        "key": "order_flow_smoke",
+        "label": "Order flow smoke",
+        "detail": "Open customer checkout or counter POS, create a test order, and confirm receipt/tracking loads.",
+    },
+    {
+        "key": "report_export_smoke",
+        "label": "Report/export smoke",
+        "detail": "Confirm customer, sales/report, and payment audit data can be read from the restored database.",
+    },
+]
+RESTORE_REHEARSAL_NOTE_HINTS = [
+    ("restore target", ("restore", "restored", "target", "clean database")),
+    ("admin login smoke", ("admin", "login", "ops", "dashboard")),
+    ("order smoke", ("order", "checkout", "pos", "receipt", "tracking")),
+    ("report/export smoke", ("report", "export", "customer", "sales")),
+]
 
 ENVIRONMENT_VARIABLE_GROUPS = [
     {
@@ -721,6 +754,11 @@ def readiness_report(db: Session) -> dict:
         "environment_summary": environment_summary,
         "backup_freshness": backup_freshness,
         "restore_rehearsal": restore_rehearsal,
+        "restore_rehearsal_command": _restore_rehearsal_command(
+            db,
+            backup_freshness=backup_freshness,
+            restore_rehearsal=restore_rehearsal,
+        ),
         "production_database_plan": _production_database_plan(
             environment=environment,
             backup_freshness=backup_freshness,
@@ -3371,6 +3409,8 @@ def record_managed_backup_proof(
     clean_reference = reference.strip()
     if len(clean_reference) < 6:
         raise ValueError("Proof reference must be at least 6 characters.")
+    if clean_type == "restore_rehearsal":
+        _validate_restore_rehearsal_proof(clean_reference, notes or "")
 
     run = BackupRun(
         backup_type=clean_type,
@@ -3384,6 +3424,80 @@ def record_managed_backup_proof(
     db.commit()
     db.refresh(run)
     return _backup_run_dict(run)
+
+
+def _validate_restore_rehearsal_proof(reference: str, notes: str) -> None:
+    combined = f"{reference} {notes}".strip().lower()
+    if len(reference.strip()) < 12:
+        raise ValueError("Restore rehearsal proof reference must be at least 12 characters.")
+    if len(notes.strip()) < 60:
+        raise ValueError(
+            "Restore rehearsal notes must include restore target, admin login, order smoke, and report/export evidence."
+        )
+    missing = [
+        label
+        for label, keywords in RESTORE_REHEARSAL_NOTE_HINTS
+        if not any(keyword in combined for keyword in keywords)
+    ]
+    if missing:
+        raise ValueError(
+            "Restore rehearsal proof is missing evidence for: " + ", ".join(missing) + "."
+        )
+
+
+def _restore_rehearsal_command(
+    db: Session,
+    *,
+    backup_freshness: dict,
+    restore_rehearsal: dict,
+) -> dict:
+    latest_restore = (
+        db.query(BackupRun)
+        .filter(BackupRun.status == "success")
+        .filter(BackupRun.backup_type == "restore_rehearsal")
+        .order_by(BackupRun.created_at.desc(), BackupRun.id.desc())
+        .first()
+    )
+    restore_ready = restore_rehearsal.get("status") == "pass"
+    backup_ready = backup_freshness.get("status") == "pass"
+    evidence_requirements = []
+    for requirement in RESTORE_REHEARSAL_EVIDENCE_REQUIREMENTS:
+        if requirement["key"] == "source_backup":
+            status = "pass" if backup_ready else "warn"
+            detail = backup_freshness.get("detail") or requirement["detail"]
+        else:
+            status = "pass" if restore_ready else "warn"
+            detail = requirement["detail"]
+        evidence_requirements.append({
+            **requirement,
+            "status": status,
+            "detail": detail,
+        })
+
+    return {
+        "status": restore_rehearsal.get("status", "warn"),
+        "summary": {
+            "backup_status": backup_freshness.get("status", "warn"),
+            "restore_status": restore_rehearsal.get("status", "warn"),
+            "evidence_ready": restore_ready,
+            "requirements_total": len(evidence_requirements),
+            "requirements_ready": sum(1 for item in evidence_requirements if item["status"] == "pass"),
+            "retention_days": settings.BACKUP_RETENTION_DAYS,
+        },
+        "detail": restore_rehearsal.get("detail") or "No restore rehearsal proof is recorded yet.",
+        "evidence_requirements": evidence_requirements,
+        "last_proof": _backup_run_dict(latest_restore) if latest_restore else None,
+        "recorder": {
+            "proof_type": "restore_rehearsal",
+            "reference_hint": "restore-clean-db-YYYYMMDD or Supabase restore job id",
+            "notes_template": [
+                "restore target: clean database name or URL alias",
+                "admin login smoke: dashboard/ops/reports/settings opened",
+                "order smoke: checkout or POS order plus receipt/tracking opened",
+                "report/export smoke: customer, sales/report, and payment audit data checked",
+            ],
+        },
+    }
 
 
 def _database_check(db: Session) -> dict:
