@@ -344,7 +344,7 @@ const immediateRemaining: RoadmapItem[] = [
   {
     title: "Live gateway credentials and bank settlement activation",
     status: "planned",
-    value: "Add real Cashfree or Razorpay credentials, run live low-value checkout and compare provider payout reports.",
+    value: "Add Direct Bank, Cashfree, or Razorpay settlement proof, run live low-value checkout and compare payout reports.",
   },
   {
     title: "Customer account lifecycle and consent",

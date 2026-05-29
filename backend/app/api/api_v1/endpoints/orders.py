@@ -50,13 +50,19 @@ DEFAULT_TABLES = [
 ]
 
 ORDER_USAGE_NOTE_PREFIX = "Auto usage from order"
-PAYMENT_PROVIDER_ORDER = ("manual", "cashfree", "razorpay")
+PAYMENT_PROVIDER_ORDER = ("manual", "direct_bank", "cashfree", "razorpay")
 PAYMENT_GATEWAY_RUNBOOK = {
     "manual": {
         "label": "Manual fallback",
         "dashboard": "Admin controlled",
         "credential_step": "No external credentials required.",
         "webhook_step": "Use the protected manual webhook tester for admin proof.",
+    },
+    "direct_bank": {
+        "label": "Direct Bank / UPI",
+        "dashboard": "Restaurant bank account or UPI settlement statement",
+        "credential_step": "Add DIRECT_BANK_UPI_ID or bank account details in Vercel production env.",
+        "webhook_step": "Direct bank settlement is staff-verified; keep counter proof and bank reference in the ledger.",
     },
     "cashfree": {
         "label": "Cashfree",
@@ -731,7 +737,7 @@ def payment_production_next_actions(
     actions: list[str] = []
     provider = active_provider["provider"]
     if provider == "manual":
-        actions.append("Select Cashfree or Razorpay before public prepaid checkout.")
+        actions.append("Select Direct Bank, Cashfree, or Razorpay before public prepaid checkout.")
     if not active_provider["checkout_configured"]:
         missing = ", ".join(active_provider["missing_checkout_settings"])
         actions.append(f"Add checkout settings for {provider}: {missing}.")
@@ -814,9 +820,9 @@ def gateway_activation_provider(
 
     if provider == "manual":
         activation_status = "fallback_ready"
-        next_action = "Keep manual as controlled fallback while Cashfree or Razorpay is activated."
+        next_action = "Keep manual as controlled staff fallback while Direct Bank, Cashfree, or Razorpay is activated."
         blockers = [
-            "Manual mode is not a public payment gateway; select Cashfree or Razorpay before public prepaid checkout."
+            "Manual mode is not a public payment gateway; select Direct Bank, Cashfree, or Razorpay before public prepaid checkout."
         ]
     else:
         blockers = []
@@ -1774,12 +1780,12 @@ async def process_payment_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    if provider.strip().lower() == "manual":
+    if provider.strip().lower() in {"manual", "direct_bank"}:
         session = session_from_request(request)
         if session["role"] not in {"admin", "staff"}:
             raise HTTPException(
                 status_code=403,
-                detail="Manual payment webhook requires an admin or staff session.",
+                detail="Manual or direct bank payment confirmation requires an admin or staff session.",
             )
 
     raw_body = await request.body()

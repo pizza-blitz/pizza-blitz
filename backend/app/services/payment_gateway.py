@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 from app.core.config import settings
 
 
-SUPPORTED_PAYMENT_PROVIDERS = {"manual", "cashfree", "razorpay"}
+SUPPORTED_PAYMENT_PROVIDERS = {"manual", "direct_bank", "cashfree", "razorpay"}
 ZERO_DECIMAL_CURRENCIES = {
     "BIF",
     "CLP",
@@ -39,6 +39,14 @@ class PaymentWebhookError(ValueError):
 def _configured(provider: str) -> bool:
     if provider == "manual":
         return True
+    if provider == "direct_bank":
+        has_upi = bool(settings.DIRECT_BANK_UPI_ID)
+        has_bank_account = bool(
+            settings.DIRECT_BANK_ACCOUNT_NAME
+            and settings.DIRECT_BANK_ACCOUNT_NUMBER
+            and settings.DIRECT_BANK_IFSC
+        )
+        return has_upi or has_bank_account
     if provider == "cashfree":
         return bool(settings.CASHFREE_APP_ID and settings.CASHFREE_SECRET_KEY)
     if provider == "razorpay":
@@ -53,11 +61,13 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
 
     checkout_settings = {
         "manual": [],
+        "direct_bank": [],
         "cashfree": ["CASHFREE_APP_ID", "CASHFREE_SECRET_KEY"],
         "razorpay": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
     }[selected_provider]
     webhook_settings = {
         "manual": [],
+        "direct_bank": [],
         "cashfree": ["CASHFREE_WEBHOOK_SECRET"],
         "razorpay": ["RAZORPAY_WEBHOOK_SECRET"],
     }[selected_provider]
@@ -68,7 +78,20 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
         "RAZORPAY_KEY_ID": settings.RAZORPAY_KEY_ID,
         "RAZORPAY_KEY_SECRET": settings.RAZORPAY_KEY_SECRET,
         "RAZORPAY_WEBHOOK_SECRET": settings.RAZORPAY_WEBHOOK_SECRET,
+        "DIRECT_BANK_UPI_ID": settings.DIRECT_BANK_UPI_ID,
+        "DIRECT_BANK_ACCOUNT_NAME": settings.DIRECT_BANK_ACCOUNT_NAME,
+        "DIRECT_BANK_ACCOUNT_NUMBER": settings.DIRECT_BANK_ACCOUNT_NUMBER,
+        "DIRECT_BANK_IFSC": settings.DIRECT_BANK_IFSC,
     }
+    if selected_provider == "direct_bank":
+        has_upi = bool(values["DIRECT_BANK_UPI_ID"])
+        has_bank_account = bool(
+            values["DIRECT_BANK_ACCOUNT_NAME"]
+            and values["DIRECT_BANK_ACCOUNT_NUMBER"]
+            and values["DIRECT_BANK_IFSC"]
+        )
+        if not has_upi and not has_bank_account:
+            checkout_settings = ["DIRECT_BANK_UPI_ID or DIRECT_BANK_ACCOUNT_NAME + DIRECT_BANK_ACCOUNT_NUMBER + DIRECT_BANK_IFSC"]
     missing_checkout = [name for name in checkout_settings if not values.get(name)]
     missing_webhook = [name for name in webhook_settings if not values.get(name)]
 
@@ -83,7 +106,11 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
         "missing_webhook_settings": missing_webhook,
         "session_endpoint": "/api/v1/restaurant/orders/{order_id}/payment-session",
         "webhook_endpoint": f"/api/v1/restaurant/orders/payments/webhook/{selected_provider}",
-        "mode": "manual" if selected_provider == "manual" else "provider_order_creation",
+        "mode": "manual"
+        if selected_provider == "manual"
+        else "staff_verified_bank_transfer"
+        if selected_provider == "direct_bank"
+        else "provider_order_creation",
     }
 
 
@@ -92,6 +119,8 @@ def provider_environment(provider: str) -> str:
         return (settings.CASHFREE_ENVIRONMENT or "sandbox").strip().lower()
     if provider == "razorpay":
         return "live_or_test_key"
+    if provider == "direct_bank":
+        return "restaurant_bank_account"
     return "local_manual"
 
 
@@ -185,7 +214,7 @@ def _nested_value(payload: dict[str, Any], path: list[str]) -> Any:
 def _extract_order_id_from_text(value: Any) -> Optional[int]:
     if value is None:
         return None
-    match = re.search(r"(?:pb|order|cashfree|razorpay|manual)[_-]?(\d+)", str(value), re.I)
+    match = re.search(r"(?:pb|order|cashfree|razorpay|manual|bank|upi)[_-]?(\d+)", str(value), re.I)
     if match:
         return int(match.group(1))
     return None
@@ -206,7 +235,7 @@ def _normalize_status(value: Any) -> str:
 
 def _normalize_manual_webhook(payload: dict[str, Any]) -> dict[str, Any]:
     return {
-        "provider": "manual",
+        "provider": str(payload.get("provider") or "manual").strip().lower() or "manual",
         "event_type": payload.get("event") or "manual.payment.updated",
         "status": _normalize_status(payload.get("status") or payload.get("payment_status")),
         "order_id": _coerce_int(payload.get("order_id")),
@@ -319,6 +348,11 @@ def normalize_payment_webhook(
     payload = _json_payload(raw_body)
     if selected_provider == "manual":
         return _normalize_manual_webhook(payload)
+    if selected_provider == "direct_bank":
+        event = _normalize_manual_webhook(payload)
+        event["provider"] = "direct_bank"
+        event["event_type"] = payload.get("event") or "direct_bank.payment.updated"
+        return event
     if selected_provider == "cashfree":
         return _normalize_cashfree_webhook(payload)
     return _normalize_razorpay_webhook(payload)
@@ -485,6 +519,48 @@ def _provider_error_session(
             "status": "provider_error",
             "provider_status_code": status_code,
             "message": _provider_error_message(provider, status_code, response_payload),
+        }
+    )
+    return session
+
+
+def _create_direct_bank_session(
+    *,
+    order_id: int,
+    amount: float,
+    customer_name: Optional[str],
+    customer_phone: Optional[str],
+    created_at: datetime,
+    return_url: Optional[str],
+) -> dict[str, Any]:
+    session_id = _safe_provider_order_id("BANK", order_id, created_at)
+    session = _base_session(
+        provider="direct_bank",
+        order_id=order_id,
+        amount=amount,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        created_at=created_at,
+        session_id=session_id,
+        return_url=return_url,
+    )
+    session.update(
+        {
+            "checkout_url": None,
+            "checkout_payload": {
+                "provider": "direct_bank",
+                "mode": "staff_verified_bank_transfer",
+                "upi_id": settings.DIRECT_BANK_UPI_ID,
+                "account_name": settings.DIRECT_BANK_ACCOUNT_NAME,
+                "account_number": settings.DIRECT_BANK_ACCOUNT_NUMBER,
+                "ifsc": settings.DIRECT_BANK_IFSC,
+                "qr_url": settings.DIRECT_BANK_QR_URL,
+                "instructions": (
+                    "Pay by UPI or bank transfer, then share the reference with the counter team. "
+                    "The order is marked paid only after staff verification."
+                ),
+            },
+            "message": "Direct bank payment instructions ready. Staff verification is required before settlement.",
         }
     )
     return session
@@ -729,6 +805,16 @@ def create_payment_session(
             customer_phone=customer_phone,
             created_at=created_at,
             session_id=session_id,
+        )
+
+    if selected_provider == "direct_bank":
+        return _create_direct_bank_session(
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            created_at=created_at,
+            return_url=callback_url,
         )
 
     if selected_provider == "cashfree":

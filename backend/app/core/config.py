@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_SECRET: str | None = os.getenv("RAZORPAY_KEY_SECRET")
     RAZORPAY_WEBHOOK_SECRET: str | None = os.getenv("RAZORPAY_WEBHOOK_SECRET")
     RAZORPAY_BASE_URL: str = os.getenv("RAZORPAY_BASE_URL", "https://api.razorpay.com")
+    DIRECT_BANK_UPI_ID: str | None = os.getenv("DIRECT_BANK_UPI_ID")
+    DIRECT_BANK_ACCOUNT_NAME: str | None = os.getenv("DIRECT_BANK_ACCOUNT_NAME")
+    DIRECT_BANK_ACCOUNT_NUMBER: str | None = os.getenv("DIRECT_BANK_ACCOUNT_NUMBER")
+    DIRECT_BANK_IFSC: str | None = os.getenv("DIRECT_BANK_IFSC")
+    DIRECT_BANK_QR_URL: str | None = os.getenv("DIRECT_BANK_QR_URL")
     CAMPAIGN_SEND_ENABLED: bool = os.getenv("CAMPAIGN_SEND_ENABLED", "false").lower() in {
         "1",
         "true",

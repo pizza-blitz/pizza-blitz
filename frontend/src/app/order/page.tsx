@@ -141,6 +141,12 @@ type CheckoutPayload = {
   mode?: string;
   payment_session_id?: string;
   provider_order_id?: string;
+  upi_id?: string | null;
+  account_name?: string | null;
+  account_number?: string | null;
+  ifsc?: string | null;
+  qr_url?: string | null;
+  instructions?: string;
   key?: string;
   amount?: number;
   currency?: string;
@@ -1455,7 +1461,8 @@ export default function PublicOrderPage() {
                       <span className="break-all">Payment session: {pendingPayment.paymentSessionId}</span>
                     )}
                 </div>
-                {pendingPayment.provider !== "manual" && pendingPayment.sessionStatus === "ready" && (
+                {["cashfree", "razorpay"].includes(pendingPayment.provider.toLowerCase()) &&
+                  pendingPayment.sessionStatus === "ready" && (
                   <button
                     type="button"
                     onClick={startGatewayPayment}
@@ -1465,7 +1472,8 @@ export default function PublicOrderPage() {
                     {isStartingGatewayPayment ? "Opening Gateway" : "Pay Online"}
                   </button>
                 )}
-                {pendingPayment.provider !== "manual" && pendingPayment.checkoutUrl && (
+                {!["manual", "direct_bank"].includes(pendingPayment.provider.toLowerCase()) &&
+                  pendingPayment.checkoutUrl && (
                   <a
                     href={pendingPayment.checkoutUrl}
                     className="mt-2 inline-flex text-sm font-black text-amber-900 underline"
@@ -1473,8 +1481,28 @@ export default function PublicOrderPage() {
                     Open payment page
                   </a>
                 )}
-                {(pendingPayment.provider === "manual" || pendingPayment.sessionStatus !== "ready") && (
+                {(pendingPayment.provider === "manual" ||
+                  pendingPayment.provider === "direct_bank" ||
+                  pendingPayment.sessionStatus !== "ready") && (
                   <div className="mt-3 rounded-md border border-amber-200 bg-white p-3 text-sm font-semibold leading-6 text-amber-900">
+                    {pendingPayment.provider === "direct_bank" && pendingPayment.checkoutPayload ? (
+                      <div className="mb-3 space-y-1 rounded-md border border-amber-100 bg-amber-50 p-3 text-xs text-amber-950">
+                        <p className="font-black uppercase tracking-widest text-amber-700">Direct Bank / UPI</p>
+                        {pendingPayment.checkoutPayload.upi_id && (
+                          <p>UPI: {pendingPayment.checkoutPayload.upi_id}</p>
+                        )}
+                        {pendingPayment.checkoutPayload.account_name && (
+                          <p>Account: {pendingPayment.checkoutPayload.account_name}</p>
+                        )}
+                        {pendingPayment.checkoutPayload.account_number && (
+                          <p>No: {pendingPayment.checkoutPayload.account_number}</p>
+                        )}
+                        {pendingPayment.checkoutPayload.ifsc && <p>IFSC: {pendingPayment.checkoutPayload.ifsc}</p>}
+                        {pendingPayment.checkoutPayload.instructions && (
+                          <p>{pendingPayment.checkoutPayload.instructions}</p>
+                        )}
+                      </div>
+                    ) : null}
                     Payment is waiting for store verification. Keep this order number and any UPI, bank, or gateway
                     reference ready for the counter team.
                   </div>
@@ -1767,7 +1795,7 @@ export default function PublicOrderPage() {
               </div>
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
                 {paymentMethod === "prepaid"
-                  ? "Prepaid creates a payment session first; manual mode can be confirmed immediately for controlled testing."
+                  ? "Prepaid creates a payment session first; manual or direct bank payments wait for store verification."
                   : "Cash keeps the order open for counter or delivery collection."}
               </div>
               <button

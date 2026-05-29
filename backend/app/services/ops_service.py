@@ -47,7 +47,7 @@ DEFAULT_SECRET_VALUES = {
     "pizza-blitz-local-session-secret",
 }
 
-PAYMENT_PROVIDER_ORDER = ("manual", "cashfree", "razorpay")
+PAYMENT_PROVIDER_ORDER = ("manual", "direct_bank", "cashfree", "razorpay")
 
 ENVIRONMENT_VARIABLE_GROUPS = [
     {
@@ -145,6 +145,30 @@ ENVIRONMENT_VARIABLE_GROUPS = [
                 "required": True,
                 "sensitive": False,
                 "purpose": "Send customers back after checkout.",
+            },
+            {
+                "name": "DIRECT_BANK_UPI_ID",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Enable direct UPI payment instructions without a third-party gateway.",
+            },
+            {
+                "name": "DIRECT_BANK_ACCOUNT_NAME",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Display the restaurant bank account holder name for direct transfer.",
+            },
+            {
+                "name": "DIRECT_BANK_ACCOUNT_NUMBER",
+                "required": False,
+                "sensitive": True,
+                "purpose": "Display direct bank transfer details when direct bank mode is enabled.",
+            },
+            {
+                "name": "DIRECT_BANK_IFSC",
+                "required": False,
+                "sensitive": False,
+                "purpose": "Display IFSC for direct bank transfer mode.",
             },
             {
                 "name": "CASHFREE_APP_ID",
@@ -1311,7 +1335,7 @@ def production_launch_report(db: Session) -> dict:
         *payment_status.get("missing_webhook_settings", []),
     ]
     if payment_status.get("provider") == "manual":
-        payment_missing.append("PAYMENT_PROVIDER=cashfree or razorpay")
+        payment_missing.append("PAYMENT_PROVIDER=direct_bank, cashfree, or razorpay")
 
     campaign_ready = sum(1 for status in campaign_statuses if status.get("configured"))
     campaign_missing = sorted({
@@ -1333,7 +1357,7 @@ def production_launch_report(db: Session) -> dict:
             "label": "Payment gateway credentials",
             "status": "pass" if payment_live_ready else "warn",
             "owner": "Admin / payment provider",
-            "detail": "Cashfree or Razorpay live checkout and webhook credentials must replace manual payment mode before public launch.",
+            "detail": "Direct Bank, Cashfree, or Razorpay live settlement must replace manual payment mode before public launch.",
             "proof": "verify-payment-production-pass.cjs",
             "missing_settings": sorted(set(payment_missing)),
         },
@@ -1905,7 +1929,7 @@ def credential_activation_report(db: Session) -> dict:
         *payment_status.get("missing_webhook_settings", []),
     ]
     if payment_status.get("provider") == "manual":
-        payment_missing.append("PAYMENT_PROVIDER=cashfree or razorpay")
+        payment_missing.append("PAYMENT_PROVIDER=direct_bank, cashfree, or razorpay")
 
     campaign_providers = [
         {
@@ -1968,7 +1992,7 @@ def credential_activation_report(db: Session) -> dict:
             "title": "Payment Gateway Activation",
             "status": provider_matrix[0]["status"],
             "owner": "Admin / payment provider",
-            "detail": "Activate Cashfree or Razorpay live checkout, webhook signature handling and settlement ownership.",
+            "detail": "Activate Direct Bank, Cashfree, or Razorpay live settlement ownership.",
             "providers": [provider_matrix[0]],
         },
         {
