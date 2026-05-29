@@ -29,9 +29,17 @@ const PAYMENT_READINESS_API = getApiUrl('/api/v1/restaurant/ops/readiness');
 const PAYMENT_PRODUCTION_API = getApiUrl('/api/v1/restaurant/orders/payments/production-readiness');
 const PAYMENT_GATEWAY_ACTIVATION_API = getApiUrl('/api/v1/restaurant/orders/payments/gateway-activation');
 const PAYMENT_RECONCILIATION_API = getApiUrl('/api/v1/restaurant/orders/payments/reconciliation');
-const MANUAL_PAYMENT_WEBHOOK_API = getApiUrl('/api/v1/restaurant/orders/payments/webhook/manual');
+const paymentStaffWebhookApi = (provider: StaffSettlementProvider) =>
+  getApiUrl(`/api/v1/restaurant/orders/payments/webhook/${provider}`);
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
 const STAFF_CREDENTIAL_API = getApiUrl('/api/v1/auth/staff/credential');
+
+type StaffSettlementProvider = "manual" | "direct_bank";
+
+const staffSettlementProviderLabels: Record<StaffSettlementProvider, string> = {
+  manual: "Manual",
+  direct_bank: "Direct Bank / UPI",
+};
 
 type RoleAccess = {
   role: string;
@@ -467,6 +475,7 @@ export default function Settings() {
   const [paymentMessage, setPaymentMessage] = useState("");
   const [webhookOrderId, setWebhookOrderId] = useState("");
   const [webhookReference, setWebhookReference] = useState("");
+  const [webhookProvider, setWebhookProvider] = useState<StaffSettlementProvider>("manual");
   const [webhookResult, setWebhookResult] = useState<PaymentWebhookResult | null>(null);
   const [isSendingWebhook, setIsSendingWebhook] = useState(false);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
@@ -862,10 +871,10 @@ export default function Settings() {
     }
   };
 
-  const sendManualPaymentWebhook = async () => {
+  const sendStaffSettlementWebhook = async () => {
     const orderId = Number(webhookOrderId);
     if (!Number.isInteger(orderId) || orderId <= 0) {
-      setPaymentMessage("Enter a valid prepaid order ID before sending the webhook.");
+      setPaymentMessage("Enter a valid prepaid order ID before recording settlement.");
       return;
     }
 
@@ -873,34 +882,35 @@ export default function Settings() {
     setWebhookResult(null);
     setPaymentMessage("");
     try {
-      const response = await fetch(MANUAL_PAYMENT_WEBHOOK_API, {
+      const response = await fetch(paymentStaffWebhookApi(webhookProvider), {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          event: "manual.payment.updated",
+          event: `${webhookProvider}.payment.updated`,
           status: "paid",
           order_id: orderId,
           payment_reference:
-            webhookReference.trim() || `MANUAL-ADMIN-${Date.now()}`,
+            webhookReference.trim() ||
+            `${webhookProvider === "direct_bank" ? "BANK" : "MANUAL"}-ADMIN-${Date.now()}`,
         }),
       });
       const data = await response.json();
       if (!response.ok) {
-        setPaymentMessage(data.detail || "Manual payment webhook failed.");
+        setPaymentMessage(data.detail || "Staff settlement proof failed.");
         return;
       }
       setWebhookResult(data);
       await loadPaymentReadiness();
       setPaymentMessage(
         data.status === "processed"
-          ? `Order #${data.order?.id || orderId} marked paid through manual webhook.`
+          ? `Order #${data.order?.id || orderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
           : data.status === "already_paid"
             ? `Order #${data.order?.id || orderId} was already paid.`
-            : `Webhook received with status: ${data.status}.`
+            : `Settlement proof received with status: ${data.status}.`
       );
     } catch {
-      setPaymentMessage("Manual payment webhook API is not available right now.");
+      setPaymentMessage("Staff settlement proof API is not available right now.");
     } finally {
       setIsSendingWebhook(false);
     }
@@ -1815,8 +1825,13 @@ export default function Settings() {
                             <button
                               onClick={() => {
                                 setWebhookOrderId(String(order.id));
-                                setWebhookReference(`MANUAL-QUEUE-${order.id}-${Date.now()}`);
-                                setPaymentMessage(`Order #${order.id} loaded into the manual webhook tester.`);
+                                const queueProvider =
+                                  order.payment_provider === "direct_bank" ? "direct_bank" : webhookProvider;
+                                setWebhookProvider(queueProvider);
+                                setWebhookReference(
+                                  `${queueProvider === "direct_bank" ? "BANK" : "MANUAL"}-QUEUE-${order.id}-${Date.now()}`
+                                );
+                                setPaymentMessage(`Order #${order.id} loaded into the staff settlement tester.`);
                               }}
                               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-xs font-black text-white hover:bg-emerald-800"
                             >
@@ -2056,33 +2071,66 @@ export default function Settings() {
                 <div className="flex items-center gap-2">
                   <CircleDollarSign className="h-5 w-5 text-emerald-700" />
                   <div>
-                    <p className="font-black text-gray-900">Manual Paid Webhook Tester</p>
+                    <p className="font-black text-gray-900">Staff Settlement Tester</p>
                     <p className="text-sm text-gray-500">
-                      Use this for a prepaid test order before live gateway credentials are active.
+                      Record manual or direct-bank paid proof for a prepaid order before a third-party gateway is active.
                     </p>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-1 gap-3">
+                <div data-testid="staff-settlement-tester" className="mt-4 grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-2 gap-2 rounded-md border border-gray-200 bg-white p-1">
+                    {(Object.keys(staffSettlementProviderLabels) as StaffSettlementProvider[]).map((provider) => (
+                      <button
+                        key={provider}
+                        type="button"
+                        data-testid={`staff-settlement-provider-${provider}`}
+                        onClick={() => setWebhookProvider(provider)}
+                        className={`rounded px-3 py-2 text-xs font-black ${
+                          webhookProvider === provider
+                            ? "bg-emerald-700 text-white"
+                            : "bg-transparent text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {staffSettlementProviderLabels[provider]}
+                      </button>
+                    ))}
+                  </div>
                   <input
                     value={webhookOrderId}
                     onChange={(event) => setWebhookOrderId(event.target.value)}
+                    data-testid="staff-settlement-order-id"
                     className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-emerald-500"
                     placeholder="Prepaid order ID"
                   />
                   <input
                     value={webhookReference}
                     onChange={(event) => setWebhookReference(event.target.value)}
+                    data-testid="staff-settlement-reference"
                     className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-semibold outline-none focus:border-emerald-500"
-                    placeholder="Payment reference"
+                    placeholder={
+                      webhookProvider === "direct_bank"
+                        ? "UPI/bank reference"
+                        : "Payment reference"
+                    }
                   />
                   <button
-                    onClick={sendManualPaymentWebhook}
+                    onClick={sendStaffSettlementWebhook}
                     disabled={isSendingWebhook}
+                    data-testid="staff-settlement-send"
                     className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-5 py-3 text-sm font-black text-white hover:bg-emerald-800 disabled:bg-gray-300"
                   >
                     <CircleDollarSign className="h-4 w-4" />
-                    {isSendingWebhook ? "Sending" : "Send Manual Paid Webhook"}
+                    {isSendingWebhook
+                      ? "Recording"
+                      : webhookProvider === "direct_bank"
+                        ? "Record Direct Bank Paid Proof"
+                        : "Record Manual Paid Proof"}
                   </button>
+                  <p className="rounded-md bg-white px-3 py-2 text-xs font-semibold leading-5 text-gray-600">
+                    {webhookProvider === "direct_bank"
+                      ? "Direct Bank / UPI proof is protected by staff/admin login and stores the bank reference in the payment ledger."
+                      : "Manual proof is a controlled fallback for local testing and staff-confirmed exceptions."}
+                  </p>
                 </div>
 
                 {webhookResult?.order && (
