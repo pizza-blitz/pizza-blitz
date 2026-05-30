@@ -25,6 +25,7 @@ import { getApiUrl } from "@/lib/api";
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
 const STATION_COMMAND_API = getApiUrl("/api/v1/restaurant/orders/station-command");
+const DAILY_CLOSE_COMMAND_API = getApiUrl("/api/v1/restaurant/ops/daily-close-command");
 
 type OrderItem = {
   name: string;
@@ -276,6 +277,91 @@ type StationCommand = {
   next_actions: string[];
 };
 
+type DailyCloseCheck = {
+  key: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  count: number;
+  detail: string;
+};
+
+type DailyCloseQueueOrder = {
+  id: number;
+  status: string;
+  payment_status: string;
+  payment_method?: string | null;
+  customer_name?: string | null;
+  total_amount: number;
+};
+
+type DailyCloseCommand = {
+  generated_at?: string;
+  date: string;
+  summary: {
+    overall_status: string;
+    readiness_score: number;
+    pass_count: number;
+    warning_count: number;
+    blocker_count: number;
+    today_order_count: number;
+    active_order_count: number;
+    closed_order_count: number;
+    closed_sales_total: number;
+    ready_unclosed_count: number;
+    payment_due_count: number;
+    payment_proof_required_count: number;
+    drawer_status: string;
+    drawer_variance: number;
+    orders_after_drawer_close: number;
+    expense_count: number;
+    expense_total: number;
+    missing_receipt_count: number;
+    shift_count: number;
+    open_shift_count: number;
+    daily_sales_total: number;
+    daily_expense_total: number;
+    daily_profit: number;
+    next_action: string;
+  };
+  checks: DailyCloseCheck[];
+  queues: {
+    active_orders: DailyCloseQueueOrder[];
+    expense_gaps: {
+      id: number;
+      amount: number;
+      description?: string | null;
+      receipt_photo_url?: string | null;
+    }[];
+    open_shifts: {
+      id: number;
+      staff_name: string;
+      role?: string | null;
+      shift_start?: string | null;
+    }[];
+  };
+  latest_drawer_close?: {
+    id: number;
+    status: string;
+    created_at?: string | null;
+  } | null;
+  latest_daily_close?: {
+    id: number;
+    status: string;
+    created_at?: string | null;
+  } | null;
+  next_actions: string[];
+};
+
+type DailyCloseProofResult = {
+  status: string;
+  event: {
+    id: number;
+    status: string;
+    created_at?: string | null;
+  };
+  command: DailyCloseCommand;
+};
+
 const filters = [
   { id: "active", label: "Active" },
   { id: "open", label: "New" },
@@ -442,6 +528,19 @@ function stationControlClass(status: string) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
+function dailyCloseStatusClass(status?: string | null) {
+  if (status === "closed" || status === "ready_to_close" || status === "pass") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+  if (status === "warn" || status === "review_needed" || status === "drawer_needed") {
+    return "border-amber-200 bg-amber-50 text-amber-800";
+  }
+  if (status === "fail" || status === "orders_open" || status === "blocked_review") {
+    return "border-rose-200 bg-rose-50 text-rose-800";
+  }
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
 function stationLineSummary(line: StationCommandLine) {
   const optionNames = (line.selected_options || [])
     .map((option) => {
@@ -504,6 +603,11 @@ export default function OperationsPage() {
   const [deliveryMission, setDeliveryMission] = useState<DeliveryMissionControl | null>(null);
   const [orderFlow, setOrderFlow] = useState<OrderFlowReadiness | null>(null);
   const [stationCommand, setStationCommand] = useState<StationCommand | null>(null);
+  const [dailyClose, setDailyClose] = useState<DailyCloseCommand | null>(null);
+  const [dailyCloseManager, setDailyCloseManager] = useState("");
+  const [dailyCloseNotes, setDailyCloseNotes] = useState("");
+  const [dailyCloseResult, setDailyCloseResult] = useState<DailyCloseProofResult | null>(null);
+  const [isRecordingDailyClose, setIsRecordingDailyClose] = useState(false);
   const [assignmentDrafts, setAssignmentDrafts] = useState<Record<number, string>>({});
   const [assignmentNoteDrafts, setAssignmentNoteDrafts] = useState<Record<number, string>>({});
 
@@ -819,7 +923,14 @@ export default function OperationsPage() {
           return {};
         }
       };
-      const [response, queueResponse, flowResponse, missionResponse, stationResponse] = await Promise.all([
+      const [
+        response,
+        queueResponse,
+        flowResponse,
+        missionResponse,
+        stationResponse,
+        dailyCloseResponse,
+      ] = await Promise.all([
         fetch(`${ORDERS_API}/today`, {
           cache: "no-store",
           credentials: "include",
@@ -840,12 +951,17 @@ export default function OperationsPage() {
           cache: "no-store",
           credentials: "include",
         }),
+        fetch(DAILY_CLOSE_COMMAND_API, {
+          cache: "no-store",
+          credentials: "include",
+        }),
       ]);
       const data = await readJson(response);
       const queueData = await readJson(queueResponse);
       const flowData = await readJson(flowResponse);
       const missionData = await readJson(missionResponse);
       const stationData = await readJson(stationResponse);
+      const dailyCloseData = await readJson(dailyCloseResponse);
       if (!response.ok) throw new Error(data.detail || "Could not load orders.");
 
       const optionalWarnings = [
@@ -861,6 +977,9 @@ export default function OperationsPage() {
         !stationResponse.ok
           ? stationData.detail || "Kitchen station command is temporarily unavailable."
           : "",
+        !dailyCloseResponse.ok
+          ? dailyCloseData.detail || "Daily close command is temporarily unavailable."
+          : "",
       ].filter(Boolean);
 
       const queueOrders = queueResponse.ok ? queueData.orders || [] : [];
@@ -871,6 +990,7 @@ export default function OperationsPage() {
       setDeliveryMission(missionResponse.ok ? missionData || null : null);
       setOrderFlow(flowResponse.ok ? flowData || null : null);
       setStationCommand(stationResponse.ok ? stationData || null : null);
+      setDailyClose(dailyCloseResponse.ok ? dailyCloseData || null : null);
       setLastRefreshedAt(
         new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
       );
@@ -1000,6 +1120,37 @@ export default function OperationsPage() {
       setMessage(error instanceof Error ? error.message : "Could not move station.");
     } finally {
       setBusyAction(null);
+    }
+  };
+
+  const recordDailyCloseProof = async () => {
+    setIsRecordingDailyClose(true);
+    setDailyCloseResult(null);
+    try {
+      const response = await fetch(`${DAILY_CLOSE_COMMAND_API}/proof`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manager_name: dailyCloseManager.trim() || undefined,
+          notes: dailyCloseNotes.trim() || undefined,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not record daily close proof.");
+      }
+      setDailyCloseResult(data as DailyCloseProofResult);
+      setDailyClose((data as DailyCloseProofResult).command);
+      setMessage(
+        data.status === "closed"
+          ? "Daily close proof recorded."
+          : "Daily close review recorded with unresolved blockers."
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not record daily close proof.");
+    } finally {
+      setIsRecordingDailyClose(false);
     }
   };
 
@@ -1221,6 +1372,222 @@ export default function OperationsPage() {
           </div>
         </div>
       </div>
+
+      {dailyClose && (
+        <section
+          data-testid="daily-close-command"
+          className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Owner day close
+              </p>
+              <h2 className="mt-1 text-xl font-black text-gray-950">
+                Daily Close Command Center
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                One checklist for orders, payments, kitchen, delivery, drawer, expenses, and staff handover.
+              </p>
+            </div>
+            <span
+              data-testid="daily-close-status"
+              className={`rounded-md border px-3 py-2 text-xs font-black uppercase ${dailyCloseStatusClass(
+                dailyClose.summary.overall_status
+              )}`}
+            >
+              {readableStatus(dailyClose.summary.overall_status)}
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Readiness
+              </p>
+              <p data-testid="daily-close-score" className="mt-2 text-2xl font-black text-gray-950">
+                {dailyClose.summary.readiness_score}%
+              </p>
+              <p className="text-xs font-semibold text-gray-500">
+                {dailyClose.summary.pass_count} pass, {dailyClose.summary.warning_count} warn
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Blockers
+              </p>
+              <p data-testid="daily-close-blockers" className="mt-2 text-2xl font-black text-gray-950">
+                {dailyClose.summary.blocker_count}
+              </p>
+              <p className="text-xs font-semibold text-gray-500">
+                {dailyClose.summary.active_order_count} active order(s)
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Closed Sales
+              </p>
+              <p className="mt-2 text-2xl font-black text-gray-950">
+                {money(dailyClose.summary.closed_sales_total)}
+              </p>
+              <p className="text-xs font-semibold text-gray-500">
+                {dailyClose.summary.closed_order_count} closed order(s)
+              </p>
+            </div>
+            <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Drawer
+              </p>
+              <p data-testid="daily-close-drawer-status" className="mt-2 text-2xl font-black text-gray-950">
+                {readableStatus(dailyClose.summary.drawer_status)}
+              </p>
+              <p className="text-xs font-semibold text-gray-500">
+                Variance {money(dailyClose.summary.drawer_variance)}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <p className="font-black text-gray-950">Close Checks</p>
+              <div data-testid="daily-close-checks" className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                {dailyClose.checks.map((check) => (
+                  <div
+                    key={check.key}
+                    data-testid={`daily-close-check-${check.key}`}
+                    className={`rounded-md border px-3 py-2 ${dailyCloseStatusClass(check.status)}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-black">{check.label}</p>
+                      <span className="rounded bg-white/70 px-2 py-1 text-[11px] font-black uppercase">
+                        {check.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold leading-5">{check.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-slate-100 bg-slate-50 p-3">
+              <div className="flex items-start gap-2">
+                <FileText className="mt-0.5 h-5 w-5 text-slate-700" />
+                <div>
+                  <p className="font-black text-gray-950">Manager Proof</p>
+                  <p className="text-sm text-gray-500">{dailyClose.summary.next_action}</p>
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                <input
+                  data-testid="daily-close-manager"
+                  value={dailyCloseManager}
+                  onChange={(event) => setDailyCloseManager(event.target.value)}
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-slate-500"
+                  placeholder="Manager or cashier name"
+                />
+                <textarea
+                  data-testid="daily-close-notes"
+                  value={dailyCloseNotes}
+                  onChange={(event) => setDailyCloseNotes(event.target.value)}
+                  className="min-h-20 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-slate-500"
+                  placeholder="Close notes or unresolved handover reason"
+                />
+                <button
+                  data-testid="daily-close-record-proof"
+                  onClick={recordDailyCloseProof}
+                  disabled={isRecordingDailyClose}
+                  className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-gray-950 px-4 text-sm font-black text-white hover:bg-gray-800 disabled:opacity-60"
+                >
+                  {isRecordingDailyClose ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                  Record Daily Close Proof
+                </button>
+              </div>
+
+              {dailyClose.latest_daily_close && (
+                <p
+                  data-testid="daily-close-latest-proof"
+                  className="mt-3 rounded-md bg-white px-3 py-2 text-xs font-semibold text-gray-600"
+                >
+                  Latest proof: {readableStatus(dailyClose.latest_daily_close.status)}
+                </p>
+              )}
+              {dailyCloseResult && (
+                <p
+                  data-testid="daily-close-proof-result"
+                  className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-800"
+                >
+                  Proof recorded as {readableStatus(dailyCloseResult.status)}.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {(dailyClose.queues.active_orders.length > 0 ||
+            dailyClose.queues.expense_gaps.length > 0 ||
+            dailyClose.queues.open_shifts.length > 0) && (
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="rounded-md border border-rose-100 bg-rose-50 p-3">
+                <p className="text-sm font-black text-rose-900">Open Orders</p>
+                <div className="mt-2 space-y-2">
+                  {dailyClose.queues.active_orders.slice(0, 3).map((order) => (
+                    <div key={`daily-close-order-${order.id}`} className="rounded bg-white px-3 py-2 text-xs">
+                      <p className="font-black text-gray-950">#{order.id} - {order.status}</p>
+                      <p className="font-semibold text-gray-500">
+                        {money(order.total_amount)} - {order.payment_status}
+                      </p>
+                    </div>
+                  ))}
+                  {!dailyClose.queues.active_orders.length && (
+                    <p className="rounded bg-white px-3 py-2 text-xs font-semibold text-gray-500">
+                      No open orders.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-md border border-amber-100 bg-amber-50 p-3">
+                <p className="text-sm font-black text-amber-900">Expense Gaps</p>
+                <div className="mt-2 space-y-2">
+                  {dailyClose.queues.expense_gaps.slice(0, 3).map((expense) => (
+                    <div key={`daily-close-expense-${expense.id}`} className="rounded bg-white px-3 py-2 text-xs">
+                      <p className="font-black text-gray-950">{money(expense.amount)}</p>
+                      <p className="font-semibold text-gray-500">
+                        {expense.description || "Receipt proof missing"}
+                      </p>
+                    </div>
+                  ))}
+                  {!dailyClose.queues.expense_gaps.length && (
+                    <p className="rounded bg-white px-3 py-2 text-xs font-semibold text-gray-500">
+                      No expense receipt gaps.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-md border border-sky-100 bg-sky-50 p-3">
+                <p className="text-sm font-black text-sky-900">Open Shifts</p>
+                <div className="mt-2 space-y-2">
+                  {dailyClose.queues.open_shifts.slice(0, 3).map((shift) => (
+                    <div key={`daily-close-shift-${shift.id}`} className="rounded bg-white px-3 py-2 text-xs">
+                      <p className="font-black text-gray-950">{shift.staff_name}</p>
+                      <p className="font-semibold text-gray-500">
+                        {shift.role || "Staff"} from {shift.shift_start || "start missing"}
+                      </p>
+                    </div>
+                  ))}
+                  {!dailyClose.queues.open_shifts.length && (
+                    <p className="rounded bg-white px-3 py-2 text-xs font-semibold text-gray-500">
+                      No open shift handovers.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
         {filters.map((item) => (
