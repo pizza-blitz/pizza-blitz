@@ -118,6 +118,7 @@ async function signInAsAdmin(context) {
 }
 
 async function assertVisualHealth(page, watch, route, expectedLabel, viewportName) {
+  console.log(`[visual-audit] ${viewportName} ${route}`);
   watch.clear();
   const response = await page.goto(`${baseURL}${route}`, { waitUntil: "domcontentloaded" });
   assert(response && response.ok(), `${viewportName} ${route} returned HTTP ${response?.status() || "no response"}.`);

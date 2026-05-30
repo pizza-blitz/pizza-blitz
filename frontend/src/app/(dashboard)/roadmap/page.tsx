@@ -1602,10 +1602,10 @@ export default function RoadmapPage() {
               </tr>
             </thead>
             <tbody>
-              {june20Push.map((day) => {
+              {june20Push.map((day, index) => {
                 const Icon = statusIcon(day.status);
                 return (
-                  <tr key={day.date} className="border-b border-slate-100 align-top">
+                  <tr key={`${day.date}-${day.focus}-${index}`} className="border-b border-slate-100 align-top">
                     <td className="whitespace-nowrap px-4 py-4 font-bold text-slate-800">{day.date}</td>
                     <td className="px-4 py-4">
                       <p className="font-black text-slate-950">{day.focus}</p>
