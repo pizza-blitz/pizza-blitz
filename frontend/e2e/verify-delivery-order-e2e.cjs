@@ -217,11 +217,17 @@ async function main() {
     await deliveryCard.getByPlaceholder("Handoff note or failure reason").fill("Thermal bag; call at Civil Lines gate.");
     await deliveryCard.getByRole("button", { name: "Assign" }).click();
     await page.getByText(`Delivery for order #${orderId} moved to assigned.`, { exact: false }).waitFor({ timeout: 15000 });
-    await deliveryCard.getByText("assigned", { exact: false }).waitFor({ timeout: 10000 });
+    await page
+      .getByTestId(`delivery-assignment-status-${orderId}`)
+      .getByText(/^assigned$/i)
+      .waitFor({ timeout: 10000 });
 
     await deliveryCard.getByRole("button", { name: "Dispatch" }).click();
     await page.getByText(`Delivery for order #${orderId} moved to out for delivery.`, { exact: false }).waitFor({ timeout: 15000 });
-    await deliveryCard.getByText("out for delivery", { exact: false }).waitFor({ timeout: 10000 });
+    await page
+      .getByTestId(`delivery-assignment-status-${orderId}`)
+      .getByText(/^out for delivery$/i)
+      .waitFor({ timeout: 10000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-delivery-order-e2e-operations.png"),

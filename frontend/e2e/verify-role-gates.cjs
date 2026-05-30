@@ -246,7 +246,7 @@ async function screenshotSettingsWithAdmin() {
     await page.getByText("Account Recovery Controls", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Audit Controls", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Backend API Role Gates", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText("Manual Payment Webhook", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("hardening-check-manual-payment-webhook").waitFor({ timeout: 10000 });
     await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: 10000 });
     await page.screenshot({
       path: path.join(artifactsDir, "visible-role-gates-settings.png"),

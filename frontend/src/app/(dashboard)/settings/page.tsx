@@ -1599,7 +1599,14 @@ export default function Settings() {
                   </div>
                   <div className="space-y-2">
                     {securityOverview.auditControls.map((control) => (
-                      <div key={control.name} className="rounded-md bg-white p-3">
+                      <div
+                        key={control.name}
+                        data-testid={`audit-control-${control.name
+                          .toLowerCase()
+                          .replace(/[^a-z0-9]+/g, "-")
+                          .replace(/(^-|-$)/g, "")}`}
+                        className="rounded-md bg-white p-3"
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="font-bold text-gray-900">{control.name}</p>
                           <span className="rounded-md bg-green-50 px-2 py-1 text-xs font-black text-green-700">
@@ -1789,11 +1796,15 @@ export default function Settings() {
               {securityOverview.hardening.map((item) => {
                 const needsAction = ["Default", "Fallback", "Planned"].includes(item.status);
                 return (
-                  <div
-                    key={item.name}
-                    className={`rounded-lg border p-4 ${
-                      needsAction
-                        ? "border-amber-100 bg-amber-50"
+                    <div
+                      key={item.name}
+                      data-testid={`hardening-check-${item.name
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, "-")
+                        .replace(/(^-|-$)/g, "")}`}
+                      className={`rounded-lg border p-4 ${
+                        needsAction
+                          ? "border-amber-100 bg-amber-50"
                         : "border-green-100 bg-green-50"
                     }`}
                   >

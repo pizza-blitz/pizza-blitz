@@ -143,17 +143,20 @@ async function main() {
 
     await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Payment Reconciliation Ledger", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText("Manual Paid Webhook Tester", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByPlaceholder("Prepaid order ID").fill(String(orderId));
-    await page.getByPlaceholder("Payment reference").fill(paymentReference);
-    await page.getByRole("button", { name: /Send Manual Paid Webhook/i }).click();
+    await page.getByText("Staff Settlement Tester", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("staff-settlement-provider-manual").click();
+    await page.getByTestId("staff-settlement-order-id").fill(String(orderId));
+    await page.getByTestId("staff-settlement-reference").fill(paymentReference);
+    await page.getByTestId("staff-settlement-send").click();
     await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: 10000 });
     const auditLedger = page.getByTestId("payment-event-audit");
     await auditLedger.getByText(paymentReference, { exact: false }).first().waitFor({ timeout: 10000 });
     await auditLedger.getByText("processed", { exact: false }).first().waitFor({ timeout: 10000 });
 
-    await page.getByRole("button", { name: /Send Manual Paid Webhook/i }).click();
-    await page.getByText("Webhook received with status: duplicate", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId("staff-settlement-send").click();
+    await page
+      .getByText(/Settlement proof received with status: duplicate|was already paid/i, { exact: false })
+      .waitFor({ timeout: 10000 });
     await auditLedger.getByText("Duplicate 1", { exact: false }).first().waitFor({ timeout: 10000 });
 
     const reconciliationResponse = await context.request.get(
