@@ -163,6 +163,13 @@ async function main() {
     await page.getByRole("heading", { name: "Takeaway Order" }).waitFor({ timeout: 15000 });
     await page.getByTestId("counter-pos-message").getByText("loaded for express walk-in", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Ready to send", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-touch-lane").waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-next-action").getByText(/Take cash or press Exact/i).waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-exact-cash").click();
+    await page.getByTestId("counter-next-action").getByText(/Send to kitchen/i).waitFor({ timeout: 15000 });
+    const tenderedCash = Number(await page.getByTestId("counter-tendered-cash").inputValue());
+    assert(tenderedCash > 0, "Exact cash did not populate the tendered cash input.");
+    await page.getByTestId("counter-change-due").getByText(/Change Rs 0/i).waitFor({ timeout: 15000 });
     await page.getByTestId("counter-payment-cash").waitFor({ timeout: 15000 });
     await page.getByTestId("counter-payment-cash").evaluate((node) => {
       if (!node.className.includes("bg-orange-500")) {
@@ -180,7 +187,7 @@ async function main() {
     });
 
     await page.getByTestId("counter-send-order").click();
-    await page.getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-pos-message").getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
     const message = await page.getByTestId("counter-pos-message").innerText();
     const orderMatch = message.match(/Order #(\d+) sent to kitchen/i);
     assert(orderMatch, `Could not find express order id in POS message: ${message}`);

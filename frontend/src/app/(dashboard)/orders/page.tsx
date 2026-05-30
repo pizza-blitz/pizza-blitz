@@ -292,6 +292,7 @@ export default function OrdersPage() {
   const [pickupNotificationLog, setPickupNotificationLog] = useState<PickupNotificationLog[]>([]);
   const [menuSearch, setMenuSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [cashTendered, setCashTendered] = useState<number | "">("");
   const [isHydrated, setIsHydrated] = useState(false);
 
   const defaultDraftForItem = (item: MenuItem) => {
@@ -408,6 +409,23 @@ export default function OrdersPage() {
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
   const total = taxableSubtotal + tax + deliveryFee;
+  const roundedTotal = Math.round(total);
+  const cashTenderedAmount =
+    typeof cashTendered === "number" ? cashTendered : Number(cashTendered || 0);
+  const cashChangeDue =
+    formData.payment_method === "cash" && cashTenderedAmount > 0
+      ? Math.max(cashTenderedAmount - roundedTotal, 0)
+      : 0;
+  const cashTenderPresets =
+    roundedTotal > 0
+      ? Array.from(
+          new Set(
+            [roundedTotal, 200, 500, 1000, 2000].filter(
+              (value) => value > 0 && value >= roundedTotal
+            )
+          )
+        ).slice(0, 4)
+      : [];
   const selectedItemCount = selectedItems.reduce(
     (sum, item) => sum + Number(item.quantity || 0),
     0
@@ -440,6 +458,24 @@ export default function OrdersPage() {
     : isDeliveryOrder && !deliveryQuote?.is_deliverable
     ? "Delivery"
     : "Ready";
+  const nextCounterAction = !selectedItemCount
+    ? "Tap a preset or menu item"
+    : isDeliveryOrder && !formData.delivery_address.trim()
+    ? "Enter delivery address"
+    : isDeliveryOrder && isQuotingDelivery
+    ? "Wait for delivery quote"
+    : isDeliveryOrder && !deliveryQuote?.is_deliverable
+    ? "Confirm deliverable zone"
+    : formData.payment_method === "cash" && !cashTenderedAmount
+    ? "Take cash or press Exact"
+    : "Send to kitchen";
+  const sendButtonCopy = saving
+    ? "Sending..."
+    : canSendOrder
+    ? isDeliveryOrder
+      ? "Send Delivery"
+      : "Send Order"
+    : `Need: ${sendBlockReason}`;
   const counterStepCards = [
     {
       label: "Items",
@@ -570,6 +606,7 @@ export default function OrdersPage() {
     setDeliveryQuote(null);
     setMenuSearch("");
     setActiveCategory("All");
+    setCashTendered("");
     setMenuItems((current) =>
       current.map((item) => ({
         ...item,
@@ -617,6 +654,7 @@ export default function OrdersPage() {
       payment_method: "cash",
       notes: "Express walk-in",
     });
+    setCashTendered("");
     setMenuSearch("");
     setActiveCategory(targetItem.category || "All");
     setMenuItems((current) =>
@@ -629,6 +667,11 @@ export default function OrdersPage() {
     );
     setShowOrderModal(true);
     setMessage(`${build?.name || targetItem.name} loaded for express walk-in.`);
+  };
+
+  const selectPaymentMethod = (method: string) => {
+    setFormData({ ...formData, payment_method: method });
+    if (method !== "cash") setCashTendered("");
   };
 
   const updateQuantity = (id: number, quantity: number) => {
@@ -772,6 +815,9 @@ export default function OrdersPage() {
     const orderType = selectedTable ? "dine-in" : orderMode;
     const notes = [
       formData.notes || "",
+      formData.payment_method === "cash" && cashTenderedAmount > 0
+        ? `Cash tendered Rs ${cashTenderedAmount}; change Rs ${cashChangeDue}`
+        : "",
       isDeliveryOrder ? "Counter delivery order" : "",
       isDeliveryOrder ? "Fulfillment: delivery" : "",
     ]
@@ -1923,13 +1969,20 @@ export default function OrdersPage() {
               data-testid="counter-speed-bar"
               className="mb-5 rounded-xl border border-white/10 bg-black/30 p-4"
             >
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto]">
+              <div data-testid="counter-touch-lane" className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_320px]">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {counterStepCards.map((step) => (
                     <CounterStepCard key={step.label} {...step} />
                   ))}
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:min-w-64">
+                <div className="rounded-lg border border-orange-400/20 bg-orange-500/10 p-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-orange-200/80">
+                    Next Touch
+                  </p>
+                  <p data-testid="counter-next-action" className="mt-1 text-sm font-black text-white">
+                    {nextCounterAction}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1941,12 +1994,36 @@ export default function OrdersPage() {
                     Walk-in
                   </button>
                   <button
+                    data-testid="counter-exact-cash"
+                    type="button"
+                    disabled={!roundedTotal}
+                    onClick={() => {
+                      setFormData({ ...formData, payment_method: "cash" });
+                      setCashTendered(roundedTotal);
+                      setMessage("Exact cash selected.");
+                    }}
+                    className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs font-black uppercase text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Exact Cash
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, discount_amount: 0 });
+                      setMessage("Discount cleared.");
+                    }}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black uppercase text-gray-200 hover:bg-white/10"
+                  >
+                    No Discount
+                  </button>
+                  <button
                     type="button"
                     onClick={resetOrderForm}
                     className="rounded-lg border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-black uppercase text-red-200 hover:bg-red-500/20"
                   >
                     Clear Bill
                   </button>
+                  </div>
                 </div>
               </div>
 
@@ -2281,7 +2358,7 @@ export default function OrdersPage() {
             </div>
               </section>
 
-              <aside className="flex min-h-0 flex-col rounded-xl border border-white/10 bg-black/20 p-4">
+              <aside className="flex min-h-0 max-h-full flex-col overflow-y-auto rounded-xl border border-white/10 bg-black/20 p-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
@@ -2341,7 +2418,7 @@ export default function OrdersPage() {
                         key={method}
                         data-testid={`counter-payment-${method}`}
                         type="button"
-                        onClick={() => setFormData({ ...formData, payment_method: method })}
+                        onClick={() => selectPaymentMethod(method)}
                         className={`rounded-lg border px-2 py-2 text-xs font-black uppercase ${
                           formData.payment_method === method
                             ? "border-orange-400 bg-orange-500 text-white"
@@ -2353,6 +2430,54 @@ export default function OrdersPage() {
                     ))}
                   </div>
                 </div>
+
+                {formData.payment_method === "cash" && (
+                  <div
+                    data-testid="counter-cash-tender-panel"
+                    className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-black uppercase tracking-widest text-emerald-200/80">
+                        Cash Tender
+                      </p>
+                      <span
+                        data-testid="counter-change-due"
+                        className="rounded-lg bg-black/30 px-3 py-1 text-xs font-black text-emerald-100"
+                      >
+                        Change Rs {Math.round(cashChangeDue).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {cashTenderPresets.map((value) => (
+                        <button
+                          key={`cash-${value}`}
+                          type="button"
+                          onClick={() => setCashTendered(value)}
+                          className={`rounded-lg border px-2 py-2 text-xs font-black ${
+                            cashTenderedAmount === value
+                              ? "border-emerald-300 bg-emerald-500 text-white"
+                              : "border-white/10 bg-black/25 text-emerald-100 hover:border-emerald-300"
+                          }`}
+                        >
+                          {value === roundedTotal ? "Exact" : `Rs ${value}`}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      data-testid="counter-tendered-cash"
+                      type="number"
+                      min="0"
+                      value={cashTendered}
+                      onChange={(event) =>
+                        setCashTendered(
+                          event.target.value === "" ? "" : Number(event.target.value) || 0
+                        )
+                      }
+                      placeholder="Cash received"
+                      className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-black text-white outline-none placeholder:text-gray-500 focus:border-emerald-300"
+                    />
+                  </div>
+                )}
 
             <div className="mt-6 rounded-xl bg-black/30 border border-white/10 p-4 space-y-2 text-sm">
               <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>Rs {Math.round(subtotal).toLocaleString()}</span></div>
@@ -2376,7 +2501,7 @@ export default function OrdersPage() {
               className="mt-5 w-full bg-orange-500 p-4 rounded-xl font-bold text-lg hover:bg-orange-600 active:scale-95 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
             >
               <Printer className="w-5 h-5" />
-              {saving ? "Sending..." : canSendOrder ? (isDeliveryOrder ? "Send Delivery to Kitchen" : "Send to Kitchen") : `Waiting: ${sendBlockReason}`}
+              {sendButtonCopy}
             </button>
               </aside>
             </div>
