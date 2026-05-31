@@ -35,17 +35,20 @@ export default function RecipesPage() {
   });
 
   useEffect(() => {
-    fetchRecipes();
+    const controller = new AbortController();
+    fetchRecipes(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchRecipes = async () => {
+  const fetchRecipes = async (signal?: AbortSignal) => {
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'));
+      const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'), { signal });
       if (res.ok) setRecipes(await res.json());
     } catch (error) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch recipes", error);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   };
 

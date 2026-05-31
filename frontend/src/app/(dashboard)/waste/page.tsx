@@ -34,22 +34,25 @@ export default function WastePage() {
   });
 
   useEffect(() => {
-    fetchWasteData();
+    const controller = new AbortController();
+    fetchWasteData(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchWasteData = async () => {
+  const fetchWasteData = async (signal?: AbortSignal) => {
     try {
       const [logsRes, summaryRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/sales/waste')),
-        fetch(getApiUrl('/api/v1/restaurant/sales/waste/summary'))
+        fetch(getApiUrl('/api/v1/restaurant/sales/waste'), { signal }),
+        fetch(getApiUrl('/api/v1/restaurant/sales/waste/summary'), { signal })
       ]);
       
       if (logsRes.ok) setWasteLogs(await logsRes.json());
       if (summaryRes.ok) setSummary(await summaryRes.json());
     } catch (error) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch waste data", error);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   };
 

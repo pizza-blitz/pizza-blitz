@@ -18,11 +18,20 @@ export default function BreakevenPage() {
     avg_order_value: 250
   });
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
+  }, []);
 
-  const fetchData = async () => {
-    const res = await fetch(API_BASE);
-    setData(await res.json());
+  const fetchData = async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch(API_BASE, { signal });
+      setData(await res.json());
+    } catch (error) {
+      if (signal?.aborted) return;
+      console.error("Failed to fetch break-even data", error);
+    }
   };
 
   const saveSetup = async () => {

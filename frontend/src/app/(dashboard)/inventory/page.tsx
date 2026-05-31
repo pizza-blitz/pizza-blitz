@@ -19,15 +19,17 @@ export default function Inventory() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetchItems();
+    const controller = new AbortController();
+    fetchItems(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchItems = async () => {
+  const fetchItems = async (signal?: AbortSignal) => {
     try {
       const [res, lowStockRes, transactionsRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/inventory/items')),
-        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock')),
-        fetch(getApiUrl('/api/v1/restaurant/inventory/transactions?limit=12')),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/items'), { signal }),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/transactions?limit=12'), { signal }),
       ]);
       if (res.ok) {
         const data = await res.json();
@@ -47,8 +49,12 @@ export default function Inventory() {
       if (transactionsRes.ok) {
         setTransactions(await transactionsRes.json());
       }
-      setIsLoading(false);
-    } catch (err) { console.error(err); setIsLoading(false); }
+    } catch (err) {
+      if (signal?.aborted) return;
+      console.error(err);
+    } finally {
+      if (!signal?.aborted) setIsLoading(false);
+    }
   };
 
   const createPurchaseDrafts = async () => {

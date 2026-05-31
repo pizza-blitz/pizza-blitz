@@ -9,14 +9,16 @@ export default function AIInsights() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchInsights();
+    const controller = new AbortController();
+    fetchInsights(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (signal?: AbortSignal) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/insights/ai-insights'));
+      const res = await fetch(getApiUrl('/api/v1/restaurant/insights/ai-insights'), { signal });
       const result = await res.json();
       if (result.status === "success") {
         setInsights(result.data);
@@ -24,9 +26,10 @@ export default function AIInsights() {
         setError(result.message || "Intelligence node synchronization failed.");
       }
     } catch (err) {
+      if (signal?.aborted) return;
       setError("Unable to establish neural link with backend.");
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   };
 
@@ -63,7 +66,7 @@ export default function AIInsights() {
             <p className="text-gray-500 mt-2 font-bold uppercase tracking-widest text-[10px] opacity-60">Artificial Intelligence Driven Strategy Layer</p>
           </div>
         </div>
-        <button onClick={fetchInsights} className="bg-gray-50 hover:bg-gray-100 text-gray-400 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all">
+        <button onClick={() => void fetchInsights()} className="bg-gray-50 hover:bg-gray-100 text-gray-400 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all">
           Force Resync
         </button>
       </div>

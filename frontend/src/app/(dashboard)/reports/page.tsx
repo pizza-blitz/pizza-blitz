@@ -32,10 +32,12 @@ export default function Reports() {
   const [segmentLaunchMessage, setSegmentLaunchMessage] = useState("");
 
   useEffect(() => {
-    fetchReports();
+    const controller = new AbortController();
+    fetchReports(controller.signal);
+    return () => controller.abort();
   }, [period, monthlyTarget]);
 
-  const fetchReports = async () => {
+  const fetchReports = async (signal?: AbortSignal) => {
     setIsLoading(true);
     setReportError("");
     try {
@@ -47,6 +49,7 @@ export default function Reports() {
         const response = await fetch(getApiUrl(endpoint), {
           cache: "no-store",
           credentials: "include",
+          signal,
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -82,11 +85,12 @@ export default function Reports() {
         breakeven: breakevenRes
       });
     } catch (err) { 
+      if (signal?.aborted) return;
       console.error(err);
       setData(null);
       setReportError(err instanceof Error ? err.message : "Reports could not be loaded.");
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   };
 
@@ -478,7 +482,7 @@ export default function Reports() {
             {reportError}
           </p>
           <button
-            onClick={fetchReports}
+            onClick={() => void fetchReports()}
             className="mt-5 rounded-md bg-yellow-900 px-4 py-2 text-sm font-black uppercase tracking-widest text-white"
           >
             Retry Reports

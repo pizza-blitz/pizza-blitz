@@ -137,22 +137,30 @@ export default function MenuManagement() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetchMenu();
+    const controller = new AbortController();
+    fetchMenu(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchMenu = async () => {
+  const fetchMenu = async (signal?: AbortSignal) => {
     setIsLoading(true);
-    const [menuRes, profitabilityRes, customizationsRes, readinessRes] = await Promise.all([
-      fetch(CUSTOMIZED_MENU_API),
-      fetch(PROFITABILITY_API),
-      fetch(CUSTOMIZATIONS_API),
-      fetch(CUSTOMIZATION_READINESS_API),
-    ]);
-    setItems(await menuRes.json());
-    setProfitability(await profitabilityRes.json());
-    setCustomizationGroups(await customizationsRes.json());
-    setCustomizationReadiness(await readinessRes.json());
-    setIsLoading(false);
+    try {
+      const [menuRes, profitabilityRes, customizationsRes, readinessRes] = await Promise.all([
+        fetch(CUSTOMIZED_MENU_API, { signal }),
+        fetch(PROFITABILITY_API, { signal }),
+        fetch(CUSTOMIZATIONS_API, { signal }),
+        fetch(CUSTOMIZATION_READINESS_API, { signal }),
+      ]);
+      setItems(await menuRes.json());
+      setProfitability(await profitabilityRes.json());
+      setCustomizationGroups(await customizationsRes.json());
+      setCustomizationReadiness(await readinessRes.json());
+    } catch (error) {
+      if (signal?.aborted) return;
+      console.error("Failed to fetch menu data", error);
+    } finally {
+      if (!signal?.aborted) setIsLoading(false);
+    }
   };
 
   const filteredItems = useMemo(
@@ -224,7 +232,7 @@ export default function MenuManagement() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={fetchMenu}
+            onClick={() => void fetchMenu()}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 font-bold text-white hover:bg-white/10"
           >
             <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh

@@ -14,14 +14,16 @@ export default function PurchaseOrders() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetchOrders();
+    const controller = new AbortController();
+    fetchOrders(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (signal?: AbortSignal) => {
     try {
       const [ordersRes, lowStockRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/purchase-orders/')),
-        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock')),
+        fetch(getApiUrl('/api/v1/restaurant/purchase-orders/'), { signal }),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
       ]);
       const data = await ordersRes.json();
       setOrders(data);
@@ -30,9 +32,10 @@ export default function PurchaseOrders() {
         setReorderGroups(lowStock.groups || []);
       }
     } catch (error) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch orders", error);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   };
 

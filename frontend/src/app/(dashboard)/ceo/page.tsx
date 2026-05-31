@@ -22,23 +22,26 @@ export default function CEODashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchData() {
+    const controller = new AbortController();
+    async function fetchData(signal: AbortSignal) {
       try {
         const [hRes, tRes, sRes] = await Promise.all([
-          fetch(`${API_BASE}/insights/health-score`),
-          fetch(`${API_BASE}/target/status`),
-          fetch(`${API_BASE}/ceo-summary`)
+          fetch(`${API_BASE}/insights/health-score`, { signal }),
+          fetch(`${API_BASE}/target/status`, { signal }),
+          fetch(`${API_BASE}/ceo-summary`, { signal })
         ]);
         setHealth(await hRes.json());
         setTarget(await tRes.json());
         setSummary(await sRes.json());
       } catch (e) {
+        if (signal.aborted) return;
         console.error("Dashboard failed to load", e);
       } finally {
-        setLoading(false);
+        if (!signal.aborted) setLoading(false);
       }
     }
-    fetchData();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, []);
 
   const shareWeeklyPulse = async () => {
