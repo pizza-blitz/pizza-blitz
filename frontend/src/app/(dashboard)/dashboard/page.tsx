@@ -245,7 +245,7 @@ export default function Dashboard() {
       return data;
     } catch (error) {
       if (signal?.aborted) return null;
-      console.error("Failed to fetch insights", error);
+      console.warn("Dashboard insights are temporarily unavailable", error);
       return null;
     }
   };
