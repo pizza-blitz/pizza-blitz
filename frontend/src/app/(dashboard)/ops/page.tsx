@@ -648,17 +648,24 @@ export default function ProductionOpsPage() {
       }
     };
 
-    await Promise.all([
-      loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), setReadiness),
-      loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), setCredentialActivation),
-      loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), setLiveEnvironment),
-      loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), setProductionLaunch),
-      loadSection("beta delivery", fetchWithAuth(`${OPS_API}/beta-delivery`), setBetaDelivery),
-      loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance),
-      loadSection("launch candidate", fetchWithAuth(`${OPS_API}/launch-candidate`), setLaunchCandidate),
-      loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), setDataQuality),
-      loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups(data.backups || [])),
-    ]);
+    const tasks = [
+      () => loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance),
+      () => loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), setReadiness),
+      () => loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups(data.backups || [])),
+      () => loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), setDataQuality),
+      () => loadSection("launch candidate", fetchWithAuth(`${OPS_API}/launch-candidate`), setLaunchCandidate),
+      () => loadSection("beta delivery", fetchWithAuth(`${OPS_API}/beta-delivery`), setBetaDelivery),
+      () => loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), setProductionLaunch),
+      () => loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), setLiveEnvironment),
+      () => loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), setCredentialActivation),
+    ];
+    const workers = Array.from({ length: 2 }, async () => {
+      while (tasks.length) {
+        const task = tasks.shift();
+        if (task) await task();
+      }
+    });
+    await Promise.all(workers);
     if (delayedSections.length) {
       setMessage(
         `Loaded available Ops sections. Still warming: ${delayedSections

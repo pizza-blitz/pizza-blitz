@@ -35,6 +35,14 @@ function formatCompactCurrency(value: number) {
   return formatCurrency(value, 0);
 }
 
+async function fetchJson(url: string, init?: RequestInit) {
+  const response = await fetch(url, init);
+  if (!response.ok) {
+    throw new Error(`Request failed with HTTP ${response.status}: ${url}`);
+  }
+  return response.json();
+}
+
 function EmptyChartState({ label }: { label: string }) {
   return (
     <div className="flex h-full min-h-52 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 px-5 text-center">
@@ -187,24 +195,32 @@ export default function Dashboard() {
   const fetchAllData = async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
-      const [statsRes, _insightsRes, monthlyRes, lifetimeRes, todayRes, flowRes, queueRes] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`), { credentials: "include", signal }).then(r => r.json()),
-        fetchInsights(signal),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-breakdown`), { credentials: "include", signal }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/lifetime-summary`), { credentials: "include", signal }).then(r => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/orders/today"), { credentials: "include", cache: "no-store", signal }).then(r => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/orders/flow-readiness"), { credentials: "include", cache: "no-store", signal }).then(r => r.json()),
-        fetch(getApiUrl("/api/v1/restaurant/delivery/queue"), { credentials: "include", cache: "no-store", signal }).then(r => r.json())
+      const statsRes = await fetchJson(getApiUrl(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`), {
+        credentials: "include",
+        signal,
+      });
+      if (signal?.aborted) return;
+      setStats(statsRes);
+      setIsLoading(false);
+
+      void fetchInsights(signal);
+      const [monthlyResult, lifetimeResult, todayResult, flowResult, queueResult] = await Promise.allSettled([
+        fetchJson(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-breakdown`), { credentials: "include", signal }),
+        fetchJson(getApiUrl(`/api/v1/restaurant/stats/insights/lifetime-summary`), { credentials: "include", signal }),
+        fetchJson(getApiUrl("/api/v1/restaurant/orders/today"), { credentials: "include", cache: "no-store", signal }),
+        fetchJson(getApiUrl("/api/v1/restaurant/orders/flow-readiness"), { credentials: "include", cache: "no-store", signal }),
+        fetchJson(getApiUrl("/api/v1/restaurant/delivery/queue"), { credentials: "include", cache: "no-store", signal }),
       ]);
 
       if (signal?.aborted) return;
-      setStats(statsRes);
-      setMonthlyData(monthlyRes);
-      setLifetime(lifetimeRes);
-      setTodayOrders(todayRes.orders || []);
-      setTotalCollectedToday(Number(todayRes.total_collected_today || 0));
-      setFlowReadiness(flowRes);
-      setDeliveryQueue(queueRes);
+      if (monthlyResult.status === "fulfilled") setMonthlyData(monthlyResult.value);
+      if (lifetimeResult.status === "fulfilled") setLifetime(lifetimeResult.value);
+      if (todayResult.status === "fulfilled") {
+        setTodayOrders(todayResult.value.orders || []);
+        setTotalCollectedToday(Number(todayResult.value.total_collected_today || 0));
+      }
+      if (flowResult.status === "fulfilled") setFlowReadiness(flowResult.value);
+      if (queueResult.status === "fulfilled") setDeliveryQueue(queueResult.value);
     } catch (error) {
       if (signal?.aborted) return;
       console.error("Failed to fetch dashboard data", error);
@@ -218,10 +234,10 @@ export default function Dashboard() {
   const fetchInsights = async (signal?: AbortSignal) => {
     try {
       const [comparison, dayOfWeek, forecast, profitTrend] = await Promise.all([
-        fetch(getApiUrl(`/api/v1/restaurant/stats/compare/same-period?period=30days`), { credentials: "include", signal }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/day-of-week`), { credentials: "include", signal }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-forecast`), { credentials: "include", signal }).then(r => r.json()),
-        fetch(getApiUrl(`/api/v1/restaurant/stats/insights/profit-trend?months=1`), { credentials: "include", signal }).then(r => r.json())
+        fetchJson(getApiUrl(`/api/v1/restaurant/stats/compare/same-period?period=30days`), { credentials: "include", signal }),
+        fetchJson(getApiUrl(`/api/v1/restaurant/stats/insights/day-of-week`), { credentials: "include", signal }),
+        fetchJson(getApiUrl(`/api/v1/restaurant/stats/insights/monthly-forecast`), { credentials: "include", signal }),
+        fetchJson(getApiUrl(`/api/v1/restaurant/stats/insights/profit-trend?months=1`), { credentials: "include", signal })
       ]);
       if (signal?.aborted) return null;
       const data = { comparison, dayOfWeek, forecast, profitTrend };
