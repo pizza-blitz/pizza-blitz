@@ -648,8 +648,8 @@ export default function ProductionOpsPage() {
       }
     };
 
+    await loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance);
     const tasks = [
-      () => loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance),
       () => loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), setReadiness),
       () => loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups(data.backups || [])),
       () => loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), setDataQuality),
