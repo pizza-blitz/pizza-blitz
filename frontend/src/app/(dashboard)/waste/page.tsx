@@ -50,7 +50,7 @@ export default function WastePage() {
       if (summaryRes.ok) setSummary(await summaryRes.json());
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch waste data", error);
+      console.warn("Waste data is temporarily unavailable", error);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }

@@ -157,7 +157,7 @@ export default function MenuManagement() {
       setCustomizationReadiness(await readinessRes.json());
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch menu data", error);
+      console.warn("Menu data is temporarily unavailable", error);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }

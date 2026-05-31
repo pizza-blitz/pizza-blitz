@@ -46,7 +46,7 @@ export default function RecipesPage() {
       if (res.ok) setRecipes(await res.json());
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch recipes", error);
+      console.warn("Recipe data is temporarily unavailable", error);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }

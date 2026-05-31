@@ -35,7 +35,7 @@ export default function CEODashboard() {
         setSummary(await sRes.json());
       } catch (e) {
         if (signal.aborted) return;
-        console.error("Dashboard failed to load", e);
+        console.warn("CEO dashboard data is temporarily unavailable", e);
       } finally {
         if (!signal.aborted) setLoading(false);
       }

@@ -30,7 +30,7 @@ export default function BreakevenPage() {
       setData(await res.json());
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch break-even data", error);
+      console.warn("Break-even data is temporarily unavailable", error);
     }
   };
 

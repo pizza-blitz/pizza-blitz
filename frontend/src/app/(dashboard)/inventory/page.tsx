@@ -51,7 +51,7 @@ export default function Inventory() {
       }
     } catch (err) {
       if (signal?.aborted) return;
-      console.error(err);
+      console.warn("Inventory data is temporarily unavailable", err);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }

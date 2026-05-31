@@ -86,7 +86,7 @@ export default function Reports() {
       });
     } catch (err) { 
       if (signal?.aborted) return;
-      console.error(err);
+      console.warn("Report data is temporarily unavailable", err);
       setData(null);
       setReportError(err instanceof Error ? err.message : "Reports could not be loaded.");
     } finally {

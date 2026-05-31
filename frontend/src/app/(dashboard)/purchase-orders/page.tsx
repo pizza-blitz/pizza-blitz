@@ -33,7 +33,7 @@ export default function PurchaseOrders() {
       }
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch orders", error);
+      console.warn("Purchase order data is temporarily unavailable", error);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
