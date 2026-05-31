@@ -242,7 +242,7 @@ export default function ExpenseTracker() {
       }
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch expense data", error);
+      console.warn("Expense data is temporarily unavailable", error);
       setMessage("Could not load expense audit data.");
     } finally {
       if (!signal?.aborted) {
