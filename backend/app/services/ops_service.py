@@ -964,9 +964,14 @@ def data_quality_report(db: Session) -> dict:
     }
 
 
-def launch_candidate_report(db: Session) -> dict:
-    readiness = readiness_report(db)
-    data_quality = data_quality_report(db)
+def launch_candidate_report(
+    db: Session,
+    *,
+    readiness: Optional[dict] = None,
+    data_quality: Optional[dict] = None,
+) -> dict:
+    readiness = readiness if readiness is not None else readiness_report(db)
+    data_quality = data_quality if data_quality is not None else data_quality_report(db)
     modules = readiness.get("module_readiness") or []
     module_by_key = {module["key"]: module for module in modules}
     deployment_plan = readiness.get("deployment_pipeline_plan") or {}
@@ -1114,10 +1119,20 @@ def launch_candidate_report(db: Session) -> dict:
     }
 
 
-def final_acceptance_report(db: Session) -> dict:
-    readiness = readiness_report(db)
-    launch_candidate = launch_candidate_report(db)
-    data_quality = data_quality_report(db)
+def final_acceptance_report(
+    db: Session,
+    *,
+    readiness: Optional[dict] = None,
+    launch_candidate: Optional[dict] = None,
+    data_quality: Optional[dict] = None,
+) -> dict:
+    readiness = readiness if readiness is not None else readiness_report(db)
+    data_quality = data_quality if data_quality is not None else data_quality_report(db)
+    launch_candidate = (
+        launch_candidate
+        if launch_candidate is not None
+        else launch_candidate_report(db, readiness=readiness, data_quality=data_quality)
+    )
     modules = readiness.get("module_readiness") or []
     module_by_key = {module["key"]: module for module in modules}
 
@@ -1236,11 +1251,31 @@ def final_acceptance_report(db: Session) -> dict:
     }
 
 
-def beta_delivery_report(db: Session) -> dict:
-    readiness = readiness_report(db)
-    launch_candidate = launch_candidate_report(db)
-    final_acceptance = final_acceptance_report(db)
-    data_quality = data_quality_report(db)
+def beta_delivery_report(
+    db: Session,
+    *,
+    readiness: Optional[dict] = None,
+    launch_candidate: Optional[dict] = None,
+    final_acceptance: Optional[dict] = None,
+    data_quality: Optional[dict] = None,
+) -> dict:
+    readiness = readiness if readiness is not None else readiness_report(db)
+    data_quality = data_quality if data_quality is not None else data_quality_report(db)
+    launch_candidate = (
+        launch_candidate
+        if launch_candidate is not None
+        else launch_candidate_report(db, readiness=readiness, data_quality=data_quality)
+    )
+    final_acceptance = (
+        final_acceptance
+        if final_acceptance is not None
+        else final_acceptance_report(
+            db,
+            readiness=readiness,
+            launch_candidate=launch_candidate,
+            data_quality=data_quality,
+        )
+    )
     proof_by_key = {gate["key"]: gate for gate in launch_candidate.get("proof_gates", [])}
     route_by_key = {route["key"]: route for route in launch_candidate.get("critical_routes", [])}
 
@@ -1363,9 +1398,18 @@ def beta_delivery_report(db: Session) -> dict:
     }
 
 
-def production_launch_report(db: Session) -> dict:
-    readiness = readiness_report(db)
-    beta_delivery = beta_delivery_report(db)
+def production_launch_report(
+    db: Session,
+    *,
+    readiness: Optional[dict] = None,
+    beta_delivery: Optional[dict] = None,
+) -> dict:
+    readiness = readiness if readiness is not None else readiness_report(db)
+    beta_delivery = (
+        beta_delivery
+        if beta_delivery is not None
+        else beta_delivery_report(db, readiness=readiness)
+    )
     payment_status = payment_provider_status()
     campaign_statuses = [campaign_provider_status(channel) for channel in ["whatsapp", "sms", "email"]]
     social_statuses = [social_provider_status(platform) for platform in ["facebook", "instagram"]]
@@ -1642,9 +1686,18 @@ def production_launch_report(db: Session) -> dict:
     }
 
 
-def live_environment_report(db: Session) -> dict:
-    readiness = readiness_report(db)
-    production_launch = production_launch_report(db)
+def live_environment_report(
+    db: Session,
+    *,
+    readiness: Optional[dict] = None,
+    production_launch: Optional[dict] = None,
+) -> dict:
+    readiness = readiness if readiness is not None else readiness_report(db)
+    production_launch = (
+        production_launch
+        if production_launch is not None
+        else production_launch_report(db, readiness=readiness)
+    )
     production_plan = readiness.get("production_database_plan") or {}
     security_plan = readiness.get("environment_security_plan") or {}
     deployment_plan = readiness.get("deployment_pipeline_plan") or {}
@@ -1963,8 +2016,12 @@ def live_environment_report(db: Session) -> dict:
 
 def credential_activation_report(db: Session) -> dict:
     readiness = readiness_report(db)
-    production_launch = production_launch_report(db)
-    live_environment = live_environment_report(db)
+    production_launch = production_launch_report(db, readiness=readiness)
+    live_environment = live_environment_report(
+        db,
+        readiness=readiness,
+        production_launch=production_launch,
+    )
     payment_status = payment_provider_status()
     campaign_statuses = [campaign_provider_status(channel) for channel in ["whatsapp", "sms", "email"]]
     social_statuses = [social_provider_status(platform) for platform in ["facebook", "instagram"]]
