@@ -57,7 +57,7 @@ export default function SalesHistory() {
       })
       .catch((error) => {
         if (signal?.aborted || reconciliationController.signal.aborted) return;
-        console.error("Failed to fetch sales reconciliation", error);
+        console.warn("Sales reconciliation is temporarily unavailable", error);
         setReconciliation(null);
         setReconciliationError("Reconciliation needs retry. The sales table is available, but the month repair queue could not load yet.");
       })
@@ -76,7 +76,7 @@ export default function SalesHistory() {
       setSummary(statsRes.metrics);
     } catch (error) {
       if (signal?.aborted) return;
-      console.error("Failed to fetch sales history", error);
+      console.warn("Sales history is temporarily unavailable", error);
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
