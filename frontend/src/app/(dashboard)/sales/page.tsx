@@ -22,10 +22,12 @@ export default function SalesHistory() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal);
+    return () => controller.abort();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (signal?: AbortSignal) => {
     setIsLoading(true);
     setIsReconciliationLoading(true);
     setReconciliationError("");
@@ -34,6 +36,7 @@ export default function SalesHistory() {
       const response = await fetch(getApiUrl(endpoint), {
         cache: "no-store",
         credentials: "include",
+        signal,
         ...init,
       });
       const payload = await response.json().catch(() => ({}));
@@ -42,6 +45,8 @@ export default function SalesHistory() {
     };
 
     const reconciliationController = new AbortController();
+    const abortReconciliation = () => reconciliationController.abort();
+    signal?.addEventListener("abort", abortReconciliation, { once: true });
     const reconciliationTimer = window.setTimeout(() => reconciliationController.abort(), 75000);
     const reconciliationRequest = fetchJson(
       '/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000&detail=summary&limit=12',
@@ -51,13 +56,15 @@ export default function SalesHistory() {
         setReconciliation(reconciliationRes);
       })
       .catch((error) => {
+        if (signal?.aborted || reconciliationController.signal.aborted) return;
         console.error("Failed to fetch sales reconciliation", error);
         setReconciliation(null);
         setReconciliationError("Reconciliation needs retry. The sales table is available, but the month repair queue could not load yet.");
       })
       .finally(() => {
         window.clearTimeout(reconciliationTimer);
-        setIsReconciliationLoading(false);
+        signal?.removeEventListener("abort", abortReconciliation);
+        if (!signal?.aborted) setIsReconciliationLoading(false);
       });
 
     try {
@@ -68,9 +75,10 @@ export default function SalesHistory() {
       setSalesData(Array.isArray(salesRes) ? salesRes : []);
       setSummary(statsRes.metrics);
     } catch (error) {
+      if (signal?.aborted) return;
       console.error("Failed to fetch sales history", error);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
 
     await reconciliationRequest;
@@ -384,7 +392,7 @@ export default function SalesHistory() {
                     <p className="text-sm font-black text-amber-700">Reconciliation needs retry.</p>
                     <p className="mt-2 text-sm font-semibold text-gray-500">{reconciliationError}</p>
                     <button
-                      onClick={fetchData}
+                      onClick={() => void fetchData()}
                       className="mt-4 rounded-md bg-gray-950 px-4 py-2 text-xs font-black uppercase text-white hover:bg-gray-800"
                     >
                       Retry Queue
