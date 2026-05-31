@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales, Expense, ExpenseCategory
 
 router = APIRouter()
@@ -31,15 +31,25 @@ class CategorySchema(BaseModel):
         from_attributes = True
 
 @router.get("/expenses", response_model=List[ExpenseSchema])
-def get_expenses(db: Session = Depends(get_db)):
+def get_expenses(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
     return db.query(Expense).order_by(Expense.date.desc()).all()
 
 @router.get("/categories", response_model=List[CategorySchema])
-def get_categories(db: Session = Depends(get_db)):
+def get_categories(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
     return db.query(ExpenseCategory).filter(ExpenseCategory.is_active == True).all()
 
 @router.post("/expenses", response_model=ExpenseSchema)
-def add_expense(req: ExpenseSchema, db: Session = Depends(get_db)):
+def add_expense(
+    req: ExpenseSchema,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
     category = db.query(ExpenseCategory).filter(
         ExpenseCategory.id == req.category_id,
         ExpenseCategory.is_active == True,
@@ -98,6 +108,7 @@ def _receipt_missing(expense: Expense) -> bool:
 def expense_audit_command(
     days: int = Query(default=30, ge=7, le=365),
     db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
 ):
     today = datetime.utcnow().date()
     start_date = today - timedelta(days=days - 1)

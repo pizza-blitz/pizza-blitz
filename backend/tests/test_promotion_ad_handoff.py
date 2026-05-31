@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.domain import AdCampaign, AdCampaignLaunch, Promotion
@@ -15,6 +16,18 @@ class PromotionAdHandoffTest(unittest.TestCase):
         campaign_id = None
         with TestClient(app) as client:
             try:
+                admin_login = client.post(
+                    "/api/v1/auth/admin/login",
+                    json={
+                        "id": settings.PIZZA_BLITZ_ADMIN_ID,
+                        "password": settings.PIZZA_BLITZ_ADMIN_PASSWORD,
+                    },
+                )
+                self.assertEqual(admin_login.status_code, 200)
+                client.headers.update(
+                    {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+                )
+
                 promo = client.post(
                     "/api/v1/restaurant/promotions/",
                     json={

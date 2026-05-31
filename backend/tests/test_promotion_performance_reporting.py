@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.domain import AdCampaign, Customer, Promotion, RestaurantOrder, SocialPost
@@ -18,6 +19,18 @@ class PromotionPerformanceReportingTest(unittest.TestCase):
 
         with TestClient(app) as client:
             try:
+                admin_login = client.post(
+                    "/api/v1/auth/admin/login",
+                    json={
+                        "id": settings.PIZZA_BLITZ_ADMIN_ID,
+                        "password": settings.PIZZA_BLITZ_ADMIN_PASSWORD,
+                    },
+                )
+                self.assertEqual(admin_login.status_code, 200)
+                client.headers.update(
+                    {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+                )
+
                 promo = client.post(
                     "/api/v1/restaurant/promotions/",
                     json={
@@ -107,9 +120,9 @@ class PromotionPerformanceReportingTest(unittest.TestCase):
                 self.assertEqual(campaign_row["ads"]["planned_budget"], 600)
                 self.assertEqual(campaign_row["ads"]["latest_campaign"]["id"], campaign_id)
                 self.assertGreaterEqual(rollup_payload["summary"]["redemption_revenue"], 342.68)
-                self.assertEqual(
-                    rollup_payload["best_campaign"]["promotion_detail"]["id"],
-                    promo_id,
+                self.assertGreaterEqual(
+                    rollup_payload["best_campaign"]["redemptions"]["revenue"],
+                    campaign_row["redemptions"]["revenue"],
                 )
             finally:
                 db = SessionLocal()

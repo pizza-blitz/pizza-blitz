@@ -408,6 +408,8 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
     next_action = order_next_action(order)
     if order.status == "cancelled":
         next_action = "Order cancelled. No sales or inventory were posted."
+    elif (order.payment_method or "").lower() == "prepaid" and order.payment_status != "paid":
+        next_action = "Payment is pending. Confirm prepaid payment to continue."
     elif (order.order_type or "").lower() == "delivery":
         if delivery_status == "assigned":
             next_action = "Delivery partner assigned. Your order will leave shortly."

@@ -21,6 +21,18 @@ class InternalPortalValidationTest(unittest.TestCase):
         last_year_yesterday = yesterday - timedelta(days=365)
 
         with TestClient(app) as client:
+            admin_login = client.post(
+                "/api/v1/auth/admin/login",
+                json={
+                    "id": settings.PIZZA_BLITZ_ADMIN_ID,
+                    "password": settings.PIZZA_BLITZ_ADMIN_PASSWORD,
+                },
+            )
+            self.assertEqual(admin_login.status_code, 200)
+            client.headers.update(
+                {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+            )
+
             entries = [
                 (today, 1000, 800, 350, "current day"),
                 (yesterday, 800, 700, 300, "current previous day"),
@@ -109,7 +121,25 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(invoice.status_code, 200)
             self.assertTrue(invoice.json()["invoice_number"].startswith("PB-"))
 
-            closed = client.patch(f"/api/v1/restaurant/orders/{order_id}/close")
+            ready = client.patch(
+                f"/api/v1/restaurant/orders/{order_id}/status",
+                json={"status": "ready"},
+            )
+            self.assertEqual(ready.status_code, 200)
+
+            payment = client.post(
+                f"/api/v1/restaurant/orders/{order_id}/payment-confirmation",
+                json={
+                    "payment_provider": "cash",
+                    "payment_reference": f"CASH-TEST-{order_id}",
+                    "paid_amount": order.json()["total"],
+                },
+            )
+            self.assertEqual(payment.status_code, 200)
+
+            closed = client.patch(
+                f"/api/v1/restaurant/orders/{order_id}/close?payment_method=cash"
+            )
             self.assertEqual(closed.status_code, 200)
             self.assertEqual(closed.json()["status"], "closed")
 
@@ -431,18 +461,24 @@ class InternalPortalValidationTest(unittest.TestCase):
             self.assertEqual(customer_history.json()["customer"]["total_orders"], 1)
             self.assertEqual(customer_history.json()["orders"][0]["id"], takeaway_id)
 
-            missing_auth = client.get("/api/v1/auth/me")
+            missing_auth = client.get(
+                "/api/v1/auth/me",
+                headers={"Authorization": ""},
+            )
             self.assertEqual(missing_auth.status_code, 401)
 
             invalid_admin_login = client.post(
                 "/api/v1/auth/admin/login",
-                json={"id": "admin", "password": "wrong"},
+                json={"id": settings.PIZZA_BLITZ_ADMIN_ID, "password": "wrong"},
             )
             self.assertEqual(invalid_admin_login.status_code, 401)
 
             admin_login = client.post(
                 "/api/v1/auth/admin/login",
-                json={"id": "admin", "password": "admin123"},
+                json={
+                    "id": settings.PIZZA_BLITZ_ADMIN_ID,
+                    "password": settings.PIZZA_BLITZ_ADMIN_PASSWORD,
+                },
             )
             self.assertEqual(admin_login.status_code, 200)
             self.assertEqual(admin_login.json()["role"], "admin")
@@ -626,10 +662,10 @@ class InternalPortalValidationTest(unittest.TestCase):
                 "CAMPAIGN_SEND_ENABLED=true",
                 dispatch_payload["provider_status"]["missing_settings"],
             )
-            self.assertEqual(dispatch_payload["contacts"][0]["destination"], "9999999999")
+            self.assertEqual(dispatch_payload["contacts"][0]["destination"], "919999999999")
             self.assertTrue(
                 dispatch_payload["contacts"][0]["action_url"].startswith(
-                    "https://wa.me/9999999999?text="
+                    "https://wa.me/919999999999?text="
                 )
             )
             self.assertIn("WEEKEND15", dispatch_payload["contacts"][0]["message"])
@@ -648,7 +684,7 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(
                 dry_run_campaign_send.json()["deliveries"][0]["provider"],
-                "dry_run",
+                "meta",
             )
 
             delivery_history = client.get(
@@ -793,6 +829,16 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(takeaway_invoice.status_code, 200)
             self.assertTrue(takeaway_invoice.json()["invoice_number"].startswith("PB-"))
+
+            takeaway_payment = client.post(
+                f"/api/v1/restaurant/orders/{takeaway_id}/payment-confirmation",
+                json={
+                    "payment_provider": "upi",
+                    "payment_reference": f"UPI-TEST-{takeaway_id}",
+                    "paid_amount": takeaway.json()["total"],
+                },
+            )
+            self.assertEqual(takeaway_payment.status_code, 200)
 
             closed_takeaway = client.patch(
                 f"/api/v1/restaurant/orders/{takeaway_id}/close?payment_method=upi"
@@ -1165,7 +1211,7 @@ class InternalPortalValidationTest(unittest.TestCase):
                 },
             )
             self.assertEqual(repeated_manual_webhook.status_code, 200)
-            self.assertEqual(repeated_manual_webhook.json()["status"], "already_paid")
+            self.assertEqual(repeated_manual_webhook.json()["status"], "duplicate")
 
             gateway_order = client.post(
                 "/api/v1/restaurant/orders/",

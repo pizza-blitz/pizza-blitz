@@ -33,6 +33,23 @@ class PurchaseOrderItemsUpdate(BaseModel):
     items: List[Any]
 
 
+def _serialize_purchase_order(order: PurchaseOrder) -> dict:
+    return {
+        "id": order.id,
+        "supplier_name": order.supplier_name,
+        "supplier_whatsapp": order.supplier_whatsapp,
+        "items": order.items or [],
+        "total_amount": round(float(order.total_amount or 0), 2),
+        "status": order.status,
+        "whatsapp_sent_at": (
+            order.whatsapp_sent_at.isoformat()
+            if order.whatsapp_sent_at
+            else None
+        ),
+        "created_at": order.created_at.isoformat() if order.created_at else None,
+    }
+
+
 def _reorder_quantity(item: InventoryItem) -> float:
     current_stock = float(item.current_stock or 0)
     minimum_stock = float(item.minimum_stock or 0)
@@ -340,9 +357,12 @@ def _post_vendor_price_history(order: PurchaseOrder, db: Session) -> list[dict]:
     return logged_prices
 
 
-@router.get("/", response_model=List[Any])
+@router.get("/")
 def get_purchase_orders(db: Session = Depends(get_db)):
-    return db.query(PurchaseOrder).all()
+    return [
+        _serialize_purchase_order(order)
+        for order in db.query(PurchaseOrder).all()
+    ]
 
 @router.post("/")
 def create_purchase_order(obj_in: PurchaseOrderCreate, db: Session = Depends(get_db)):
@@ -356,7 +376,7 @@ def create_purchase_order(obj_in: PurchaseOrderCreate, db: Session = Depends(get
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
-    return db_obj
+    return _serialize_purchase_order(db_obj)
 
 @router.post("/from-low-stock")
 def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
@@ -399,7 +419,10 @@ def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
 
     return {
         "created": len(created_orders),
-        "purchase_orders": created_orders,
+        "purchase_orders": [
+            _serialize_purchase_order(order)
+            for order in created_orders
+        ],
     }
 
 @router.patch("/{order_id}/items")
@@ -420,7 +443,7 @@ def reconcile_purchase_order_items(
     db.commit()
     db.refresh(order)
     return {
-        "purchase_order": order,
+        "purchase_order": _serialize_purchase_order(order),
         "items": order.items,
         "total_amount": order.total_amount,
     }
@@ -436,7 +459,10 @@ def mark_purchase_order_sent(order_id: int, db: Session = Depends(get_db)):
     order.whatsapp_sent_at = order.whatsapp_sent_at or datetime.utcnow()
     db.commit()
     db.refresh(order)
-    return {"status": order.status, "purchase_order": order}
+    return {
+        "status": order.status,
+        "purchase_order": _serialize_purchase_order(order),
+    }
 
 
 @router.patch("/{order_id}/receive")
@@ -445,7 +471,7 @@ def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
     if order.status == "received":
         return {
             "status": order.status,
-            "purchase_order": order,
+            "purchase_order": _serialize_purchase_order(order),
             "inventory_updates": [],
             "skipped_items": [],
             "vendor_prices": [],
@@ -463,7 +489,7 @@ def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
 
     return {
         "status": order.status,
-        "purchase_order": order,
+        "purchase_order": _serialize_purchase_order(order),
         "inventory_updates": inventory_updates,
         "skipped_items": skipped_items,
         "expense": expense,
@@ -492,9 +518,12 @@ def update_purchase_order_status(
     order.status = "draft"
     db.commit()
     db.refresh(order)
-    return {"status": order.status, "purchase_order": order}
+    return {
+        "status": order.status,
+        "purchase_order": _serialize_purchase_order(order),
+    }
 
 
 @router.get("/{order_id}")
 def get_purchase_order(order_id: int, db: Session = Depends(get_db)):
-    return _get_purchase_order_or_404(order_id, db)
+    return _serialize_purchase_order(_get_purchase_order_or_404(order_id, db))

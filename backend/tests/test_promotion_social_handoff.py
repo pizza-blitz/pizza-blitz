@@ -3,13 +3,41 @@ from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
+from app.db.session import SessionLocal
 from app.main import app
+from app.models.domain import Promotion, SocialPost, SocialPostDelivery
+
+
+def cleanup_social_handoff(promo_id: int, post_id: int) -> None:
+    db = SessionLocal()
+    try:
+        db.query(SocialPostDelivery).filter(
+            SocialPostDelivery.social_post_id == post_id
+        ).delete()
+        db.query(SocialPost).filter(SocialPost.id == post_id).delete()
+        db.query(Promotion).filter(Promotion.id == promo_id).delete()
+        db.commit()
+    finally:
+        db.close()
 
 
 class PromotionSocialHandoffTest(unittest.TestCase):
     def test_promotion_can_create_ready_social_post(self):
         today = date.today()
         with TestClient(app) as client:
+            admin_login = client.post(
+                "/api/v1/auth/admin/login",
+                json={
+                    "id": settings.PIZZA_BLITZ_ADMIN_ID,
+                    "password": settings.PIZZA_BLITZ_ADMIN_PASSWORD,
+                },
+            )
+            self.assertEqual(admin_login.status_code, 200)
+            client.headers.update(
+                {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+            )
+
             promo = client.post(
                 "/api/v1/restaurant/promotions/",
                 json={
@@ -39,6 +67,7 @@ class PromotionSocialHandoffTest(unittest.TestCase):
             )
             self.assertEqual(handoff.status_code, 200)
             post = handoff.json()["post"]
+            self.addCleanup(cleanup_social_handoff, promo_id, post["id"])
             self.assertEqual(post["title"], "Pizza Blitz Offer: Social Combo")
             self.assertEqual(post["platforms"], ["facebook", "instagram"])
             self.assertEqual(post["status"], "ready")
