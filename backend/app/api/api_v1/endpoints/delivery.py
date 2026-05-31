@@ -465,7 +465,7 @@ def create_delivery_zone(
 @router.get("/economics")
 def delivery_economics(
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     ensure_delivery_zones(db)
     zones = (

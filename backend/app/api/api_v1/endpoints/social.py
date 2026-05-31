@@ -378,7 +378,7 @@ def _retry_candidates(
 
 @router.get("/provider-status")
 def social_provider_statuses(
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     return {
         platform: _social_provider_readiness(platform)

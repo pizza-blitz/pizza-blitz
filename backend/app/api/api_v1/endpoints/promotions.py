@@ -2276,7 +2276,7 @@ def create_segment_campaign(
 
 @router.get("/providers/status")
 def campaign_provider_statuses(
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     channels = ["whatsapp", "sms", "email"]
     statuses = [_provider_readiness_status(channel) for channel in channels]
@@ -2303,7 +2303,7 @@ def campaign_provider_statuses(
 @router.get("/providers/dispatch-control")
 def campaign_dispatch_control(
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     channels = [_dispatch_control_channel(db, channel) for channel in CHANNEL_ORDER]
     delivery_counts = {

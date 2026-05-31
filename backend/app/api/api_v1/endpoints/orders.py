@@ -2233,7 +2233,7 @@ def create_order_payment_session(
 @router.get("/payments/production-readiness")
 def payment_production_readiness(
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     providers = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
     active_provider = payment_provider_status()
@@ -2353,7 +2353,7 @@ def payment_production_readiness(
 @router.get("/payments/gateway-activation")
 def payment_gateway_activation(
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     provider_statuses = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
     activation_providers = []

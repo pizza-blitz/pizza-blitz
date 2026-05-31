@@ -592,7 +592,7 @@ def _campaign_management_row(db: Session, campaign: AdCampaign, provider_status:
 
 @router.get("/provider-status")
 def ads_provider_status(
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     return _ad_provider_readiness()
 
@@ -686,7 +686,7 @@ def ads_launch_readiness(
 def ads_sync_readiness(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_roles("admin")),
 ):
     provider_status = _ad_provider_readiness()
     all_campaigns = db.query(AdCampaign).all()
