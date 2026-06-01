@@ -6,8 +6,8 @@ const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
-const staffId = process.env.E2E_STAFF_ID || "staff";
-const staffPassword = process.env.E2E_STAFF_PASSWORD || "staff123";
+const staffId = process.env.E2E_STAFF_ID || "delivery-e2e-staff";
+const staffPassword = process.env.E2E_STAFF_PASSWORD || "Delivery-Staff-123!";
 const artifactsDir = path.join(__dirname, "artifacts");
 
 function assert(condition, message) {
@@ -80,6 +80,25 @@ async function apiJson(endpoint, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   return { response, data };
+}
+
+async function activateManagedStaffCredential() {
+  const adminCookie = await portalLogin("admin");
+  const { response, data } = await apiJson("/api/v1/auth/staff/credential", {
+    method: "POST",
+    headers: {
+      Cookie: adminCookie,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: staffId,
+      password: staffPassword,
+      display_name: "E2E Delivery Staff",
+      is_active: true,
+    }),
+  });
+  assert(response.ok, `Could not activate managed staff credential: ${JSON.stringify(data)}`);
+  assert(data.configured === true, "Managed staff credential was not active after save.");
 }
 
 async function createDeliveryOrder(zoneId, address) {
@@ -195,6 +214,7 @@ async function main() {
   assert(orderResult.data.delivery_assignment?.status === "unassigned", "New delivery order did not create an unassigned dispatch record.");
   assert(orderResult.data.delivery_assignment?.zone?.name === outerZone.name, "Dispatch record did not keep the delivery zone.");
 
+  await activateManagedStaffCredential();
   const staffCookie = await portalLogin("staff");
   const queueResult = await fetch(`${apiURL}/api/v1/restaurant/delivery/queue`, {
     headers: { Cookie: staffCookie },

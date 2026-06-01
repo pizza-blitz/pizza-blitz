@@ -16,7 +16,7 @@ export function getServerApiUrl(endpoint: string) {
     process.env.PIZZA_BLITZ_API_URL ||
     process.env.API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:8010";
+    "http://127.0.0.1:8010";
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
   if (backendUrl.startsWith("/")) {

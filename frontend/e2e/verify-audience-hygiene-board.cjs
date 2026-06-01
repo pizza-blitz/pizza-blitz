@@ -165,11 +165,24 @@ async function screenshotAudienceHygiene(contacts) {
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
     await page.getByText("Audience Hygiene", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Contact readiness before campaign sends", { exact: true }).waitFor({ timeout: 15000 });
+    await page.waitForLoadState("networkidle", { timeout: 7000 }).catch(() => undefined);
     const hygieneSelect = page
       .locator("label")
       .filter({ hasText: "Audience Hygiene Segment" })
       .locator("select");
-    await hygieneSelect.selectOption("all_customers");
+    const [selectionResponse] = await Promise.all([
+      page.waitForResponse(
+        (apiResponse) =>
+          apiResponse.url().includes("/api/v1/restaurant/promotions/audience?audience=all_customers") &&
+          apiResponse.ok(),
+        { timeout: 15000 }
+      ),
+      hygieneSelect.selectOption("all_customers"),
+    ]);
+    assert(
+      selectionResponse.url().includes("audience=all_customers"),
+      `Audience hygiene selection used the wrong segment: ${selectionResponse.url()}`
+    );
     assert(
       (await hygieneSelect.inputValue()) === "all_customers",
       "Audience hygiene selector did not switch to all customers."

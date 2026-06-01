@@ -178,7 +178,10 @@ async function verifyBrowser() {
     await page.getByTestId("run-safe-test-send").click();
     await page.getByText("Dry-run test generated", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Live send blocked", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByText("re***@example.com", { exact: false }).waitFor({ timeout: 15000 });
+    await page
+      .getByTestId("safe-test-send-result")
+      .getByText("re***@example.com", { exact: false })
+      .waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-messaging-readiness.png"),

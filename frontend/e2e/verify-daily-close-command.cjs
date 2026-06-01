@@ -153,17 +153,19 @@ async function main() {
 
   const drawerBefore = await apiJson("/api/v1/restaurant/orders/cash-drawer/command", adminCookie);
   assert(drawerBefore.response.ok, `Cash drawer command failed: ${JSON.stringify(drawerBefore.data)}`);
-  const cashExpected = drawerBefore.data.method_totals.find((row) => row.method === "cash")?.expected_amount || 0;
+  const expectedTotals = Object.fromEntries(
+    drawerBefore.data.method_totals.map((row) => [row.method, row.expected_amount || 0])
+  );
   const drawerClose = await apiJson("/api/v1/restaurant/orders/cash-drawer/close", adminCookie, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      counted_cash: cashExpected,
-      counted_upi: 0,
-      counted_card: 0,
-      counted_mixed: 0,
-      counted_prepaid: 0,
-      counted_other: 0,
+      counted_cash: expectedTotals.cash || 0,
+      counted_upi: expectedTotals.upi || 0,
+      counted_card: expectedTotals.card || 0,
+      counted_mixed: expectedTotals.mixed || 0,
+      counted_prepaid: expectedTotals.prepaid || 0,
+      counted_other: expectedTotals.other || 0,
       closed_by: "E2E Manager",
       notes: "E2E drawer close before daily close",
     }),
