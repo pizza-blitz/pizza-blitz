@@ -67,6 +67,18 @@ CUSTOMIZATION_QUICK_BUILD_RECIPES = [
 ]
 
 
+def _top_option_rows(option_counter: Counter[str], limit: int = 8) -> list[dict]:
+    ranked_options = option_counter.most_common()
+    if not ranked_options:
+        return []
+    cutoff = ranked_options[min(limit - 1, len(ranked_options) - 1)][1]
+    return [
+        {"option": option, "quantity": quantity}
+        for option, quantity in ranked_options
+        if quantity >= cutoff
+    ]
+
+
 class MenuItemSchema(BaseModel):
     id: Optional[int] = None
     name: str
@@ -254,10 +266,7 @@ def get_customization_readiness(db: Session = Depends(get_db)):
         },
         "groups": group_rows,
         "category_coverage": category_coverage,
-        "top_options": [
-            {"option": option, "quantity": quantity}
-            for option, quantity in option_counter.most_common(8)
-        ],
+        "top_options": _top_option_rows(option_counter),
         "recent_customized_lines": recent_customized_lines,
         "next_actions": next_actions,
     }

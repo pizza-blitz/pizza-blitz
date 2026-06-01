@@ -141,7 +141,7 @@ async function main() {
     await page.getByPlaceholder("Customer name").fill("Quick Build Proof");
     await page.getByPlaceholder("Customer phone").fill(phone);
     await page.getByTestId("counter-send-order").click();
-    await page.getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-pos-message").getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
 
     const message = await page.getByTestId("counter-pos-message").innerText();
     const orderMatch = message.match(/Order #(\d+) sent to kitchen/i);

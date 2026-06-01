@@ -384,8 +384,8 @@ const defaultKitchenStations = [
 ];
 
 const kitchenStatusPriority: Record<string, number> = {
-  open: 0,
-  preparing: 1,
+  preparing: 0,
+  open: 1,
   ready: 2,
 };
 

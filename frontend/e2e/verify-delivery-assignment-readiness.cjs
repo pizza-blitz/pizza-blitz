@@ -147,7 +147,7 @@ async function proveOperationsAssignment(orderId) {
     await page.getByTestId("delivery-priority-need-rider").getByText("Need Rider", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Address Review", { exact: false }).first().waitFor({ timeout: 10000 });
 
-    const card = page.locator("article").filter({ hasText: `Order #${orderId}` }).first();
+    const card = page.getByTestId(`delivery-handoff-order-${orderId}`);
     await card.waitFor({ timeout: 10000 });
     await page.getByTestId(`delivery-status-rail-${orderId}`).waitFor({ timeout: 10000 });
     await page.getByTestId(`delivery-address-score-${orderId}`).waitFor({ timeout: 10000 });

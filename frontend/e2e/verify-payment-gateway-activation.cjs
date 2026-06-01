@@ -18,6 +18,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
 async function waitForHttp(url, label) {
   const startedAt = Date.now();
   let lastError = "";
@@ -87,6 +96,9 @@ async function signInAsAdmin(context) {
   });
   const data = await response.json();
   assert(response.ok(), `Admin session failed: ${JSON.stringify(data)}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers()["set-cookie"]);
+  assert(cookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
+  return cookie;
 }
 
 async function main() {
@@ -103,10 +115,11 @@ async function main() {
   const watch = createBrowserWatch(page);
 
   try {
-    await signInAsAdmin(context);
+    const adminCookie = await signInAsAdmin(context);
 
     const apiResponse = await context.request.get(
-      `${apiURL}/api/v1/restaurant/orders/payments/gateway-activation`
+      `${apiURL}/api/v1/restaurant/orders/payments/gateway-activation`,
+      { headers: { Cookie: adminCookie } }
     );
     const activation = await apiResponse.json();
     assert(apiResponse.ok(), `Gateway activation API failed: ${JSON.stringify(activation)}`);

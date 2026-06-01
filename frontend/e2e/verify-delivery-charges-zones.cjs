@@ -18,6 +18,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
 async function waitForHttp(url, label) {
   const startedAt = Date.now();
   let lastError = "";
@@ -152,8 +161,12 @@ async function main() {
       data: { id: adminId, password: adminPassword, role: "admin" },
     });
     assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
+    const adminCookie = cookieHeaderFromSetCookie(login.headers()["set-cookie"]);
+    assert(adminCookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
 
-    const authedEconomics = await context.request.get(`${apiURL}/api/v1/restaurant/delivery/economics`);
+    const authedEconomics = await context.request.get(`${apiURL}/api/v1/restaurant/delivery/economics`, {
+      headers: { Cookie: adminCookie },
+    });
     const economics = await authedEconomics.json();
     assert(authedEconomics.ok(), `Authed delivery economics failed: ${JSON.stringify(economics)}`);
     assert(economics.summary.minimum_order_zone_count >= 1, "Economics summary did not count minimum-order zones.");

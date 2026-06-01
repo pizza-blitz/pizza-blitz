@@ -185,7 +185,7 @@ async function main() {
     await page.getByTestId(`counter-option-${counterItem.itemId}-${counterItem.optionId}`).click();
     await page.getByText(counterItem.optionName, { exact: false }).first().waitFor({ timeout: 10000 });
     await page.getByTestId("counter-send-order").click();
-    await page.getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
+    await page.getByTestId("counter-pos-message").getByText(/Order #\d+ sent to kitchen/i).waitFor({ timeout: 15000 });
 
     const bodyText = await page.locator("body").innerText();
     const orderMatch = bodyText.match(/Order #(\d+) sent to kitchen/i);

@@ -18,6 +18,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
 async function waitForHttp(url, label) {
   const startedAt = Date.now();
   let lastError = "";
@@ -115,6 +124,9 @@ async function signInAsAdmin(context) {
   });
   const data = await response.json();
   assert(response.ok(), `Admin session failed: ${JSON.stringify(data)}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers()["set-cookie"]);
+  assert(cookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
+  return cookie;
 }
 
 async function main() {
@@ -134,7 +146,7 @@ async function main() {
   let reconciliationEvent = null;
 
   try {
-    await signInAsAdmin(context);
+    const adminCookie = await signInAsAdmin(context);
     orderId = await createPrepaidOrder();
     paymentReference = `MANUAL-E2E-${Date.now()}`;
     const response = await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
@@ -160,7 +172,8 @@ async function main() {
     await auditLedger.getByText("Duplicate 1", { exact: false }).first().waitFor({ timeout: 10000 });
 
     const reconciliationResponse = await context.request.get(
-      `${apiURL}/api/v1/restaurant/orders/payments/reconciliation`
+      `${apiURL}/api/v1/restaurant/orders/payments/reconciliation`,
+      { headers: { Cookie: adminCookie } }
     );
     const reconciliationData = await reconciliationResponse.json();
     assert(

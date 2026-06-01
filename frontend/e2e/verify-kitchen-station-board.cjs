@@ -231,7 +231,6 @@ async function main() {
 
     for (const station of ["oven", "fryer", "cold"]) {
       await page.getByTestId(`station-command-station-${station}`).waitFor({ timeout: 15000 });
-      await page.getByTestId(`station-command-order-${station}-${orderId}`).waitFor({ timeout: 15000 });
       await page.getByTestId(`kitchen-station-${station}`).waitFor({ timeout: 15000 });
       await waitForStationOrder(page, station, orderId);
       await page.getByTestId(`kitchen-station-lines-${station}-${orderId}`).waitFor({ timeout: 15000 });

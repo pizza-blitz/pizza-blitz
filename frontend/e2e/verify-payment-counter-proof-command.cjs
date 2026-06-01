@@ -16,6 +16,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
 async function waitForHttp(url, label) {
   const startedAt = Date.now();
   let lastError = "";
@@ -38,6 +47,9 @@ async function signInAsAdmin(context) {
   });
   const data = await response.json();
   assert(response.ok(), `Admin session failed: ${JSON.stringify(data)}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers()["set-cookie"]);
+  assert(cookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
+  return cookie;
 }
 
 async function createCounterUpiOrder() {
@@ -65,9 +77,10 @@ async function createCounterUpiOrder() {
   return data.order_id;
 }
 
-async function getPaymentProduction(context) {
+async function getPaymentProduction(context, adminCookie) {
   const response = await context.request.get(
-    `${apiURL}/api/v1/restaurant/orders/payments/production-readiness`
+    `${apiURL}/api/v1/restaurant/orders/payments/production-readiness`,
+    { headers: { Cookie: adminCookie } }
   );
   const data = await response.json();
   assert(response.ok(), `Payment production readiness failed: ${JSON.stringify(data)}`);
@@ -128,18 +141,21 @@ async function main() {
   let orderId = 0;
 
   try {
-    await signInAsAdmin(context);
+    const adminCookie = await signInAsAdmin(context);
     orderId = await createCounterUpiOrder();
 
     const readyResponse = await context.request.patch(
       `${apiURL}/api/v1/restaurant/orders/${orderId}/status`,
-      { data: { status: "ready" } }
+      {
+        data: { status: "ready" },
+        headers: { Cookie: adminCookie },
+      }
     );
     const readyData = await readyResponse.json();
     assert(readyResponse.ok(), `Could not mark order ready: ${JSON.stringify(readyData)}`);
     assert(readyData.payment_proof_required === true, "UPI order should require payment proof.");
 
-    const productionBefore = await getPaymentProduction(context);
+    const productionBefore = await getPaymentProduction(context, adminCookie);
     assert(
       productionBefore.summary.payment_proof_required_count >= 1,
       "Counter proof count did not include the UPI order."
@@ -166,7 +182,7 @@ async function main() {
     });
     watch.assertClean("payment counter proof command workflow");
 
-    const productionAfter = await getPaymentProduction(context);
+    const productionAfter = await getPaymentProduction(context, adminCookie);
     assert(
       !productionAfter.queues.payment_proof_required.some((order) => order.id === orderId),
       `Order #${orderId} remained in the counter proof queue after proof.`

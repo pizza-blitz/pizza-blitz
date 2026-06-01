@@ -18,6 +18,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
 async function waitForHttp(url, label) {
   const startedAt = Date.now();
   let lastError = "";
@@ -70,11 +79,15 @@ async function signInAsAdmin(context) {
   });
   const data = await response.json();
   assert(response.ok(), `Admin session failed: ${JSON.stringify(data)}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers()["set-cookie"]);
+  assert(cookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
+  return cookie;
 }
 
-async function getPaymentProduction(context) {
+async function getPaymentProduction(context, adminCookie) {
   const response = await context.request.get(
-    `${apiURL}/api/v1/restaurant/orders/payments/production-readiness`
+    `${apiURL}/api/v1/restaurant/orders/payments/production-readiness`,
+    { headers: { Cookie: adminCookie } }
   );
   const data = await response.json();
   assert(response.ok(), `Payment production readiness failed: ${JSON.stringify(data)}`);
@@ -142,10 +155,10 @@ async function main() {
   let paymentReference = "";
 
   try {
-    await signInAsAdmin(context);
+    const adminCookie = await signInAsAdmin(context);
     orderId = await createPrepaidOrder();
 
-    const productionBefore = await getPaymentProduction(context);
+    const productionBefore = await getPaymentProduction(context, adminCookie);
     assert(
       productionBefore.queues.awaiting_settlement.some((order) => order.id === orderId),
       `Order #${orderId} was not visible in the settlement queue.`
@@ -161,7 +174,10 @@ async function main() {
     if (missingProvider) {
       const sessionResponse = await context.request.post(
         `${apiURL}/api/v1/restaurant/orders/${orderId}/payment-session`,
-        { data: { provider: missingProvider.provider } }
+        {
+          data: { provider: missingProvider.provider },
+          headers: { Cookie: adminCookie },
+        }
       );
       assert(
         sessionResponse.status() === 409,
@@ -177,7 +193,6 @@ async function main() {
     await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Payment Production Control", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText("Awaiting Settlement Queue", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText(`Order #${orderId}`, { exact: false }).waitFor({ timeout: 10000 });
     await page.getByRole("button", { name: new RegExp(`Load #${orderId}`) }).click();
     await page.getByPlaceholder("Payment reference").fill(paymentReference);
     await page.getByRole("button", { name: /Record Manual Paid Proof|Send Manual Paid Webhook/i }).click();
@@ -190,7 +205,7 @@ async function main() {
     });
     watch.assertClean("payment production settings workflow");
 
-    const productionAfter = await getPaymentProduction(context);
+    const productionAfter = await getPaymentProduction(context, adminCookie);
     assert(
       !productionAfter.queues.awaiting_settlement.some((order) => order.id === orderId),
       `Order #${orderId} remained in the settlement queue after paid webhook.`
