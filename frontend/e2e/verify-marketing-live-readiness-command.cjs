@@ -193,6 +193,18 @@ async function verifyBrowser(contracts) {
       data: { id: adminId, password: adminPassword, role: "admin" },
     });
     assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
+    const cookie = cookieHeaderFromSetCookie(login.headers()["set-cookie"]);
+    assert(cookie.includes("pb_admin_session="), "Admin browser login did not return an admin session cookie.");
+    const [cookieName, ...cookieValueParts] = cookie.split("=");
+    await context.addCookies([
+      {
+        name: cookieName,
+        value: cookieValueParts.join("="),
+        url: baseURL,
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+    ]);
 
     const response = await page.goto(`${baseURL}/promotions`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
@@ -219,6 +231,37 @@ async function verifyBrowser(contracts) {
 
     await page.getByTestId("marketing-live-readiness-score").getByText(`${score.score}% ready`, { exact: true }).waitFor({ timeout: 15000 });
     await board.getByText(`${score.passed}/${score.total} checks passed`, { exact: true }).waitFor({ timeout: 15000 });
+    try {
+      await page.waitForFunction(
+        ({ readyCampaigns, readyContacts }) => {
+          const senderText = document
+            .querySelector('[data-testid="marketing-sender-checklist"]')
+            ?.innerText?.replace(/\s+/g, " ")
+            .trim()
+            .toUpperCase();
+          return (
+            senderText?.includes(`READY CAMPAIGNS ${readyCampaigns}`) &&
+            senderText.includes(`READY CONTACTS ${readyContacts}`)
+          );
+        },
+        {
+          readyCampaigns: contracts.sendQueue.summary.ready_campaign_count,
+          readyContacts: contracts.sendQueue.summary.send_ready_contacts,
+        },
+        { timeout: 20000 }
+      );
+    } catch {
+      const senderText = await page.getByTestId("marketing-sender-checklist").innerText();
+      const apiProbe = await page.evaluate(async (url) => {
+        const response = await fetch(url, { credentials: "include", cache: "no-store" });
+        return { status: response.status, text: (await response.text()).slice(0, 500) };
+      }, `${apiURL}/api/v1/restaurant/promotions/send/queue?limit=50&view=all`);
+      throw new Error(
+        `Sender card did not reach the expected metrics. Expected campaigns=${contracts.sendQueue.summary.ready_campaign_count}, contacts=${contracts.sendQueue.summary.send_ready_contacts}. Browser API probe=${JSON.stringify(
+          apiProbe
+        )}. Visible sender card:\n${senderText}`
+      );
+    }
     const senderText = await page.getByTestId("marketing-sender-checklist").innerText();
     const socialText = await page.getByTestId("marketing-social-checklist").innerText();
     const adText = await page.getByTestId("marketing-ad-checklist").innerText();
@@ -231,9 +274,9 @@ async function verifyBrowser(contracts) {
     assertMetricText(adText, "Ready", `${contracts.adLaunch.ready_count}`, "ads");
     assertMetricText(adText, "Blocked", `${contracts.adLaunch.blocked_count}`, "ads");
     assertMetricText(adText, "Budget", `Rs ${Math.round(contracts.adLaunch.planned_budget || 0).toLocaleString()}`, "ads");
-    await page.getByRole("link", { name: /Open send queue/i }).waitFor({ timeout: 15000 });
-    await page.getByRole("link", { name: /Open social/i }).waitFor({ timeout: 15000 });
-    await page.getByRole("link", { name: /Open ads/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("marketing-sender-checklist").getByRole("link", { name: /Open send queue/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("marketing-social-checklist").getByRole("link", { name: /Open social/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("marketing-ad-checklist").getByRole("link", { name: /Open ads/i }).waitFor({ timeout: 15000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-marketing-live-readiness-command.png"),
