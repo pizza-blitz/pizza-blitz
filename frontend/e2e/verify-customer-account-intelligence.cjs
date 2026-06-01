@@ -16,6 +16,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
 async function waitForHttp(url, label) {
   const startedAt = Date.now();
   let lastError = "";
@@ -99,8 +108,22 @@ async function signInAsCustomer(context, phone, orderId) {
     data: { phone, order_id: orderId },
   });
   assert(response.ok(), `Customer session failed: ${await response.text()}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers()["set-cookie"]);
+  assert(cookie.includes("pb_customer_session="), "Customer login did not return a customer session cookie.");
+  const [name, ...valueParts] = cookie.split("=");
+  await context.addCookies([
+    {
+      name,
+      value: valueParts.join("="),
+      url: baseURL,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
 
-  const sessionResponse = await context.request.get(`${baseURL}/api/customer-session`);
+  const sessionResponse = await context.request.get(`${baseURL}/api/customer-session`, {
+    headers: { Cookie: cookie },
+  });
   const sessionData = await sessionResponse.json().catch(() => ({}));
   assert(sessionResponse.ok(), `Customer session was not persisted: ${JSON.stringify(sessionData)}`);
   assert(sessionData.session?.phone === phone, "Customer session returned the wrong phone.");
