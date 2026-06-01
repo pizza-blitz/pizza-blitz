@@ -31,7 +31,7 @@ from app.models.domain import (
     StaffLeaveRequest,
 )
 from app.services.ad_campaign_service import ad_provider_status
-from app.services.auth_service import has_managed_staff_credentials
+from app.services.auth_service import has_managed_admin_credentials, has_managed_staff_credentials
 from app.services.campaign_dispatch_service import campaign_provider_status
 from app.services.payment_gateway import payment_provider_status
 from app.services.social_publish_service import social_provider_status
@@ -690,7 +690,7 @@ def readiness_report(db: Session) -> dict:
     checks = [
         _database_check(db),
         _database_persistence_check(environment),
-        _admin_password_check(environment),
+        _admin_password_check(environment, db),
         _staff_password_check(environment, db),
         _auth_secret_check(environment),
         _portal_session_secret_check(environment),
@@ -699,7 +699,7 @@ def readiness_report(db: Session) -> dict:
         _payment_webhook_check(environment, payment_status),
         _backup_storage_check(),
     ]
-    environment_manifest = _environment_manifest()
+    environment_manifest = _environment_manifest(db)
     environment_summary = _environment_summary(environment_manifest)
     go_live_sections = _go_live_sections(
         checks=checks,
@@ -3604,7 +3604,15 @@ def _database_persistence_check(environment: str) -> dict:
     }
 
 
-def _admin_password_check(environment: str) -> dict:
+def _admin_password_check(environment: str, db: Session) -> dict:
+    if has_managed_admin_credentials(db):
+        return {
+            "key": "admin_password",
+            "label": "Admin password",
+            "status": "pass",
+            "detail": "Managed master admin login is active and stored with a salted PBKDF2 hash.",
+        }
+
     configured, weak = _admin_credential_state()
     if (not configured or weak) and environment == "production":
         status = "fail"
@@ -3642,7 +3650,9 @@ def _staff_password_check(environment: str, db: Session) -> dict:
     )
     weak = password in DEFAULT_SECRET_VALUES or len(password) < 8
     admin_configured, admin_weak = _admin_credential_state()
-    admin_master_available = admin_configured and not admin_weak
+    admin_master_available = has_managed_admin_credentials(db) or (
+        admin_configured and not admin_weak
+    )
     if not configured and admin_master_available:
         status = "warn"
     elif (not configured or weak) and environment == "production":
@@ -4111,7 +4121,8 @@ def _backup_run_dict(run: BackupRun) -> dict:
     }
 
 
-def _environment_manifest() -> list[dict]:
+def _environment_manifest(db: Session) -> list[dict]:
+    managed_admin_active = has_managed_admin_credentials(db)
     groups = []
     for group in ENVIRONMENT_VARIABLE_GROUPS:
         variables = []
@@ -4125,11 +4136,20 @@ def _environment_manifest() -> list[dict]:
             if raw_value is None and alias_values:
                 raw_value = alias_values[0]
             configured = raw_value is not None and raw_value.strip() != ""
+            required = variable["required"]
+            requirement_satisfied_by = None
+            if managed_admin_active and variable["name"] in {
+                "RESTAURANT_ADMIN_ID",
+                "RESTAURANT_ADMIN_PASSWORD",
+            }:
+                required = False
+                requirement_satisfied_by = "managed_admin_credential"
             variables.append(
                 {
                     "name": variable["name"],
                     "aliases": variable.get("aliases", []),
-                    "required": variable["required"],
+                    "required": required,
+                    "requirement_satisfied_by": requirement_satisfied_by,
                     "sensitive": variable["sensitive"],
                     "configured": configured,
                     "purpose": variable["purpose"],
