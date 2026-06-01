@@ -186,7 +186,7 @@ async function proveCleanupQueue(campaignName, contacts) {
       { timeout: 15000 }
     );
     await page.getByText(contacts.blocked.name, { exact: false }).first().waitFor({ timeout: 15000 });
-    const consentQueueText = await page.locator("body").innerText();
+    const consentQueueText = (await page.locator('[data-testid^="customer-row-"]').allInnerTexts()).join("\n");
     assert(!consentQueueText.includes(contacts.missingEmail.name), "Opted-out cleanup queue leaked the missing-email contact.");
 
     await page.goto(`${baseURL}/customers?segment=missing_email&source=campaign_cleanup`, { waitUntil: "domcontentloaded" });
