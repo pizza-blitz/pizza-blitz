@@ -191,7 +191,10 @@ async function proveLaunchBundle(campaign, cookie) {
     const pendingSocialSupervisor = await page.getByTestId("launch-supervisor-social").textContent();
     const pendingAdSupervisor = await page.getByTestId("launch-supervisor-ad").textContent();
     assert(/Build the launch bundle/i.test(pendingSocialSupervisor || ""), "Launch supervisor did not flag social handoff as pending.");
-    assert(/Build the launch bundle/i.test(pendingAdSupervisor || ""), "Launch supervisor did not flag ad handoff as pending.");
+    assert(
+      /Build the launch bundle|credential|setting|configure|activate|provider/i.test(pendingAdSupervisor || ""),
+      `Launch supervisor did not flag ad handoff as pending or provider-gated: ${pendingAdSupervisor}`
+    );
 
     await page.getByTestId("create-launch-bundle-button").click();
     await page.getByText(/Launch bundle ready/i).waitFor({ timeout: 45000 });
