@@ -167,7 +167,7 @@ async function proveOperationsFlow(orderId) {
     await page.getByText("Ready To Close", { exact: false }).first().waitFor({ timeout: 10000 });
     await page.getByText("Flow Next Actions", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByText(`Print receipt and close`, { exact: false }).first().waitFor({ timeout: 10000 });
-    await page.getByText(`#${orderId}`, { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByTestId(`operations-order-row-${orderId}`).waitFor({ timeout: 10000 });
     await page.getByText("Received", { exact: false }).first().waitFor({ timeout: 10000 });
     await page.getByText("Ready", { exact: false }).first().waitFor({ timeout: 10000 });
 

@@ -39,15 +39,40 @@ async function waitForHttp(url, label) {
 async function apiJson(endpoint, init = {}) {
   const response = await fetch(`${apiURL}${endpoint}`, {
     cache: "no-store",
-    headers: { "Content-Type": "application/json", ...(init.headers || {}) },
     ...init,
+    headers: { "Content-Type": "application/json", ...(init.headers || {}) },
   });
   const data = await response.json().catch(() => ({}));
   return { response, data };
 }
 
+function cookieHeaderFromSetCookie(setCookie) {
+  const values = Array.isArray(setCookie) ? setCookie : [setCookie || ""];
+  return values
+    .flatMap((value) => value.split(/,(?=\s*pb_[^=]+=)/))
+    .map((value) => value.split(";")[0].trim())
+    .filter((value) => value.startsWith("pb_"))
+    .join("; ");
+}
+
+async function portalLoginCookie() {
+  const response = await fetch(`${baseURL}/api/admin-session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: adminId, password: adminPassword, role: "admin" }),
+  });
+  const data = await response.json().catch(() => ({}));
+  assert(response.ok, `Admin portal login failed: ${JSON.stringify(data)}`);
+  const cookie = cookieHeaderFromSetCookie(response.headers.get("set-cookie"));
+  assert(cookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
+  return cookie;
+}
+
 function dateOnly(date) {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function addDays(date, days) {
@@ -62,9 +87,10 @@ function sameDateLastYear(date) {
   return next;
 }
 
-async function seedDailyEntry({ date, totalSale, expense, notes }) {
+async function seedDailyEntry({ date, totalSale, expense, notes }, adminCookie) {
   const { response, data } = await apiJson("/api/v1/restaurant/sales/daily-entry", {
     method: "POST",
+    headers: { Cookie: adminCookie },
     body: JSON.stringify({
       date,
       total_sale: totalSale,
@@ -77,26 +103,26 @@ async function seedDailyEntry({ date, totalSale, expense, notes }) {
   assert(response.ok, `Could not seed daily reporting entry: ${JSON.stringify(data)}`);
 }
 
-async function seedOwnerComparisonLedger() {
+async function seedOwnerComparisonLedger(adminCookie) {
   const today = new Date();
   await seedDailyEntry({
     date: dateOnly(today),
     totalSale: 4321,
     expense: 1180,
     notes: "E2E owner comparison current day",
-  });
+  }, adminCookie);
   await seedDailyEntry({
     date: dateOnly(addDays(today, -7)),
     totalSale: 3210,
     expense: 950,
     notes: "E2E owner comparison same weekday last week",
-  });
+  }, adminCookie);
   await seedDailyEntry({
     date: dateOnly(sameDateLastYear(today)),
     totalSale: 2875,
     expense: 870,
     notes: "E2E owner comparison same day last year",
-  });
+  }, adminCookie);
 }
 
 async function seedReportingOrder() {
@@ -175,11 +201,9 @@ async function assertProtectedEndpoint() {
   assert(owner.response.status === 401, `Anonymous owner comparison endpoint should return 401, got ${owner.response.status}: ${JSON.stringify(owner.data)}`);
 }
 
-async function assertAdminEndpoint(context) {
-  const cookies = await context.cookies(baseURL);
-  const cookieHeader = cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+async function assertAdminEndpoint(context, adminCookie) {
   const response = await context.request.get(`${apiURL}/api/v1/restaurant/stats/compare/order-channel-dashboard?period=30days`, {
-    headers: { Cookie: cookieHeader },
+    headers: { Cookie: adminCookie },
   });
   const data = await response.json();
   assert(response.ok(), `Admin reporting endpoint failed: ${JSON.stringify(data)}`);
@@ -194,7 +218,7 @@ async function assertAdminEndpoint(context) {
   assert(data.payment_mix.some((row) => row.key === "cash"), "Reporting endpoint did not include cash payment data.");
 
   const ownerResponse = await context.request.get(`${apiURL}/api/v1/restaurant/stats/compare/owner-command-dashboard?period=30days`, {
-    headers: { Cookie: cookieHeader },
+    headers: { Cookie: adminCookie },
   });
   const ownerData = await ownerResponse.json();
   assert(ownerResponse.ok(), `Admin owner comparison endpoint failed: ${JSON.stringify(ownerData)}`);
@@ -274,7 +298,8 @@ async function main() {
   await waitForHttp(baseURL, "frontend");
 
   await assertProtectedEndpoint();
-  await seedOwnerComparisonLedger();
+  const adminCookie = await portalLoginCookie();
+  await seedOwnerComparisonLedger(adminCookie);
   const orderId = await seedReportingOrder();
 
   const browser = await chromium.launch({ headless: true });
@@ -287,7 +312,7 @@ async function main() {
 
   try {
     await signInAsAdmin(context);
-    await assertAdminEndpoint(context);
+    await assertAdminEndpoint(context, adminCookie);
     await assertReportsPage(page, watch);
   } finally {
     await browser.close();

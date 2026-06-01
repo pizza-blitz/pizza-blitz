@@ -188,8 +188,14 @@ async function createDeliveryOrder(item, zoneId, address, phone) {
 async function assertCount(page, testId, expected) {
   const locator = page.getByTestId(testId);
   await locator.waitFor({ timeout: 15000 });
-  const actual = (await locator.innerText()).trim();
-  assert(actual === String(expected), `${testId} expected ${expected}, got ${actual}.`);
+  const deadline = Date.now() + 15000;
+  let actual = "";
+  while (Date.now() < deadline) {
+    actual = (await locator.innerText()).trim();
+    if (actual === String(expected)) return;
+    await sleep(250);
+  }
+  assert(false, `${testId} expected ${expected}, got ${actual}.`);
 }
 
 async function main() {

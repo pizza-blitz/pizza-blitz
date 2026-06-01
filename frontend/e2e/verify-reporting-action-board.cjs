@@ -64,7 +64,7 @@ async function main() {
     await page.getByText("Daily Recovery Queue", { exact: true }).waitFor({ timeout: 10000 });
     await page.getByText("Owner Moves", { exact: true }).waitFor({ timeout: 10000 });
     await page.getByText("Revenue Recovery", { exact: true }).waitFor({ timeout: 10000 });
-    await page.getByText("Profit Direction", { exact: true }).waitFor({ timeout: 10000 });
+    await page.getByTestId("reporting-action-board").getByText("Profit Direction", { exact: true }).waitFor({ timeout: 10000 });
 
     const layout = await page.evaluate(() => ({
       bodyOverflow: document.documentElement.scrollWidth - window.innerWidth,
