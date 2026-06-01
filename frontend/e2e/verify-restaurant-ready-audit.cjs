@@ -1,6 +1,7 @@
 const { chromium } = require("@playwright/test");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 
@@ -47,14 +48,14 @@ async function main() {
     assert(/Ready\s+\d+/i.test(bodyText), "Restaurant ready audit did not render ready count.");
     assert(/Attention\s+\d+/i.test(bodyText), "Restaurant ready audit did not render attention count.");
 
-    const apiAudit = await page.evaluate(async () => {
-      const response = await fetch("/server/api/v1/restaurant/ops/readiness", {
+    const apiAudit = await page.evaluate(async (readinessUrl) => {
+      const response = await fetch(readinessUrl, {
         credentials: "include",
         cache: "no-store",
       });
       const data = await response.json();
       return { ok: response.ok, status: response.status, data };
-    });
+    }, `${apiURL}/api/v1/restaurant/ops/readiness`);
     assert(apiAudit.ok, `Readiness API failed with ${apiAudit.status}: ${JSON.stringify(apiAudit.data)}`);
     assert(
       Array.isArray(apiAudit.data.restaurant_ready_audit?.requirements),

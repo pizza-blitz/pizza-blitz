@@ -166,8 +166,14 @@ async function verifyBrowser(report) {
     await page.getByText("Release Decision", { exact: true }).waitFor({ timeout: 15000 });
     await board.getByRole("link", { name: /Production Ops/i }).waitFor({ timeout: 15000 });
     await board.getByRole("link", { name: /Customer Checkout/i }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-launch-candidate-hardening.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-customer-web-checkout.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page
+      .getByTestId("e2e-failure-review")
+      .getByText("verify-launch-candidate-hardening.cjs", { exact: true })
+      .waitFor({ timeout: 15000 });
+    await page
+      .getByTestId("critical-route-stability")
+      .getByText("verify-customer-web-checkout.cjs", { exact: true })
+      .waitFor({ timeout: 15000 });
 
     const boardText = await board.innerText();
     assertNormalizedTextContains(boardText, `${report.score}% ready`, "launch board readiness score");
