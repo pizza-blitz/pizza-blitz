@@ -186,6 +186,10 @@ async function main() {
     await page.getByPlaceholder("Email for receipts and offers").fill(email);
     await page.getByPlaceholder("Delivery address").fill("Civil Lines market near main road");
     await page.getByText(/Delivery .*: Rs .*ETA/i).waitFor({ timeout: 15000 });
+    const prepaidButton = page.getByRole("button", { name: /^Prepaid$/i });
+    const cashButton = page.getByRole("button", { name: /^Cash$/i });
+    assert(await prepaidButton.isDisabled(), "Manual fallback should not advertise a usable public prepaid checkout.");
+    assert((await cashButton.getAttribute("aria-pressed")) === "true", "Cash should be the default while prepaid is inactive.");
     await page.getByRole("button", { name: /^Cash$/i }).click();
     await page.getByTestId("customer-place-order").click();
     await page.getByText(/Order #\d+ confirmed/i).waitFor({ timeout: 15000 });

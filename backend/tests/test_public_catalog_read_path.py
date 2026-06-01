@@ -33,6 +33,10 @@ class PublicCatalogReadPathTest(unittest.TestCase):
         payload = response.json()
         self.assertEqual(len(payload["menu"]), 10)
         self.assertIn("accepting_orders", payload["checkout_readiness"])
+        self.assertIn("cash_available", payload["payment_checkout"])
+        self.assertIn("prepaid_available", payload["payment_checkout"])
+        self.assertNotIn("missing_checkout_settings", payload["payment_checkout"])
+        self.assertNotIn("missing_webhook_settings", payload["payment_checkout"])
         self.assertGreater(len(payload["delivery_zones"]), 0)
         self.assertLessEqual(len(payload["active_promotions"]), 8)
 

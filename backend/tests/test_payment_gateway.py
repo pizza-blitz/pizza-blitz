@@ -10,14 +10,17 @@ from app.services import payment_gateway
 class PaymentGatewayProviderTest(unittest.TestCase):
     def setUp(self):
         self.original_values = {
+            "PAYMENT_PROVIDER": settings.PAYMENT_PROVIDER,
             "PAYMENT_CURRENCY": settings.PAYMENT_CURRENCY,
             "CASHFREE_APP_ID": settings.CASHFREE_APP_ID,
             "CASHFREE_SECRET_KEY": settings.CASHFREE_SECRET_KEY,
+            "CASHFREE_WEBHOOK_SECRET": settings.CASHFREE_WEBHOOK_SECRET,
             "CASHFREE_ENVIRONMENT": settings.CASHFREE_ENVIRONMENT,
             "CASHFREE_API_VERSION": settings.CASHFREE_API_VERSION,
             "CASHFREE_BASE_URL": settings.CASHFREE_BASE_URL,
             "RAZORPAY_KEY_ID": settings.RAZORPAY_KEY_ID,
             "RAZORPAY_KEY_SECRET": settings.RAZORPAY_KEY_SECRET,
+            "RAZORPAY_WEBHOOK_SECRET": settings.RAZORPAY_WEBHOOK_SECRET,
             "RAZORPAY_BASE_URL": settings.RAZORPAY_BASE_URL,
         }
 
@@ -66,6 +69,28 @@ class PaymentGatewayProviderTest(unittest.TestCase):
         self.assertEqual(payload["customer_details"]["customer_phone"], "9876543210")
         self.assertEqual(headers["x-api-version"], "2025-01-01")
         self.assertEqual(headers["x-client-id"], "cf_app")
+
+    def test_public_checkout_uses_cash_only_until_real_gateway_is_ready(self):
+        settings.PAYMENT_PROVIDER = "manual"
+        manual = payment_gateway.public_payment_checkout_status()
+        self.assertTrue(manual["cash_available"])
+        self.assertFalse(manual["prepaid_available"])
+        self.assertIsNone(manual["provider"])
+        self.assertEqual(manual["mode"], "cash_only")
+        self.assertNotIn("missing_checkout_settings", manual)
+
+        settings.PAYMENT_PROVIDER = "cashfree"
+        settings.CASHFREE_APP_ID = "cf_app"
+        settings.CASHFREE_SECRET_KEY = "cf_secret"
+        settings.CASHFREE_WEBHOOK_SECRET = None
+        unsigned = payment_gateway.public_payment_checkout_status()
+        self.assertFalse(unsigned["prepaid_available"])
+
+        settings.CASHFREE_WEBHOOK_SECRET = "cf_webhook"
+        ready = payment_gateway.public_payment_checkout_status()
+        self.assertTrue(ready["prepaid_available"])
+        self.assertEqual(ready["provider"], "cashfree")
+        self.assertEqual(ready["mode"], "online_gateway")
 
     def test_razorpay_session_creates_provider_order_and_verifies_signature(self):
         settings.PAYMENT_CURRENCY = "INR"

@@ -114,6 +114,45 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
     }
 
 
+def public_payment_checkout_status(provider: Optional[str] = None) -> dict[str, Any]:
+    provider_status = payment_provider_status(provider)
+    selected_provider = provider_status["provider"]
+    prepaid_available = (
+        selected_provider in {"direct_bank", "cashfree", "razorpay"}
+        and provider_status["checkout_configured"]
+        and provider_status["webhook_configured"]
+    )
+
+    if not prepaid_available:
+        return {
+            "cash_available": True,
+            "prepaid_available": False,
+            "provider": None,
+            "mode": "cash_only",
+            "label": "Online payment activating",
+            "message": "Online payment is activating. Please pay by cash at pickup or delivery.",
+        }
+
+    if selected_provider == "direct_bank":
+        return {
+            "cash_available": True,
+            "prepaid_available": True,
+            "provider": selected_provider,
+            "mode": "staff_verified_bank_transfer",
+            "label": "Bank transfer",
+            "message": "Bank transfer is available. The store team verifies the payment reference before settlement.",
+        }
+
+    return {
+        "cash_available": True,
+        "prepaid_available": True,
+        "provider": selected_provider,
+        "mode": "online_gateway",
+        "label": "Pay online",
+        "message": "Secure online prepaid checkout is available.",
+    }
+
+
 def provider_environment(provider: str) -> str:
     if provider == "cashfree":
         return (settings.CASHFREE_ENVIRONMENT or "sandbox").strip().lower()

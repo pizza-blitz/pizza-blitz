@@ -9,6 +9,7 @@ from app.api.api_v1.endpoints.promotions import _promotion_dict
 from app.models.domain import DeliveryZone, Promotion
 from app.services.delivery_service import seed_default_delivery_zones, serialize_delivery_zone
 from app.services.menu_customization_service import customized_menu_payload
+from app.services.payment_gateway import public_payment_checkout_status
 
 
 router = APIRouter()
@@ -51,6 +52,7 @@ def storefront_bootstrap(db: Session = Depends(get_db)):
     return {
         "menu": customized_menu_payload(db),
         "checkout_readiness": checkout_readiness_payload(),
+        "payment_checkout": public_payment_checkout_status(),
         "active_promotions": public_promotions(db),
         "delivery_zones": public_delivery_zones(db),
     }

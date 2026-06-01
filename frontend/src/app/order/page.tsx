@@ -133,8 +133,18 @@ type CheckoutReadiness = {
 type StorefrontBootstrap = {
   menu: MenuItem[];
   checkout_readiness: CheckoutReadiness;
+  payment_checkout: PublicPaymentCheckout;
   active_promotions: ActivePromotion[];
   delivery_zones: DeliveryZone[];
+};
+
+type PublicPaymentCheckout = {
+  cash_available: boolean;
+  prepaid_available: boolean;
+  provider?: string | null;
+  mode: "cash_only" | "staff_verified_bank_transfer" | "online_gateway";
+  label: string;
+  message: string;
 };
 
 type PendingPayment = {
@@ -246,7 +256,7 @@ export default function PublicOrderPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [orderType, setOrderType] = useState<"pickup" | "delivery">("pickup");
-  const [paymentMethod, setPaymentMethod] = useState<"prepaid" | "cash">("prepaid");
+  const [paymentMethod, setPaymentMethod] = useState<"prepaid" | "cash">("cash");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -260,6 +270,7 @@ export default function PublicOrderPage() {
   const [orderId, setOrderId] = useState<number | null>(null);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [checkoutReadiness, setCheckoutReadiness] = useState<CheckoutReadiness | null>(null);
+  const [paymentCheckout, setPaymentCheckout] = useState<PublicPaymentCheckout | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
@@ -288,6 +299,10 @@ export default function PublicOrderPage() {
         setMenu(availableMenu);
         applySavedReorder(availableMenu);
         setCheckoutReadiness(data.checkout_readiness);
+        setPaymentCheckout(data.payment_checkout);
+        if (!data.payment_checkout.prepaid_available) {
+          setPaymentMethod("cash");
+        }
         setActivePromotions(data.active_promotions.filter((promotion) => promotion.code));
         const activeZones = data.delivery_zones.filter((zone) => zone.is_active);
         setDeliveryZones(activeZones);
@@ -302,6 +317,13 @@ export default function PublicOrderPage() {
           accepting_orders: false,
           message: "Online ordering is temporarily unavailable.",
           detail: "Please browse the menu and try again shortly.",
+        });
+        setPaymentCheckout({
+          cash_available: true,
+          prepaid_available: false,
+          mode: "cash_only",
+          label: "Online payment activating",
+          message: "Online payment is activating. Please pay by cash at pickup or delivery.",
         });
         setActivePromotions([]);
         setDeliveryZones([]);
@@ -1882,6 +1904,8 @@ export default function PublicOrderPage() {
                 <SegmentButton
                   active={paymentMethod === "prepaid"}
                   label="Prepaid"
+                  disabled={!paymentCheckout?.prepaid_available}
+                  title={paymentCheckout?.message}
                   onClick={() => {
                     setPaymentMethod("prepaid");
                     setMessage("");
@@ -1898,8 +1922,10 @@ export default function PublicOrderPage() {
               </div>
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
                 {paymentMethod === "prepaid"
-                  ? "Prepaid creates a payment session first; manual or direct bank payments wait for store verification."
-                  : "Cash keeps the order open for counter or delivery collection."}
+                  ? paymentCheckout?.message || "Checking online payment availability."
+                  : paymentCheckout?.prepaid_available
+                    ? `Cash keeps the order open for collection. ${paymentCheckout.label} is also available.`
+                    : paymentCheckout?.message || "Cash keeps the order open for counter or delivery collection."}
               </div>
               <button
                 data-testid="customer-place-order"
@@ -1979,19 +2005,28 @@ function SegmentButton({
   active,
   label,
   onClick,
+  disabled = false,
+  title,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      title={title}
       className={`rounded-md border px-3 py-3 text-sm font-bold ${
         active
           ? "border-red-700 bg-red-700 text-white"
-          : "border-slate-300 bg-white text-slate-700 hover:border-red-600"
+          : disabled
+            ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+            : "border-slate-300 bg-white text-slate-700 hover:border-red-600"
       }`}
     >
       {label}
