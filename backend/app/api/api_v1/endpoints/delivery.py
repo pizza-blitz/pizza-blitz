@@ -406,12 +406,18 @@ def serialize_delivery_queue_order(db: Session, order: RestaurantOrder) -> dict:
 
 @router.get("/zones")
 def list_delivery_zones(db: Session = Depends(get_db)):
-    ensure_delivery_zones(db)
     zones = (
         db.query(DeliveryZone)
         .order_by(DeliveryZone.delivery_fee.asc(), DeliveryZone.id.asc())
         .all()
     )
+    if not zones:
+        ensure_delivery_zones(db)
+        zones = (
+            db.query(DeliveryZone)
+            .order_by(DeliveryZone.delivery_fee.asc(), DeliveryZone.id.asc())
+            .all()
+        )
     return [serialize_delivery_zone(zone) for zone in zones]
 
 

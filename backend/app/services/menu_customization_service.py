@@ -1,7 +1,7 @@
 from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.domain import MenuCustomizationGroup, MenuCustomizationOption, MenuItem
 
@@ -359,14 +359,23 @@ def calculate_customized_item_price(
 
 
 def customized_menu_payload(db: Session) -> list[dict]:
-    seed_default_customizations(db)
-    db.commit()
     groups = (
         db.query(MenuCustomizationGroup)
+        .options(selectinload(MenuCustomizationGroup.options))
         .filter(MenuCustomizationGroup.is_active == True)  # noqa: E712
         .order_by(MenuCustomizationGroup.sort_order.asc(), MenuCustomizationGroup.id.asc())
         .all()
     )
+    if not groups:
+        seed_default_customizations(db)
+        db.commit()
+        groups = (
+            db.query(MenuCustomizationGroup)
+            .options(selectinload(MenuCustomizationGroup.options))
+            .filter(MenuCustomizationGroup.is_active == True)  # noqa: E712
+            .order_by(MenuCustomizationGroup.sort_order.asc(), MenuCustomizationGroup.id.asc())
+            .all()
+        )
     items = db.query(MenuItem).order_by(MenuItem.name.asc()).all()
     return [
         {
