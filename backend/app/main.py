@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -57,6 +59,31 @@ DEFAULT_EXPENSE_CATEGORIES = [
 POSTGRES_BOOTSTRAP_LOCK_ID = 20260525
 
 
+def _environment_flag(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_vercel_serverless_runtime() -> bool:
+    return os.getenv("VERCEL") == "1"
+
+
+def should_bootstrap_database_on_startup() -> bool:
+    return _environment_flag(
+        "PIZZA_BLITZ_BOOTSTRAP_ON_STARTUP",
+        not is_vercel_serverless_runtime(),
+    )
+
+
+def should_start_scheduler() -> bool:
+    return _environment_flag(
+        "PIZZA_BLITZ_SCHEDULER_ENABLED",
+        not is_vercel_serverless_runtime(),
+    )
+
+
 def seed_baseline_data(db=None) -> None:
     owns_session = db is None
     if db is None:
@@ -113,8 +140,10 @@ def bootstrap_database() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    bootstrap_database()
-    start_scheduler()
+    if should_bootstrap_database_on_startup():
+        bootstrap_database()
+    if should_start_scheduler():
+        start_scheduler()
     yield
 
 app = FastAPI(
