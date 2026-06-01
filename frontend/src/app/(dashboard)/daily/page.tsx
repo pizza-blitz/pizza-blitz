@@ -32,6 +32,7 @@ export default function DailyEntry() {
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/sales/daily-entry'), {
         method: 'POST',
+        credentials: "include",
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });

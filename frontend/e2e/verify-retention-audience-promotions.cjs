@@ -168,13 +168,13 @@ async function screenshotPromotionAudience(campaignName, vipEmail) {
     const response = await page.goto(`${baseURL}/promotions`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
     await page.getByText("Retention Audience Bridge", { exact: false }).waitFor({ timeout: 15000 });
-    await page.getByText("VIP Guests", { exact: false }).first().waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Audience VIP Guests", exact: true }).waitFor({ timeout: 10000 });
     await page.screenshot({
       path: path.join(artifactsDir, "visible-retention-audience-bridge.png"),
       fullPage: true,
     });
     await page.getByText(campaignName, { exact: false }).first().click();
-    await page.getByText("VIP Guests", { exact: false }).first().waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Audience VIP Guests", exact: true }).waitFor({ timeout: 10000 });
     await page.getByText(vipEmail, { exact: false }).first().waitFor({ timeout: 15000 });
 
     const health = await page.evaluate(() => {

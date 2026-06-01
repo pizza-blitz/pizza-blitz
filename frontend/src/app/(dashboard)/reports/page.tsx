@@ -98,6 +98,20 @@ export default function Reports() {
     window.location.href = getApiUrl('/api/v1/restaurant/sales/export/csv');
   };
 
+  const handleShare = () => {
+    const summary = data?.summary || {};
+    const target = data?.targetPacing || {};
+    const text = [
+      "Pizza Blitz Performance Report",
+      `Period: ${period}`,
+      `Revenue: Rs ${Math.round(Number(summary.revenue || 0)).toLocaleString()}`,
+      `Profit: Rs ${Math.round(Number(summary.profit || 0)).toLocaleString()}`,
+      `Orders: ${Math.round(Number(summary.orders || 0)).toLocaleString()}`,
+      `Monthly target progress: ${Number(target.achievement_percent || 0).toFixed(1)}%`,
+    ].join("\n");
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+  };
+
   const applyMonthlyTarget = () => {
     const normalizedTarget = String(targetDraft || "").replace(/[^\d.]/g, "");
     setMonthlyTarget(normalizedTarget);
@@ -443,7 +457,7 @@ export default function Reports() {
           <button onClick={handleExport} className="flex shrink-0 items-center rounded-xl border-2 border-gray-100 bg-white px-4 py-3 text-xs font-black uppercase tracking-widest text-gray-900 shadow-sm transition-all hover:bg-gray-50 sm:px-6">
             <Download className="w-4 h-4 mr-2" /> Data Export
           </button>
-          <button className="flex shrink-0 items-center rounded-xl bg-green-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-green-100 transition-all hover:bg-green-700 sm:px-6">
+          <button onClick={handleShare} className="flex shrink-0 items-center rounded-xl bg-green-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-green-100 transition-all hover:bg-green-700 sm:px-6">
             <Share2 className="w-4 h-4 mr-2" /> Share Report
           </button>
         </div>

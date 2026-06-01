@@ -4,6 +4,23 @@ import { Send, Plus, FileText, CheckCircle2, Search, CornerDownRight, Loader2 } 
 import Link from 'next/link';
 import { getApiUrl } from '@/lib/api';
 
+async function fetchJson(url: string, init: RequestInit = {}) {
+  const response = await fetch(url, {
+    ...init,
+    credentials: "include",
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || `Request failed with HTTP ${response.status}.`);
+  }
+  return data;
+}
+
+function arrayRows<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 export default function PurchaseOrders() {
   const [orders, setOrders] = useState<any[]>([]);
   const [reorderGroups, setReorderGroups] = useState<any[]>([]);
@@ -21,19 +38,18 @@ export default function PurchaseOrders() {
 
   const fetchOrders = async (signal?: AbortSignal) => {
     try {
-      const [ordersRes, lowStockRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/purchase-orders/'), { signal }),
-        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
+      const [data, lowStock] = await Promise.all([
+        fetchJson(getApiUrl('/api/v1/restaurant/purchase-orders/'), { signal }),
+        fetchJson(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
       ]);
-      const data = await ordersRes.json();
-      setOrders(data);
-      if (lowStockRes.ok) {
-        const lowStock = await lowStockRes.json();
-        setReorderGroups(lowStock.groups || []);
-      }
+      setOrders(arrayRows(data));
+      setReorderGroups(arrayRows(lowStock.groups));
     } catch (error) {
       if (signal?.aborted) return;
       console.warn("Purchase order data is temporarily unavailable", error);
+      setOrders([]);
+      setReorderGroups([]);
+      setMessage("Could not load purchase order data.");
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
@@ -43,11 +59,9 @@ export default function PurchaseOrders() {
     setIsCreatingDrafts(true);
     setMessage("");
     try {
-      const response = await fetch(getApiUrl('/api/v1/restaurant/purchase-orders/from-low-stock'), {
+      const data = await fetchJson(getApiUrl('/api/v1/restaurant/purchase-orders/from-low-stock'), {
         method: 'POST',
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Could not create purchase order drafts.");
       setMessage(
         data.created
           ? `Created ${data.created} purchase order draft${data.created === 1 ? "" : "s"}.`
@@ -66,11 +80,9 @@ export default function PurchaseOrders() {
     setUpdatingOrderId(updateKey);
     setMessage("");
     try {
-      const response = await fetch(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}/${action}`), {
+      const data = await fetchJson(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}/${action}`), {
         method: 'PATCH',
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Could not update purchase order.");
 
       const updatedItems = data.inventory_updates?.length || 0;
       const expenseAmount = Number(data.expense?.amount || 0);
@@ -101,13 +113,12 @@ export default function PurchaseOrders() {
       formData.append('file', e.target.files[0]);
 
       try {
-        const res = await fetch(getApiUrl('/api/v1/restaurant/import/pdf'), {
+        const result = await fetchJson(getApiUrl('/api/v1/restaurant/import/pdf'), {
           method: 'POST',
           body: formData
         });
-        const result = await res.json();
         alert(`Successfully imported ${result.imported} records from PDF!`);
-        fetchOrders();
+        await fetchOrders();
       } catch (error) {
         alert("Failed to process PDF note.");
       } finally {
@@ -118,7 +129,7 @@ export default function PurchaseOrders() {
 
   const getWhatsAppLink = (supplier: string, phone: string, items: any[]) => {
     const text = `Hello ${supplier},\n\nPlease send the following supplies for Pizza Blitz today:\n\n` +
-      items.map(i => `- ${i.name}: ${i.reorder_quantity || i.needed} ${i.unit}`).join('\n') +
+      arrayRows<any>(items).map(i => `- ${i.name}: ${i.reorder_quantity || i.needed} ${i.unit}`).join('\n') +
       `\n\nPlease confirm availability and total bill.\nRegards,\nPizza Blitz`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   };
@@ -183,7 +194,7 @@ export default function PurchaseOrders() {
                  </Link>
               </div>
               <div className="p-4 space-y-3">
-                {data.items.map((item: any) => (
+                {arrayRows<any>(data.items).map((item: any) => (
                   <div key={item.id} className="flex justify-between items-center text-sm">
                     <div className="flex items-center text-gray-700">
                       <CornerDownRight className="w-4 h-4 mr-2 text-gray-400" />
@@ -234,7 +245,7 @@ export default function PurchaseOrders() {
                         <p className="text-xs text-gray-400 mt-1">{order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"} in this PO</p>
                       </div>
                       <div className="text-right space-y-2">
-                        <div className="font-bold text-gray-900">Rs. {order.total_amount?.toLocaleString()}</div>
+                        <div className="font-bold text-gray-900">Rs. {Number(order.total_amount || 0).toLocaleString()}</div>
                         <Link
                           href={`/purchase-orders/${order.id}`}
                           className="inline-flex items-center justify-center px-3 py-1.5 rounded-md border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:bg-gray-50"

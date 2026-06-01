@@ -42,8 +42,11 @@ export default function RecipesPage() {
 
   const fetchRecipes = async (signal?: AbortSignal) => {
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'), { signal });
-      if (res.ok) setRecipes(await res.json());
+      const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'), { signal, credentials: "include", cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setRecipes(Array.isArray(data) ? data : []);
+      }
     } catch (error) {
       if (signal?.aborted) return;
       console.warn("Recipe data is temporarily unavailable", error);
@@ -77,6 +80,7 @@ export default function RecipesPage() {
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'), {
         method: 'POST',
+        credentials: "include",
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRecipe)
       });
@@ -95,10 +99,13 @@ export default function RecipesPage() {
     setIsSubmitting(true);
     setShowPrediction(true);
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/next-day-prediction'));
+      const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/next-day-prediction'), {
+        credentials: "include",
+        cache: "no-store",
+      });
       if (res.ok) {
         const data = await res.json();
-        setPredictions(data.predictions || []);
+        setPredictions(Array.isArray(data.predictions) ? data.predictions : []);
       }
     } catch (error) {
       console.error("Failed to fetch predictions", error);

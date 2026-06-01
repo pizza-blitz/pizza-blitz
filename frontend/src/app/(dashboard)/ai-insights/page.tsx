@@ -18,9 +18,13 @@ export default function AIInsights() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(getApiUrl('/api/v1/restaurant/insights/ai-insights'), { signal });
+      const res = await fetch(getApiUrl('/api/v1/restaurant/insights/ai-insights'), {
+        signal,
+        credentials: "include",
+        cache: "no-store",
+      });
       const result = await res.json();
-      if (result.status === "success") {
+      if (res.ok && result.status === "success") {
         setInsights(result.data);
       } else {
         setError(result.message || "Intelligence node synchronization failed.");
@@ -129,7 +133,11 @@ export default function AIInsights() {
                    <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-1">Potential Monthly Yield</p>
                    <p className="font-black text-4xl text-green-400 tracking-tighter">Rs 4,500+</p>
                 </div>
-                <button className="w-full py-5 bg-orange-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-orange-900/50 hover:bg-orange-500 transition-all active:scale-95">
+                <button
+                  type="button"
+                  onClick={() => void fetchInsights()}
+                  className="w-full py-5 bg-orange-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-orange-900/50 hover:bg-orange-500 transition-all active:scale-95"
+                >
                    Optimize Model
                 </button>
              </div>

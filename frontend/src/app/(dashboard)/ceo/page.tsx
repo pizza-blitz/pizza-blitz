@@ -15,6 +15,23 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats");
 
+async function fetchJson(url: string, signal?: AbortSignal) {
+  const response = await fetch(url, {
+    credentials: "include",
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with HTTP ${response.status}.`);
+  }
+  return response.json();
+}
+
+function formatNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue.toLocaleString("en-IN") : "0";
+}
+
 export default function CEODashboard() {
   const [health, setHealth] = useState<any>(null);
   const [target, setTarget] = useState<any>(null);
@@ -25,14 +42,14 @@ export default function CEODashboard() {
     const controller = new AbortController();
     async function fetchData(signal: AbortSignal) {
       try {
-        const [hRes, tRes, sRes] = await Promise.all([
-          fetch(`${API_BASE}/insights/health-score`, { signal }),
-          fetch(`${API_BASE}/target/status`, { signal }),
-          fetch(`${API_BASE}/ceo-summary`, { signal })
+        const [healthData, targetData, summaryData] = await Promise.all([
+          fetchJson(`${API_BASE}/insights/health-score`, signal),
+          fetchJson(`${API_BASE}/target/status`, signal),
+          fetchJson(`${API_BASE}/ceo-summary`, signal)
         ]);
-        setHealth(await hRes.json());
-        setTarget(await tRes.json());
-        setSummary(await sRes.json());
+        setHealth(healthData);
+        setTarget(targetData);
+        setSummary(summaryData);
       } catch (e) {
         if (signal.aborted) return;
         console.warn("CEO dashboard data is temporarily unavailable", e);
@@ -46,11 +63,11 @@ export default function CEODashboard() {
 
   const shareWeeklyPulse = async () => {
     try {
-      const res = await fetch(`${API_BASE}/weekly-summary/whatsapp`);
-      const data = await res.json();
+      const data = await fetchJson(`${API_BASE}/weekly-summary/whatsapp`);
+      if (!data.whatsapp_url) throw new Error("Weekly pulse link is unavailable.");
       window.open(data.whatsapp_url, '_blank');
     } catch (e) {
-      alert("Search failed or WhatsApp disconnected");
+      alert("Weekly pulse is temporarily unavailable.");
     }
   };
 
@@ -148,8 +165,8 @@ export default function CEODashboard() {
                 <span className="text-sm font-bold text-gray-500 uppercase">Monthly Target</span>
               </div>
               <div className="flex items-end gap-2 mb-2">
-                <span className="text-4xl font-bold">₹{target?.revenue_so_far.toLocaleString() || 0}</span>
-                <span className="text-gray-500 mb-1.5">/ ₹{target?.monthly_target.toLocaleString() || 0}</span>
+                <span className="text-4xl font-bold">Rs {formatNumber(target?.revenue_so_far)}</span>
+                <span className="text-gray-500 mb-1.5">/ Rs {formatNumber(target?.monthly_target)}</span>
               </div>
               <div className="text-xs text-orange-400 font-medium mb-6">
                 {target?.status_message}
@@ -175,7 +192,7 @@ export default function CEODashboard() {
               </div>
               <p className="text-xs text-gray-500 mb-2">Projected Month End Revenue</p>
               <div className="text-4xl font-bold mb-4">
-                ₹{target?.projected_month_total.toLocaleString() || 0}
+                Rs {formatNumber(target?.projected_month_total)}
               </div>
               <div className={`flex items-center gap-1.5 text-sm font-bold ${target?.on_track ? 'text-green-400' : 'text-red-400'}`}>
                 {target?.on_track ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
@@ -194,7 +211,7 @@ export default function CEODashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-white/5">
               <div className="p-8 flex flex-col gap-2">
                 <span className="text-xs text-gray-500 uppercase font-bold tracking-widest">Revenue</span>
-                <span className="text-2xl font-bold">₹{summary?.this_week_revenue.toLocaleString() || 0}</span>
+                <span className="text-2xl font-bold">Rs {formatNumber(summary?.this_week_revenue)}</span>
                 <span className={`text-xs font-bold ${summary?.direction === 'up' ? 'text-green-400' : 'text-red-400'}`}>
                   {summary?.direction === 'up' ? '+' : ''}{summary?.week_on_week_change}% WoW
                 </span>
@@ -209,14 +226,14 @@ export default function CEODashboard() {
                 <span className="text-lg font-bold overflow-hidden text-ellipsis whitespace-nowrap">
                   {summary?.best_day?.date || "N/A"}
                 </span>
-                <span className="text-xs text-green-400 font-bold tracking-tight">₹{summary?.best_day?.revenue.toLocaleString()}</span>
+                <span className="text-xs text-green-400 font-bold tracking-tight">Rs {formatNumber(summary?.best_day?.revenue)}</span>
               </div>
               <div className="p-8 flex flex-col gap-2">
                 <span className="text-xs text-gray-500 uppercase font-bold tracking-widest">Urgent Review</span>
                 <span className="text-lg font-bold overflow-hidden text-ellipsis whitespace-nowrap">
                   {summary?.worst_day?.date || "N/A"}
                 </span>
-                <span className="text-xs text-red-400 font-bold tracking-tight">₹{summary?.worst_day?.revenue.toLocaleString()}</span>
+                <span className="text-xs text-red-400 font-bold tracking-tight">Rs {formatNumber(summary?.worst_day?.revenue)}</span>
               </div>
             </div>
           </div>

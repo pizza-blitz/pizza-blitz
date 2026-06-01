@@ -6,6 +6,18 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats/breakeven");
 
+function formatNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue.toLocaleString("en-IN") : "0";
+}
+
+function completionPercent(revenue: unknown, breakEvenRevenue: unknown) {
+  const revenueValue = Number(revenue);
+  const breakEvenValue = Number(breakEvenRevenue);
+  if (!Number.isFinite(revenueValue) || !Number.isFinite(breakEvenValue) || breakEvenValue <= 0) return 0;
+  return Math.min(100, Math.max(0, (revenueValue / breakEvenValue) * 100));
+}
+
 export default function BreakevenPage() {
   const [data, setData] = useState<any>(null);
   const [showSetup, setShowSetup] = useState(false);
@@ -26,7 +38,12 @@ export default function BreakevenPage() {
 
   const fetchData = async (signal?: AbortSignal) => {
     try {
-      const res = await fetch(API_BASE, { signal });
+      const res = await fetch(API_BASE, {
+        credentials: "include",
+        cache: "no-store",
+        signal,
+      });
+      if (!res.ok) throw new Error(`Request failed with HTTP ${res.status}.`);
       setData(await res.json());
     } catch (error) {
       if (signal?.aborted) return;
@@ -35,9 +52,17 @@ export default function BreakevenPage() {
   };
 
   const saveSetup = async () => {
-    await fetch(`${API_BASE}/setup?${new URLSearchParams(setupData as any)}`, { method: 'POST' });
-    setShowSetup(false);
-    fetchData();
+    try {
+      const response = await fetch(`${API_BASE}/setup?${new URLSearchParams(setupData as any)}`, {
+        method: 'POST',
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error(`Request failed with HTTP ${response.status}.`);
+      setShowSetup(false);
+      await fetchData();
+    } catch (error) {
+      console.warn("Break-even setup could not be updated", error);
+    }
   };
 
   return (
@@ -71,12 +96,12 @@ export default function BreakevenPage() {
 
             <div className="flex flex-col md:flex-row gap-12 items-center">
               <div className="flex-1 space-y-2">
-                <p className="text-4xl font-black">₹{data?.today_revenue.toLocaleString()}</p>
+                <p className="text-4xl font-black">Rs {formatNumber(data?.today_revenue)}</p>
                 <p className="text-sm text-gray-500">Revenue Recorded Today</p>
               </div>
               <div className="h-20 w-px bg-white/10 hidden md:block"></div>
               <div className="flex-1 space-y-2">
-                <p className="text-4xl font-black text-gray-400">₹{data?.daily_breakeven_revenue.toLocaleString()}</p>
+                <p className="text-4xl font-black text-gray-400">Rs {formatNumber(data?.daily_breakeven_revenue)}</p>
                 <p className="text-sm text-gray-500">Break-even Goal (Daily)</p>
               </div>
             </div>
@@ -84,7 +109,7 @@ export default function BreakevenPage() {
             <div className="mt-12 h-6 bg-white/5 rounded-full relative overflow-hidden">
               <div 
                 className={`h-full transition-all duration-1000 ${data?.today_above_breakeven ? 'bg-green-500' : 'bg-orange-500'}`}
-                style={{ width: `${Math.min(100, (data?.today_revenue / data?.daily_breakeven_revenue) * 100)}%` }}
+                style={{ width: `${completionPercent(data?.today_revenue, data?.daily_breakeven_revenue)}%` }}
               ></div>
             </div>
             <p className="mt-4 text-xs font-bold text-gray-400 uppercase text-center">{data?.status_message}</p>
@@ -93,7 +118,7 @@ export default function BreakevenPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-[#1a1a1c] p-6 rounded-[2.5rem] border border-white/5">
                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Fixed Monthly</p>
-                <p className="text-2xl font-bold">₹{data?.fixed_costs.total.toLocaleString()}</p>
+                <p className="text-2xl font-bold">Rs {formatNumber(data?.fixed_costs?.total)}</p>
             </div>
             <div className="bg-[#1a1a1c] p-6 rounded-[2.5rem] border border-white/5">
                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">Break-even Orders</p>
@@ -101,7 +126,7 @@ export default function BreakevenPage() {
             </div>
             <div className="bg-[#1a1a1c] p-6 rounded-[2.5rem] border border-white/5">
                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-tighter mb-1">AOV Target</p>
-                <p className="text-2xl font-bold">₹{data?.avg_order_value}</p>
+                <p className="text-2xl font-bold">Rs {formatNumber(data?.avg_order_value)}</p>
             </div>
           </div>
         </div>
@@ -115,7 +140,7 @@ export default function BreakevenPage() {
             {data?.fixed_costs && Object.entries(data.fixed_costs).filter(([k]) => k !== 'total').map(([key, val]: any) => (
               <div key={key} className="flex justify-between items-center group">
                 <span className="text-gray-400 text-sm capitalize group-hover:text-white transition-colors">{key}</span>
-                <span className="font-mono text-white">₹{val.toLocaleString()}</span>
+                <span className="font-mono text-white">Rs {formatNumber(val)}</span>
               </div>
             ))}
           </div>

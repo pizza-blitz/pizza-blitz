@@ -49,9 +49,10 @@ export default function ScanBillPage() {
     try {
       const res = await fetch(
         getApiUrl("/api/v1/restaurant/ocr/scan-bill"),
-        { method: "POST", body: formData }
+        { method: "POST", body: formData, credentials: "include" }
       );
       const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Scan failed.");
       setResult(data);
     } catch (e) {
       setError("Scan failed. Please try again.");

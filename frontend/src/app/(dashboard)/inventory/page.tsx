@@ -17,6 +17,19 @@ export default function Inventory() {
   const [adjustmentQty, setAdjustmentQty] = useState("1");
   const [adjustmentNotes, setAdjustmentNotes] = useState("");
   const [message, setMessage] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [newItem, setNewItem] = useState({
+    name: "",
+    category: "",
+    unit: "kg",
+    current_stock: "0",
+    minimum_stock: "0",
+    cost_per_unit: "0",
+    supplier_name: "",
+    supplier_whatsapp: "",
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -27,31 +40,28 @@ export default function Inventory() {
   const fetchItems = async (signal?: AbortSignal) => {
     try {
       const [res, lowStockRes, transactionsRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/inventory/items'), { signal }),
-        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
-        fetch(getApiUrl('/api/v1/restaurant/inventory/transactions?limit=12'), { signal }),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/items'), { signal, credentials: "include", cache: "no-store" }),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal, credentials: "include", cache: "no-store" }),
+        fetch(getApiUrl('/api/v1/restaurant/inventory/transactions?limit=12'), { signal, credentials: "include", cache: "no-store" }),
       ]);
-      if (res.ok) {
-        const data = await res.json();
-        setItems(data);
-      } else {
-        // Fallback mock
-        const mockItems = [
-          { id: 1, name: "Pizza Flour", category: "Raw Material", current_stock: 45, minimum_stock: 50, unit: "kg", cost_per_unit: 45 },
-          { id: 2, name: "Mozzarella Cheese", category: "Dairy", current_stock: 12, minimum_stock: 10, unit: "kg", cost_per_unit: 450 },
-          { id: 3, name: "Tomato Sauce", category: "Sauces", current_stock: 8, minimum_stock: 15, unit: "liters", cost_per_unit: 120 },
-        ];
-        setItems(mockItems);
+      if (!res.ok || !lowStockRes.ok || !transactionsRes.ok) {
+        throw new Error("Could not load inventory data.");
       }
-      if (lowStockRes.ok) {
-        setLowStock(await lowStockRes.json());
-      }
-      if (transactionsRes.ok) {
-        setTransactions(await transactionsRes.json());
-      }
+      const [data, lowStockData, transactionData] = await Promise.all([
+        res.json(),
+        lowStockRes.json(),
+        transactionsRes.json(),
+      ]);
+      setItems(Array.isArray(data) ? data : []);
+      setLowStock(lowStockData && typeof lowStockData === "object" ? lowStockData : { count: 0, items: [], groups: [], total_estimated_cost: 0 });
+      setTransactions(Array.isArray(transactionData) ? transactionData : []);
     } catch (err) {
       if (signal?.aborted) return;
       console.warn("Inventory data is temporarily unavailable", err);
+      setItems([]);
+      setLowStock({ count: 0, items: [], groups: [], total_estimated_cost: 0 });
+      setTransactions([]);
+      setMessage("Could not load inventory data.");
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
@@ -63,6 +73,7 @@ export default function Inventory() {
     try {
       const response = await fetch(getApiUrl('/api/v1/restaurant/purchase-orders/from-low-stock'), {
         method: 'POST',
+        credentials: "include",
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not create purchase order drafts.");
@@ -92,6 +103,7 @@ export default function Inventory() {
     try {
       const response = await fetch(getApiUrl('/api/v1/restaurant/inventory/transaction'), {
         method: 'POST',
+        credentials: "include",
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           item_id: selectedItem.id,
@@ -115,6 +127,73 @@ export default function Inventory() {
     }
   };
 
+  const handleAddItem = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const currentStock = Number(newItem.current_stock);
+    const minimumStock = Number(newItem.minimum_stock);
+    const costPerUnit = Number(newItem.cost_per_unit);
+    if (
+      !newItem.name.trim() ||
+      !Number.isFinite(currentStock) ||
+      !Number.isFinite(minimumStock) ||
+      !Number.isFinite(costPerUnit) ||
+      currentStock < 0 ||
+      minimumStock < 0 ||
+      costPerUnit < 0
+    ) {
+      setMessage("Enter an item name and valid non-negative stock values.");
+      return;
+    }
+
+    setIsAddingItem(true);
+    setMessage("");
+    try {
+      const response = await fetch(getApiUrl('/api/v1/restaurant/inventory/items'), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newItem,
+          name: newItem.name.trim(),
+          category: newItem.category.trim() || "General",
+          unit: newItem.unit.trim() || "unit",
+          current_stock: currentStock,
+          minimum_stock: minimumStock,
+          cost_per_unit: costPerUnit,
+          supplier_name: newItem.supplier_name.trim() || null,
+          supplier_whatsapp: newItem.supplier_whatsapp.trim() || null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not add inventory item.");
+      setMessage(`${data.name} added to inventory.`);
+      setNewItem({
+        name: "",
+        category: "",
+        unit: "kg",
+        current_stock: "0",
+        minimum_stock: "0",
+        cost_per_unit: "0",
+        supplier_name: "",
+        supplier_whatsapp: "",
+      });
+      setShowAddItem(false);
+      await fetchItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not add inventory item.");
+    } finally {
+      setIsAddingItem(false);
+    }
+  };
+
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const filteredItems = normalizedSearchTerm
+    ? items.filter((item) =>
+        [item.name, item.category, item.supplier_name]
+          .some((value) => String(value || "").toLowerCase().includes(normalizedSearchTerm))
+      )
+    : items;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
@@ -127,7 +206,11 @@ export default function Inventory() {
             className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold inline-flex items-center gap-2">
             📷 Scan Bill
           </a>
-           <button className="bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-100 flex items-center hover:bg-orange-700 transition-all">
+           <button
+             type="button"
+             onClick={() => setShowAddItem((current) => !current)}
+             className="bg-orange-600 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-orange-100 flex items-center hover:bg-orange-700 transition-all"
+           >
              <Plus className="w-5 h-5 mr-2" /> Add Item
            </button>
         </div>
@@ -137,6 +220,38 @@ export default function Inventory() {
         <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
           {message}
         </div>
+      )}
+
+      {showAddItem && (
+        <form onSubmit={handleAddItem} className="rounded-xl border border-orange-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-black text-gray-900">Add Inventory Item</h2>
+              <p className="mt-1 text-xs font-semibold text-gray-500">Create the stock record used by purchase orders and adjustments.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddItem(false)}
+              className="text-xs font-black text-gray-500 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <input required aria-label="Item name" value={newItem.name} onChange={(event) => setNewItem({ ...newItem, name: event.target.value })} placeholder="Item name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input aria-label="Category" value={newItem.category} onChange={(event) => setNewItem({ ...newItem, category: event.target.value })} placeholder="Category" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input required aria-label="Unit" value={newItem.unit} onChange={(event) => setNewItem({ ...newItem, unit: event.target.value })} placeholder="Unit" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input aria-label="Supplier" value={newItem.supplier_name} onChange={(event) => setNewItem({ ...newItem, supplier_name: event.target.value })} placeholder="Supplier" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input aria-label="Current stock" type="number" min="0" step="0.01" value={newItem.current_stock} onChange={(event) => setNewItem({ ...newItem, current_stock: event.target.value })} placeholder="Current stock" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input aria-label="Minimum stock" type="number" min="0" step="0.01" value={newItem.minimum_stock} onChange={(event) => setNewItem({ ...newItem, minimum_stock: event.target.value })} placeholder="Minimum stock" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input aria-label="Cost per unit" type="number" min="0" step="0.01" value={newItem.cost_per_unit} onChange={(event) => setNewItem({ ...newItem, cost_per_unit: event.target.value })} placeholder="Cost per unit" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+            <input aria-label="Supplier WhatsApp" value={newItem.supplier_whatsapp} onChange={(event) => setNewItem({ ...newItem, supplier_whatsapp: event.target.value })} placeholder="Supplier WhatsApp" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          </div>
+          <button type="submit" disabled={isAddingItem} className="mt-4 inline-flex items-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-black text-white hover:bg-orange-700 disabled:bg-gray-300">
+            <Save className="mr-2 h-4 w-4" />
+            {isAddingItem ? "Saving..." : "Save Item"}
+          </button>
+        </form>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -162,6 +277,9 @@ export default function Inventory() {
             <input 
               type="text" 
               placeholder="Search stock items..."
+              aria-label="Search stock items"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent rounded-xl focus:bg-white focus:border-orange-500 outline-none transition-all"
             />
           </div>
@@ -177,7 +295,7 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {items.map((item: any) => {
+                {filteredItems.map((item: any) => {
                   const isLow = item.current_stock < item.minimum_stock;
                   return (
                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
@@ -202,6 +320,9 @@ export default function Inventory() {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <button 
+                          type="button"
+                          aria-label={`Adjust stock for ${item.name}`}
+                          title={`Adjust stock for ${item.name}`}
                           onClick={() => {
                             setSelectedItem(item);
                             setAdjustmentType('purchase');

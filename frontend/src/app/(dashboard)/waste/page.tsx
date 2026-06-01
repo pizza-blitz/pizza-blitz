@@ -42,11 +42,14 @@ export default function WastePage() {
   const fetchWasteData = async (signal?: AbortSignal) => {
     try {
       const [logsRes, summaryRes] = await Promise.all([
-        fetch(getApiUrl('/api/v1/restaurant/sales/waste'), { signal }),
-        fetch(getApiUrl('/api/v1/restaurant/sales/waste/summary'), { signal })
+        fetch(getApiUrl('/api/v1/restaurant/sales/waste'), { signal, credentials: "include", cache: "no-store" }),
+        fetch(getApiUrl('/api/v1/restaurant/sales/waste/summary'), { signal, credentials: "include", cache: "no-store" })
       ]);
       
-      if (logsRes.ok) setWasteLogs(await logsRes.json());
+      if (logsRes.ok) {
+        const data = await logsRes.json();
+        setWasteLogs(Array.isArray(data) ? data : []);
+      }
       if (summaryRes.ok) setSummary(await summaryRes.json());
     } catch (error) {
       if (signal?.aborted) return;
@@ -62,6 +65,7 @@ export default function WastePage() {
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/sales/waste'), {
         method: 'POST',
+        credentials: "include",
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newWaste)
       });

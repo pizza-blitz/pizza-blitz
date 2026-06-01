@@ -48,6 +48,10 @@ function numericValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function arrayRows<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function normalizeLine(line: PurchaseOrderLine): PurchaseOrderLine {
   const quantity = numericValue(line.quantity ?? line.needed);
   const receivedQuantity = numericValue(line.received_quantity, quantity);
@@ -84,11 +88,14 @@ export default function PurchaseOrderDetail() {
   const fetchOrder = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}`));
+      const response = await fetch(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}`), {
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!response.ok) throw new Error("Purchase order not found.");
       const data = await response.json();
       setOrder(data);
-      setLines((data.items || []).map(normalizeLine));
+      setLines(arrayRows<PurchaseOrderLine>(data.items).map(normalizeLine));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load purchase order.");
     } finally {
@@ -113,13 +120,14 @@ export default function PurchaseOrderDetail() {
     try {
       const response = await fetch(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}/items`), {
         method: "PATCH",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: lines.map(normalizeLine) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not save reconciliation.");
       setOrder(data.purchase_order);
-      setLines((data.items || []).map(normalizeLine));
+      setLines(arrayRows<PurchaseOrderLine>(data.items).map(normalizeLine));
       setMessage(`Saved supplier bill reconciliation. New PO total is Rs. ${Number(data.total_amount || 0).toLocaleString()}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save reconciliation.");
@@ -134,11 +142,12 @@ export default function PurchaseOrderDetail() {
     try {
       const response = await fetch(getApiUrl(`/api/v1/restaurant/purchase-orders/${orderId}/${action}`), {
         method: "PATCH",
+        credentials: "include",
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not update purchase order.");
       setOrder(data.purchase_order);
-      setLines((data.purchase_order.items || []).map(normalizeLine));
+      setLines(arrayRows<PurchaseOrderLine>(data.purchase_order?.items).map(normalizeLine));
       const updatedCount = data.inventory_updates?.length || 0;
       const expenseAmount = Number(data.expense?.amount || 0);
       const vendorPriceCount = data.vendor_prices?.length || 0;

@@ -21,6 +21,21 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/vendors");
 
+async function fetchJson(url: string) {
+  const response = await fetch(url, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with HTTP ${response.status}.`);
+  }
+  return response.json();
+}
+
+function arrayRows<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 type PriceAlert = {
   item_name: string;
   vendor_name: string;
@@ -71,17 +86,15 @@ export default function VendorPricePage() {
     setIsLoading(true);
     setMessage("");
     try {
-      const [alertsRes, recentRes] = await Promise.all([
-        fetch(`${API_BASE}/prices/alerts/increases`),
-        fetch(`${API_BASE}/prices/recent?limit=12`),
-      ]);
       const [alertsData, recentData] = await Promise.all([
-        alertsRes.json(),
-        recentRes.json(),
+        fetchJson(`${API_BASE}/prices/alerts/increases`),
+        fetchJson(`${API_BASE}/prices/recent?limit=12`),
       ]);
-      setAlerts(alertsData || []);
-      setRecentPrices(recentData || []);
-      const defaultItem = recentData?.[0]?.item_name || itemSearch;
+      const alertRows = arrayRows<PriceAlert>(alertsData);
+      const recentRows = arrayRows<PriceHistory>(recentData);
+      setAlerts(alertRows);
+      setRecentPrices(recentRows);
+      const defaultItem = recentRows[0]?.item_name || itemSearch;
       if (defaultItem !== itemSearch) setItemSearch(defaultItem);
       await loadItemData(defaultItem);
     } catch (error) {
@@ -94,12 +107,18 @@ export default function VendorPricePage() {
   const loadItemData = async (name: string) => {
     if (!name.trim()) return;
     const encodedName = encodeURIComponent(name.trim());
-    const [historyRes, cheapestRes] = await Promise.all([
-      fetch(`${API_BASE}/prices/history/${encodedName}`),
-      fetch(`${API_BASE}/intelligence/cheapest/${encodedName}`),
-    ]);
-    setHistory(await historyRes.json());
-    setCheapest(await cheapestRes.json());
+    try {
+      const [historyData, cheapestData] = await Promise.all([
+        fetchJson(`${API_BASE}/prices/history/${encodedName}`),
+        fetchJson(`${API_BASE}/intelligence/cheapest/${encodedName}`),
+      ]);
+      setHistory(arrayRows<PriceHistory>(historyData));
+      setCheapest(arrayRows<CheapestVendor>(cheapestData));
+    } catch {
+      setHistory([]);
+      setCheapest([]);
+      setMessage("Could not load vendor comparison.");
+    }
   };
 
   return (
