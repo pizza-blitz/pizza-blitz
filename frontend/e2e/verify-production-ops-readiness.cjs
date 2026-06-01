@@ -173,7 +173,7 @@ async function screenshotProductionOps() {
     await page.getByTestId("deployment-pipeline-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Deployment Pipeline Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Rollback And Logs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("Product Catalog", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Product Catalog", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Finance Reporting", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Production Go-Live Checklist", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Environment Inventory" }).waitFor({ timeout: 15000 });
