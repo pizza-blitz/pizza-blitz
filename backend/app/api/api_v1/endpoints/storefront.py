@@ -13,6 +13,7 @@ from app.services.payment_gateway import public_payment_checkout_status
 
 
 router = APIRouter()
+INTERNAL_PROMOTION_MARKERS = ("proof", "e2e", "[internal", "[live verify")
 
 
 def public_delivery_zones(db: Session) -> list[dict]:
@@ -34,6 +35,17 @@ def public_delivery_zones(db: Session) -> list[dict]:
     return [serialize_delivery_zone(zone) for zone in zones]
 
 
+def is_public_storefront_promotion(promotion: Promotion) -> bool:
+    searchable = " ".join(
+        str(value or "")
+        for value in (promotion.name, promotion.description, promotion.code)
+    ).lower()
+    return (
+        (promotion.audience or "").strip().lower() == "all_customers"
+        and not any(marker in searchable for marker in INTERNAL_PROMOTION_MARKERS)
+    )
+
+
 def public_promotions(db: Session, limit: int = 8) -> list[dict]:
     today = date.today()
     promotions = (
@@ -41,10 +53,13 @@ def public_promotions(db: Session, limit: int = 8) -> list[dict]:
         .filter(Promotion.start_date <= today, Promotion.end_date >= today)
         .filter(Promotion.status.in_(["active", "scheduled"]))
         .order_by(Promotion.end_date.asc(), Promotion.id.asc())
-        .limit(limit)
         .all()
     )
-    return [_promotion_dict(promotion) for promotion in promotions]
+    return [
+        _promotion_dict(promotion)
+        for promotion in promotions
+        if is_public_storefront_promotion(promotion)
+    ][:limit]
 
 
 @router.get("/bootstrap")

@@ -1,8 +1,10 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.api.api_v1.endpoints.storefront import is_public_storefront_promotion
 from app.main import app
 
 
@@ -39,6 +41,30 @@ class PublicCatalogReadPathTest(unittest.TestCase):
         self.assertNotIn("missing_webhook_settings", payload["payment_checkout"])
         self.assertGreater(len(payload["delivery_zones"]), 0)
         self.assertLessEqual(len(payload["active_promotions"]), 8)
+
+    def test_storefront_offer_hygiene_keeps_targeted_and_verification_campaigns_internal(self):
+        public_offer = SimpleNamespace(
+            name="Weekend Family Combo",
+            description="Save on a family meal this weekend.",
+            code="FAMILY20",
+            audience="all_customers",
+        )
+        targeted_offer = SimpleNamespace(
+            name="VIP Party Pack",
+            description="Private retention offer.",
+            code="VIP20",
+            audience="vip_guests",
+        )
+        verification_offer = SimpleNamespace(
+            name="Customer Checkout Proof 123456",
+            description="E2E customer checkout coupon proof",
+            code="CHK123456",
+            audience="all_customers",
+        )
+
+        self.assertTrue(is_public_storefront_promotion(public_offer))
+        self.assertFalse(is_public_storefront_promotion(targeted_offer))
+        self.assertFalse(is_public_storefront_promotion(verification_offer))
 
 
 if __name__ == "__main__":
