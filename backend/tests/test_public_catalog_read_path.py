@@ -25,6 +25,17 @@ class PublicCatalogReadPathTest(unittest.TestCase):
         seed_customizations.assert_not_called()
         seed_delivery_zones.assert_not_called()
 
+    def test_storefront_bootstrap_returns_customer_order_dependencies_together(self):
+        with TestClient(app) as client:
+            response = client.get("/api/v1/restaurant/storefront/bootstrap")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["menu"]), 10)
+        self.assertIn("accepting_orders", payload["checkout_readiness"])
+        self.assertGreater(len(payload["delivery_zones"]), 0)
+        self.assertLessEqual(len(payload["active_promotions"]), 8)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -115,6 +115,7 @@ async function screenshotPublicCustomization(item, selectedOptions) {
 
     const card = page.locator("article").filter({ hasText: item.name }).first();
     await card.waitFor({ timeout: 10000 });
+    await card.getByRole("button", { name: /Customize/i }).click();
     for (const option of selectedOptions) {
       await card.getByRole("button", { name: new RegExp(option.option_name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") }).click();
     }

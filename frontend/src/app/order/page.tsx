@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   CreditCard,
   MapPin,
@@ -13,18 +15,16 @@ import {
   Phone,
   Plus,
   Search,
+  SlidersHorizontal,
   ShoppingBag,
   User,
   X,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
-const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
+const STOREFRONT_BOOTSTRAP_API = getApiUrl("/api/v1/restaurant/storefront/bootstrap");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
-const CHECKOUT_READINESS_API = getApiUrl("/api/v1/restaurant/orders/checkout-readiness");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
-const ACTIVE_PROMOS_API = getApiUrl("/api/v1/restaurant/promotions/active");
-const DELIVERY_ZONES_API = getApiUrl("/api/v1/restaurant/delivery/zones");
 const DELIVERY_QUOTE_API = getApiUrl("/api/v1/restaurant/delivery/quote");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
 const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
@@ -128,6 +128,13 @@ type CheckoutReadiness = {
   accepting_orders: boolean;
   message: string;
   detail: string;
+};
+
+type StorefrontBootstrap = {
+  menu: MenuItem[];
+  checkout_readiness: CheckoutReadiness;
+  active_promotions: ActivePromotion[];
+  delivery_zones: DeliveryZone[];
 };
 
 type PendingPayment = {
@@ -235,6 +242,7 @@ export default function PublicOrderPage() {
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customizationDrafts, setCustomizationDrafts] = useState<Record<number, Record<number, number[]>>>({});
+  const [expandedCustomizationItems, setExpandedCustomizationItems] = useState<Record<number, boolean>>({});
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [orderType, setOrderType] = useState<"pickup" | "delivery">("pickup");
@@ -269,46 +277,35 @@ export default function PublicOrderPage() {
       setMessage(`${normalizedCoupon} selected from this offer link. Add any item and it will apply automatically.`);
     }
 
-    fetch(MENU_API)
-      .then((response) => response.json())
-      .then((data: MenuItem[]) => {
-        const availableMenu = data.filter((item) => item.is_available);
-        setMenu(availableMenu);
-        applySavedReorder(availableMenu);
-      })
-      .catch(() => setMessage("Menu is not available right now."));
-
-    fetch(CHECKOUT_READINESS_API)
+    fetch(STOREFRONT_BOOTSTRAP_API)
       .then(async (response) => {
         const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || "Checkout readiness is unavailable.");
-        return data as CheckoutReadiness;
+        if (!response.ok) throw new Error(data.detail || "Storefront is unavailable.");
+        return data as StorefrontBootstrap;
       })
-      .then((data) => setCheckoutReadiness(data))
-      .catch(() =>
-        setCheckoutReadiness({
-          status: "storefront_preview",
-          accepting_orders: false,
-          message: "Online ordering is temporarily unavailable.",
-          detail: "Please browse the menu and try again shortly.",
-        })
-      );
-
-    fetch(ACTIVE_PROMOS_API)
-      .then((response) => response.json())
-      .then((data: ActivePromotion[]) => setActivePromotions(data.filter((promotion) => promotion.code)))
-      .catch(() => setActivePromotions([]));
-
-    fetch(DELIVERY_ZONES_API)
-      .then((response) => response.json())
-      .then((data: DeliveryZone[]) => {
-        const activeZones = data.filter((zone) => zone.is_active);
+      .then((data) => {
+        const availableMenu = data.menu.filter((item) => item.is_available);
+        setMenu(availableMenu);
+        applySavedReorder(availableMenu);
+        setCheckoutReadiness(data.checkout_readiness);
+        setActivePromotions(data.active_promotions.filter((promotion) => promotion.code));
+        const activeZones = data.delivery_zones.filter((zone) => zone.is_active);
         setDeliveryZones(activeZones);
         if (activeZones[0]) {
           setSelectedDeliveryZoneId(activeZones[0].id);
         }
       })
-      .catch(() => setDeliveryZones([]));
+      .catch(() => {
+        setMessage("Menu is not available right now.");
+        setCheckoutReadiness({
+          status: "storefront_preview",
+          accepting_orders: false,
+          message: "Online ordering is temporarily unavailable.",
+          detail: "Please browse the menu and try again shortly.",
+        });
+        setActivePromotions([]);
+        setDeliveryZones([]);
+      });
 
     const savedCustomer = window.localStorage.getItem(CUSTOMER_STORAGE_KEY);
     if (savedCustomer) {
@@ -461,6 +458,13 @@ export default function PublicOrderPage() {
         },
       };
     });
+  };
+
+  const toggleCustomization = (itemId: number) => {
+    setExpandedCustomizationItems((current) => ({
+      ...current,
+      [itemId]: !current[itemId],
+    }));
   };
 
   const applySavedReorder = (availableMenu: MenuItem[]) => {
@@ -1360,54 +1364,80 @@ export default function PublicOrderPage() {
                     </div>
                   </div>
                   {(item.customization_groups || []).length > 0 && (
-                    <div className="space-y-3 border-t border-slate-100 bg-slate-50 p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
-                        <span>Build this item</span>
-                        <span>
-                          Base Rs {Number(item.selling_price || 0).toLocaleString()} + upgrades Rs {customizationTotalForItem(item, draft).toLocaleString()}
+                    <div className="border-t border-slate-100 bg-slate-50">
+                      <button
+                        type="button"
+                        data-testid={`customer-customize-item-${item.id}`}
+                        onClick={() => toggleCustomization(item.id)}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-black text-slate-700 hover:bg-slate-100"
+                      >
+                        <span className="flex items-center gap-2">
+                          <SlidersHorizontal className="h-4 w-4 text-red-700" />
+                          Customize
                         </span>
-                      </div>
-                      {item.customization_groups?.map((group) => {
-                        const selectedIds = new Set(draft[group.id] || []);
-                        return (
-                          <div key={`${item.id}-${group.id}`}>
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                              <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-                                {group.name}
-                              </p>
-                              {group.min_select > 0 ? (
-                                <span className="text-xs font-bold text-red-700">
-                                  required
-                                </span>
-                              ) : group.selection_type === "multiple" ? (
-                                <span className="text-xs font-bold text-slate-400">
-                                  up to {group.max_select}
-                                </span>
-                              ) : null}
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {group.options.map((option) => {
-                                const active = selectedIds.has(option.id);
-                                return (
-                                  <button
-                                    key={option.id}
-                                    type="button"
-                                    onClick={() => updateCustomization(item, group, option)}
-                                    className={`rounded-md border px-3 py-2 text-xs font-black ${
-                                      active
-                                        ? "border-red-700 bg-red-700 text-white"
-                                        : "border-slate-300 bg-white text-slate-700 hover:border-red-600"
-                                    }`}
-                                  >
-                                    {option.name}
-                                    {option.price_delta > 0 ? ` +Rs ${option.price_delta}` : ""}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                        <span className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                          +Rs {customizationTotalForItem(item, draft).toLocaleString()}
+                          {expandedCustomizationItems[item.id] ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </span>
+                      </button>
+                      {expandedCustomizationItems[item.id] && (
+                        <div
+                          data-testid={`customer-customization-panel-${item.id}`}
+                          className="space-y-3 border-t border-slate-200 p-4"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600">
+                            <span>Build this item</span>
+                            <span>
+                              Base Rs {Number(item.selling_price || 0).toLocaleString()} + upgrades Rs {customizationTotalForItem(item, draft).toLocaleString()}
+                            </span>
                           </div>
-                        );
-                      })}
+                          {item.customization_groups?.map((group) => {
+                            const selectedIds = new Set(draft[group.id] || []);
+                            return (
+                              <div key={`${item.id}-${group.id}`}>
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+                                    {group.name}
+                                  </p>
+                                  {group.min_select > 0 ? (
+                                    <span className="text-xs font-bold text-red-700">
+                                      required
+                                    </span>
+                                  ) : group.selection_type === "multiple" ? (
+                                    <span className="text-xs font-bold text-slate-400">
+                                      up to {group.max_select}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {group.options.map((option) => {
+                                    const active = selectedIds.has(option.id);
+                                    return (
+                                      <button
+                                        key={option.id}
+                                        type="button"
+                                        onClick={() => updateCustomization(item, group, option)}
+                                        className={`rounded-md border px-3 py-2 text-xs font-black ${
+                                          active
+                                            ? "border-red-700 bg-red-700 text-white"
+                                            : "border-slate-300 bg-white text-slate-700 hover:border-red-600"
+                                        }`}
+                                      >
+                                        {option.name}
+                                        {option.price_delta > 0 ? ` +Rs ${option.price_delta}` : ""}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </article>

@@ -206,6 +206,7 @@ async function main() {
 
     await page.getByPlaceholder("Search menu").fill(customizableItem.itemName);
     await page.getByRole("heading", { name: customizableItem.itemName }).waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Customize/i }).first().click();
     await page.getByRole("button", { name: new RegExp(customizableItem.optionName, "i") }).first().click();
     await page.getByText(customizableItem.optionName, { exact: false }).first().waitFor({ timeout: 10000 });
     await page.getByRole("button", { name: /^Add$/i }).first().click();
