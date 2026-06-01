@@ -77,6 +77,38 @@ async function verifyManagedStaffCredentials(id: string, password: string) {
   }
 }
 
+async function verifyManagedAdminCredentials(id: string, password: string) {
+  try {
+    const response = await fetch(getServerApiUrl("/api/v1/auth/admin/portal-verify"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, password }),
+      cache: "no-store",
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        detail: data.detail || "Invalid admin credentials.",
+      };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      adminId: data.admin_id || id,
+      displayName: data.display_name || "Restaurant Admin",
+      source: data.source || "managed",
+    };
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      detail: "Admin credential service is unavailable.",
+    };
+  }
+}
+
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
   const requestedRole: PortalLoginRole = payload.role === "staff" ? "staff" : "admin";
@@ -84,8 +116,13 @@ export async function POST(request: Request) {
   const adminCredentials = credentialsForRole("admin");
   const id = String(payload.id || "").trim();
   const password = String(payload.password || "");
-  const isAdminMasterLogin = credentialsMatch(id, password, adminCredentials);
+  const isEnvironmentAdminLogin = credentialsMatch(id, password, adminCredentials);
   const isRequestedRoleLogin = credentialsMatch(id, password, requestedCredentials);
+  const managedAdminLogin = !isEnvironmentAdminLogin
+    ? await verifyManagedAdminCredentials(id, password)
+    : null;
+  const verifiedManagedAdmin = managedAdminLogin?.ok ? managedAdminLogin : null;
+  const isAdminMasterLogin = isEnvironmentAdminLogin || Boolean(verifiedManagedAdmin);
   const managedStaffLogin =
     requestedRole === "staff" && !isAdminMasterLogin && !isRequestedRoleLogin
       ? await verifyManagedStaffCredentials(id, password)
@@ -123,22 +160,32 @@ export async function POST(request: Request) {
   const token = await createSessionToken(
     {
       role,
-      subject: isManagedStaffLogin
-        ? `staff:${managedStaffLogin.staffId}`
-        : `${credentials.subjectPrefix}:${id}`,
-      displayName: isManagedStaffLogin
-        ? managedStaffLogin.displayName
-        : credentials.displayName,
+      subject: verifiedManagedAdmin
+        ? `admin:${verifiedManagedAdmin.adminId}`
+        : isManagedStaffLogin
+          ? `staff:${managedStaffLogin.staffId}`
+          : `${credentials.subjectPrefix}:${id}`,
+      displayName: verifiedManagedAdmin
+        ? verifiedManagedAdmin.displayName
+        : isManagedStaffLogin
+          ? managedStaffLogin.displayName
+          : credentials.displayName,
     },
     maxAge
   );
   const response = NextResponse.json({
     ok: true,
     role,
-    displayName: isManagedStaffLogin
-      ? managedStaffLogin.displayName
-      : credentials.displayName,
-    source: isManagedStaffLogin ? managedStaffLogin.source : "environment",
+    displayName: verifiedManagedAdmin
+      ? verifiedManagedAdmin.displayName
+      : isManagedStaffLogin
+        ? managedStaffLogin.displayName
+        : credentials.displayName,
+    source: verifiedManagedAdmin
+      ? verifiedManagedAdmin.source
+      : isManagedStaffLogin
+        ? managedStaffLogin.source
+        : "environment",
     startPath: requestedRole === "staff" ? "/orders" : "/dashboard",
   });
   response.cookies.set({

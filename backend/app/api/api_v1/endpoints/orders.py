@@ -1,4 +1,5 @@
 import hashlib
+import os
 from collections import Counter
 from datetime import date, datetime
 from typing import List, Optional
@@ -9,6 +10,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles, session_from_request
+from app.core.config import settings
 from app.models.domain import (
     Customer,
     DailySales,
@@ -84,6 +86,33 @@ PAYMENT_GATEWAY_RUNBOOK = {
         "webhook_step": "Add RAZORPAY_WEBHOOK_SECRET and enable payment captured webhooks.",
     },
 }
+
+
+def checkout_readiness_payload() -> dict:
+    environment = (os.getenv("VERCEL_ENV") or settings.ENVIRONMENT or "development").strip().lower()
+    is_cloud_runtime = (
+        environment not in {"development", "local", "test"}
+        or os.getenv("VERCEL") == "1"
+    )
+    database_uri = (settings.SQLALCHEMY_DATABASE_URI or "").strip().lower()
+    uses_ephemeral_database = database_uri.startswith("sqlite")
+    accepting_orders = not (is_cloud_runtime and uses_ephemeral_database)
+    return {
+        "status": "accepting_orders" if accepting_orders else "storefront_preview",
+        "accepting_orders": accepting_orders,
+        "environment": environment,
+        "database_ready": not uses_ephemeral_database or not is_cloud_runtime,
+        "message": (
+            "Online ordering is active."
+            if accepting_orders
+            else "Online ordering is being activated. Browse the menu now and place your order shortly."
+        ),
+        "detail": (
+            "Order capture is connected to a persistent database."
+            if accepting_orders
+            else "The storefront is in preview mode until the managed production database is connected."
+        ),
+    }
 
 
 class OrderItem(BaseModel):
@@ -1733,8 +1762,17 @@ def get_tables(
     return [serialize_table(table) for table in tables]
 
 
+@router.get("/checkout-readiness")
+def checkout_readiness():
+    return checkout_readiness_payload()
+
+
 @router.post("/")
 def create_order(order: OrderCreate, db: Session = Depends(get_db)):
+    checkout_readiness = checkout_readiness_payload()
+    if not checkout_readiness["accepting_orders"]:
+        raise HTTPException(status_code=503, detail=checkout_readiness["message"])
+
     valid_items = normalize_order_items(db, order.items)
     if not valid_items:
         raise HTTPException(status_code=422, detail="Order must include at least one item.")

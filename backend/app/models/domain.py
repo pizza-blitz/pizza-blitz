@@ -124,6 +124,18 @@ class Customer(Base):
     last_order_at = Column(DateTime, nullable=True)
     notes = Column(String, nullable=True)
 
+class AdminCredential(Base):
+    __tablename__ = "admin_credentials"
+    id = Column(Integer, primary_key=True, index=True)
+    admin_id = Column(String(120), unique=True, index=True, nullable=False)
+    display_name = Column(String(120), default="Restaurant Admin")
+    password_hash = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True, index=True)
+    must_rotate = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime, nullable=True)
+
 class StaffCredential(Base):
     __tablename__ = "staff_credentials"
     id = Column(Integer, primary_key=True, index=True)

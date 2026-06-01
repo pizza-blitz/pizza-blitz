@@ -3576,20 +3576,25 @@ def _database_check(db: Session) -> dict:
 
 
 def _database_persistence_check(environment: str) -> dict:
+    is_sqlite = settings.SQLALCHEMY_DATABASE_URI.lower().startswith("sqlite")
     is_memory = settings.SQLALCHEMY_DATABASE_URI == "sqlite:///:memory:"
-    if is_memory and environment == "production":
+    if is_sqlite and environment == "production":
         return {
             "key": "database_persistence",
             "label": "Production database",
             "status": "fail",
-            "detail": "Production cannot use sqlite:///:memory: because data disappears on restart.",
+            "detail": "Production cannot use SQLite because deployed instances do not share durable storage.",
         }
-    if is_memory:
+    if is_sqlite:
         return {
             "key": "database_persistence",
             "label": "Production database",
             "status": "warn",
-            "detail": "Local tests use an in-memory database; deployment must set SQLALCHEMY_DATABASE_URI.",
+            "detail": (
+                "Local development uses an in-memory SQLite database; deployment must set SQLALCHEMY_DATABASE_URI."
+                if is_memory
+                else "Local development uses file-backed SQLite; deployment must set a managed SQLALCHEMY_DATABASE_URI."
+            ),
         }
     return {
         "key": "database_persistence",

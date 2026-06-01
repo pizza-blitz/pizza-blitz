@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.domain import StaffCredential
+from app.models.domain import AdminCredential, StaffCredential
 
 
 TOKEN_ALGORITHM = "HS256"
@@ -33,7 +33,14 @@ def _expires_at(minutes: int) -> datetime:
     return datetime.utcnow() + timedelta(minutes=minutes)
 
 
-def verify_admin_credentials(admin_id: str, password: str) -> bool:
+def verify_admin_credentials(admin_id: str, password: str, db: Session | None = None) -> bool:
+    if db is not None and verify_managed_admin_credentials(
+        admin_id=admin_id,
+        password=password,
+        db=db,
+    ):
+        return True
+
     if _is_cloud_runtime() and not (
         os.getenv("PIZZA_BLITZ_ADMIN_ID") and os.getenv("PIZZA_BLITZ_ADMIN_PASSWORD")
     ):
@@ -50,7 +57,7 @@ def verify_admin_credentials(admin_id: str, password: str) -> bool:
     )
 
 
-def _hash_staff_password(password: str, salt: str | None = None) -> str:
+def _hash_password(password: str, salt: str | None = None) -> str:
     selected_salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256",
@@ -61,7 +68,7 @@ def _hash_staff_password(password: str, salt: str | None = None) -> str:
     return f"{PASSWORD_SCHEME}${PASSWORD_ITERATIONS}${selected_salt}${digest}"
 
 
-def _verify_staff_password(password: str, stored_hash: str) -> bool:
+def _verify_password(password: str, stored_hash: str) -> bool:
     try:
         scheme, iterations, salt, expected_digest = stored_hash.split("$", 3)
         if scheme != PASSWORD_SCHEME:
@@ -75,6 +82,104 @@ def _verify_staff_password(password: str, stored_hash: str) -> bool:
         return compare_digest(digest, expected_digest)
     except (ValueError, TypeError):
         return False
+
+
+def has_managed_admin_credentials(db: Session) -> bool:
+    return (
+        db.query(AdminCredential)
+        .filter(AdminCredential.is_active.is_(True))
+        .first()
+        is not None
+    )
+
+
+def managed_admin_credential_status(db: Session) -> dict:
+    credential = (
+        db.query(AdminCredential)
+        .order_by(AdminCredential.is_active.desc(), AdminCredential.updated_at.desc())
+        .first()
+    )
+    if credential is None:
+        return {
+            "configured": False,
+            "source": "environment",
+            "admin_id": settings.PIZZA_BLITZ_ADMIN_ID,
+            "display_name": settings.PIZZA_BLITZ_ADMIN_NAME,
+            "is_active": False,
+            "must_rotate": False,
+            "updated_at": None,
+            "last_login_at": None,
+            "password_policy": "Minimum 8 characters. Store only a salted PBKDF2 hash.",
+            "next_action": "Save a master admin ID and password to activate managed rotation.",
+        }
+    return {
+        "configured": bool(credential.is_active),
+        "source": "managed",
+        "admin_id": credential.admin_id,
+        "display_name": credential.display_name,
+        "is_active": bool(credential.is_active),
+        "must_rotate": bool(credential.must_rotate),
+        "updated_at": credential.updated_at.isoformat() if credential.updated_at else None,
+        "last_login_at": credential.last_login_at.isoformat() if credential.last_login_at else None,
+        "password_policy": "Minimum 8 characters. Store only a salted PBKDF2 hash.",
+        "next_action": "The master admin can sign in with this managed ID. Keep environment credentials as recovery access.",
+    }
+
+
+def upsert_managed_admin_credential(
+    *,
+    db: Session,
+    admin_id: str,
+    password: str,
+    display_name: str = "Restaurant Admin",
+    is_active: bool = True,
+) -> AdminCredential:
+    clean_admin_id = admin_id.strip()
+    clean_display_name = display_name.strip() or "Restaurant Admin"
+    credential = (
+        db.query(AdminCredential)
+        .order_by(AdminCredential.is_active.desc(), AdminCredential.updated_at.desc())
+        .first()
+    )
+    if credential is None:
+        credential = AdminCredential(admin_id=clean_admin_id)
+        db.add(credential)
+    else:
+        credential.admin_id = clean_admin_id
+    credential.display_name = clean_display_name
+    credential.password_hash = _hash_password(password)
+    credential.is_active = is_active
+    credential.must_rotate = False
+    credential.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(credential)
+    return credential
+
+
+def verify_managed_admin_credentials(
+    *,
+    admin_id: str,
+    password: str,
+    db: Session,
+    mark_login: bool = False,
+) -> AdminCredential | None:
+    credential = (
+        db.query(AdminCredential)
+        .filter(
+            AdminCredential.admin_id == admin_id.strip(),
+            AdminCredential.is_active.is_(True),
+        )
+        .first()
+    )
+    if credential is None:
+        return None
+    if not _verify_password(password, credential.password_hash):
+        return None
+    if mark_login:
+        credential.last_login_at = datetime.utcnow()
+        db.commit()
+        db.refresh(credential)
+    return credential
 
 
 def has_managed_staff_credentials(db: Session) -> bool:
@@ -138,7 +243,7 @@ def upsert_managed_staff_credential(
         credential = StaffCredential(staff_id=clean_staff_id)
         db.add(credential)
     credential.display_name = clean_display_name
-    credential.password_hash = _hash_staff_password(password)
+    credential.password_hash = _hash_password(password)
     credential.is_active = is_active
     credential.must_rotate = False
     credential.updated_at = datetime.utcnow()
@@ -164,7 +269,7 @@ def verify_managed_staff_credentials(
     )
     if credential is None:
         return None
-    if not _verify_staff_password(password, credential.password_hash):
+    if not _verify_password(password, credential.password_hash):
         return None
     if mark_login:
         credential.last_login_at = datetime.utcnow()

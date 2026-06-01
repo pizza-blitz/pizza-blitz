@@ -21,6 +21,7 @@ import { getApiUrl } from "@/lib/api";
 
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
+const CHECKOUT_READINESS_API = getApiUrl("/api/v1/restaurant/orders/checkout-readiness");
 const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
 const ACTIVE_PROMOS_API = getApiUrl("/api/v1/restaurant/promotions/active");
 const DELIVERY_ZONES_API = getApiUrl("/api/v1/restaurant/delivery/zones");
@@ -120,6 +121,13 @@ type DeliveryQuote = {
     delivery_fee: number;
     total_with_delivery: number;
   };
+};
+
+type CheckoutReadiness = {
+  status: "accepting_orders" | "storefront_preview";
+  accepting_orders: boolean;
+  message: string;
+  detail: string;
 };
 
 type PendingPayment = {
@@ -243,6 +251,7 @@ export default function PublicOrderPage() {
   const [message, setMessage] = useState("");
   const [orderId, setOrderId] = useState<number | null>(null);
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
+  const [checkoutReadiness, setCheckoutReadiness] = useState<CheckoutReadiness | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
@@ -268,6 +277,22 @@ export default function PublicOrderPage() {
         applySavedReorder(availableMenu);
       })
       .catch(() => setMessage("Menu is not available right now."));
+
+    fetch(CHECKOUT_READINESS_API)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Checkout readiness is unavailable.");
+        return data as CheckoutReadiness;
+      })
+      .then((data) => setCheckoutReadiness(data))
+      .catch(() =>
+        setCheckoutReadiness({
+          status: "storefront_preview",
+          accepting_orders: false,
+          message: "Online ordering is temporarily unavailable.",
+          detail: "Please browse the menu and try again shortly.",
+        })
+      );
 
     fetch(ACTIVE_PROMOS_API)
       .then((response) => response.json())
@@ -553,7 +578,13 @@ export default function PublicOrderPage() {
       Boolean(deliveryQuote?.is_deliverable) &&
       !isQuotingDelivery);
   const paymentReady = paymentMethod === "cash" || paymentMethod === "prepaid";
-  const canSubmitOrder = Boolean(cart.length) && contactReady && fulfillmentReady && paymentReady && !isSubmitting;
+  const canSubmitOrder =
+    Boolean(checkoutReadiness?.accepting_orders) &&
+    Boolean(cart.length) &&
+    contactReady &&
+    fulfillmentReady &&
+    paymentReady &&
+    !isSubmitting;
   const fulfillmentStatus =
     orderType === "pickup"
       ? "Pickup promise ready"
@@ -826,6 +857,10 @@ export default function PublicOrderPage() {
 
   const placeOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!checkoutReadiness?.accepting_orders) {
+      setMessage(checkoutReadiness?.message || "Online ordering is temporarily unavailable.");
+      return;
+    }
     if (!cart.length) {
       setMessage("Add at least one item.");
       return;
@@ -1472,6 +1507,17 @@ export default function PublicOrderPage() {
               </div>
             </div>
 
+            {checkoutReadiness && !checkoutReadiness.accepting_orders && (
+              <div
+                data-testid="storefront-preview-notice"
+                className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-950"
+              >
+                <p className="text-sm font-black">Storefront preview</p>
+                <p className="mt-1 text-sm font-semibold">{checkoutReadiness.message}</p>
+                <p className="mt-1 text-xs font-semibold text-amber-800">{checkoutReadiness.detail}</p>
+              </div>
+            )}
+
             {pendingPayment && (
               <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
                 <p className="font-black text-amber-900">Prepaid payment pending</p>
@@ -1831,7 +1877,11 @@ export default function PublicOrderPage() {
                 className="flex w-full items-center justify-center gap-2 rounded-md bg-red-700 px-5 py-4 font-black text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 <CreditCard className="h-5 w-5" />
-                {isSubmitting ? "Placing Order" : "Place Order"}
+                {isSubmitting
+                  ? "Placing Order"
+                  : checkoutReadiness?.accepting_orders
+                    ? "Place Order"
+                    : "Ordering Activating"}
               </button>
             </div>
           </form>

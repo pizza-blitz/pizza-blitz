@@ -34,6 +34,7 @@ const CASH_DRAWER_CLOSE_API = getApiUrl('/api/v1/restaurant/orders/cash-drawer/c
 const paymentStaffWebhookApi = (provider: StaffSettlementProvider) =>
   getApiUrl(`/api/v1/restaurant/orders/payments/webhook/${provider}`);
 const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
+const ADMIN_CREDENTIAL_API = getApiUrl('/api/v1/auth/admin/credential');
 const STAFF_CREDENTIAL_API = getApiUrl('/api/v1/auth/staff/credential');
 const OPERATIONAL_AUDIT_API = getApiUrl('/api/v1/restaurant/ops/audit-events');
 
@@ -117,6 +118,19 @@ type StaffCredentialStatus = {
   updated_at?: string | null;
   last_login_at?: string | null;
   password_policy: string;
+  next_action: string;
+};
+
+type AdminCredentialStatus = {
+  configured: boolean;
+  source: string;
+  admin_id?: string | null;
+  display_name?: string | null;
+  is_active: boolean;
+  must_rotate: boolean;
+  updated_at?: string | null;
+  last_login_at?: string | null;
+  password_policy?: string;
   next_action: string;
 };
 
@@ -598,6 +612,10 @@ export default function Settings() {
   const [isStaffCredentialLoading, setIsStaffCredentialLoading] = useState(true);
   const [isSavingStaffCredential, setIsSavingStaffCredential] = useState(false);
   const [staffCredentialMessage, setStaffCredentialMessage] = useState("");
+  const [adminCredential, setAdminCredential] = useState<AdminCredentialStatus | null>(null);
+  const [isAdminCredentialLoading, setIsAdminCredentialLoading] = useState(true);
+  const [isSavingAdminCredential, setIsSavingAdminCredential] = useState(false);
+  const [adminCredentialMessage, setAdminCredentialMessage] = useState("");
   const [paymentReadiness, setPaymentReadiness] = useState<PaymentReadiness | null>(null);
   const [paymentProduction, setPaymentProduction] = useState<PaymentProductionReadiness | null>(null);
   const [paymentGatewayActivation, setPaymentGatewayActivation] =
@@ -643,9 +661,59 @@ export default function Settings() {
   const [syncResult, setSyncResult] = useState<SheetSyncResult | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
 
-  // Missing State for Admin Credentials
   const [adminId, setAdminId] = useState("admin");
   const [adminPassword, setAdminPassword] = useState("");
+
+  const loadAdminCredential = async () => {
+    setIsAdminCredentialLoading(true);
+    try {
+      const response = await fetch(ADMIN_CREDENTIAL_API, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Admin credential API failed.");
+      }
+      const data: AdminCredentialStatus = await response.json();
+      setAdminCredential(data);
+      setAdminId(data.admin_id || "admin");
+    } catch {
+      setAdminCredential(null);
+      setAdminCredentialMessage("Master admin credential status is unavailable right now.");
+    } finally {
+      setIsAdminCredentialLoading(false);
+    }
+  };
+
+  const saveAdminCredential = async () => {
+    setIsSavingAdminCredential(true);
+    setAdminCredentialMessage("");
+    try {
+      const response = await fetch(ADMIN_CREDENTIAL_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          id: adminId,
+          password: adminPassword,
+          display_name: adminCredential?.display_name || "Restaurant Admin",
+          is_active: true,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not save master admin credential.");
+      }
+      setAdminCredential(data as AdminCredentialStatus);
+      setAdminPassword("");
+      setAdminCredentialMessage("Master admin credential saved. Environment credentials remain available for recovery.");
+      await loadOperationalAudit();
+    } catch (error) {
+      setAdminCredentialMessage(error instanceof Error ? error.message : "Could not save master admin credential.");
+    } finally {
+      setIsSavingAdminCredential(false);
+    }
+  };
 
   const loadStaffCredential = async () => {
     setIsStaffCredentialLoading(true);
@@ -863,6 +931,7 @@ export default function Settings() {
 
     if (isMounted) {
       void loadDeliveryZones();
+      void loadAdminCredential();
       void loadStaffCredential();
       void loadOperationalAudit();
     }
@@ -3553,42 +3622,58 @@ export default function Settings() {
       </div>
 
       {/* Admin Credentials */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+      <div data-testid="admin-credential-command" className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <div className="flex items-center mb-4">
           <div className="p-2 bg-blue-100 rounded-lg mr-3">
             <Shield className="w-5 h-5 text-blue-600" />
           </div>
           <div>
             <h3 className="font-bold text-gray-900">Admin Credentials</h3>
-            <p className="text-sm text-gray-500">Update the portal login ID and password.</p>
+            <p className="text-sm text-gray-500">Rotate the master portal login while keeping environment recovery access.</p>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Admin ID</label>
-            <input
-              type="text"
-              value={adminId}
-              onChange={(e) => setAdminId(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+              <input
+                type="text"
+                value={adminId}
+                onChange={(e) => setAdminId(e.target.value)}
+                disabled={isAdminCredentialLoading || isSavingAdminCredential}
+                className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none disabled:bg-gray-100"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-            <input
-              type="password"
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
-              placeholder="Enter new password"
-              className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Enter new password"
+                disabled={isAdminCredentialLoading || isSavingAdminCredential}
+                className="w-full border border-gray-200 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-orange-500 outline-none disabled:bg-gray-100"
             />
           </div>
         </div>
         <div className="mt-4">
-          <button className="px-5 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold shadow-sm transition-colors flex items-center">
-            <Save className="w-4 h-4 mr-2" /> Save Credentials
+          <button
+            type="button"
+            data-testid="admin-credential-save"
+            onClick={saveAdminCredential}
+            disabled={isAdminCredentialLoading || isSavingAdminCredential || adminId.trim().length < 3 || adminPassword.length < 8}
+            className="px-5 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-bold shadow-sm transition-colors flex items-center disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Save className="w-4 h-4 mr-2" /> {isSavingAdminCredential ? "Saving..." : "Save Credentials"}
           </button>
         </div>
+        {adminCredentialMessage && (
+          <p data-testid="admin-credential-message" className="mt-3 rounded-md bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
+            {adminCredentialMessage}
+          </p>
+        )}
+        <p className="mt-3 text-xs font-semibold text-gray-500">
+          {adminCredential?.next_action || "Save an admin ID and a password of at least 8 characters."}
+        </p>
       </div>
     </div>
   );
