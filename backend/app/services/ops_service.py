@@ -1760,12 +1760,12 @@ def live_environment_report(
                 },
                 {
                     "key": "run_migrations",
-                    "label": "Run Alembic migrations",
+                    "label": "Bootstrap managed database",
                     "status": _gate_status(production_plan.get("migration_steps"), "run_migrations"),
                     "owner": "Engineering",
-                    "command": "alembic upgrade head",
+                    "command": "python bootstrap_managed_database.py --stamp-alembic",
                     "proof": "verify-production-database-path.cjs",
-                    "detail": "Run the latest schema migration against the managed database URL.",
+                    "detail": "Create the current schema, seed the verified baseline, validate every application table and stamp the fresh managed database.",
                 },
                 {
                     "key": "seed_baseline",
@@ -2321,9 +2321,9 @@ def _production_database_plan(*, environment: str, backup_freshness: dict, resto
             },
             {
                 "key": "run_migrations",
-                "label": "Run Alembic migrations",
+                "label": "Bootstrap managed database",
                 "status": "warn",
-                "detail": "Run alembic upgrade head against the managed database before importing menu, customers or orders.",
+                "detail": "Run python bootstrap_managed_database.py --stamp-alembic against the fresh managed database before importing menu, customers or orders.",
             },
             {
                 "key": "seed_baseline",

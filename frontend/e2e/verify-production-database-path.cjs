@@ -143,7 +143,7 @@ async function main() {
     await page.getByRole("heading", { name: "Production Database Path Command" }).waitFor({ timeout: 15000 });
     await command.getByText("Managed PostgreSQL", { exact: false }).first().waitFor({ timeout: 15000 });
     await command.getByText("Set SQLALCHEMY_DATABASE_URI", { exact: true }).waitFor({ timeout: 15000 });
-    await command.getByText("Run Alembic migrations", { exact: true }).waitFor({ timeout: 15000 });
+    await command.getByText("Bootstrap managed database", { exact: true }).waitFor({ timeout: 15000 });
     await command.getByText("Restore rehearsal", { exact: true }).waitFor({ timeout: 15000 });
     await command.getByText("Current Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await command.getByText("Target Backend", { exact: true }).waitFor({ timeout: 15000 });

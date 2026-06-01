@@ -211,7 +211,7 @@ async function main() {
     "Production database plan did not choose Managed PostgreSQL."
   );
   assert(
-    readiness.data.production_database_plan.migration_steps.some((step) => step.label === "Run Alembic migrations"),
+    readiness.data.production_database_plan.migration_steps.some((step) => step.label === "Bootstrap managed database"),
     "Production database plan did not include migration proof."
   );
   assert(readiness.data.environment_security_plan, "Readiness did not include environment security plan.");

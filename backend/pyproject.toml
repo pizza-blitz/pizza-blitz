@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Pizza Blitz FastAPI service for Vercel deployment"
 requires-python = ">=3.12,<3.15"
 dependencies = [
+  "alembic>=1.17,<2",
   "apscheduler>=3.11,<4",
   "email-validator>=2.3,<3",
   "fastapi>=0.123,<1",
