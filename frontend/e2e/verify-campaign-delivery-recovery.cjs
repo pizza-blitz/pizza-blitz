@@ -140,10 +140,11 @@ async function screenshotRecovery(campaignName) {
 
     const response = await page.goto(`${baseURL}/promotions`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
-    await page.getByText("Provider Send Console", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByTestId("messaging-readiness-command").waitFor({ timeout: 15000 });
     await page.getByText(campaignName, { exact: true }).first().click();
     await page.getByText("Delivery Recovery", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /Needs Attention/i }).click();
+    await page.getByTestId("delivery-reason-filter-missing_destination").click();
     await page.getByText("Add or correct the customer's email address.", { exact: false }).first().waitFor({ timeout: 15000 });
 
     const health = await page.evaluate(() => {

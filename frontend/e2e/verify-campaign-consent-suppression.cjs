@@ -177,7 +177,7 @@ async function screenshotConsentSuppression(campaignName, blockedName) {
     const response = await page.goto(`${baseURL}/promotions`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    await page.getByText("Provider Send Console", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByTestId("messaging-readiness-command").waitFor({ timeout: 15000 });
     await page.getByText("Campaign List", { exact: false }).waitFor({ timeout: 15000 });
     try {
       await Promise.all([
@@ -227,6 +227,7 @@ async function screenshotConsentSuppression(campaignName, blockedName) {
     }
     await campaignButton.click();
     await page.getByText("Recent Delivery Attempts", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByTestId("delivery-reason-filter-consent").click();
     await page.getByText(blockedName, { exact: false }).first().waitFor({ timeout: 15000 });
     await page.getByText("Marketing consent not granted", { exact: false }).first().waitFor({ timeout: 15000 });
     await page.getByText("Ask the customer to opt in before sending promotional messages.", { exact: false }).first().waitFor({ timeout: 15000 });
