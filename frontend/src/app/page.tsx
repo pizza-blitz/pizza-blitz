@@ -84,7 +84,7 @@ export default function PublicHomePage() {
               Pizza Blitz
             </h1>
             <p className="mt-5 max-w-xl text-lg font-medium leading-8 text-white/85">
-              Hot pizzas, sides, drinks, coupons, prepaid checkout, and live order tracking from one place.
+              Hot pizzas, sides, drinks, coupons, flexible checkout, and live order tracking from one place.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -158,7 +158,7 @@ export default function PublicHomePage() {
       <section className="border-y border-slate-200 bg-white">
         <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-5 py-10 md:grid-cols-3">
           <Info icon={Utensils} label="Catalog" value="Pizza, sides, beverages, desserts" />
-          <Info icon={ShieldCheck} label="Checkout" value="Coupon support and prepaid flow" />
+          <Info icon={ShieldCheck} label="Checkout" value="Coupon support and payment choices" />
           <Info icon={Phone} label="Customer Care" value="Saved contact details for order history" />
         </div>
       </section>

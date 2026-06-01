@@ -1664,7 +1664,10 @@ export default function PublicOrderPage() {
               >
                 <p className="text-sm font-black text-slate-900">Pickup</p>
                 <p className="mt-1 text-xs font-semibold text-slate-600">
-                  Ready around 20-25 min. Pay online or at counter.
+                  Ready around 20-25 min.{" "}
+                  {paymentCheckout?.prepaid_available
+                    ? "Pay online or at counter."
+                    : "Cash at counter while online pay activates."}
                 </p>
               </div>
               <div
