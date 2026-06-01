@@ -160,7 +160,7 @@ async function verifyBrowser(seed) {
     await page.getByTestId("expense-description-input").fill(browserDescription);
     await page.getByTestId("expense-save").click();
     await page.getByText("Logged expense of Rs. 77.", { exact: true }).waitFor({ timeout: 30000 });
-    await page.getByText(browserDescription, { exact: false }).waitFor({ timeout: 30000 });
+    await page.getByRole("cell", { name: browserDescription }).waitFor({ timeout: 30000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-expense-audit-command.png"),
