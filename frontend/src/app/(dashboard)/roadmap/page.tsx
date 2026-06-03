@@ -368,6 +368,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Visible buttons, links, inputs, selects and textareas now have a repeatable accessibility audit, and unlabeled controls on Shifts, Daily, Recipes, Waste and Settings were fixed.",
   },
+  {
+    title: "Safe action button audit",
+    status: "done",
+    value: "A conservative browser proof now clicks non-destructive refresh, filter and view-toggle buttons across the route set and catches runtime errors without changing business data.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -930,8 +935,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "32",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels and roadmap.",
+    value: "33",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1169,6 +1174,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "interactive-control-labels.json",
   },
   {
+    area: "Safe action buttons",
+    proof: "verify-safe-action-buttons.cjs",
+    status: "passed",
+    value: "Non-destructive refresh, filter and view-toggle buttons are clicked in browser and checked for runtime errors without changing business records.",
+    artifact: "safe-action-buttons.json",
+  },
+  {
     area: "Dashboard visual polish",
     proof: "verify-dashboard-visual-polish.cjs",
     status: "passed",
@@ -1194,8 +1206,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "34 / 34",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "35 / 35",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",
