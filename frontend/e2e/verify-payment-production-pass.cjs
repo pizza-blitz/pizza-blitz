@@ -7,6 +7,9 @@ const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 const artifactsDir = path.join(__dirname, "artifacts");
+const paymentActionTimeoutMs = Number(
+  process.env.E2E_PAYMENT_ACTION_TIMEOUT_MS || (baseURL.includes("vercel.app") ? 45000 : 15000)
+);
 
 function assert(condition, message) {
   if (!condition) {
@@ -92,6 +95,25 @@ async function getPaymentProduction(context, adminCookie) {
   const data = await response.json();
   assert(response.ok(), `Payment production readiness failed: ${JSON.stringify(data)}`);
   return data;
+}
+
+async function waitForPaymentProductionState(context, adminCookie, orderId, predicate, label) {
+  const startedAt = Date.now();
+  let latest = null;
+
+  while (Date.now() - startedAt < paymentActionTimeoutMs) {
+    latest = await getPaymentProduction(context, adminCookie);
+    if (predicate(latest)) return latest;
+    await sleep(1500);
+  }
+
+  const snapshot = latest
+    ? {
+        awaiting: latest.queues.awaiting_settlement.map((order) => order.id),
+        recent_paid: latest.queues.recent_paid.map((order) => order.id),
+      }
+    : null;
+  throw new Error(`${label} for order #${orderId}. Latest payment queue snapshot: ${JSON.stringify(snapshot)}`);
 }
 
 function createBrowserWatch(page) {
@@ -196,7 +218,7 @@ async function main() {
     await page.getByRole("button", { name: new RegExp(`Load #${orderId}`) }).click();
     await page.getByPlaceholder("Payment reference").fill(paymentReference);
     await page.getByRole("button", { name: /Record Manual Paid Proof|Send Manual Paid Webhook/i }).click();
-    await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
     await page.getByText("Recent Paid Settlements", { exact: false }).waitFor({ timeout: 10000 });
 
     await page.screenshot({
@@ -205,7 +227,15 @@ async function main() {
     });
     watch.assertClean("payment production settings workflow");
 
-    const productionAfter = await getPaymentProduction(context, adminCookie);
+    const productionAfter = await waitForPaymentProductionState(
+      context,
+      adminCookie,
+      orderId,
+      (data) =>
+        !data.queues.awaiting_settlement.some((order) => order.id === orderId) &&
+        data.queues.recent_paid.some((order) => order.id === orderId),
+      "Paid order did not settle into the production queues"
+    );
     assert(
       !productionAfter.queues.awaiting_settlement.some((order) => order.id === orderId),
       `Order #${orderId} remained in the settlement queue after paid webhook.`
