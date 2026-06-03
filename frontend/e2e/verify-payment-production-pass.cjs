@@ -215,14 +215,14 @@ async function main() {
     assert(response && response.ok(), `Settings returned HTTP ${response?.status() || "no response"}.`);
     await assertHealthyPage(page, "settings page");
 
-    await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText("Payment Production Control", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText("Awaiting Settlement Queue", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Payment Gateway Readiness", { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
+    await page.getByText("Payment Production Control", { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
+    await page.getByText("Awaiting Settlement Queue", { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
     await page.getByRole("button", { name: new RegExp(`Load #${orderId}`) }).click();
     await page.getByPlaceholder("Payment reference").fill(paymentReference);
     await page.getByRole("button", { name: /Record Manual Paid Proof|Send Manual Paid Webhook/i }).click();
     await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
-    await page.getByText("Recent Paid Settlements", { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText("Recent Paid Settlements", { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-payment-production-pass.png"),
