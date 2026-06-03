@@ -78,8 +78,8 @@ const progressCards = [
   },
   {
     label: "Execution Mode",
-    value: "10 Feature Audit",
-    note: "Production Ops now exposes the 10-feature restaurant readiness audit with 8 pass, 2 warning, and clear next actions.",
+    value: "Feature Coverage",
+    note: "The roadmap now has a 13-area feature action audit that maps business workflows to proof scripts, artifacts, and live-provider gates.",
   },
 ];
 
@@ -372,6 +372,11 @@ const completedValue: RoadmapItem[] = [
     title: "Safe action button audit",
     status: "done",
     value: "A conservative browser proof now clicks non-destructive refresh, filter and view-toggle buttons across the route set and catches runtime errors without changing business data.",
+  },
+  {
+    title: "Feature action coverage audit",
+    status: "done",
+    value: "A consolidated audit now maps 13 major restaurant feature areas to proof scripts, saved artifacts and the remaining live-provider or environment gates.",
   },
 ];
 
@@ -708,7 +713,7 @@ const june20Push: DailyPlan[] = [
       "Run restaurant-ready and growth production audits",
       "Refresh roadmap status from live readiness",
     ],
-    output: "Payment production, direct-bank proof, webhook duplicate handling, Ops readiness, daily close, proof-order cleanup, readiness summary, campaign sending, social posting and ad proofs were verified on production.",
+    output: "Payment production, direct-bank proof, webhook duplicate handling, Ops readiness, daily close, proof-order cleanup, readiness summary, campaign sending, social posting, ad proofs and feature action coverage were verified.",
   },
   {
     date: "4 Jun 2026",
@@ -935,8 +940,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "33",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons and roadmap.",
+    value: "34",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1181,6 +1186,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "safe-action-buttons.json",
   },
   {
+    area: "Feature action coverage",
+    proof: "verify-feature-action-coverage.cjs",
+    status: "passed",
+    value: "Thirteen major restaurant feature areas are mapped to proof scripts, saved artifacts and explicit live-provider or environment gates.",
+    artifact: "feature-action-coverage.json",
+  },
+  {
     area: "Dashboard visual polish",
     proof: "verify-dashboard-visual-polish.cjs",
     status: "passed",
@@ -1206,8 +1218,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "35 / 35",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "36 / 36",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

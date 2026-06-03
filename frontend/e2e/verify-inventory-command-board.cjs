@@ -1,12 +1,19 @@
+const fs = require("fs");
+const path = require("path");
 const { chromium } = require("@playwright/test");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
+const artifactsDir = path.join(__dirname, "artifacts");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function field(page, label) {
+  return page.locator(`input[aria-label="${label}"]`).first();
 }
 
 async function waitForHttp(url, label) {
@@ -26,6 +33,7 @@ async function waitForHttp(url, label) {
 }
 
 async function main() {
+  fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(`${apiURL}/health`, "restaurant API");
   await waitForHttp(baseURL, "frontend");
 
@@ -46,16 +54,18 @@ async function main() {
     const response = await page.goto(`${baseURL}/inventory`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Inventory page returned HTTP ${response?.status() || "no response"}.`);
     await page.getByRole("heading", { name: "Inventory Management" }).waitFor({ timeout: 15000 });
+    await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
 
-    await page.getByRole("button", { name: "Add Item", exact: true }).click();
-    await page.getByLabel("Item name", { exact: true }).fill(itemName);
-    await page.getByLabel("Category", { exact: true }).fill("Fresh Produce");
-    await page.getByLabel("Unit", { exact: true }).fill("kg");
-    await page.getByLabel("Supplier", { exact: true }).fill("E2E Supplier");
-    await page.getByLabel("Current stock", { exact: true }).fill("1");
-    await page.getByLabel("Minimum stock", { exact: true }).fill("5");
-    await page.getByLabel("Cost per unit", { exact: true }).fill("120");
-    await page.getByLabel("Supplier WhatsApp", { exact: true }).fill("919999999999");
+    await page.getByRole("button", { name: /Add Item/i }).first().click();
+    await page.getByRole("heading", { name: "Add Inventory Item" }).waitFor({ timeout: 15000 });
+    await field(page, "Item name").fill(itemName);
+    await field(page, "Category").fill("Fresh Produce");
+    await field(page, "Unit").fill("kg");
+    await field(page, "Supplier").fill("E2E Supplier");
+    await field(page, "Current stock").fill("1");
+    await field(page, "Minimum stock").fill("5");
+    await field(page, "Cost per unit").fill("120");
+    await field(page, "Supplier WhatsApp").fill("919999999999");
     await page.getByRole("button", { name: "Save Item", exact: true }).click();
     await page.getByText(`${itemName} added to inventory.`, { exact: true }).waitFor({ timeout: 15000 });
 
@@ -71,6 +81,10 @@ async function main() {
     assert(await draftButton.isEnabled(), "Create PO Drafts stayed disabled for a low-stock item.");
     await draftButton.click();
     await page.getByText(/Created \d+ purchase order drafts?\.|No low-stock items need reorder drafts\./).waitFor({ timeout: 15000 });
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-inventory-command-board.png"),
+      fullPage: true,
+    });
 
     console.log(`Inventory command board proof passed for ${itemName}.`);
   } finally {
