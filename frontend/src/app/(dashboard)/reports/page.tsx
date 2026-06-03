@@ -24,6 +24,7 @@ export default function Reports() {
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reportError, setReportError] = useState("");
+  const [reportWarnings, setReportWarnings] = useState<string[]>([]);
   const [period, setPeriod] = useState("30days");
   const [monthlyTarget, setMonthlyTarget] = useState("");
   const [targetDraft, setTargetDraft] = useState("");
@@ -40,12 +41,14 @@ export default function Reports() {
   const fetchReports = async (signal?: AbortSignal) => {
     setIsLoading(true);
     setReportError("");
+    setReportWarnings([]);
+    setData(null);
     try {
       const comparisonPeriod = period === "lifetime" ? "1year" : period;
       const targetQuery = Number(monthlyTarget || 0) > 0
         ? `?monthly_target=${encodeURIComponent(monthlyTarget)}`
         : "";
-      const fetchJson = async (endpoint: string) => {
+      const fetchJson = async (endpoint: string, label: string) => {
         const response = await fetch(getApiUrl(endpoint), {
           cache: "no-store",
           credentials: "include",
@@ -53,37 +56,67 @@ export default function Reports() {
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(payload.detail || `Report request failed: ${endpoint}`);
+          throw new Error(`${label}: ${payload.detail || `request failed (${response.status})`}`);
         }
         return payload;
       };
-      const [statsRes, salesRes, forecastRes, trendRes, comparisonRes, ownerComparisonRes, marketingRes, orderChannelRes, customerSegmentRes, targetRes, breakevenRes] = await Promise.all([
-        fetchJson(`/api/v1/restaurant/stats/dashboard-stats?period=${period}`),
-        fetchJson('/api/v1/restaurant/sales/'),
-        fetchJson('/api/v1/restaurant/stats/insights/monthly-forecast'),
-        fetchJson('/api/v1/restaurant/stats/insights/profit-trend?months=12'),
-        fetchJson(`/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
-        fetchJson(`/api/v1/restaurant/stats/compare/owner-command-dashboard?period=${comparisonPeriod}`),
-        fetchJson('/api/v1/restaurant/promotions/performance?limit=25'),
-        fetchJson(`/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`),
-        fetchJson('/api/v1/restaurant/customers/segments/report'),
-        fetchJson(`/api/v1/restaurant/stats/target/status${targetQuery}`),
-        fetchJson('/api/v1/restaurant/stats/breakeven')
-      ]);
+      const loadReport = async (
+        key: string,
+        label: string,
+        endpoint: string,
+        transform: (payload: any) => any = (payload) => payload
+      ) => {
+        try {
+          const payload = await fetchJson(endpoint, label);
+          return { key, value: transform(payload), error: "" };
+        } catch (err) {
+          if (signal?.aborted) return { key, value: null, error: "" };
+          return {
+            key,
+            value: null,
+            error: err instanceof Error ? err.message : `${label}: request failed`,
+          };
+        }
+      };
+      const applyReportResults = (
+        results: Array<{ key: string; value: any; error: string }>,
+        replace = false
+      ) => {
+        if (signal?.aborted) return;
+        const nextData = results.reduce((next: any, result) => {
+          if (!result.error) next[result.key] = result.value;
+          return next;
+        }, {});
+        const warnings = results
+          .filter((result) => result.error)
+          .map((result) => result.error);
+        if (Object.keys(nextData).length) {
+          setData((current: any) => (replace ? nextData : { ...(current || {}), ...nextData }));
+        }
+        if (warnings.length) {
+          setReportWarnings((current) => Array.from(new Set([...current, ...warnings])));
+        }
+      };
 
-      setData({
-        summary: statsRes.metrics,
-        records: Array.isArray(salesRes) ? [...salesRes].reverse().slice(0, 10) : [],
-        forecast: forecastRes,
-        trends: trendRes.trend || [],
-        comparison: comparisonRes,
-        ownerComparison: ownerComparisonRes,
-        marketing: marketingRes,
-        orderChannels: orderChannelRes,
-        customerSegments: customerSegmentRes,
-        targetPacing: targetRes,
-        breakeven: breakevenRes
-      });
+      const coreResults = await Promise.all([
+        loadReport("summary", "Dashboard stats", `/api/v1/restaurant/stats/dashboard-stats?period=${period}`, (payload) => payload.metrics || {}),
+        loadReport("records", "Sales ledger", "/api/v1/restaurant/sales/", (payload) => Array.isArray(payload) ? [...payload].reverse().slice(0, 10) : []),
+        loadReport("comparison", "Performance comparison", `/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
+        loadReport("ownerComparison", "Owner comparison", `/api/v1/restaurant/stats/compare/owner-command-dashboard?period=${comparisonPeriod}`),
+        loadReport("customerSegments", "Customer segments", "/api/v1/restaurant/customers/segments/report"),
+      ]);
+      applyReportResults(coreResults, true);
+      setIsLoading(false);
+
+      const detailResults = await Promise.all([
+        loadReport("forecast", "Monthly forecast", "/api/v1/restaurant/stats/insights/monthly-forecast"),
+        loadReport("trends", "Profit trend", "/api/v1/restaurant/stats/insights/profit-trend?months=12", (payload) => payload.trend || []),
+        loadReport("marketing", "Marketing performance", "/api/v1/restaurant/promotions/performance?limit=25"),
+        loadReport("orderChannels", "Order channel comparison", `/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`),
+        loadReport("targetPacing", "Target pacing", `/api/v1/restaurant/stats/target/status${targetQuery}`),
+        loadReport("breakeven", "Break-even", "/api/v1/restaurant/stats/breakeven"),
+      ]);
+      applyReportResults(detailResults);
     } catch (err) { 
       if (signal?.aborted) return;
       console.warn("Report data is temporarily unavailable", err);
@@ -481,12 +514,26 @@ export default function Reports() {
         </div>
       </div>
 
-      {isLoading ? (
+      {reportWarnings.length > 0 && (
+        <div data-testid="report-partial-warning" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="text-sm font-black">Some report sections need attention</p>
+              <p className="mt-1 text-xs font-semibold leading-5">
+                Working sections are still visible. Latest issue: {reportWarnings[0]}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLoading && !data ? (
         <div className="py-20 text-center flex flex-col items-center">
           <Loader2 className="w-12 h-12 animate-spin text-orange-500 mb-4" />
           <p className="text-gray-400 font-black uppercase tracking-widest text-xs">Compiling Ledger Data...</p>
         </div>
-      ) : reportError ? (
+      ) : reportError && !data ? (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-6 text-yellow-900">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle className="h-5 w-5" />
@@ -1739,10 +1786,10 @@ export default function Reports() {
               </div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Aggregate Revenue</p>
               <div className="text-4xl font-black text-gray-900 tracking-tighter flex items-center">
-                <IndianRupee className="w-8 h-8 mr-1" />{data?.summary.total_sales.toLocaleString()}
+                <IndianRupee className="w-8 h-8 mr-1" />{Number(data?.summary?.total_sales || 0).toLocaleString()}
               </div>
               <div className="mt-4 pt-4 border-t border-gray-50 text-xs text-green-600 font-black uppercase flex items-center">
-                <TrendingUp className="w-3 h-3 mr-1" /> Velocity: <IndianRupee className="w-3 h-3 mx-1" />{Math.round(data?.summary.avg_daily_sale).toLocaleString()}/day
+                <TrendingUp className="w-3 h-3 mr-1" /> Velocity: <IndianRupee className="w-3 h-3 mx-1" />{Math.round(Number(data?.summary?.avg_daily_sale || 0)).toLocaleString()}/day
               </div>
             </div>
 
@@ -1767,10 +1814,10 @@ export default function Reports() {
               </div>
               <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2 ml-1">Retained Net Profit</p>
               <div className="text-4xl font-black text-white tracking-tighter flex items-center">
-                <IndianRupee className="w-8 h-8 mr-1" />{data?.summary.total_profit.toLocaleString()}
+                <IndianRupee className="w-8 h-8 mr-1" />{Number(data?.summary?.total_profit || 0).toLocaleString()}
               </div>
               <div className="mt-4 pt-4 border-t border-white/10 text-xs text-indigo-400 font-black uppercase tracking-widest">
-                Growth Index: {data?.summary.sales_growth}%
+                Growth Index: {data?.summary?.sales_growth || 0}%
               </div>
             </div>
           </div>
@@ -1836,10 +1883,10 @@ export default function Reports() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {data?.trends?.length === 0 ? (
+                  {((data?.trends || []) as any[]).length === 0 ? (
                     <tr><td colSpan={5} className="py-20 text-center text-gray-400 font-bold uppercase tracking-widest">No historical trend data available.</td></tr>
                   ) : (
-                    data?.trends.map((t: any, i: number) => (
+                    (data?.trends || []).map((t: any, i: number) => (
                       <tr key={i} className="hover:bg-gray-50 transition-colors">
                         <td className="px-10 py-6 font-black text-gray-900 tracking-tight lowercase">{t.month}</td>
                         <td className="px-10 py-6 text-right font-black text-gray-700"><IndianRupee className="w-4 h-4 inline mr-1" />{t.total_sale.toLocaleString()}</td>
