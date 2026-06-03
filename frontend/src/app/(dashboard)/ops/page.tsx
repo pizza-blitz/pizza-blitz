@@ -24,7 +24,7 @@ import { getApiUrl } from "@/lib/api";
 
 const OPS_API = getApiUrl("/api/v1/restaurant/ops");
 const CUSTOMER_CSV_VALIDATE_API = getApiUrl("/api/v1/restaurant/customers/import/validate");
-const OPS_FETCH_TIMEOUT_MS = 25000;
+const OPS_FETCH_TIMEOUT_MS = 45000;
 const fetchWithAuth = (url: string, init?: RequestInit) => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), OPS_FETCH_TIMEOUT_MS);
@@ -685,18 +685,18 @@ export default function ProductionOpsPage() {
       }
     };
 
-    await loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance);
     const tasks = [
       () => loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), setReadiness),
+      () => loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), setCredentialActivation),
+      () => loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), setProductionLaunch),
+      () => loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), setLiveEnvironment),
       () => loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups(data.backups || [])),
       () => loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), setDataQuality),
       () => loadSection("launch candidate", fetchWithAuth(`${OPS_API}/launch-candidate`), setLaunchCandidate),
       () => loadSection("beta delivery", fetchWithAuth(`${OPS_API}/beta-delivery`), setBetaDelivery),
-      () => loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), setProductionLaunch),
-      () => loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), setLiveEnvironment),
-      () => loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), setCredentialActivation),
+      () => loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance),
     ];
-    const workers = Array.from({ length: 2 }, async () => {
+    const workers = Array.from({ length: Math.min(4, tasks.length) }, async () => {
       while (tasks.length) {
         const task = tasks.shift();
         if (task) await task();
