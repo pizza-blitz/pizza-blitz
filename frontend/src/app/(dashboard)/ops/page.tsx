@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -23,6 +23,7 @@ import {
 import { getApiUrl } from "@/lib/api";
 
 const OPS_API = getApiUrl("/api/v1/restaurant/ops");
+const CUSTOMER_CSV_VALIDATE_API = getApiUrl("/api/v1/restaurant/customers/import/validate");
 const OPS_FETCH_TIMEOUT_MS = 25000;
 const fetchWithAuth = (url: string, init?: RequestInit) => {
   const controller = new AbortController();
@@ -258,6 +259,21 @@ type DataQualityResource = {
   status: CheckStatus;
   endpoint?: string | null;
   detail: string;
+};
+
+type CustomerCsvDryRunResult = {
+  dry_run: boolean;
+  writes_performed: number;
+  ready_for_review: boolean;
+  summary: {
+    rows_total: number;
+    rows_valid: number;
+    rows_invalid: number;
+    duplicate_phone_groups: number;
+    existing_customer_matches: number;
+    new_customer_candidates: number;
+  };
+  rollback_plan: string;
 };
 
 type DataQualityReport = {
@@ -2237,6 +2253,7 @@ function DataQualityCommand({ report }: { report: DataQualityReport }) {
               <DataQualityResourceRow key={item.key} item={item} />
             ))}
           </div>
+          <CustomerCsvDryRunValidator />
         </div>
       </div>
 
@@ -2355,6 +2372,113 @@ function DataQualityResourceRow({ item }: { item: DataQualityResource }) {
       <p className="text-sm leading-6 text-gray-400">{item.detail}</p>
       {item.endpoint ? (
         <p className="mt-2 break-all text-xs font-semibold text-gray-600">{item.endpoint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CustomerCsvDryRunValidator() {
+  const [fileName, setFileName] = useState("");
+  const [csvText, setCsvText] = useState("");
+  const [isValidating, setIsValidating] = useState(false);
+  const [message, setMessage] = useState("");
+  const [result, setResult] = useState<CustomerCsvDryRunResult | null>(null);
+
+  const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setResult(null);
+    setMessage("");
+    if (!file) {
+      setFileName("");
+      setCsvText("");
+      return;
+    }
+    setFileName(file.name);
+    try {
+      setCsvText(await file.text());
+    } catch {
+      setCsvText("");
+      setMessage("CSV file could not be read.");
+    }
+  };
+
+  const validatePreview = async () => {
+    if (!csvText.trim()) return;
+    setIsValidating(true);
+    setMessage("");
+    setResult(null);
+    try {
+      const response = await fetchWithAuth(CUSTOMER_CSV_VALIDATE_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ csv_text: csvText }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(data.detail || "Customer CSV could not be validated.");
+        return;
+      }
+      setResult(data);
+    } catch {
+      setMessage("Customer CSV validation API is unavailable.");
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  return (
+    <div data-testid="customer-csv-dry-run-validator" className="mt-5 border-t border-white/10 pt-5">
+      <div className="mb-3 flex items-start gap-3">
+        <Upload className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+        <div>
+          <p className="text-sm font-black text-white">Validate customer CSV</p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-gray-500">
+            Preview rows, duplicate phones and existing matches. Validation never writes customer records.
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label
+          htmlFor="customer-csv-file"
+          className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-black text-gray-200 hover:bg-white/10"
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Choose CSV
+        </label>
+        <input
+          id="customer-csv-file"
+          data-testid="customer-csv-file"
+          className="hidden"
+          type="file"
+          accept=".csv,text/csv"
+          onChange={chooseFile}
+        />
+        <button
+          data-testid="customer-csv-validate"
+          type="button"
+          disabled={!csvText.trim() || isValidating}
+          onClick={validatePreview}
+          className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3 py-2 text-xs font-black text-black disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-gray-600"
+        >
+          <ShieldCheck className="h-3.5 w-3.5" />
+          {isValidating ? "Validating..." : "Validate preview"}
+        </button>
+      </div>
+      {fileName ? <p className="mt-2 break-all text-xs font-semibold text-gray-500">{fileName}</p> : null}
+      {message ? <p className="mt-3 text-xs font-bold text-amber-300">{message}</p> : null}
+      {result ? (
+        <div data-testid="customer-csv-dry-run-result" className="mt-4 bg-cyan-500/5 p-3">
+          <p className="text-xs font-black uppercase text-cyan-200">
+            {result.ready_for_review ? "Ready for review" : "Review required"} · No records written
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-gray-300">
+            <p>{result.summary.rows_valid} valid row(s)</p>
+            <p>{result.summary.rows_invalid} invalid row(s)</p>
+            <p>{result.summary.duplicate_phone_groups} duplicate group(s)</p>
+            <p>{result.summary.existing_customer_matches} existing match(es)</p>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-gray-500">{result.rollback_plan}</p>
+        </div>
       ) : null}
     </div>
   );

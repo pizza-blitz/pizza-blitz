@@ -136,6 +136,30 @@ async function verifyApi(cookie) {
   assert(quality.data.imports.some((item) => item.key === "customer_csv_import"), "Customer import dry-run gap was missing.");
   assert(quality.data.backup_restore.restore_rehearsal.status === "warn", "Restore rehearsal should remain visible as a warning.");
 
+  const customerCsv = [
+    "name,phone,email,marketing_opt_in",
+    "CSV Existing,9876510001,existing@example.com,yes",
+    "CSV Duplicate,9876510001,duplicate@example.com,no",
+    "CSV Invalid,,not-an-email,maybe",
+  ].join("\n");
+  const anonymousPreview = await apiJson("/api/v1/restaurant/customers/import/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ csv_text: customerCsv }),
+  });
+  assert(anonymousPreview.response.status === 401, `Anonymous CSV preview should be blocked, got ${anonymousPreview.response.status}.`);
+
+  const customerPreview = await adminJson("/api/v1/restaurant/customers/import/validate", cookie, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ csv_text: customerCsv }),
+  });
+  assert(customerPreview.response.ok, `Customer CSV preview failed: ${JSON.stringify(customerPreview.data)}`);
+  assert(customerPreview.data.dry_run === true, "Customer CSV preview did not identify itself as a dry run.");
+  assert(customerPreview.data.writes_performed === 0, "Customer CSV preview unexpectedly wrote customer records.");
+  assert(customerPreview.data.summary.rows_invalid === 1, "Customer CSV preview did not report the invalid row.");
+  assert(customerPreview.data.summary.duplicate_phone_groups === 1, "Customer CSV preview did not report duplicate phones.");
+
   const anonymousCustomerExport = await fetch(`${apiURL}/api/v1/restaurant/customers/export.csv`, { cache: "no-store" });
   assert(
     anonymousCustomerExport.status === 401,
@@ -184,6 +208,15 @@ async function verifyBrowser(quality) {
     await page.getByRole("link", { name: /Download customers/i }).waitFor({ timeout: 15000 });
     await page.getByRole("link", { name: /Download sales/i }).waitFor({ timeout: 15000 });
     await page.getByRole("link", { name: /Open backups/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("customer-csv-file").setInputFiles({
+      name: "customer-preview.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("name,phone,email,marketing_opt_in\nCSV Ready,9876510002,ready@example.com,yes"),
+    });
+    await page.getByTestId("customer-csv-validate").click();
+    const csvResult = page.getByTestId("customer-csv-dry-run-result");
+    await csvResult.waitFor({ timeout: 15000 });
+    await csvResult.getByText("Ready for review · No records written", { exact: true }).waitFor({ timeout: 15000 });
 
     const boardText = await board.innerText();
     assertNormalizedTextContains(boardText, `${quality.score}% ready`, "data quality board score");

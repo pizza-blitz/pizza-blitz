@@ -829,7 +829,7 @@ def data_quality_report(db: Session) -> dict:
     reach_status = "pass" if total_customers and reachable / total_customers >= 0.8 else "warn" if reachable else "fail"
     report_status = "pass" if daily_rows else "warn"
     backup_status = backup_freshness.get("status", "warn")
-    import_status = "warn"
+    import_status = "pass"
     checks = [
         {
             "key": "customer_identity",
@@ -859,7 +859,7 @@ def data_quality_report(db: Session) -> dict:
             "key": "import_controls",
             "label": "Import controls",
             "status": import_status,
-            "detail": "Sheets and PDF import endpoints exist; customer CSV import still needs a dry-run validator before live bulk uploads.",
+            "detail": "Sheets, PDF and customer CSV dry-run validation endpoints exist; keep backup and duplicate review ahead of live bulk uploads.",
         },
     ]
     score = _readiness_score(checks)
@@ -867,7 +867,7 @@ def data_quality_report(db: Session) -> dict:
         "Run customer CSV export before any bulk cleanup.",
         "Run sales/report CSV export and attach it to the daily manager review.",
         "Create or verify a fresh backup, then rehearse restore before importing production data.",
-        "Add a customer CSV import dry-run validator before accepting bulk uploads.",
+        "Run customer CSV dry-run validation before each bulk customer cleanup import.",
     ]
 
     return {
@@ -945,9 +945,9 @@ def data_quality_report(db: Session) -> dict:
             {
                 "key": "customer_csv_import",
                 "label": "Customer CSV import dry-run",
-                "status": "warn",
-                "endpoint": None,
-                "detail": "Customer CSV export is ready; bulk customer import still needs validator, duplicate preview and rollback plan.",
+                "status": "pass",
+                "endpoint": "/api/v1/restaurant/customers/import/validate",
+                "detail": "Admin-only validation previews invalid rows, duplicate phones and existing-customer matches without writing records.",
             },
         ],
         "backup_restore": {

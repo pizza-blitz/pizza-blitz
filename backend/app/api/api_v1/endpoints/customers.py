@@ -1,11 +1,13 @@
 import csv
 import io
+import re
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -63,6 +65,55 @@ class CustomerSelfUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     opt_in_marketing: Optional[bool] = None
+
+
+class CustomerCsvDryRunRequest(BaseModel):
+    csv_text: str = Field(min_length=1, max_length=1_000_000)
+
+
+CUSTOMER_CSV_HEADER_ALIASES = {
+    "customer_name": "name",
+    "full_name": "name",
+    "mobile": "phone",
+    "mobile_number": "phone",
+    "phone_number": "phone",
+    "contact": "phone",
+    "contact_number": "phone",
+    "opt_in_marketing": "marketing_opt_in",
+    "marketing_consent": "marketing_opt_in",
+}
+CUSTOMER_CSV_ALLOWED_COLUMNS = {
+    "id",
+    "name",
+    "phone",
+    "email",
+    "marketing_opt_in",
+    "total_orders",
+    "total_spend",
+    "first_seen_at",
+    "last_order_at",
+    "notes",
+}
+CUSTOMER_CSV_TRUE_VALUES = {"1", "true", "yes", "y", "on", "opt_in", "opted_in"}
+CUSTOMER_CSV_FALSE_VALUES = {"0", "false", "no", "n", "off", "opt_out", "opted_out", ""}
+
+
+def normalized_customer_csv_header(value: str) -> str:
+    key = re.sub(r"[^a-z0-9]+", "_", (value or "").strip().lower()).strip("_")
+    return CUSTOMER_CSV_HEADER_ALIASES.get(key, key)
+
+
+def canonical_customer_phone(value: str) -> str:
+    return re.sub(r"\D", "", (value or "").strip())
+
+
+def customer_csv_opt_in(value: str) -> tuple[Optional[bool], Optional[str]]:
+    normalized = (value or "").strip().lower()
+    if normalized in CUSTOMER_CSV_TRUE_VALUES:
+        return True, None
+    if normalized in CUSTOMER_CSV_FALSE_VALUES:
+        return False, None
+    return None, "marketing_opt_in must be yes/no, true/false, or 1/0."
 
 
 def serialize_customer(customer: Customer) -> dict:
@@ -511,6 +562,133 @@ def export_customers_csv(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=customers_{suffix}_export.csv"},
     )
+
+
+@router.post("/import/validate")
+def validate_customer_csv_import(
+    payload: CustomerCsvDryRunRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    csv_text = payload.csv_text.lstrip("\ufeff")
+    reader = csv.DictReader(io.StringIO(csv_text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=422, detail="CSV header row is required.")
+
+    headers = {
+        original: normalized_customer_csv_header(original)
+        for original in reader.fieldnames
+        if original is not None
+    }
+    normalized_headers = list(headers.values())
+    duplicate_headers = sorted({
+        header
+        for header in normalized_headers
+        if normalized_headers.count(header) > 1
+    })
+    if duplicate_headers:
+        raise HTTPException(
+            status_code=422,
+            detail=f"CSV contains duplicate mapped header(s): {', '.join(duplicate_headers)}.",
+        )
+    if "phone" not in normalized_headers:
+        raise HTTPException(status_code=422, detail="CSV must include a phone column.")
+
+    ignored_columns = sorted({
+        header
+        for header in normalized_headers
+        if header not in CUSTOMER_CSV_ALLOWED_COLUMNS
+    })
+    rows = []
+    phone_rows: dict[str, list[int]] = defaultdict(list)
+    for row_number, source_row in enumerate(reader, start=2):
+        normalized_row = {
+            headers[key]: (value or "").strip()
+            for key, value in source_row.items()
+            if key in headers
+        }
+        if not any(normalized_row.values()):
+            continue
+
+        errors = []
+        warnings = []
+        raw_phone = normalized_row.get("phone", "")
+        phone = canonical_customer_phone(raw_phone)
+        if not phone:
+            errors.append("Phone is required.")
+        elif len(phone) < 10 or len(phone) > 15:
+            errors.append("Phone must contain 10 to 15 digits.")
+        else:
+            phone_rows[phone].append(row_number)
+
+        email = normalized_row.get("email", "")
+        if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            errors.append("Email format is invalid.")
+
+        opt_in, opt_in_error = customer_csv_opt_in(
+            normalized_row.get("marketing_opt_in", "")
+        )
+        if opt_in_error:
+            errors.append(opt_in_error)
+        if "marketing_opt_in" not in normalized_headers:
+            warnings.append("Marketing consent column is absent; consent defaults to no.")
+
+        rows.append(
+            {
+                "row_number": row_number,
+                "name": normalized_row.get("name") or None,
+                "phone": phone or raw_phone,
+                "email": email or None,
+                "marketing_opt_in": bool(opt_in),
+                "valid": not errors,
+                "errors": errors,
+                "warnings": warnings,
+                "existing_customer_id": None,
+            }
+        )
+        if len(rows) > 5000:
+            raise HTTPException(status_code=422, detail="CSV dry-run supports up to 5000 customer rows.")
+
+    candidate_phones = set(phone_rows)
+    existing_by_phone = {}
+    if candidate_phones:
+        for customer in db.query(Customer).all():
+            phone = canonical_customer_phone(customer.phone or "")
+            if phone in candidate_phones:
+                existing_by_phone[phone] = customer.id
+
+    for row in rows:
+        row["existing_customer_id"] = existing_by_phone.get(row["phone"])
+
+    duplicate_phone_groups = [
+        {"phone": phone, "row_numbers": row_numbers}
+        for phone, row_numbers in sorted(phone_rows.items())
+        if len(row_numbers) > 1
+    ]
+    invalid_rows = [row for row in rows if not row["valid"]]
+    existing_matches = sum(1 for row in rows if row["existing_customer_id"] is not None)
+    ready_for_review = bool(rows) and not invalid_rows and not duplicate_phone_groups
+
+    return {
+        "dry_run": True,
+        "writes_performed": 0,
+        "ready_for_review": ready_for_review,
+        "summary": {
+            "rows_total": len(rows),
+            "rows_valid": len(rows) - len(invalid_rows),
+            "rows_invalid": len(invalid_rows),
+            "duplicate_phone_groups": len(duplicate_phone_groups),
+            "existing_customer_matches": existing_matches,
+            "new_customer_candidates": max(len(rows) - existing_matches, 0),
+        },
+        "headers": {
+            "detected": normalized_headers,
+            "ignored": ignored_columns,
+        },
+        "duplicate_phone_groups": duplicate_phone_groups,
+        "rows_preview": rows[:20],
+        "rollback_plan": "Dry-run only: no records were written. Export customers and create a fresh backup before any future controlled import.",
+    }
 
 
 @router.get("/retention")
