@@ -1,14 +1,13 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Package, Plus, Search, AlertTriangle, RefreshCw, Upload, Save, CheckCircle2, History, TrendingUp, Camera, Sparkles, ShoppingCart } from 'lucide-react';
+import { Plus, Search, AlertTriangle, RefreshCw, Upload, Save, CheckCircle2, History, TrendingUp, Camera, Sparkles, ShoppingCart } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 export default function Inventory() {
   const [items, setItems] = useState<any[]>([]);
   const [lowStock, setLowStock] = useState<any>({ count: 0, items: [], groups: [], total_estimated_cost: 0 });
   const [isLoading, setIsLoading] = useState(true);
-  const [isUploading, setIsUploading] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isCreatingPO, setIsCreatingPO] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -202,10 +201,13 @@ export default function Inventory() {
           <p className="text-gray-500 mt-1">Track stock levels, record purchases, and process invoices.</p>
         </div>
         <div className="flex space-x-3">
-          <a href="/inventory/scan"
-            className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold inline-flex items-center gap-2">
-            📷 Scan Bill
-          </a>
+          <Link
+            href="/inventory/scan"
+            className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold inline-flex items-center gap-2"
+          >
+            <Camera className="h-4 w-4" />
+            Scan Bill
+          </Link>
            <button
              type="button"
              onClick={() => setShowAddItem((current) => !current)}

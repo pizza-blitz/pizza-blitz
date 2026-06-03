@@ -100,6 +100,7 @@ async function main() {
     await page.getByText("verify-interactive-control-labels.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-safe-action-buttons.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-feature-action-coverage.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-source-text-hygiene.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
@@ -119,7 +120,9 @@ async function main() {
     await page.getByText("Safe action button audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Feature action coverage audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("feature-action-coverage.json", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("36 / 36", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Source text hygiene audit", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("source-text-hygiene.json", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("37 / 37", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });

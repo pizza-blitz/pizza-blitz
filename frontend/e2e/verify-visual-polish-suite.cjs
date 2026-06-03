@@ -136,7 +136,8 @@ async function assertVisualHealth(page, watch, route, expectedLabel, viewportNam
       textLength: text.trim().length,
       hasOverlay: overlay,
       hasFrameworkError: /Unhandled Runtime Error|Build Error|Application error|Hydration failed/i.test(text),
-      hasTextCorruption: /�|â€|â€™|â€œ|â€�|â‚¹|Â/.test(text),
+      hasTextCorruption:
+        /\uFFFD|\u00C3|\u00C2|\u00E2\u20AC|\u00E2\u20AC\u2122|\u00E2\u20AC\u0153|\u00E2\u20AC\uFFFD|\u00E2\u201A\u00B9|\u00E2\u0153|\u00E2\u2013|\u00E2\u2014|\u00F0\u0178/.test(text),
       bodyOverflow: document.documentElement.scrollWidth - window.innerWidth,
       title: document.title,
     };

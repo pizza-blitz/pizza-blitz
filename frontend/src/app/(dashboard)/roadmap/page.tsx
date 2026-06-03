@@ -378,6 +378,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "A consolidated audit now maps 13 major restaurant feature areas to proof scripts, saved artifacts and the remaining live-provider or environment gates.",
   },
+  {
+    title: "Source text hygiene audit",
+    status: "done",
+    value: "Inventory scan navigation now uses a lucide camera icon instead of corrupted emoji text, and source files are checked for mojibake or emoji UI text.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -940,8 +945,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "34",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage and roadmap.",
+    value: "35",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, source text hygiene and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1193,6 +1198,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "feature-action-coverage.json",
   },
   {
+    area: "Source text hygiene",
+    proof: "verify-source-text-hygiene.cjs",
+    status: "passed",
+    value: "Frontend source files are checked for mojibake and emoji UI text so visible controls stay readable and icon-backed.",
+    artifact: "source-text-hygiene.json",
+  },
+  {
     area: "Dashboard visual polish",
     proof: "verify-dashboard-visual-polish.cjs",
     status: "passed",
@@ -1218,8 +1230,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "36 / 36",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "37 / 37",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",
