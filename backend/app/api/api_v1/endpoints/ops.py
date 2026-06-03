@@ -23,6 +23,7 @@ from app.services.ops_service import (
     production_launch_report,
     readiness_report,
     record_managed_backup_proof,
+    run_logical_backup_proof,
     run_live_deployment_probe,
     run_sqlite_restore_rehearsal,
 )
@@ -524,6 +525,35 @@ def create_backup(
         metadata={"status": backup.get("status"), "size_bytes": backup.get("size_bytes")},
     )
     return {"backup": backup}
+
+
+@router.post("/backups/logical-proof/run")
+def run_backup_logical_proof(
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    result = run_logical_backup_proof(db)
+    backup = result["backup"]
+    manifest = result["manifest"]
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="backup",
+        action="logical_backup_proof_run",
+        resource_type="backup_run",
+        resource_id=backup.get("id"),
+        status=backup.get("status", "success"),
+        detail="Logical database export proof completed.",
+        metadata={
+            "checksum": manifest.get("checksum"),
+            "table_count": manifest.get("table_count"),
+            "total_rows": manifest.get("total_rows"),
+            "database_backend": manifest.get("database_backend"),
+        },
+    )
+    return result
 
 
 @router.post("/backups/proof")

@@ -253,6 +253,7 @@ type Readiness = {
     latest_backup_at?: string | null;
     detail: string;
   };
+  logical_backup_proof?: LogicalBackupProof;
   restore_rehearsal?: {
     status: CheckStatus;
     latest_restore_at?: string | null;
@@ -302,6 +303,13 @@ type BackupRun = {
   database_backend?: string | null;
   error?: string | null;
   created_at?: string | null;
+};
+
+type LogicalBackupProof = {
+  status: CheckStatus;
+  latest_proof_at?: string | null;
+  checksum?: string | null;
+  detail: string;
 };
 
 type DataQualityResource = {
@@ -848,6 +856,7 @@ export default function ProductionOpsPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
+  const [runningLogicalBackupProof, setRunningLogicalBackupProof] = useState(false);
   const [runningRestoreRehearsal, setRunningRestoreRehearsal] = useState(false);
   const [runningLiveDeploymentProof, setRunningLiveDeploymentProof] = useState(false);
   const [recordingBackupProof, setRecordingBackupProof] = useState(false);
@@ -963,6 +972,24 @@ export default function ProductionOpsPage() {
     setCreatingBackup(false);
   };
 
+  const runLogicalBackupProof = async () => {
+    setRunningLogicalBackupProof(true);
+    const response = await fetchWithAuth(`${OPS_API}/backups/logical-proof/run`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.detail || "Logical database export proof could not be completed.");
+      setRunningLogicalBackupProof(false);
+      return;
+    }
+    const manifest = data.manifest || {};
+    const checksum = String(manifest.checksum || "").slice(0, 12);
+    await fetchOps();
+    setMessage(
+      `Logical export proof recorded: ${manifest.table_count || 0} tables, ${manifest.total_rows || 0} rows, checksum ${checksum}. Managed snapshot or pg_dump is still required before public launch.`
+    );
+    setRunningLogicalBackupProof(false);
+  };
+
   const runRestoreRehearsal = async () => {
     setRunningRestoreRehearsal(true);
     const response = await fetchWithAuth(`${OPS_API}/backups/restore-rehearsal/run`, { method: "POST" });
@@ -1070,6 +1097,15 @@ export default function ProductionOpsPage() {
             className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             <HardDrive className="h-4 w-4" /> {isManagedDatabase ? "Managed Proof" : "Create Backup"}
+          </button>
+          <button
+            data-testid="run-logical-backup-proof"
+            onClick={runLogicalBackupProof}
+            disabled={runningLogicalBackupProof}
+            className="flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 px-5 py-3 font-bold text-sky-50 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileText className={`h-4 w-4 ${runningLogicalBackupProof ? "animate-pulse" : ""}`} />
+            {runningLogicalBackupProof ? "Reading Data" : "Run Export Proof"}
           </button>
           <button
             data-testid="run-restore-rehearsal"
@@ -1269,6 +1305,12 @@ export default function ProductionOpsPage() {
               </p>
               <p className="mt-2 text-sm leading-6 text-green-100/80">
                 {readiness.backup_freshness?.detail || "Backup freshness is loading."}
+              </p>
+              <p className="mt-2 text-xs font-bold text-green-100/70">
+                Logical export: {readiness.logical_backup_proof?.status || "checking"}
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-green-100/60">
+                {readiness.logical_backup_proof?.detail || "Logical export proof is loading."}
               </p>
               <p className="mt-2 text-xs font-bold text-green-100/70">
                 Restore: {readiness.restore_rehearsal?.status || "checking"}

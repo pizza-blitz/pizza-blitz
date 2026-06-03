@@ -338,6 +338,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "The frontend now has explicit typecheck, live smoke and quality verification scripts so future slices can be checked before release.",
   },
+  {
+    title: "Logical database export proof",
+    status: "done",
+    value: "Production Ops now has a one-click logical export proof that checks live database table readability and records a checksum without exposing secrets.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -435,6 +440,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Compact production readiness summary",
     status: "done",
     value: "Production Ops now shows built percentage, restaurant-ready percentage, module counts, requirement counts and remaining external gates in one owner-facing panel.",
+  },
+  {
+    title: "Logical database export proof",
+    status: "done",
+    value: "Ops can now run a software-verifiable table-count and checksum proof for the live database; managed Supabase snapshot/pg_dump and restore rehearsal remain separate external gates.",
   },
   {
     title: "Live provider smoke pilot",
@@ -1282,7 +1292,7 @@ const betaBlockers: RoadmapItem[] = [
   {
     title: "Production database and backups",
     status: "active",
-    value: "Path is defined; managed credentials, scheduled snapshots and restore rehearsal still need production proof.",
+    value: "Path and logical export proof are defined; managed credentials, scheduled snapshots and restore rehearsal still need production proof.",
   },
   {
     title: "Deployment and secret security",

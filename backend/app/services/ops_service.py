@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import shutil
 import sqlite3
@@ -54,6 +56,30 @@ DEFAULT_SECRET_VALUES = {
 
 PAYMENT_PROVIDER_ORDER = ("manual", "direct_bank", "cashfree", "razorpay")
 BACKUP_PROOF_TYPES = {"managed_snapshot", "pg_dump"}
+LOGICAL_BACKUP_PROOF_TYPE = "logical_manifest"
+LOGICAL_BACKUP_MODELS = (
+    ("customers", Customer),
+    ("daily_sales", DailySales),
+    ("orders", RestaurantOrder),
+    ("menu_items", MenuItem),
+    ("menu_customization_groups", MenuCustomizationGroup),
+    ("menu_customization_options", MenuCustomizationOption),
+    ("promotions", Promotion),
+    ("campaign_deliveries", CampaignDelivery),
+    ("social_posts", SocialPost),
+    ("social_post_deliveries", SocialPostDelivery),
+    ("ad_campaigns", AdCampaign),
+    ("ad_campaign_launches", AdCampaignLaunch),
+    ("delivery_zones", DeliveryZone),
+    ("delivery_assignments", DeliveryAssignment),
+    ("expenses", Expense),
+    ("expense_categories", ExpenseCategory),
+    ("shift_log", ShiftLog),
+    ("staff_leave_requests", StaffLeaveRequest),
+    ("provider_test_runs", ProviderTestRun),
+    ("backup_runs", BackupRun),
+    ("operational_audit_events", OperationalAuditEvent),
+)
 RESTORE_REHEARSAL_EVIDENCE_REQUIREMENTS = [
     {
         "key": "source_backup",
@@ -982,6 +1008,7 @@ def readiness_report(db: Session) -> dict:
     payment_status = payment_provider_status()
     payment_providers = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
     backup_freshness = _backup_freshness(db)
+    logical_backup_proof = _logical_backup_proof_status(db)
     restore_rehearsal = _restore_rehearsal_status(db)
     live_deployment = _live_deployment_status(db)
     checks = [
@@ -1053,6 +1080,7 @@ def readiness_report(db: Session) -> dict:
         "environment_manifest": environment_manifest,
         "environment_summary": environment_summary,
         "backup_freshness": backup_freshness,
+        "logical_backup_proof": logical_backup_proof,
         "live_deployment": live_deployment,
         "live_deployment_command": _live_deployment_command(live_deployment),
         "restore_rehearsal": restore_rehearsal,
@@ -3870,6 +3898,61 @@ def list_backups(db: Session, limit: int = 20) -> list[dict]:
     return [_backup_run_dict(run) for run in runs]
 
 
+def run_logical_backup_proof(db: Session) -> dict:
+    backend = database_backend()
+    table_stats = []
+    for table_name, model in LOGICAL_BACKUP_MODELS:
+        row_count = int(db.query(func.count(model.id)).scalar() or 0)
+        max_id = int(db.query(func.max(model.id)).scalar() or 0)
+        table_stats.append({
+            "table": table_name,
+            "rows": row_count,
+            "max_id": max_id,
+        })
+
+    manifest_core = {
+        "database_backend": backend,
+        "table_count": len(table_stats),
+        "total_rows": sum(table["rows"] for table in table_stats),
+        "tables": table_stats,
+    }
+    canonical_manifest = json.dumps(
+        manifest_core,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    checksum = hashlib.sha256(canonical_manifest.encode("utf-8")).hexdigest()
+    generated_at = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    manifest = {
+        **manifest_core,
+        "generated_at": generated_at,
+        "checksum": checksum,
+    }
+    manifest_size = len(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+
+    run = BackupRun(
+        backup_type=LOGICAL_BACKUP_PROOF_TYPE,
+        status="success",
+        file_path=f"logical-manifest:{checksum}",
+        size_bytes=manifest_size,
+        database_backend=backend,
+        error=(
+            f"Logical export manifest {checksum[:12]} covers "
+            f"{manifest_core['table_count']} tables and {manifest_core['total_rows']} rows. "
+            "This verifies DB read/export health; it does not replace managed snapshot, pg_dump, or restore rehearsal proof."
+        ),
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return {
+        "backup": _backup_run_dict(run),
+        "manifest": manifest,
+    }
+
+
 def create_database_backup(db: Session) -> dict:
     backend = database_backend()
     source_path = sqlite_database_path()
@@ -4337,6 +4420,41 @@ def _backup_freshness(db: Session) -> dict:
         "status": "pass",
         "latest_backup_at": latest_success.created_at.isoformat(),
         "detail": "Latest successful backup is inside the retention window.",
+    }
+
+
+def _logical_backup_proof_status(db: Session) -> dict:
+    latest_success = (
+        db.query(BackupRun)
+        .filter(BackupRun.status == "success")
+        .filter(BackupRun.backup_type == LOGICAL_BACKUP_PROOF_TYPE)
+        .order_by(BackupRun.created_at.desc(), BackupRun.id.desc())
+        .first()
+    )
+    if not latest_success or not latest_success.created_at:
+        return {
+            "status": "warn",
+            "latest_proof_at": None,
+            "checksum": None,
+            "detail": "No logical database export proof has been recorded yet.",
+        }
+
+    age = datetime.utcnow() - latest_success.created_at
+    max_age = timedelta(days=max(settings.BACKUP_RETENTION_DAYS, 1))
+    checksum = (latest_success.file_path or "").replace("logical-manifest:", "")
+    if age > max_age:
+        return {
+            "status": "warn",
+            "latest_proof_at": latest_success.created_at.isoformat(),
+            "checksum": checksum or None,
+            "detail": f"Latest logical export proof is older than {settings.BACKUP_RETENTION_DAYS} days.",
+        }
+
+    return {
+        "status": "pass",
+        "latest_proof_at": latest_success.created_at.isoformat(),
+        "checksum": checksum or None,
+        "detail": "Latest logical export proof is inside the retention window.",
     }
 
 
