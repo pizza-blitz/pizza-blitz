@@ -28,6 +28,7 @@ from app.models.domain import (
     MenuItem,
     OperationalAuditEvent,
     Promotion,
+    ProviderTestRun,
     RestaurantOrder,
     SocialPost,
     SocialPostDelivery,
@@ -3053,6 +3054,7 @@ def _launch_module_readiness(
     opted_in_customers = _count(db, Customer, Customer.opt_in_marketing.is_(True))
     promotions = _count(db, Promotion)
     campaign_deliveries = _count(db, CampaignDelivery)
+    provider_test_runs = _count(db, ProviderTestRun)
     social_posts = _count(db, SocialPost)
     social_deliveries = _count(db, SocialPostDelivery)
     ad_campaigns = _count(db, AdCampaign)
@@ -3104,6 +3106,33 @@ def _launch_module_readiness(
         + (20 if ad_campaigns or ad_launches else 5)
         + (15 if ads_status["configured"] or any(status["configured"] for status in social_statuses) else 5)
     )
+    growth_software_checks = [
+        {
+            "label": "Provider safe tests",
+            "ready": bool(provider_test_runs or campaign_deliveries),
+        },
+        {
+            "label": "Campaign delivery audit",
+            "ready": bool(campaign_deliveries),
+        },
+        {
+            "label": "Social publishing audit",
+            "ready": bool(social_posts or social_deliveries),
+        },
+        {
+            "label": "Ad campaign guardrails",
+            "ready": bool(ad_campaigns or ad_launches),
+        },
+    ]
+    growth_software_ready = sum(1 for check in growth_software_checks if check["ready"])
+    growth_provider_ready = (
+        sum(1 for status in campaign_statuses if status["configured"])
+        + sum(1 for status in social_statuses if status["configured"])
+        + (1 if ads_status["configured"] else 0)
+    )
+    growth_provider_total = len(campaign_statuses) + len(social_statuses) + 1
+    if growth_software_ready == len(growth_software_checks) and growth_provider_ready < growth_provider_total:
+        growth_score = max(growth_score, 80)
     finance_score = (
         (30 if daily_sales else 10)
         + (25 if order_count else 0)
@@ -3281,13 +3310,20 @@ def _launch_module_readiness(
             title="Growth Publishing",
             score=growth_score,
             route="/promotions",
-            detail="Campaign sending, social auto-posting, and ad campaign launch controls are represented.",
+            detail="Campaign sending, social auto-posting, and ad campaign launch controls are represented; live publishing stays blocked until provider credentials are configured.",
             metrics=[
                 {"label": "Campaign sends", "value": str(campaign_deliveries)},
+                {"label": "Software proofs", "value": f"{growth_software_ready}/{len(growth_software_checks)} ready"},
+                {"label": "Live providers", "value": f"{growth_provider_ready}/{growth_provider_total} configured"},
                 {"label": "Social posts", "value": str(social_posts)},
                 {"label": "Ad campaigns", "value": str(ad_campaigns)},
             ],
             next_actions=[
+                (
+                    "Software Growth controls are verified; keep live sends, posts and ads blocked until provider credentials are configured."
+                    if growth_provider_ready < growth_provider_total
+                    else "Run owner-approved live smoke sends, social posts and paused ad syncs."
+                ),
                 "Add real WhatsApp/SMS/email provider credentials.",
                 "Add Facebook, Instagram, and Meta Ads credentials when business accounts are ready.",
             ],

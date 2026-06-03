@@ -164,6 +164,19 @@ class LiveDeploymentProbeTest(unittest.TestCase):
         self.assertGreaterEqual(production["score"], 85)
         self.assertIn("Keep live deployment proof fresh", production["next_actions"][0])
 
+        growth = next(module for module in modules if module["key"] == "growth_publishing")
+        self.assertEqual(growth["status"], "warn")
+        self.assertEqual(growth["score"], 80)
+        self.assertIn(
+            {"label": "Software proofs", "value": "4/4 ready"},
+            growth["metrics"],
+        )
+        self.assertIn(
+            {"label": "Live providers", "value": "0/6 configured"},
+            growth["metrics"],
+        )
+        self.assertIn("Software Growth controls are verified", growth["next_actions"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
