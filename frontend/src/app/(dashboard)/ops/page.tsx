@@ -632,6 +632,7 @@ export default function ProductionOpsPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
+  const [runningRestoreRehearsal, setRunningRestoreRehearsal] = useState(false);
   const [recordingBackupProof, setRecordingBackupProof] = useState(false);
   const [backupProofType, setBackupProofType] = useState("managed_snapshot");
   const [backupProofReference, setBackupProofReference] = useState("");
@@ -710,6 +711,28 @@ export default function ProductionOpsPage() {
     setCreatingBackup(false);
   };
 
+  const runRestoreRehearsal = async () => {
+    setRunningRestoreRehearsal(true);
+    const response = await fetchWithAuth(`${OPS_API}/backups/restore-rehearsal/run`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.detail || "Restore rehearsal could not be completed.");
+      setRunningRestoreRehearsal(false);
+      return;
+    }
+    const rowCounts = data.checks?.row_counts || {};
+    const checkedTables = Object.entries(rowCounts)
+      .map(([table, count]) => `${table}: ${count}`)
+      .join(", ");
+    await fetchOps();
+    setMessage(
+      checkedTables
+        ? `Restore rehearsal passed. Checked ${checkedTables}.`
+        : "Restore rehearsal passed."
+    );
+    setRunningRestoreRehearsal(false);
+  };
+
   const recordBackupProof = async () => {
     const reference = backupProofReference.trim();
     if (reference.length < 6) {
@@ -764,11 +787,20 @@ export default function ProductionOpsPage() {
           >
             <HardDrive className="h-4 w-4" /> Create Backup
           </button>
+          <button
+            data-testid="run-restore-rehearsal"
+            onClick={runRestoreRehearsal}
+            disabled={runningRestoreRehearsal}
+            className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3 font-bold text-cyan-50 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Database className={`h-4 w-4 ${runningRestoreRehearsal ? "animate-pulse" : ""}`} />
+            {runningRestoreRehearsal ? "Running Drill" : "Run Restore Drill"}
+          </button>
         </div>
       </div>
 
       {message && (
-        <div className="mb-6 rounded-xl border border-orange-500/20 bg-orange-500/10 px-5 py-3 text-sm text-orange-100">
+        <div data-testid="ops-message" className="mb-6 rounded-xl border border-orange-500/20 bg-orange-500/10 px-5 py-3 text-sm text-orange-100">
           {message}
         </div>
       )}

@@ -23,6 +23,7 @@ from app.services.ops_service import (
     production_launch_report,
     readiness_report,
     record_managed_backup_proof,
+    run_sqlite_restore_rehearsal,
 )
 
 router = APIRouter()
@@ -531,3 +532,32 @@ def record_backup_proof(
         },
     )
     return {"backup": backup}
+
+
+@router.post("/backups/restore-rehearsal/run")
+def run_restore_rehearsal(
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    try:
+        result = run_sqlite_restore_rehearsal(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    backup = result["backup"]
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="backup",
+        action="restore_rehearsal_run",
+        resource_type="backup_run",
+        resource_id=backup.get("id"),
+        status=backup.get("status", "success"),
+        detail="Automated local SQLite restore rehearsal completed.",
+        metadata={
+            "source_backup": result.get("source_backup"),
+            "checks": result.get("checks"),
+        },
+    )
+    return result

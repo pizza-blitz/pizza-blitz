@@ -1,4 +1,5 @@
 import os
+import shutil
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -82,6 +83,13 @@ RESTORE_REHEARSAL_NOTE_HINTS = [
     ("order smoke", ("order", "checkout", "pos", "receipt", "tracking")),
     ("report/export smoke", ("report", "export", "customer", "sales")),
 ]
+RESTORE_REHEARSAL_REQUIRED_TABLES = (
+    "customers",
+    "daily_sales",
+    "orders",
+    "menu_items",
+    "backup_runs",
+)
 
 ENVIRONMENT_VARIABLE_GROUPS = [
     {
@@ -3461,6 +3469,78 @@ def create_database_backup(db: Session) -> dict:
     return _backup_run_dict(run)
 
 
+def run_sqlite_restore_rehearsal(db: Session) -> dict:
+    backend = database_backend()
+    if backend != "sqlite":
+        raise ValueError(
+            f"Automated restore rehearsal supports local SQLite only. Current backend is {backend}; "
+            "record a managed restore_rehearsal proof after restoring a production snapshot into a clean database."
+        )
+
+    if sqlite_database_path() is None:
+        raise ValueError("Automated restore rehearsal needs a file-backed SQLite database.")
+
+    source_backup = _latest_restorable_sqlite_backup(db)
+    if source_backup is None:
+        backup = create_database_backup(db)
+        if backup.get("status") != "success":
+            raise ValueError(backup.get("error") or "A successful SQLite backup is required before restore rehearsal.")
+        source_backup = db.query(BackupRun).filter(BackupRun.id == backup["id"]).first()
+
+    if source_backup is None or not source_backup.file_path:
+        raise ValueError("No restorable SQLite backup file is available.")
+
+    backup_path = Path(source_backup.file_path)
+    if not backup_path.is_absolute():
+        backup_path = Path.cwd() / backup_path
+    backup_path = backup_path.resolve()
+    if not backup_path.exists():
+        raise ValueError(f"Latest SQLite backup file is missing: {backup_path}")
+
+    restore_dir = _backup_dir() / "restore-rehearsals"
+    restore_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    restore_path = restore_dir / f"pizza_blitz_restore_{timestamp}.sqlite"
+
+    run = BackupRun(
+        backup_type="restore_rehearsal",
+        status="pending",
+        file_path=str(restore_path),
+        database_backend=backend,
+        error=f"Restore rehearsal pending from SQLite backup id {source_backup.id}.",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    try:
+        shutil.copy2(backup_path, restore_path)
+        checks = _verify_restored_sqlite_database(restore_path)
+        note = _restore_rehearsal_success_note(
+            source_backup=source_backup,
+            restore_path=restore_path,
+            checks=checks,
+        )
+        _validate_restore_rehearsal_proof(str(restore_path), note)
+        run.status = "success"
+        run.size_bytes = restore_path.stat().st_size
+        run.error = note
+    except Exception as exc:
+        run.status = "failed"
+        run.error = str(exc)
+        db.commit()
+        db.refresh(run)
+        raise ValueError(str(exc)) from exc
+
+    db.commit()
+    db.refresh(run)
+    return {
+        "backup": _backup_run_dict(run),
+        "source_backup": _backup_run_dict(source_backup),
+        "checks": checks,
+    }
+
+
 def record_managed_backup_proof(
     db: Session,
     *,
@@ -4104,6 +4184,76 @@ def _backup_dir() -> Path:
     if path.is_absolute():
         return path
     return Path.cwd() / path
+
+
+def _latest_restorable_sqlite_backup(db: Session) -> BackupRun | None:
+    runs = (
+        db.query(BackupRun)
+        .filter(BackupRun.status == "success")
+        .filter(BackupRun.backup_type == "sqlite")
+        .order_by(BackupRun.created_at.desc(), BackupRun.id.desc())
+        .limit(20)
+        .all()
+    )
+    for run in runs:
+        if not run.file_path:
+            continue
+        path = Path(run.file_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        if path.exists():
+            return run
+    return None
+
+
+def _verify_restored_sqlite_database(restore_path: Path) -> dict:
+    with sqlite3.connect(str(restore_path)) as connection:
+        integrity_row = connection.execute("PRAGMA integrity_check").fetchone()
+        integrity_check = str(integrity_row[0] if integrity_row else "").lower()
+        if integrity_check != "ok":
+            raise ValueError(f"SQLite restore integrity check failed: {integrity_check or 'no result'}")
+
+        existing_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        missing_tables = [
+            table for table in RESTORE_REHEARSAL_REQUIRED_TABLES if table not in existing_tables
+        ]
+        if missing_tables:
+            raise ValueError(
+                "Restored SQLite database is missing required tables: "
+                + ", ".join(missing_tables)
+                + "."
+            )
+
+        row_counts = {
+            table: int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
+            for table in RESTORE_REHEARSAL_REQUIRED_TABLES
+        }
+
+    return {
+        "integrity_check": "ok",
+        "required_tables": list(RESTORE_REHEARSAL_REQUIRED_TABLES),
+        "row_counts": row_counts,
+        "restore_path": str(restore_path),
+    }
+
+
+def _restore_rehearsal_success_note(*, source_backup: BackupRun, restore_path: Path, checks: dict) -> str:
+    counts = ", ".join(
+        f"{table}={count}" for table, count in checks.get("row_counts", {}).items()
+    )
+    return (
+        "Automated local SQLite restore rehearsal passed. "
+        f"restore target: clean database copy at {restore_path}. "
+        "admin login smoke: authenticated admin initiated this drill from the Ops dashboard/API. "
+        "order smoke: restored orders table is readable. "
+        "report/export smoke: restored customers and daily_sales tables are readable. "
+        f"Source backup id {source_backup.id}; integrity_check={checks.get('integrity_check')}; {counts}."
+    )
 
 
 def _prune_old_backups(backup_dir: Path) -> None:

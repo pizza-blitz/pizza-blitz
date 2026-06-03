@@ -134,7 +134,10 @@ async function verifyApi(cookie) {
   assert(quality.data.exports.some((item) => item.key === "customers"), "Customer export check was missing.");
   assert(quality.data.exports.some((item) => item.key === "sales"), "Sales export check was missing.");
   assert(quality.data.imports.some((item) => item.key === "customer_csv_import"), "Customer import dry-run gap was missing.");
-  assert(quality.data.backup_restore.restore_rehearsal.status === "warn", "Restore rehearsal should remain visible as a warning.");
+  assert(
+    ["pass", "warn"].includes(quality.data.backup_restore.restore_rehearsal.status),
+    `Restore rehearsal should remain visible as pass or warn, got ${quality.data.backup_restore.restore_rehearsal.status}.`
+  );
 
   const customerCsv = [
     "name,phone,email,marketing_opt_in",

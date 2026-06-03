@@ -72,7 +72,27 @@ async function main() {
       `Weak restore proof rejection did not explain required evidence: ${JSON.stringify(weakProofData)}`
     );
 
-    console.log("restore-rehearsal-command verification passed with strict weak-proof rejection");
+    await page.getByTestId("run-restore-rehearsal").click();
+    await page
+      .getByTestId("ops-message")
+      .getByText(/Restore rehearsal passed/i)
+      .waitFor({ timeout: 60000 });
+
+    const afterRunResponse = await context.request.get(`${apiURL}/api/v1/restaurant/ops/readiness`, {
+      headers: { Cookie: cookie },
+    });
+    const afterRunData = await afterRunResponse.json();
+    assert(afterRunResponse.ok(), `Readiness after restore run failed: ${JSON.stringify(afterRunData)}`);
+    assert(
+      afterRunData.restore_rehearsal?.status === "pass",
+      `Restore rehearsal status did not become pass: ${JSON.stringify(afterRunData.restore_rehearsal)}`
+    );
+    assert(
+      afterRunData.restore_rehearsal_command?.summary?.restore_status === "pass",
+      `Restore command summary did not become pass: ${JSON.stringify(afterRunData.restore_rehearsal_command?.summary)}`
+    );
+
+    console.log("restore-rehearsal-command verification passed with strict weak-proof rejection and automated restore drill");
   } finally {
     await browser.close();
   }
