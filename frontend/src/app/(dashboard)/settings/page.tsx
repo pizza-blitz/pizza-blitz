@@ -1205,7 +1205,7 @@ export default function Settings() {
       });
       setPaymentMessage(
         proofStatus === "paid"
-          ? `Order #${proofOrderId} is paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
+          ? `Paid proof recorded for order #${proofOrderId} through ${staffSettlementProviderLabels[webhookProvider]}.`
           : data.status === "processed"
           ? `Order #${proofOrderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
           : data.status === "already_paid"

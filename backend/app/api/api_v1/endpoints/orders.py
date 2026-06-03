@@ -2310,7 +2310,11 @@ def payment_production_readiness(
     recent_paid = (
         db.query(RestaurantOrder)
         .filter(RestaurantOrder.payment_status == "paid")
-        .order_by(RestaurantOrder.payment_confirmed_at.desc(), RestaurantOrder.id.desc())
+        .order_by(
+            RestaurantOrder.payment_confirmed_at.is_(None).asc(),
+            RestaurantOrder.payment_confirmed_at.desc(),
+            RestaurantOrder.id.desc(),
+        )
         .limit(8)
         .all()
     )
