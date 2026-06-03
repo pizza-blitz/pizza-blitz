@@ -37,6 +37,7 @@ const SHEETS_IMPORT_API = getApiUrl('/api/v1/restaurant/import/sheets');
 const ADMIN_CREDENTIAL_API = getApiUrl('/api/v1/auth/admin/credential');
 const STAFF_CREDENTIAL_API = getApiUrl('/api/v1/auth/staff/credential');
 const OPERATIONAL_AUDIT_API = getApiUrl('/api/v1/restaurant/ops/audit-events');
+const PAYMENT_FETCH_TIMEOUT_MS = 45000;
 
 type StaffSettlementProvider = "manual" | "direct_bank";
 
@@ -556,7 +557,7 @@ const formatTimestamp = (value?: string | null) => {
 
 async function fetchPaymentJson<T>(url: string): Promise<T | null> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 8000);
+  const timeout = window.setTimeout(() => controller.abort(), PAYMENT_FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
       cache: "no-store",
@@ -821,26 +822,35 @@ export default function Settings() {
   const loadPaymentReadiness = async () => {
     setIsPaymentLoading(true);
     try {
-      const [
-        readinessData,
-        productionData,
-        gatewayActivationData,
-        reconciliationData,
-        cashDrawerData,
-      ] = await Promise.all([
-        fetchPaymentJson<PaymentReadiness>(PAYMENT_READINESS_API),
-        fetchPaymentJson<PaymentProductionReadiness>(PAYMENT_PRODUCTION_API),
-        fetchPaymentJson<PaymentGatewayActivation>(PAYMENT_GATEWAY_ACTIVATION_API),
-        fetchPaymentJson<PaymentReconciliation>(PAYMENT_RECONCILIATION_API),
-        fetchPaymentJson<CashDrawerCommand>(CASH_DRAWER_COMMAND_API),
+      const readinessTask = fetchPaymentJson<PaymentReadiness>(PAYMENT_READINESS_API).then((data) => {
+        setPaymentReadiness(data);
+        return data;
+      });
+      const productionTask = fetchPaymentJson<PaymentProductionReadiness>(PAYMENT_PRODUCTION_API).then((data) => {
+        setPaymentProduction(data);
+        return data;
+      });
+      const gatewayTask = fetchPaymentJson<PaymentGatewayActivation>(PAYMENT_GATEWAY_ACTIVATION_API).then((data) => {
+        setPaymentGatewayActivation(data);
+        return data;
+      });
+      const reconciliationTask = fetchPaymentJson<PaymentReconciliation>(PAYMENT_RECONCILIATION_API).then((data) => {
+        setPaymentReconciliation(data);
+        return data;
+      });
+      const cashDrawerTask = fetchPaymentJson<CashDrawerCommand>(CASH_DRAWER_COMMAND_API).then((data) => {
+        setCashDrawerCommand(data);
+        seedCashDrawerDraft(data);
+        return data;
+      });
+      const results = await Promise.all([
+        readinessTask,
+        productionTask,
+        gatewayTask,
+        reconciliationTask,
+        cashDrawerTask,
       ]);
-      setPaymentReadiness(readinessData);
-      setPaymentProduction(productionData);
-      setPaymentGatewayActivation(gatewayActivationData);
-      setPaymentReconciliation(reconciliationData);
-      setCashDrawerCommand(cashDrawerData);
-      seedCashDrawerDraft(cashDrawerData);
-      if (!readinessData && !productionData && !gatewayActivationData && !reconciliationData && !cashDrawerData) {
+      if (!results.some(Boolean)) {
         setPaymentMessage("Payment readiness API is not available right now.");
       } else if (paymentMessage === "Payment readiness API is not available right now.") {
         setPaymentMessage("");
@@ -2196,8 +2206,53 @@ export default function Settings() {
               </div>
             )}
 
+            {!paymentProductionSummary && (
+              <div data-testid="payment-production-control" className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-white p-2 text-emerald-700">
+                      <ClipboardCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-black text-gray-900">Payment Production Control</p>
+                      <p className="text-sm text-emerald-900">
+                        Provider setup, counter proof gaps, unsettled prepaid orders, and recent settlements are loading.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="inline-flex rounded-md bg-white px-3 py-2 text-xs font-black uppercase text-emerald-700">
+                    {isPaymentLoading ? "Checking payment queues" : "Payment data unavailable"}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+                  <div className="rounded-lg border border-emerald-100 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-black text-gray-900">Awaiting Settlement Queue</p>
+                        <p className="text-sm text-gray-500">
+                          Loading prepaid orders that still need a paid provider event.
+                        </p>
+                      </div>
+                      <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700">
+                        Loading
+                      </span>
+                    </div>
+                    <div className="mt-4 rounded-md border border-dashed border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+                      Payment settlement queue is warming. Controls will appear automatically.
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-emerald-100 bg-white p-4">
+                    <p className="font-black text-gray-900">Recent Paid Settlements</p>
+                    <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500">
+                      Loading recent paid settlement proof.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {paymentProductionSummary && (
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+              <div data-testid="payment-production-control" className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex items-start gap-3">
                     <div className="rounded-lg bg-white p-2 text-emerald-700">
