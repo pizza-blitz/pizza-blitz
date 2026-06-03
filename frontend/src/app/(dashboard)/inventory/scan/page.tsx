@@ -1,10 +1,24 @@
 "use client";
-import { useState, useRef } from "react";
+
+import { useRef, useState } from "react";
+import { Camera, CheckCircle2, Search, Upload } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+
+type ScanResult = {
+  total_items_found: number;
+  updated_inventory: string[];
+  extracted_items: {
+    item_name: string;
+    quantity: number;
+    unit: string;
+    price_per_unit: number;
+  }[];
+};
 
 export default function ScanBillPage() {
   const [preview, setPreview] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [result, setResult] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -12,118 +26,167 @@ export default function ScanBillPage() {
   const [cameraActive, setCameraActive] = useState(false);
 
   const handleFile = (file: File) => {
-    const url = URL.createObjectURL(file);
-    setPreview(url);
+    if (preview) URL.revokeObjectURL(preview);
+    setSelectedFile(file);
+    setPreview(URL.createObjectURL(file));
+    setResult(null);
+    setError(null);
+  };
+
+  const stopCamera = () => {
+    (videoRef.current?.srcObject as MediaStream | null)?.getTracks().forEach((track) => track.stop());
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraActive(false);
   };
 
   const startCamera = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      setCameraActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setCameraActive(true);
+        setError(null);
+      }
+    } catch {
+      setError("Camera access is not available. Upload a receipt photo instead.");
     }
   };
 
   const capturePhoto = () => {
+    if (!videoRef.current) return;
     const canvas = document.createElement("canvas");
-    canvas.width = videoRef.current!.videoWidth;
-    canvas.height = videoRef.current!.videoHeight;
-    canvas.getContext("2d")!.drawImage(videoRef.current!, 0, 0);
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    canvas.getContext("2d")?.drawImage(videoRef.current, 0, 0);
     canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-        handleFile(file);
-        (videoRef.current!.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-        setCameraActive(false);
+      if (!blob) {
+        setError("Camera capture failed. Try uploading a photo instead.");
+        return;
       }
+      handleFile(new File([blob], "capture.jpg", { type: "image/jpeg" }));
+      stopCamera();
     }, "image/jpeg");
   };
 
   const scanBill = async () => {
-    if (!fileRef.current?.files?.[0] && !preview) return;
+    if (!selectedFile) {
+      setError("Choose or capture a bill photo first.");
+      return;
+    }
     setLoading(true);
     setError(null);
     const formData = new FormData();
-    const file = fileRef.current?.files?.[0];
-    if (file) formData.append("file", file);
+    formData.append("file", selectedFile);
     try {
-      const res = await fetch(
-        getApiUrl("/api/v1/restaurant/ocr/scan-bill"),
-        { method: "POST", body: formData, credentials: "include" }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Scan failed.");
+      const response = await fetch(getApiUrl("/api/v1/restaurant/ocr/scan-bill"), {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Scan failed.");
       setResult(data);
-    } catch (e) {
+    } catch {
       setError("Scan failed. Please try again.");
     }
     setLoading(false);
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">📷 Scan Bill / Invoice</h1>
-      <div className="flex gap-4 mb-6">
-        <button onClick={startCamera}
-          className="bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold">
+    <div data-testid="inventory-scan-page" className="mx-auto max-w-2xl p-6">
+      <h1 className="mb-6 flex items-center gap-2 text-2xl font-bold">
+        <Camera className="h-6 w-6 text-orange-500" />
+        Scan Bill / Invoice
+      </h1>
+
+      <div className="mb-6 flex flex-wrap gap-4">
+        <button
+          type="button"
+          onClick={startCamera}
+          className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 font-semibold text-white"
+        >
+          <Camera className="h-4 w-4" />
           Open Camera
         </button>
-        <button onClick={() => fileRef.current?.click()}
-          className="bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold">
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 font-semibold text-white"
+        >
+          <Upload className="h-4 w-4" />
           Upload Photo
         </button>
-        <input ref={fileRef} type="file" accept="image/*" className="hidden"
-          onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => event.target.files?.[0] && handleFile(event.target.files[0])}
+        />
       </div>
-      {cameraActive && (
+
+      {cameraActive ? (
         <div className="mb-4">
           <video ref={videoRef} autoPlay className="w-full rounded-lg" />
-          <button onClick={capturePhoto}
-            className="mt-2 bg-green-600 text-white px-4 py-2 rounded-lg w-full">
+          <button
+            type="button"
+            onClick={capturePhoto}
+            className="mt-2 w-full rounded-lg bg-green-600 px-4 py-2 text-white"
+          >
             Capture Photo
           </button>
         </div>
-      )}
-      {preview && (
+      ) : null}
+
+      {preview ? (
         <div className="mb-4">
-          <img src={preview} className="w-full rounded-lg border" alt="Preview" />
-          <button onClick={scanBill} disabled={loading}
-            className="mt-3 bg-orange-500 text-white px-6 py-3 rounded-lg w-full font-bold text-lg">
-            {loading ? "Scanning..." : "🔍 Scan Bill"}
+          <img src={preview} className="w-full rounded-lg border" alt="Receipt preview" />
+          <button
+            type="button"
+            onClick={scanBill}
+            disabled={loading}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 px-6 py-3 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Search className="h-5 w-5" />
+            {loading ? "Scanning..." : "Scan Bill"}
           </button>
         </div>
-      )}
-      {error && <p className="text-red-500 mt-2">{error}</p>}
-      {result && (
-        <div className="mt-6 bg-gray-900 rounded-lg p-4">
-          <h2 className="text-lg font-bold text-green-400 mb-3">
-            ✅ {result.total_items_found} items extracted
+      ) : null}
+
+      {error ? <p className="mt-2 text-red-500">{error}</p> : null}
+
+      {result ? (
+        <div className="mt-6 rounded-lg bg-gray-900 p-4">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-green-400">
+            <CheckCircle2 className="h-5 w-5" />
+            {result.total_items_found} items extracted
           </h2>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-gray-400 border-b border-gray-700">
-                <th className="text-left py-2">Item</th>
-                <th className="text-right py-2">Qty</th>
-                <th className="text-right py-2">Unit</th>
-                <th className="text-right py-2">Price</th>
+              <tr className="border-b border-gray-700 text-gray-400">
+                <th className="py-2 text-left">Item</th>
+                <th className="py-2 text-right">Qty</th>
+                <th className="py-2 text-right">Unit</th>
+                <th className="py-2 text-right">Price</th>
               </tr>
             </thead>
             <tbody>
-              {result.extracted_items.map((item: any, i: number) => (
-                <tr key={i} className="border-b border-gray-800">
+              {result.extracted_items.map((item, index) => (
+                <tr key={`${item.item_name}-${index}`} className="border-b border-gray-800">
                   <td className="py-2 capitalize">{item.item_name}</td>
-                  <td className="text-right py-2">{item.quantity}</td>
-                  <td className="text-right py-2">{item.unit}</td>
-                  <td className="text-right py-2">₹{item.price_per_unit}</td>
+                  <td className="py-2 text-right">{item.quantity}</td>
+                  <td className="py-2 text-right">{item.unit}</td>
+                  <td className="py-2 text-right">Rs {item.price_per_unit}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="text-green-400 mt-3 text-sm">
-            ✅ Inventory updated for: {result.updated_inventory.join(", ")}
+          <p className="mt-3 flex items-center gap-2 text-sm text-green-400">
+            <CheckCircle2 className="h-4 w-4" />
+            Inventory updated for: {result.updated_inventory.join(", ")}
           </p>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

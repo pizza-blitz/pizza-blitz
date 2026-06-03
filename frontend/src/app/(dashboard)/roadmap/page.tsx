@@ -348,6 +348,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops backup and restore header buttons now adapt for managed PostgreSQL by preparing the correct proof form instead of triggering unsupported local backup actions.",
   },
+  {
+    title: "Inventory scanner visual and upload fix",
+    status: "done",
+    value: "Inventory scan page now uses readable text, icon buttons and a corrected camera capture upload path, and it is included in the visual route audit.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -915,8 +920,8 @@ const stabilizationMetrics: StabilizationMetric[] = [
   },
   {
     label: "Route / View Audit",
-    value: "29 x 2",
-    note: "Public, admin and roadmap routes checked on desktop and mobile viewports.",
+    value: "32 x 2",
+    note: "Public, admin, counter, communications and inventory scanner routes checked on desktop and mobile viewports.",
   },
   {
     label: "Stability State",
@@ -1131,7 +1136,7 @@ const stabilizationProofs: StabilizationProof[] = [
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
-    value: "Public, admin and roadmap pages are audited for blank screens, overflow and browser errors.",
+    value: "Public, admin, counter, communications and inventory scanner pages are audited for blank screens, overflow, corrupted text and browser errors.",
     artifact: "visible-visual-audit-desktop.png",
   },
   {
