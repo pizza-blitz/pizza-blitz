@@ -15,6 +15,7 @@ SENSITIVE_EVENT_TYPES = {
     "cash_drawer",
     "credential",
     "daily_close",
+    "deployment",
     "delivery",
     "employee",
     "expense",

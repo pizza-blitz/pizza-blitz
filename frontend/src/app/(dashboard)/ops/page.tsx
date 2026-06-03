@@ -125,6 +125,24 @@ type RestoreRehearsalCommand = {
   };
 };
 
+type LiveDeploymentCheck = ProductionDatabaseStep & {
+  url?: string;
+  evidence?: Record<string, string | number | boolean | null | undefined>;
+};
+
+type LiveDeploymentCommand = {
+  key: string;
+  title: string;
+  status: CheckStatus;
+  score: number;
+  detail: string;
+  base_url: string;
+  last_checked_at?: string | null;
+  checks: LiveDeploymentCheck[];
+  run_endpoint: string;
+  next_actions: string[];
+};
+
 type LaunchModule = {
   key: string;
   title: string;
@@ -214,6 +232,7 @@ type Readiness = {
   production_database_plan?: ProductionDatabasePlan;
   environment_security_plan?: EnvironmentSecurityPlan;
   deployment_pipeline_plan?: DeploymentPipelinePlan;
+  live_deployment_command?: LiveDeploymentCommand;
   restore_rehearsal_command?: RestoreRehearsalCommand;
   launch_blockers: GoLiveItem[];
   setup_actions: GoLiveItem[];
@@ -633,6 +652,7 @@ export default function ProductionOpsPage() {
   const [loading, setLoading] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [runningRestoreRehearsal, setRunningRestoreRehearsal] = useState(false);
+  const [runningLiveDeploymentProof, setRunningLiveDeploymentProof] = useState(false);
   const [recordingBackupProof, setRecordingBackupProof] = useState(false);
   const [backupProofType, setBackupProofType] = useState("managed_snapshot");
   const [backupProofReference, setBackupProofReference] = useState("");
@@ -733,6 +753,27 @@ export default function ProductionOpsPage() {
     setRunningRestoreRehearsal(false);
   };
 
+  const runLiveDeploymentProof = async () => {
+    setRunningLiveDeploymentProof(true);
+    const response = await fetchWithAuth(`${OPS_API}/live-deployment-proof/run`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.detail || "Live deployment proof could not be completed.");
+      setRunningLiveDeploymentProof(false);
+      return;
+    }
+    const proof = data.proof || {};
+    const resultMessage =
+      proof.status === "pass"
+        ? `Live deployment proof passed: ${proof.checks_passed}/${proof.checks_total} checks.`
+        : `Live deployment proof needs attention: ${proof.checks_passed || 0}/${proof.checks_total || 0} checks passed.`;
+    await fetchOps();
+    setMessage(
+      resultMessage
+    );
+    setRunningLiveDeploymentProof(false);
+  };
+
   const recordBackupProof = async () => {
     const reference = backupProofReference.trim();
     if (reference.length < 6) {
@@ -796,6 +837,15 @@ export default function ProductionOpsPage() {
             <Database className={`h-4 w-4 ${runningRestoreRehearsal ? "animate-pulse" : ""}`} />
             {runningRestoreRehearsal ? "Running Drill" : "Run Restore Drill"}
           </button>
+          <button
+            data-testid="run-live-deployment-proof"
+            onClick={runLiveDeploymentProof}
+            disabled={runningLiveDeploymentProof}
+            className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-3 font-bold text-emerald-50 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Rocket className={`h-4 w-4 ${runningLiveDeploymentProof ? "animate-pulse" : ""}`} />
+            {runningLiveDeploymentProof ? "Checking Live" : "Run Live Proof"}
+          </button>
         </div>
       </div>
 
@@ -847,6 +897,14 @@ export default function ProductionOpsPage() {
       {liveEnvironment ? <LiveEnvironmentExecutionCommand report={liveEnvironment} /> : null}
 
       {productionLaunch ? <ProductionLaunchIntegrationsCommand report={productionLaunch} /> : null}
+
+      {readiness?.live_deployment_command ? (
+        <LiveDeploymentProofCommand
+          command={readiness.live_deployment_command}
+          isRunning={runningLiveDeploymentProof}
+          onRun={runLiveDeploymentProof}
+        />
+      ) : null}
 
       {betaDelivery ? <BetaDeliveryCheckpointCommand report={betaDelivery} /> : null}
 
@@ -1760,6 +1818,93 @@ function ProductionLaunchStepCard({ step, compact = false }: { step: ProductionL
         </p>
       ) : null}
     </div>
+  );
+}
+
+function LiveDeploymentProofCommand({
+  command,
+  isRunning,
+  onRun,
+}: {
+  command: LiveDeploymentCommand;
+  isRunning: boolean;
+  onRun: () => void;
+}) {
+  const checks = command.checks || [];
+  return (
+    <section
+      data-testid="live-deployment-proof-command"
+      className="mb-8 rounded-xl border border-emerald-500/20 bg-[#0f1512] p-6"
+    >
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-300">Live Deployment Proof</p>
+          <h2 className="mt-2 text-2xl font-black">{command.title}</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{command.detail}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={command.status} />
+          <button
+            data-testid="live-deployment-proof-panel-run"
+            onClick={onRun}
+            disabled={isRunning}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2 text-sm font-black text-black hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Rocket className={`h-4 w-4 ${isRunning ? "animate-pulse" : ""}`} />
+            {isRunning ? "Checking" : "Run Proof"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <SummaryPill label="Score" value={`${command.score}%`} />
+        <SummaryPill label="Checks" value={`${checks.filter((check) => check.status === "pass").length}/${checks.length}`} />
+        <SummaryPill label="Target" value="live site" />
+        <SummaryPill
+          label="Last Proof"
+          value={command.last_checked_at ? new Date(command.last_checked_at).toLocaleDateString() : "none"}
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-4">
+        {checks.map((check) => (
+          <div key={check.key} className="rounded-xl border border-white/5 bg-black/25 p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="font-black text-white">{check.label}</p>
+              <StatusBadge status={check.status} />
+            </div>
+            <p className="min-h-[72px] text-sm leading-6 text-gray-400">{check.detail}</p>
+            {check.url ? (
+              <p className="mt-3 break-words text-[11px] font-black leading-4 text-emerald-100">{check.url}</p>
+            ) : null}
+            {check.evidence ? (
+              <div className="mt-4 grid grid-cols-1 gap-2">
+                {Object.entries(check.evidence)
+                  .filter(([, value]) => value !== undefined && value !== null && value !== "")
+                  .slice(0, 4)
+                  .map(([label, value]) => (
+                    <div key={`${check.key}-${label}`} className="flex items-center justify-between gap-3 rounded-lg bg-white/5 px-3 py-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        {label.replaceAll("_", " ")}
+                      </span>
+                      <span className="max-w-[9rem] truncate text-xs font-black text-white">{String(value)}</span>
+                    </div>
+                  ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 rounded-xl border border-emerald-500/10 bg-emerald-500/5 p-4 md:grid-cols-2">
+        {command.next_actions.map((action) => (
+          <p key={action} className="flex items-start gap-3 text-sm font-semibold leading-6 text-emerald-50/90">
+            <ListChecks className="mt-1 h-4 w-4 shrink-0 text-emerald-300" />
+            {action}
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "manual")
     PAYMENT_CURRENCY: str = os.getenv("PAYMENT_CURRENCY", "INR")
     PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://localhost:3000/account")
+    PIZZA_BLITZ_PUBLIC_URL: str = os.getenv("PIZZA_BLITZ_PUBLIC_URL", "https://pizza-blitz.vercel.app")
+    PIZZA_BLITZ_PUBLIC_API_PREFIX: str = os.getenv("PIZZA_BLITZ_PUBLIC_API_PREFIX", "/server")
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
     CASHFREE_WEBHOOK_SECRET: str | None = os.getenv("CASHFREE_WEBHOOK_SECRET")

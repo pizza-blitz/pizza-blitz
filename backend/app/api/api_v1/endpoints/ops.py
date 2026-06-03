@@ -23,6 +23,7 @@ from app.services.ops_service import (
     production_launch_report,
     readiness_report,
     record_managed_backup_proof,
+    run_live_deployment_probe,
     run_sqlite_restore_rehearsal,
 )
 
@@ -381,6 +382,32 @@ def live_environment_readiness(
     session: dict = Depends(require_roles("admin")),
 ):
     return live_environment_report(db)
+
+
+@router.post("/live-deployment-proof/run")
+def run_live_deployment_proof(
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    proof = run_live_deployment_probe(db)
+    event = record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="deployment",
+        action="live_deployment_probe",
+        resource_type="public_deployment",
+        resource_id=proof.get("base_url"),
+        status="success" if proof.get("status") == "pass" else "failed",
+        detail=(
+            "Live deployment proof passed."
+            if proof.get("status") == "pass"
+            else "Live deployment proof found failing public checks."
+        ),
+        metadata={"proof": proof},
+    )
+    return {"proof": proof, "event": serialize_operational_audit_event(event)}
 
 
 @router.get("/credential-activation")

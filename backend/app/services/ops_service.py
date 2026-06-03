@@ -1,6 +1,8 @@
 import os
 import shutil
 import sqlite3
+import urllib.error
+import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -24,6 +26,7 @@ from app.models.domain import (
     MenuCustomizationGroup,
     MenuCustomizationOption,
     MenuItem,
+    OperationalAuditEvent,
     Promotion,
     RestaurantOrder,
     SocialPost,
@@ -89,6 +92,13 @@ RESTORE_REHEARSAL_REQUIRED_TABLES = (
     "orders",
     "menu_items",
     "backup_runs",
+)
+LIVE_DEPLOYMENT_AUDIT_ACTION = "live_deployment_probe"
+LIVE_DEPLOYMENT_REQUIRED_CHECKS = (
+    "public_api_health",
+    "checkout_database_readiness",
+    "cors_origin_lock",
+    "public_order_page",
 )
 
 ENVIRONMENT_VARIABLE_GROUPS = [
@@ -689,12 +699,290 @@ def sqlite_database_path() -> Optional[Path]:
     return path.resolve()
 
 
+def _public_base_url() -> str:
+    return (settings.PIZZA_BLITZ_PUBLIC_URL or "https://pizza-blitz.vercel.app").rstrip("/")
+
+
+def _public_api_prefix() -> str:
+    prefix = (settings.PIZZA_BLITZ_PUBLIC_API_PREFIX or "/server").strip()
+    if not prefix:
+        return ""
+    if not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+    return prefix.rstrip("/")
+
+
+def _public_url(path: str, *, api: bool = False) -> str:
+    clean_path = path if path.startswith("/") else f"/{path}"
+    if api:
+        return f"{_public_base_url()}{_public_api_prefix()}{clean_path}"
+    return f"{_public_base_url()}{clean_path}"
+
+
+def _http_probe(url: str, *, headers: Optional[dict[str, str]] = None, timeout: int = 5) -> dict:
+    request = urllib.request.Request(
+        url,
+        headers=headers or {},
+        method="GET",
+    )
+    started_at = datetime.utcnow()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read(2048)
+            text_body = body.decode("utf-8", errors="replace")
+            payload = None
+            try:
+                import json
+
+                payload = json.loads(text_body)
+            except Exception:
+                payload = None
+            return {
+                "ok": 200 <= int(response.status) < 400,
+                "status_code": int(response.status),
+                "headers": {key.lower(): value for key, value in response.headers.items()},
+                "payload": payload,
+                "body_preview": text_body[:240],
+                "duration_ms": round((datetime.utcnow() - started_at).total_seconds() * 1000),
+            }
+    except urllib.error.HTTPError as exc:
+        body = exc.read(512).decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "status_code": int(exc.code),
+            "headers": {key.lower(): value for key, value in exc.headers.items()},
+            "payload": None,
+            "body_preview": body[:240],
+            "duration_ms": round((datetime.utcnow() - started_at).total_seconds() * 1000),
+            "error": exc.reason,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status_code": 0,
+            "headers": {},
+            "payload": None,
+            "body_preview": "",
+            "duration_ms": round((datetime.utcnow() - started_at).total_seconds() * 1000),
+            "error": str(exc),
+        }
+
+
+def _http_probe_with_retry(url: str, *, headers: Optional[dict[str, str]] = None) -> dict:
+    first = _http_probe(url, headers=headers)
+    if first.get("status_code") != 0:
+        return first
+    second = _http_probe(url, headers=headers)
+    if second.get("status_code") == 0:
+        second["duration_ms"] = int(first.get("duration_ms") or 0) + int(second.get("duration_ms") or 0)
+    return second
+
+
+def run_live_deployment_probe(db: Session | None = None) -> dict:
+    del db
+    base_url = _public_base_url()
+    health_url = _public_url("/health", api=True)
+    checkout_url = _public_url("/api/v1/restaurant/orders/checkout-readiness", api=True)
+    order_url = _public_url("/order")
+
+    health_probe = _http_probe_with_retry(health_url)
+    health_payload = health_probe.get("payload") or {}
+    health_pass = (
+        health_probe.get("ok")
+        and health_payload.get("status") == "ok"
+        and bool(health_payload.get("project"))
+    )
+
+    checkout_probe = _http_probe_with_retry(checkout_url)
+    checkout_payload = checkout_probe.get("payload") or {}
+    checkout_pass = (
+        checkout_probe.get("ok")
+        and bool(checkout_payload.get("accepting_orders"))
+        and bool(checkout_payload.get("database_ready"))
+        and str(checkout_payload.get("environment", "")).lower() == "production"
+    )
+
+    cors_probe = _http_probe_with_retry(health_url, headers={"Origin": base_url})
+    cors_headers = cors_probe.get("headers") or {}
+    cors_pass = (
+        cors_probe.get("ok")
+        and cors_headers.get("access-control-allow-origin") == base_url
+        and cors_headers.get("access-control-allow-credentials", "").lower() == "true"
+    )
+
+    order_probe = _http_probe_with_retry(order_url)
+    order_pass = bool(order_probe.get("ok"))
+
+    checks = [
+        {
+            "key": "public_api_health",
+            "label": "Public API health",
+            "status": "pass" if health_pass else "fail",
+            "url": health_url,
+            "detail": (
+                "Public API health returned ok."
+                if health_pass
+                else f"Public API health failed with HTTP {health_probe.get('status_code')}."
+            ),
+            "evidence": {
+                "status_code": health_probe.get("status_code"),
+                "duration_ms": health_probe.get("duration_ms"),
+            },
+        },
+        {
+            "key": "checkout_database_readiness",
+            "label": "Checkout database readiness",
+            "status": "pass" if checkout_pass else "fail",
+            "url": checkout_url,
+            "detail": (
+                "Checkout is accepting orders against a production persistent database."
+                if checkout_pass
+                else "Checkout readiness did not prove production order capture and database readiness."
+            ),
+            "evidence": {
+                "status_code": checkout_probe.get("status_code"),
+                "accepting_orders": bool(checkout_payload.get("accepting_orders")),
+                "database_ready": bool(checkout_payload.get("database_ready")),
+                "environment": checkout_payload.get("environment"),
+                "duration_ms": checkout_probe.get("duration_ms"),
+            },
+        },
+        {
+            "key": "cors_origin_lock",
+            "label": "CORS origin lock",
+            "status": "pass" if cors_pass else "fail",
+            "url": health_url,
+            "detail": (
+                "Production API allows the deployed frontend origin with credentials."
+                if cors_pass
+                else "Production API did not return the expected credentialed frontend CORS origin."
+            ),
+            "evidence": {
+                "status_code": cors_probe.get("status_code"),
+                "allow_origin": cors_headers.get("access-control-allow-origin"),
+                "allow_credentials": cors_headers.get("access-control-allow-credentials"),
+                "duration_ms": cors_probe.get("duration_ms"),
+            },
+        },
+        {
+            "key": "public_order_page",
+            "label": "Public order page",
+            "status": "pass" if order_pass else "fail",
+            "url": order_url,
+            "detail": (
+                "Public order page is reachable."
+                if order_pass
+                else f"Public order page failed with HTTP {order_probe.get('status_code')}."
+            ),
+            "evidence": {
+                "status_code": order_probe.get("status_code"),
+                "duration_ms": order_probe.get("duration_ms"),
+            },
+        },
+    ]
+    score = _readiness_score(checks)
+    status = _rollup_status(checks)
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "base_url": base_url,
+        "api_prefix": _public_api_prefix(),
+        "status": status,
+        "score": score,
+        "checks_total": len(checks),
+        "checks_passed": sum(1 for check in checks if check["status"] == "pass"),
+        "checks": checks,
+        "next_actions": (
+            ["Live deployment proof is green. Keep this proof fresh after each production deploy."]
+            if status == "pass"
+            else [
+                "Fix failing live deployment checks before routing real customer traffic.",
+                "Re-run the proof after deployment, database, or CORS changes.",
+            ]
+        ),
+    }
+
+
+def _latest_live_deployment_event(db: Session) -> OperationalAuditEvent | None:
+    return (
+        db.query(OperationalAuditEvent)
+        .filter(OperationalAuditEvent.event_type == "deployment")
+        .filter(OperationalAuditEvent.action == LIVE_DEPLOYMENT_AUDIT_ACTION)
+        .order_by(OperationalAuditEvent.created_at.desc(), OperationalAuditEvent.id.desc())
+        .first()
+    )
+
+
+def _live_deployment_status(db: Session) -> dict:
+    event = _latest_live_deployment_event(db)
+    if event is None:
+        return {
+            "status": "warn",
+            "score": 0,
+            "detail": "No live deployment proof has been recorded yet.",
+            "last_checked_at": None,
+            "base_url": _public_base_url(),
+            "checks": [
+                {
+                    "key": key,
+                    "label": key.replace("_", " ").title(),
+                    "status": "warn",
+                    "detail": "Run the live deployment proof from Production Ops.",
+                }
+                for key in LIVE_DEPLOYMENT_REQUIRED_CHECKS
+            ],
+        }
+    metadata = event.metadata_json or {}
+    proof = metadata.get("proof") or {}
+    age_hours = (
+        (datetime.utcnow() - event.created_at).total_seconds() / 3600
+        if event.created_at
+        else None
+    )
+    recorded_status = proof.get("status") or ("pass" if event.status == "success" else "fail")
+    if recorded_status == "pass" and age_hours is not None and age_hours > 24:
+        status = "warn"
+        detail = "Last live deployment proof passed but is older than 24 hours."
+    else:
+        status = recorded_status
+        detail = proof.get("detail") or event.detail or "Latest live deployment proof is recorded."
+    return {
+        "status": status,
+        "score": int(proof.get("score") or 0),
+        "detail": detail,
+        "last_checked_at": event.created_at.isoformat() if event.created_at else None,
+        "base_url": proof.get("base_url") or _public_base_url(),
+        "checks_total": proof.get("checks_total"),
+        "checks_passed": proof.get("checks_passed"),
+        "checks": proof.get("checks") or [],
+        "event_id": event.id,
+    }
+
+
+def _live_deployment_command(live_deployment: dict) -> dict:
+    return {
+        "key": "live_deployment_proof_command",
+        "title": "Live Deployment Proof",
+        "status": live_deployment.get("status", "warn"),
+        "score": live_deployment.get("score", 0),
+        "detail": live_deployment.get("detail") or "Run a public production smoke proof from Production Ops.",
+        "base_url": live_deployment.get("base_url") or _public_base_url(),
+        "last_checked_at": live_deployment.get("last_checked_at"),
+        "checks": live_deployment.get("checks") or [],
+        "run_endpoint": "/api/v1/restaurant/ops/live-deployment-proof/run",
+        "next_actions": [
+            "Run this proof after each Vercel deploy or environment variable change.",
+            "Require public API health, checkout database readiness, CORS, and order page checks to pass before live traffic.",
+        ],
+    }
+
+
 def readiness_report(db: Session) -> dict:
     environment = settings.ENVIRONMENT.lower()
     payment_status = payment_provider_status()
     payment_providers = [payment_provider_status(provider) for provider in PAYMENT_PROVIDER_ORDER]
     backup_freshness = _backup_freshness(db)
     restore_rehearsal = _restore_rehearsal_status(db)
+    live_deployment = _live_deployment_status(db)
     checks = [
         _database_check(db),
         _database_persistence_check(environment),
@@ -761,6 +1049,8 @@ def readiness_report(db: Session) -> dict:
         "environment_manifest": environment_manifest,
         "environment_summary": environment_summary,
         "backup_freshness": backup_freshness,
+        "live_deployment": live_deployment,
+        "live_deployment_command": _live_deployment_command(live_deployment),
         "restore_rehearsal": restore_rehearsal,
         "restore_rehearsal_command": _restore_rehearsal_command(
             db,
@@ -1436,6 +1726,7 @@ def production_launch_report(
     deployment_plan = readiness.get("deployment_pipeline_plan") or {}
     backup_freshness = readiness.get("backup_freshness") or {}
     environment_summary = readiness.get("environment_summary") or {}
+    live_deployment = readiness.get("live_deployment") or _live_deployment_status(db)
 
     payment_live_ready = (
         payment_status.get("provider") != "manual"
@@ -1567,6 +1858,16 @@ def production_launch_report(
             "detail": "Build, deploy, log inspection, rollback ownership and browser smoke tests are the final launch gate.",
             "steps": [
                 {
+                    "key": "live_deployment_proof",
+                    "label": "Run live deployment proof",
+                    "status": live_deployment.get("status", "warn"),
+                    "owner": "Launch captain",
+                    "detail": live_deployment.get("detail")
+                    or "Verify public API health, production checkout database readiness, CORS and order page availability.",
+                    "proof": "verify-live-deployment-proof.cjs",
+                    "missing_settings": [],
+                },
+                {
                     "key": "frontend_build",
                     "label": "Run production build",
                     "status": "pass",
@@ -1610,6 +1911,11 @@ def production_launch_report(
             for step in live_credential_steps
             if step.get("missing_settings")
         ],
+        (
+            f"Live deployment proof: {live_deployment.get('detail')}"
+            if live_deployment.get("status") != "pass"
+            else None
+        ),
     ]
     blockers = [
         {
