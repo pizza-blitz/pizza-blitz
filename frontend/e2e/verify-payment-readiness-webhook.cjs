@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
+const { cleanupProofOrder } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
@@ -147,9 +148,11 @@ async function main() {
   let orderId = 0;
   let paymentReference = "";
   let reconciliationEvent = null;
+  let adminCookie = "";
+  let cleanedUp = false;
 
   try {
-    const adminCookie = await signInAsAdmin(context);
+    adminCookie = await signInAsAdmin(context);
     orderId = await createPrepaidOrder();
     paymentReference = `MANUAL-E2E-${Date.now()}`;
     const response = await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
@@ -201,21 +204,38 @@ async function main() {
       fullPage: true,
     });
     watch.assertClean("payment readiness settings workflow");
+
+    const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/${orderId}`, {
+      cache: "no-store",
+    });
+    const order = await orderResponse.json();
+    assert(orderResponse.ok, `Could not fetch paid order: ${JSON.stringify(order)}`);
+    assert(order.payment_status === "paid", `Expected paid order, got ${order.payment_status}.`);
+    assert(order.payment_provider === "manual", `Expected manual provider, got ${order.payment_provider}.`);
+    assert(order.payment_reference === paymentReference, `Payment reference mismatch: ${order.payment_reference}.`);
+
+    await cleanupProofOrder({
+      apiURL,
+      orderId,
+      cookie: adminCookie,
+      reason: "E2E cleanup after payment readiness webhook proof",
+    });
+    cleanedUp = true;
   } finally {
     await browser.close();
+    if (!cleanedUp && adminCookie && orderId) {
+      await cleanupProofOrder({
+        apiURL,
+        orderId,
+        cookie: adminCookie,
+        reason: "Best effort cleanup after interrupted payment readiness proof",
+        strict: false,
+      });
+    }
   }
 
   assert(orderId > 0, "No prepaid order was created for the payment proof.");
   assert(reconciliationEvent, "No payment reconciliation event was captured.");
-
-  const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/${orderId}`, {
-    cache: "no-store",
-  });
-  const order = await orderResponse.json();
-  assert(orderResponse.ok, `Could not fetch paid order: ${JSON.stringify(order)}`);
-  assert(order.payment_status === "paid", `Expected paid order, got ${order.payment_status}.`);
-  assert(order.payment_provider === "manual", `Expected manual provider, got ${order.payment_provider}.`);
-  assert(order.payment_reference === paymentReference, `Payment reference mismatch: ${order.payment_reference}.`);
 
   console.log(`Payment readiness webhook proof passed for order #${orderId}.`);
 }

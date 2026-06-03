@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
+const { cleanupProofOrder } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
@@ -301,6 +302,7 @@ async function main() {
   const adminCookie = await portalLoginCookie();
   await seedOwnerComparisonLedger(adminCookie);
   const orderId = await seedReportingOrder();
+  let cleanedUp = false;
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -314,8 +316,24 @@ async function main() {
     await signInAsAdmin(context);
     await assertAdminEndpoint(context, adminCookie);
     await assertReportsPage(page, watch);
+    await cleanupProofOrder({
+      apiURL,
+      orderId,
+      cookie: adminCookie,
+      reason: "E2E cleanup after reporting comparison proof",
+    });
+    cleanedUp = true;
   } finally {
     await browser.close();
+    if (!cleanedUp && orderId) {
+      await cleanupProofOrder({
+        apiURL,
+        orderId,
+        cookie: adminCookie,
+        reason: "Best effort cleanup after interrupted reporting comparison proof",
+        strict: false,
+      });
+    }
   }
 
   console.log(`Reporting comparison dashboard proof passed with seeded order #${orderId}.`);

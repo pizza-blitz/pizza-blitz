@@ -658,7 +658,7 @@ const june20Push: DailyPlan[] = [
       "Run restaurant-ready and growth production audits",
       "Refresh roadmap status from live readiness",
     ],
-    output: "Payment production, direct-bank proof, webhook duplicate handling, Ops readiness, restaurant audit, campaign sending, social posting and ad proofs were verified on production.",
+    output: "Payment production, direct-bank proof, webhook duplicate handling, Ops readiness, daily close, proof-order cleanup, campaign sending, social posting and ad proofs were verified on production.",
   },
   {
     date: "4 Jun 2026",
@@ -1040,6 +1040,20 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-production-ops-readiness.png",
   },
   {
+    area: "Daily close command",
+    proof: "verify-daily-close-command.cjs",
+    status: "passed",
+    value: "Cash drawer close, zero open-order blockers and daily close proof now pass on production.",
+    artifact: "visible-daily-close-command.png",
+  },
+  {
+    area: "Proof order hygiene",
+    proof: "cleanup-open-proof-orders.cjs",
+    status: "passed",
+    value: "Production E2E orders are cancelled through the normal API after proof so they do not block daily close.",
+    artifact: "terminal proof: active_order_count_after 0",
+  },
+  {
     area: "Data quality export command",
     proof: "verify-data-quality-export-command.cjs",
     status: "passed",
@@ -1121,8 +1135,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "30 / 30",
-    note: "Critical browser, API and typecheck proofs now have named artifacts on the roadmap.",
+    value: "32 / 32",
+    note: "Critical browser, API, typecheck and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

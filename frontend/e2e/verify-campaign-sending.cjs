@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
+const { cleanupProofOrder } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
@@ -110,7 +111,7 @@ async function seedOptInCustomer() {
     }),
   });
   assert(response.response.ok, `Could not seed customer order: ${JSON.stringify(response.data)}`);
-  return { phone, email };
+  return { phone, email, orderId: response.data.order_id };
 }
 
 function createBrowserWatch(page) {
@@ -179,73 +180,93 @@ async function main() {
 
   const contact = await seedOptInCustomer();
   const cookie = await portalLogin();
+  let cleanedUpSeedOrder = false;
 
-  const providerResult = await adminJson("/api/v1/restaurant/promotions/providers/status", cookie);
-  assert(providerResult.response.ok, `Provider readiness failed: ${JSON.stringify(providerResult.data)}`);
-  assert(
-    providerResult.data.channels.some((channel) => channel.channel === "email"),
-    "Provider readiness did not include email."
-  );
+  try {
+    const providerResult = await adminJson("/api/v1/restaurant/promotions/providers/status", cookie);
+    assert(providerResult.response.ok, `Provider readiness failed: ${JSON.stringify(providerResult.data)}`);
+    assert(
+      providerResult.data.channels.some((channel) => channel.channel === "email"),
+      "Provider readiness did not include email."
+    );
 
-  const customerSummary = await adminJson("/api/v1/restaurant/customers/summary", cookie);
-  assert(customerSummary.response.ok, `Admin customer summary failed: ${JSON.stringify(customerSummary.data)}`);
+    const customerSummary = await adminJson("/api/v1/restaurant/customers/summary", cookie);
+    assert(customerSummary.response.ok, `Admin customer summary failed: ${JSON.stringify(customerSummary.data)}`);
 
-  const today = new Date();
-  const endDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-  const campaignName = `Campaign Send Proof ${Date.now()}`;
-  const promotionResult = await adminJson("/api/v1/restaurant/promotions/", cookie, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: campaignName,
-      code: `SEND${Date.now().toString().slice(-6)}`,
-      start_date: today.toISOString().slice(0, 10),
-      end_date: endDate.toISOString().slice(0, 10),
-      description: "E2E dry-run campaign sending proof",
-      discount_type: "percentage",
-      discount_value: 12,
-      audience: "marketing_opt_in",
-      channel: "email",
-      status: "active",
-      message_template: "Hi {name}, Pizza Blitz has {offer}. Use {code} before {end_date}.",
-    }),
-  });
-  assert(promotionResult.response.ok, `Could not create promotion: ${JSON.stringify(promotionResult.data)}`);
-  const promotionId = promotionResult.data.promotion.id;
+    const today = new Date();
+    const endDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const campaignName = `Campaign Send Proof ${Date.now()}`;
+    const promotionResult = await adminJson("/api/v1/restaurant/promotions/", cookie, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: campaignName,
+        code: `SEND${Date.now().toString().slice(-6)}`,
+        start_date: today.toISOString().slice(0, 10),
+        end_date: endDate.toISOString().slice(0, 10),
+        description: "E2E dry-run campaign sending proof",
+        discount_type: "percentage",
+        discount_value: 12,
+        audience: "marketing_opt_in",
+        channel: "email",
+        status: "active",
+        message_template: "Hi {name}, Pizza Blitz has {offer}. Use {code} before {end_date}.",
+      }),
+    });
+    assert(promotionResult.response.ok, `Could not create promotion: ${JSON.stringify(promotionResult.data)}`);
+    const promotionId = promotionResult.data.promotion.id;
 
-  const dispatchResult = await adminJson(`/api/v1/restaurant/promotions/${promotionId}/dispatch`, cookie);
-  assert(dispatchResult.response.ok, `Dispatch preview failed: ${JSON.stringify(dispatchResult.data)}`);
-  assert(dispatchResult.data.send_ready_count >= 1, "Dispatch preview did not find any send-ready contacts.");
-  assert(
-    dispatchResult.data.contacts.some((row) => row.destination === contact.email),
-    "Dispatch preview did not include the seeded email contact."
-  );
+    const dispatchResult = await adminJson(`/api/v1/restaurant/promotions/${promotionId}/dispatch`, cookie);
+    assert(dispatchResult.response.ok, `Dispatch preview failed: ${JSON.stringify(dispatchResult.data)}`);
+    assert(dispatchResult.data.send_ready_count >= 1, "Dispatch preview did not find any send-ready contacts.");
+    assert(
+      dispatchResult.data.contacts.some((row) => row.destination === contact.email),
+      "Dispatch preview did not include the seeded email contact."
+    );
 
-  const anonymousSend = await apiJson(`/api/v1/restaurant/promotions/${promotionId}/send`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dry_run: true, limit: 5 }),
-  });
-  assert(anonymousSend.response.status === 401, `Anonymous send should be blocked, got ${anonymousSend.response.status}.`);
+    const anonymousSend = await apiJson(`/api/v1/restaurant/promotions/${promotionId}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: true, limit: 5 }),
+    });
+    assert(anonymousSend.response.status === 401, `Anonymous send should be blocked, got ${anonymousSend.response.status}.`);
 
-  const dryRun = await adminJson(`/api/v1/restaurant/promotions/${promotionId}/send`, cookie, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dry_run: true, limit: 5 }),
-  });
-  assert(dryRun.response.ok, `Dry run failed: ${JSON.stringify(dryRun.data)}`);
-  assert(dryRun.data.dry_run_count >= 1, "Dry run did not record a dry_run delivery.");
-  assert(
-    dryRun.data.deliveries.some((delivery) => delivery.destination === contact.email && delivery.status === "dry_run"),
-    "Dry run delivery did not include the seeded email contact."
-  );
+    const dryRun = await adminJson(`/api/v1/restaurant/promotions/${promotionId}/send`, cookie, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dry_run: true, limit: 5 }),
+    });
+    assert(dryRun.response.ok, `Dry run failed: ${JSON.stringify(dryRun.data)}`);
+    assert(dryRun.data.dry_run_count >= 1, "Dry run did not record a dry_run delivery.");
+    assert(
+      dryRun.data.deliveries.some((delivery) => delivery.destination === contact.email && delivery.status === "dry_run"),
+      "Dry run delivery did not include the seeded email contact."
+    );
 
-  const deliveries = await adminJson(`/api/v1/restaurant/promotions/${promotionId}/deliveries`, cookie);
-  assert(deliveries.response.ok, `Delivery history failed: ${JSON.stringify(deliveries.data)}`);
-  assert(deliveries.data.dry_run_count >= 1, "Delivery history did not retain the dry run.");
+    const deliveries = await adminJson(`/api/v1/restaurant/promotions/${promotionId}/deliveries`, cookie);
+    assert(deliveries.response.ok, `Delivery history failed: ${JSON.stringify(deliveries.data)}`);
+    assert(deliveries.data.dry_run_count >= 1, "Delivery history did not retain the dry run.");
 
-  await screenshotCampaignConsole(campaignName);
-  console.log(`Campaign sending proof passed for promotion #${promotionId}.`);
+    await screenshotCampaignConsole(campaignName);
+    await cleanupProofOrder({
+      apiURL,
+      orderId: contact.orderId,
+      cookie,
+      reason: "E2E cleanup after campaign sending contact seed",
+    });
+    cleanedUpSeedOrder = true;
+    console.log(`Campaign sending proof passed for promotion #${promotionId}.`);
+  } finally {
+    if (!cleanedUpSeedOrder && contact.orderId && cookie) {
+      await cleanupProofOrder({
+        apiURL,
+        orderId: contact.orderId,
+        cookie,
+        reason: "Best effort cleanup after interrupted campaign sending proof",
+        strict: false,
+      });
+    }
+  }
 }
 
 main().catch((error) => {

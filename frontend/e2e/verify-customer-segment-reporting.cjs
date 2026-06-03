@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
+const { cleanupProofOrder } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
@@ -89,35 +90,36 @@ async function createOrder({ name, phone, email, optIn, price }) {
 
 async function seedSegmentCustomers() {
   const suffix = Date.now().toString().slice(-8);
-  await createOrder({
+  const orderIds = [];
+  orderIds.push(await createOrder({
     name: `Segment VIP ${suffix}`,
     phone: `79${suffix}01`,
     email: `segment-vip-${suffix}@example.com`,
     optIn: true,
     price: 6200,
-  });
-  await createOrder({
+  }));
+  orderIds.push(await createOrder({
     name: `Segment Regular ${suffix}`,
     phone: `79${suffix}02`,
     email: `segment-regular-${suffix}@example.com`,
     optIn: true,
     price: 1499,
-  });
-  await createOrder({
+  }));
+  orderIds.push(await createOrder({
     name: `Segment Cleanup ${suffix}`,
     phone: `79${suffix}03`,
     email: null,
     optIn: true,
     price: 349,
-  });
-  await createOrder({
+  }));
+  orderIds.push(await createOrder({
     name: `Segment Opted Out ${suffix}`,
     phone: `79${suffix}04`,
     email: `segment-out-${suffix}@example.com`,
     optIn: false,
     price: 899,
-  });
-  return suffix;
+  }));
+  return { suffix, orderIds };
 }
 
 async function assertSegmentEndpoint(cookie) {
@@ -214,9 +216,33 @@ async function main() {
   await waitForHttp(baseURL, "frontend");
 
   const cookie = await portalLogin();
-  const suffix = await seedSegmentCustomers();
-  await assertSegmentEndpoint(cookie);
-  await proveSegmentReport();
+  const { suffix, orderIds } = await seedSegmentCustomers();
+  let cleanedUp = false;
+  try {
+    await assertSegmentEndpoint(cookie);
+    await proveSegmentReport();
+    for (const orderId of orderIds) {
+      await cleanupProofOrder({
+        apiURL,
+        orderId,
+        cookie,
+        reason: "E2E cleanup after customer segment reporting proof",
+      });
+    }
+    cleanedUp = true;
+  } finally {
+    if (!cleanedUp) {
+      for (const orderId of orderIds) {
+        await cleanupProofOrder({
+          apiURL,
+          orderId,
+          cookie,
+          reason: "Best effort cleanup after interrupted customer segment reporting proof",
+          strict: false,
+        });
+      }
+    }
+  }
 
   console.log(`Customer segment reporting proof passed for seed ${suffix}.`);
 }

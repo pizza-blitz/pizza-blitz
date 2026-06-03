@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
+const { cleanupProofOrder } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
@@ -175,9 +176,11 @@ async function main() {
   const watch = createBrowserWatch(page);
   let orderId = 0;
   let paymentReference = "";
+  let adminCookie = "";
+  let cleanedUp = false;
 
   try {
-    const adminCookie = await signInAsAdmin(context);
+    adminCookie = await signInAsAdmin(context);
     orderId = await createPrepaidOrder();
 
     const productionBefore = await getPaymentProduction(context, adminCookie);
@@ -253,8 +256,25 @@ async function main() {
     assert(order.payment_status === "paid", `Expected paid order, got ${order.payment_status}.`);
     assert(order.payment_provider === "manual", `Expected manual provider, got ${order.payment_provider}.`);
     assert(order.payment_reference === paymentReference, `Payment reference mismatch: ${order.payment_reference}.`);
+
+    await cleanupProofOrder({
+      apiURL,
+      orderId,
+      cookie: adminCookie,
+      reason: "E2E cleanup after payment production proof",
+    });
+    cleanedUp = true;
   } finally {
     await browser.close();
+    if (!cleanedUp && adminCookie && orderId) {
+      await cleanupProofOrder({
+        apiURL,
+        orderId,
+        cookie: adminCookie,
+        reason: "Best effort cleanup after interrupted payment production proof",
+        strict: false,
+      });
+    }
   }
 
   assert(orderId > 0, "No prepaid order was created for the payment production proof.");

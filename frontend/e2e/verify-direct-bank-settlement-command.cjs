@@ -1,4 +1,5 @@
 const { chromium } = require("@playwright/test");
+const { cleanupProofOrder, cookieHeaderFromSetCookie } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
 const apiURL =
@@ -54,6 +55,8 @@ async function main() {
   const page = await context.newPage();
   const reference = `BANK-E2E-${Date.now()}`;
   let orderId = 0;
+  let adminCookie = "";
+  let cleanedUp = false;
 
   try {
     orderId = await createPrepaidOrder();
@@ -62,6 +65,8 @@ async function main() {
     });
     const sessionData = await sessionResponse.json().catch(() => ({}));
     assert(sessionResponse.ok(), `Admin session failed: ${JSON.stringify(sessionData)}`);
+    adminCookie = cookieHeaderFromSetCookie(sessionResponse.headers()["set-cookie"]);
+    assert(adminCookie.includes("pb_admin_session="), "Admin login did not return an admin session cookie.");
 
     await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
     const tester = page.getByTestId("staff-settlement-tester");
@@ -90,9 +95,26 @@ async function main() {
     assert(order.payment_provider === "direct_bank", `Expected direct_bank, got ${order.payment_provider}.`);
     assert(order.payment_reference === reference, `Payment reference mismatch: ${order.payment_reference}.`);
 
+    await cleanupProofOrder({
+      apiURL,
+      orderId,
+      cookie: adminCookie,
+      reason: "E2E cleanup after direct bank settlement proof",
+    });
+    cleanedUp = true;
+
     console.log(`direct-bank-settlement-command verification passed for order #${orderId}`);
   } finally {
     await browser.close();
+    if (!cleanedUp && adminCookie && orderId) {
+      await cleanupProofOrder({
+        apiURL,
+        orderId,
+        cookie: adminCookie,
+        reason: "Best effort cleanup after interrupted direct bank proof",
+        strict: false,
+      });
+    }
   }
 }
 
