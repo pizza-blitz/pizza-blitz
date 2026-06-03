@@ -358,6 +358,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "The global visual suite now checks the admin login route and the customer account redirect path on desktop and mobile, closing the last static entry-route gap.",
   },
+  {
+    title: "Navigation link health audit",
+    status: "done",
+    value: "A safe browser proof now checks same-site links across 34 source routes and records broken-link evidence without pressing destructive action buttons.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -920,8 +925,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "30",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit and roadmap.",
+    value: "31",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1145,6 +1150,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-visual-audit-desktop.png",
   },
   {
+    area: "Navigation link health",
+    proof: "verify-navigation-link-health.cjs",
+    status: "passed",
+    value: "Same-site links across the public and admin route set are checked for 4xx/5xx destinations without pressing destructive action buttons.",
+    artifact: "navigation-link-health.json",
+  },
+  {
     area: "Dashboard visual polish",
     proof: "verify-dashboard-visual-polish.cjs",
     status: "passed",
@@ -1170,8 +1182,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "32 / 32",
-    note: "Critical browser, API, typecheck and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "33 / 33",
+    note: "Critical browser, API, typecheck, navigation link health and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",
