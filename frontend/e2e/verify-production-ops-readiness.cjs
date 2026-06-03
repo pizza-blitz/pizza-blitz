@@ -178,7 +178,8 @@ async function screenshotProductionOps() {
     await page.getByText("Production Go-Live Checklist", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Environment Inventory" }).waitFor({ timeout: 15000 });
     await page.getByText("Portal session secret", { exact: false }).first().waitFor({ timeout: 15000 });
-    await page.getByRole("button", { name: /Create Backup/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("create-backup-action").waitFor({ timeout: 15000 });
+    await page.getByTestId("create-backup-action").getByText(/Create Backup|Managed Proof/i).waitFor({ timeout: 15000 });
     await page.getByTestId("managed-backup-proof-form").waitFor({ timeout: 15000 });
     await page.getByTestId("backup-proof-type").selectOption("restore_rehearsal");
     await page.getByTestId("restore-proof-checklist").waitFor({ timeout: 15000 });
@@ -280,10 +281,18 @@ async function main() {
     ["success", "skipped", "external_required", "failed"].includes(backup.data.backup?.status),
     `Unexpected backup status: ${JSON.stringify(backup.data)}`
   );
+  if (backup.data.backup?.status === "external_required") {
+    assert(
+      backup.data.backup.id === null || backup.data.backup.id === undefined,
+      "Managed database backup guidance should not create a fake backup row."
+    );
+  }
 
   const history = await adminJson("/api/v1/restaurant/ops/backups", cookie);
   assert(history.response.ok, `Backup history failed: ${JSON.stringify(history.data)}`);
-  assert(history.data.backups.length >= 1, "Backup history did not include the latest backup attempt.");
+  if (backup.data.backup?.status !== "external_required") {
+    assert(history.data.backups.length >= 1, "Backup history did not include the latest backup attempt.");
+  }
 
   const productionLaunch = await adminJson("/api/v1/restaurant/ops/production-launch", cookie);
   assert(productionLaunch.response.ok, `Production launch report failed: ${JSON.stringify(productionLaunch.data)}`);

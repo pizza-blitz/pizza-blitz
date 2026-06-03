@@ -3770,16 +3770,16 @@ def create_database_backup(db: Session) -> dict:
     backend = database_backend()
     source_path = sqlite_database_path()
     if backend != "sqlite":
-        run = BackupRun(
-            backup_type="external",
-            status="external_required",
-            database_backend=backend,
-            error="Use managed database snapshots or pg_dump for production database backups.",
-        )
-        db.add(run)
-        db.commit()
-        db.refresh(run)
-        return _backup_run_dict(run)
+        return {
+            "id": None,
+            "backup_type": "external",
+            "status": "external_required",
+            "file_path": None,
+            "size_bytes": 0,
+            "database_backend": backend,
+            "error": "Use managed database snapshots or pg_dump for production database backups.",
+            "created_at": datetime.utcnow().isoformat(),
+        }
 
     if source_path is None:
         run = BackupRun(

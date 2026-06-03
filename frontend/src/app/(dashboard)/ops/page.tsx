@@ -659,6 +659,7 @@ export default function ProductionOpsPage() {
   const [backupProofNotes, setBackupProofNotes] = useState("");
 
   const latestBackup = useMemo(() => backups[0] || null, [backups]);
+  const isManagedDatabase = Boolean(readiness?.database_backend && readiness.database_backend !== "sqlite");
   const backupProofReferenceValue = backupProofReference.trim();
   const backupProofNotesValue = backupProofNotes.trim();
   const isRestoreProof = backupProofType === "restore_rehearsal";
@@ -754,11 +755,13 @@ export default function ProductionOpsPage() {
       return;
     }
     const backup: BackupRun = data.backup;
-    setMessage(
-      backup.status === "success"
-        ? `Backup created: ${formatBytes(backup.size_bytes)}`
-        : backup.error || `Backup status: ${backup.status}`
-    );
+    let backupMessage = backup.error || `Backup status: ${backup.status}`;
+    if (backup.status === "external_required") {
+      backupMessage = "Managed database backups must be recorded with a Supabase snapshot or pg_dump proof in Backup History.";
+    } else if (backup.status === "success") {
+      backupMessage = `Backup created: ${formatBytes(backup.size_bytes)}`;
+    }
+    setMessage(backupMessage);
     await fetchOps();
     setCreatingBackup(false);
   };
@@ -864,11 +867,12 @@ export default function ProductionOpsPage() {
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
           </button>
           <button
+            data-testid="create-backup-action"
             onClick={createBackup}
             disabled={creatingBackup}
             className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <HardDrive className="h-4 w-4" /> Create Backup
+            <HardDrive className="h-4 w-4" /> {isManagedDatabase ? "Managed Proof" : "Create Backup"}
           </button>
           <button
             data-testid="run-restore-rehearsal"
