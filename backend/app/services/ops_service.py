@@ -823,12 +823,17 @@ def data_quality_report(db: Session) -> dict:
     latest_sale = daily_rows[0].date if daily_rows else None
     latest_campaign = promotions[0] if promotions else None
     backup_freshness = _backup_freshness(db)
+    restore_rehearsal = _restore_rehearsal_status(db)
     latest_backup = db.query(BackupRun).order_by(BackupRun.created_at.desc(), BackupRun.id.desc()).first()
 
     customer_status = "pass" if duplicate_phone_count == 0 and with_phone == total_customers else "warn"
     reach_status = "pass" if total_customers and reachable / total_customers >= 0.8 else "warn" if reachable else "fail"
     report_status = "pass" if daily_rows else "warn"
     backup_status = backup_freshness.get("status", "warn")
+    restore_status = restore_rehearsal.get("status", "warn")
+    backup_restore_status = _rollup_status(
+        [{"status": backup_status}, {"status": restore_status}]
+    )
     import_status = "pass"
     checks = [
         {
@@ -852,8 +857,11 @@ def data_quality_report(db: Session) -> dict:
         {
             "key": "backup_restore",
             "label": "Backup/restore proof",
-            "status": backup_status,
-            "detail": backup_freshness.get("detail") or "Backup status is not available.",
+            "status": backup_restore_status,
+            "detail": (
+                f"Backup: {backup_freshness.get('detail') or 'status unavailable'} "
+                f"Restore: {restore_rehearsal.get('detail') or 'status unavailable'}"
+            ),
         },
         {
             "key": "import_controls",
@@ -956,8 +964,9 @@ def data_quality_report(db: Session) -> dict:
             "latest_size_bytes": latest_backup.size_bytes if latest_backup else 0,
             "freshness": backup_freshness,
             "restore_rehearsal": {
-                "status": "warn",
-                "detail": "Restore a backup into a clean database and run login, customer export, sales export and order smoke proof.",
+                "status": restore_status,
+                "detail": restore_rehearsal.get("detail")
+                or "Restore a backup into a clean database and run login, customer export, sales export and order smoke proof.",
             },
         },
         "next_actions": next_actions,
