@@ -353,6 +353,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Inventory scan page now uses readable text, icon buttons and a corrected camera capture upload path, and it is included in the visual route audit.",
   },
+  {
+    title: "Login and customer account route audit",
+    status: "done",
+    value: "The global visual suite now checks the admin login route and the customer account redirect path on desktop and mobile, closing the last static entry-route gap.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -920,8 +925,8 @@ const stabilizationMetrics: StabilizationMetric[] = [
   },
   {
     label: "Route / View Audit",
-    value: "32 x 2",
-    note: "Public, admin, counter, communications and inventory scanner routes checked on desktop and mobile viewports.",
+    value: "34 x 2",
+    note: "Public, login, customer account redirect, admin, counter, communications and inventory scanner routes checked on desktop and mobile viewports.",
   },
   {
     label: "Stability State",
@@ -1136,7 +1141,7 @@ const stabilizationProofs: StabilizationProof[] = [
     area: "Visual polish suite",
     proof: "verify-visual-polish-suite.cjs",
     status: "passed",
-    value: "Public, admin, counter, communications and inventory scanner pages are audited for blank screens, overflow, corrupted text and browser errors.",
+    value: "Public, login, customer account redirect, admin, counter, communications and inventory scanner pages are audited for blank screens, overflow, corrupted text and browser errors.",
     artifact: "visible-visual-audit-desktop.png",
   },
   {

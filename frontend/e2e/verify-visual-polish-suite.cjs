@@ -43,7 +43,9 @@ const publicRoutes = [
   { route: "/", label: "Pizza Blitz" },
   { route: "/order", label: "Checkout" },
   { route: "/track", label: "Track" },
-  { route: "/account/login", label: "Sign" },
+  { route: "/login", label: "Restaurant Management Portal" },
+  { route: "/account/login", label: "Sign in with your order details" },
+  { route: "/account", label: "Sign in with your order details" },
 ];
 
 const viewports = [
