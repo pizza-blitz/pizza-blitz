@@ -1204,13 +1204,15 @@ export default function Settings() {
             : undefined,
       });
       setPaymentMessage(
-        proofStatus === "paid"
-          ? `Paid proof recorded for order #${proofOrderId} through ${staffSettlementProviderLabels[webhookProvider]}.`
-          : data.status === "processed"
-          ? `Order #${proofOrderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
+        data.status === "duplicate"
+          ? "Settlement proof received with status: duplicate."
           : data.status === "already_paid"
             ? `Order #${proofOrderId} was already paid.`
-            : `Settlement proof received with status: ${data.status}.`
+            : proofStatus === "paid"
+              ? `Paid proof recorded for order #${proofOrderId} through ${staffSettlementProviderLabels[webhookProvider]}.`
+              : data.status === "processed"
+                ? `Order #${proofOrderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
+                : `Settlement proof received with status: ${data.status}.`
       );
       void loadPaymentReadiness();
       void loadOperationalAudit();

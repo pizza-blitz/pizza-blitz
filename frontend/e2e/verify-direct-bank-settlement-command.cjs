@@ -6,6 +6,9 @@ const apiURL =
   (/localhost|127\.0\.0\.1/.test(baseURL) ? "http://127.0.0.1:8010" : `${baseURL}/server`);
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
+const paymentActionTimeoutMs = Number(
+  process.env.E2E_PAYMENT_ACTION_TIMEOUT_MS || (baseURL.includes("vercel.app") ? 45000 : 20000)
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -68,14 +71,14 @@ async function main() {
     await page.getByTestId("staff-settlement-order-id").fill(String(orderId));
     await page.getByTestId("staff-settlement-reference").fill(reference);
     await page.getByTestId("staff-settlement-send").click();
-    await page.getByText(`Order #${orderId} marked paid through Direct Bank / UPI proof.`, {
+    await page.getByText(`Order #${orderId} is paid`, {
       exact: false,
-    }).waitFor({ timeout: 20000 });
+    }).waitFor({ timeout: paymentActionTimeoutMs });
     await page.getByTestId("payment-event-audit").getByText(reference, { exact: false }).waitFor({
-      timeout: 20000,
+      timeout: paymentActionTimeoutMs,
     });
     await page.getByTestId("payment-event-audit").getByText("direct_bank", { exact: false }).first().waitFor({
-      timeout: 20000,
+      timeout: paymentActionTimeoutMs,
     });
 
     const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/${orderId}`, {

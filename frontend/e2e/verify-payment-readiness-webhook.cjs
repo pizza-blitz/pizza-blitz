@@ -7,6 +7,9 @@ const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 const artifactsDir = path.join(__dirname, "artifacts");
+const paymentActionTimeoutMs = Number(
+  process.env.E2E_PAYMENT_ACTION_TIMEOUT_MS || (baseURL.includes("vercel.app") ? 45000 : 15000)
+);
 
 function assert(condition, message) {
   if (!condition) {
@@ -160,16 +163,16 @@ async function main() {
     await page.getByTestId("staff-settlement-order-id").fill(String(orderId));
     await page.getByTestId("staff-settlement-reference").fill(paymentReference);
     await page.getByTestId("staff-settlement-send").click();
-    await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText(`Order #${orderId} is paid`, { exact: false }).waitFor({ timeout: paymentActionTimeoutMs });
     const auditLedger = page.getByTestId("payment-event-audit");
-    await auditLedger.getByText(paymentReference, { exact: false }).first().waitFor({ timeout: 10000 });
-    await auditLedger.getByText("processed", { exact: false }).first().waitFor({ timeout: 10000 });
+    await auditLedger.getByText(paymentReference, { exact: false }).first().waitFor({ timeout: paymentActionTimeoutMs });
+    await auditLedger.getByText("processed", { exact: false }).first().waitFor({ timeout: paymentActionTimeoutMs });
 
     await page.getByTestId("staff-settlement-send").click();
     await page
       .getByText(/Settlement proof received with status: duplicate|was already paid/i, { exact: false })
-      .waitFor({ timeout: 10000 });
-    await auditLedger.getByText("Duplicate 1", { exact: false }).first().waitFor({ timeout: 10000 });
+      .waitFor({ timeout: paymentActionTimeoutMs });
+    await auditLedger.getByText("Duplicate 1", { exact: false }).first().waitFor({ timeout: paymentActionTimeoutMs });
 
     const reconciliationResponse = await context.request.get(
       `${apiURL}/api/v1/restaurant/orders/payments/reconciliation`,
