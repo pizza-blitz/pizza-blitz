@@ -638,6 +638,171 @@ type CredentialActivationReport = {
   next_actions: string[];
 };
 
+const credentialActivationLoadingReport: CredentialActivationReport = {
+  generated_at: "pending",
+  status: "warn",
+  score: 0,
+  decision: "hold",
+  summary: {
+    providers_total: 4,
+    providers_ready: 0,
+    smoke_steps: 4,
+    smoke_ready: 0,
+    missing_settings: 0,
+    blockers: 1,
+    live_environment_score: 0,
+    readiness_score: 0,
+  },
+  activation_lanes: [
+    {
+      key: "payment_gateway",
+      title: "Payment Gateway",
+      status: "warn",
+      owner: "Owner / Finance",
+      detail: "Checking live Cashfree, Razorpay, Direct Bank and webhook evidence.",
+      providers: [
+        {
+          key: "payment_gateway_loading",
+          label: "Gateway evidence",
+          provider: "Cashfree / Razorpay / Direct Bank",
+          status: "warn",
+          channel: "payments",
+          configured: false,
+          missing_settings: [],
+          proof: "Loading live provider readiness.",
+          detail: "The command panel is visible while the production credential report warms.",
+        },
+      ],
+    },
+    {
+      key: "messaging_channels",
+      title: "Messaging Channels",
+      status: "warn",
+      owner: "Marketing / CRM",
+      detail: "Checking WhatsApp, SMS and email sender credentials.",
+      providers: [
+        {
+          key: "messaging_loading",
+          label: "Messaging evidence",
+          provider: "WhatsApp / SMS / Email",
+          status: "warn",
+          channel: "messaging",
+          configured: false,
+          missing_settings: [],
+          proof: "Loading live provider readiness.",
+          detail: "No live send is implied until the provider report returns pass evidence.",
+        },
+      ],
+    },
+    {
+      key: "social_publishing",
+      title: "Social Publishing",
+      status: "warn",
+      owner: "Marketing",
+      detail: "Checking Facebook, Instagram and post proof readiness.",
+      providers: [
+        {
+          key: "social_loading",
+          label: "Social evidence",
+          provider: "Facebook / Instagram",
+          status: "warn",
+          channel: "social",
+          configured: false,
+          missing_settings: [],
+          proof: "Loading live provider readiness.",
+          detail: "Auto-posting stays blocked unless real credentials and smoke proof are present.",
+        },
+      ],
+    },
+    {
+      key: "ad_campaign_sync",
+      title: "Ad Campaign Sync",
+      status: "warn",
+      owner: "Marketing / Ads",
+      detail: "Checking Meta Ads campaign sync credentials and low-budget smoke evidence.",
+      providers: [
+        {
+          key: "ads_loading",
+          label: "Ads evidence",
+          provider: "Meta Ads",
+          status: "warn",
+          channel: "ads",
+          configured: false,
+          missing_settings: [],
+          proof: "Loading live provider readiness.",
+          detail: "Ad launch remains a manual hold until the real provider report is loaded.",
+        },
+      ],
+    },
+  ],
+  provider_matrix: [],
+  smoke_plan: [
+    {
+      key: "payment_smoke_loading",
+      label: "Payment smoke",
+      status: "warn",
+      owner: "Owner / Finance",
+      proof: "Pending live report.",
+      detail: "Checking low-value checkout, callback and settlement proof.",
+    },
+    {
+      key: "messaging_smoke_loading",
+      label: "Messaging smoke",
+      status: "warn",
+      owner: "Marketing / CRM",
+      proof: "Pending live report.",
+      detail: "Checking dry-run and live-send safety controls.",
+    },
+    {
+      key: "social_smoke_loading",
+      label: "Social publish smoke",
+      status: "warn",
+      owner: "Marketing",
+      proof: "Pending live report.",
+      detail: "Checking post creation and publishing handoff evidence.",
+    },
+    {
+      key: "ads_smoke_loading",
+      label: "Ad sync smoke",
+      status: "warn",
+      owner: "Marketing / Ads",
+      proof: "Pending live report.",
+      detail: "Checking ad campaign draft/sync evidence.",
+    },
+  ],
+  evidence: [
+    {
+      key: "credential_report_loading",
+      label: "Credential report",
+      status: "warn",
+      proof: "Loading production credential activation report.",
+      artifact: "The live API report replaces this placeholder automatically.",
+      detail: "Placeholder only; not a credential pass.",
+    },
+  ],
+  blockers: [
+    {
+      key: "credential_report_loading",
+      label: "Credential report loading",
+      status: "warn",
+      detail: "Waiting for the live credential activation report before any provider can be marked ready.",
+    },
+  ],
+  go_no_go: {
+    title: "Hold live provider launch",
+    status: "hold",
+    detail: "Provider launch stays on hold until real credential and smoke evidence is loaded.",
+    required_signoffs: [
+      "Payment owner confirms gateway credentials.",
+      "Marketing owner confirms messaging, social and ads credentials.",
+    ],
+  },
+  next_actions: [
+    "Wait for the production credential activation report to finish loading.",
+    "Keep live sends, posts, ads and gateway checkout blocked until real credentials are configured.",
+  ],
+};
+
 export default function ProductionOpsPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [credentialActivation, setCredentialActivation] = useState<CredentialActivationReport | null>(null);
@@ -938,7 +1103,7 @@ export default function ProductionOpsPage() {
         <RestaurantReadyAuditPanel audit={readiness.restaurant_ready_audit} />
       ) : null}
 
-      {credentialActivation ? <CredentialActivationCommand report={credentialActivation} /> : null}
+      <CredentialActivationCommand report={credentialActivation || credentialActivationLoadingReport} />
 
       {liveEnvironment ? <LiveEnvironmentExecutionCommand report={liveEnvironment} /> : null}
 
