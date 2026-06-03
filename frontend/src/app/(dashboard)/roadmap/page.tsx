@@ -432,6 +432,11 @@ const immediateRemaining: RoadmapItem[] = [
     value: "Gateway, webhook, WhatsApp/SMS/email, social publishing and Meta Ads activation readiness are now visible with smoke steps and blockers.",
   },
   {
+    title: "Compact production readiness summary",
+    status: "done",
+    value: "Production Ops now shows built percentage, restaurant-ready percentage, module counts, requirement counts and remaining external gates in one owner-facing panel.",
+  },
+  {
     title: "Live provider smoke pilot",
     status: "planned",
     value: "Use real credentials to execute low-value checkout, signed webhook, owner-approved campaign sends, social publish and paused ad sync against the live host.",
@@ -658,7 +663,7 @@ const june20Push: DailyPlan[] = [
       "Run restaurant-ready and growth production audits",
       "Refresh roadmap status from live readiness",
     ],
-    output: "Payment production, direct-bank proof, webhook duplicate handling, Ops readiness, daily close, proof-order cleanup, campaign sending, social posting and ad proofs were verified on production.",
+    output: "Payment production, direct-bank proof, webhook duplicate handling, Ops readiness, daily close, proof-order cleanup, readiness summary, campaign sending, social posting and ad proofs were verified on production.",
   },
   {
     date: "4 Jun 2026",

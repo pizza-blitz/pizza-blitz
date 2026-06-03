@@ -1031,6 +1031,8 @@ def readiness_report(db: Session) -> dict:
         for item in go_live_items
         if item["status"] in {"fail", "warn"}
     ][:8]
+    launch_summary = _launch_summary(module_readiness)
+    readiness_score = _readiness_score(go_live_items)
     failed = sum(1 for check in checks if check["status"] == "fail")
     warnings = sum(1 for check in checks if check["status"] == "warn")
     overall = "ready"
@@ -1078,11 +1080,22 @@ def readiness_report(db: Session) -> dict:
             module_readiness=module_readiness,
             backup_freshness=backup_freshness,
         ),
-        "readiness_score": _readiness_score(go_live_items),
+        "readiness_score": readiness_score,
+        "readiness_summary": _readiness_summary(
+            overall=overall,
+            readiness_score=readiness_score,
+            launch_summary=launch_summary,
+            restaurant_ready_audit=restaurant_ready_audit,
+            payment_status=payment_status,
+            payment_providers=payment_providers,
+            backup_freshness=backup_freshness,
+            restore_rehearsal=restore_rehearsal,
+            module_readiness=module_readiness,
+        ),
         "launch_blockers": launch_blockers,
         "setup_actions": setup_actions,
         "go_live_sections": go_live_sections,
-        "launch_summary": _launch_summary(module_readiness),
+        "launch_summary": launch_summary,
         "module_readiness": module_readiness,
         "restaurant_ready_audit": restaurant_ready_audit,
         "overall": overall,
@@ -3379,6 +3392,97 @@ def _launch_summary(modules: list[dict]) -> dict:
         "modules_blocked": blocked,
         "implementation_score": score,
         "next_actions": next_actions[:6],
+    }
+
+
+def _readiness_summary(
+    *,
+    overall: str,
+    readiness_score: int,
+    launch_summary: dict,
+    restaurant_ready_audit: dict,
+    payment_status: dict,
+    payment_providers: list[dict],
+    backup_freshness: dict,
+    restore_rehearsal: dict,
+    module_readiness: list[dict],
+) -> dict:
+    external_gates: list[dict] = []
+    settlement_provider_ready = any(
+        provider.get("provider") in {"direct_bank", "cashfree", "razorpay"}
+        and provider.get("checkout_configured")
+        and provider.get("webhook_configured")
+        for provider in payment_providers
+    )
+    if not settlement_provider_ready:
+        external_gates.append({
+            "key": "live_payment_provider",
+            "label": "Live Payment Provider",
+            "status": "warn",
+            "route": "/settings",
+            "detail": (
+                f"Active provider is {payment_status.get('provider', 'manual')}; "
+                "Direct Bank, Cashfree, or Razorpay must be configured before public paid checkout."
+            ),
+            "next_action": "Add live settlement credentials and run one low-value payment/webhook proof.",
+        })
+
+    if backup_freshness.get("status") != "pass":
+        external_gates.append({
+            "key": "managed_backup_proof",
+            "label": "Managed Backup Proof",
+            "status": backup_freshness.get("status", "warn"),
+            "route": "/ops",
+            "detail": backup_freshness.get("detail") or "No successful managed backup proof is recorded.",
+            "next_action": "Record a Supabase managed snapshot or pg_dump proof inside the retention window.",
+        })
+
+    if restore_rehearsal.get("status") != "pass":
+        external_gates.append({
+            "key": "restore_rehearsal_proof",
+            "label": "Restore Rehearsal Proof",
+            "status": restore_rehearsal.get("status", "warn"),
+            "route": "/ops",
+            "detail": restore_rehearsal.get("detail") or "No restore rehearsal proof is recorded.",
+            "next_action": "Restore into a clean target and record admin login, order, and report/export smoke evidence.",
+        })
+
+    growth_module = next(
+        (module for module in module_readiness if module.get("key") == "growth_publishing"),
+        None,
+    )
+    if growth_module and growth_module.get("status") != "pass":
+        external_gates.append({
+            "key": "live_growth_providers",
+            "label": "Live Growth Providers",
+            "status": growth_module.get("status", "warn"),
+            "route": growth_module.get("route", "/promotions"),
+            "detail": growth_module.get("detail") or "Live campaign/social/ad providers need credentials.",
+            "next_action": "Add WhatsApp/SMS/email, Facebook/Instagram, and Meta Ads credentials when accounts are ready.",
+        })
+
+    restaurant_summary = restaurant_ready_audit.get("summary") or {}
+    return {
+        "overall": overall,
+        "go_live_score": readiness_score,
+        "implementation_score": launch_summary.get("implementation_score", 0),
+        "restaurant_ready_score": restaurant_ready_audit.get("score", 0),
+        "modules": {
+            "total": launch_summary.get("modules_total", 0),
+            "ready": launch_summary.get("modules_ready", 0),
+            "attention": launch_summary.get("modules_attention", 0),
+            "blocked": launch_summary.get("modules_blocked", 0),
+        },
+        "requirements": {
+            "total": restaurant_summary.get("requirements_total", 0),
+            "ready": restaurant_summary.get("requirements_ready", 0),
+            "attention": restaurant_summary.get("requirements_attention", 0),
+            "blocked": restaurant_summary.get("requirements_blocked", 0),
+        },
+        "external_gates": external_gates,
+        "external_gate_count": len(external_gates),
+        "next_actions": [gate["next_action"] for gate in external_gates[:4]]
+        or launch_summary.get("next_actions", [])[:4],
     }
 
 

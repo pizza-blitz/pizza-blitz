@@ -130,6 +130,10 @@ async function screenshotProductionOps() {
 
     const response = await page.goto(`${baseURL}/ops`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Production Ops returned HTTP ${response?.status() || "no response"}.`);
+    await page.getByTestId("readiness-summary").waitFor({ timeout: opsCommandTimeoutMs });
+    await page.getByText("Live Readiness Summary", { exact: false }).waitFor({ timeout: opsCommandTimeoutMs });
+    await page.getByText("Built, Verified And Still External", { exact: false }).waitFor({ timeout: opsCommandTimeoutMs });
+    await page.getByTestId("readiness-external-gates").waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByTestId("credential-activation-command").waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByRole("heading", { name: "Credential Activation Command" }).waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByTestId("payment-gateway-activation").waitFor({ timeout: opsCommandTimeoutMs });
@@ -223,6 +227,23 @@ async function main() {
   const cookie = await portalLogin();
   const readiness = await adminJson("/api/v1/restaurant/ops/readiness", cookie);
   assert(readiness.response.ok, `Admin ops readiness failed: ${JSON.stringify(readiness.data)}`);
+  assert(readiness.data.readiness_summary, "Readiness did not include compact readiness summary.");
+  assert(
+    readiness.data.readiness_summary.implementation_score >= 80,
+    `Implementation score is unexpectedly low: ${JSON.stringify(readiness.data.readiness_summary)}`
+  );
+  assert(
+    readiness.data.readiness_summary.restaurant_ready_score >= 80,
+    `Restaurant-ready score is unexpectedly low: ${JSON.stringify(readiness.data.readiness_summary)}`
+  );
+  assert(
+    readiness.data.readiness_summary.requirements?.total >= 10,
+    "Readiness summary did not include the 10 restaurant requirements."
+  );
+  assert(
+    Array.isArray(readiness.data.readiness_summary.external_gates),
+    "Readiness summary did not include external gates."
+  );
   assert(Array.isArray(readiness.data.environment_manifest), "Readiness did not include environment manifest.");
   assert(readiness.data.environment_summary?.required_total >= 1, "Readiness did not include required environment summary.");
   assert(readiness.data.production_database_plan, "Readiness did not include production database plan.");

@@ -188,6 +188,37 @@ type RestaurantReadyAudit = {
   next_actions: string[];
 };
 
+type ExternalReadinessGate = {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  route: string;
+  detail: string;
+  next_action: string;
+};
+
+type ReadinessSummary = {
+  overall: "ready" | "attention" | "blocked";
+  go_live_score: number;
+  implementation_score: number;
+  restaurant_ready_score: number;
+  modules: {
+    total: number;
+    ready: number;
+    attention: number;
+    blocked: number;
+  };
+  requirements: {
+    total: number;
+    ready: number;
+    attention: number;
+    blocked: number;
+  };
+  external_gates: ExternalReadinessGate[];
+  external_gate_count: number;
+  next_actions: string[];
+};
+
 type EnvironmentVariable = {
   name: string;
   required: boolean;
@@ -240,6 +271,7 @@ type Readiness = {
   launch_summary?: LaunchSummary;
   module_readiness?: LaunchModule[];
   restaurant_ready_audit?: RestaurantReadyAudit;
+  readiness_summary?: ReadinessSummary;
   overall: "ready" | "attention" | "blocked";
   failed_checks: number;
   warning_checks: number;
@@ -1098,6 +1130,10 @@ export default function ProductionOpsPage() {
           icon={HardDrive}
         />
       </div>
+
+      {readiness?.readiness_summary ? (
+        <ReadinessSummaryPanel summary={readiness.readiness_summary} />
+      ) : null}
 
       {readiness?.restaurant_ready_audit ? (
         <RestaurantReadyAuditPanel audit={readiness.restaurant_ready_audit} />
@@ -2683,6 +2719,81 @@ function DataQualityCommand({ report }: { report: DataQualityReport }) {
             {action}
           </p>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ReadinessSummaryPanel({ summary }: { summary: ReadinessSummary }) {
+  const externalGates = summary.external_gates || [];
+  return (
+    <section data-testid="readiness-summary" className="mb-8 rounded-xl border border-orange-500/15 bg-[#14110d] p-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-orange-300">Live Readiness Summary</p>
+          <h2 className="mt-2 text-2xl font-black">Built, Verified And Still External</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-400">
+            One compact owner view of the current production score, restaurant-ready audit, and the gates that still
+            require real provider or backup evidence.
+          </p>
+        </div>
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black uppercase ${statusClass(summary.overall === "ready" ? "pass" : summary.overall === "blocked" ? "fail" : "warn")}`}>
+          {summary.overall === "ready" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+          {summary.overall}
+        </span>
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <SummaryPill label="Go-Live" value={`${summary.go_live_score}%`} />
+        <SummaryPill label="Built" value={`${summary.implementation_score}%`} />
+        <SummaryPill label="Restaurant" value={`${summary.restaurant_ready_score}%`} />
+        <SummaryPill label="Modules" value={`${summary.modules.ready}/${summary.modules.total}`} />
+        <SummaryPill label="Reqs" value={`${summary.requirements.ready}/${summary.requirements.total}`} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <ListChecks className="h-5 w-5 text-orange-300" />
+            <h3 className="font-black text-orange-50">Remaining External Gates</h3>
+          </div>
+          <div data-testid="readiness-external-gates" className="space-y-3">
+            {externalGates.map((gate) => (
+              <div key={gate.key} className="rounded-lg border border-white/5 bg-black/30 p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-black text-white">{gate.label}</p>
+                  <StatusBadge status={gate.status} />
+                </div>
+                <p className="text-sm leading-6 text-gray-400">{gate.detail}</p>
+                <p className="mt-2 text-xs font-bold text-orange-100/80">{gate.next_action}</p>
+              </div>
+            ))}
+            {!externalGates.length && (
+              <p className="rounded-lg border border-green-500/20 bg-green-500/10 p-3 text-sm font-bold text-green-100">
+                No external gates are currently reported by the readiness API.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/25 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <RouteIcon className="h-5 w-5 text-orange-300" />
+            <h3 className="font-black text-orange-50">Next Actions</h3>
+          </div>
+          <div className="space-y-2">
+            {(summary.next_actions || []).map((action) => (
+              <p key={action} className="rounded-lg bg-black/30 px-3 py-2 text-sm font-bold leading-6 text-orange-50">
+                {action}
+              </p>
+            ))}
+            {!summary.next_actions?.length && (
+              <p className="rounded-lg bg-black/30 px-3 py-2 text-sm font-bold leading-6 text-orange-50">
+                Keep proof checks current after each production deploy.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );
