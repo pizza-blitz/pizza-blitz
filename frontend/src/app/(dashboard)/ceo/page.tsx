@@ -21,10 +21,11 @@ async function fetchJson(url: string, signal?: AbortSignal) {
     cache: "no-store",
     signal,
   });
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(`Request failed with HTTP ${response.status}.`);
+    throw new Error(data.detail || `Request failed with HTTP ${response.status}.`);
   }
-  return response.json();
+  return data;
 }
 
 function formatNumber(value: unknown) {
@@ -37,6 +38,8 @@ export default function CEODashboard() {
   const [target, setTarget] = useState<any>(null);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [pulseStatus, setPulseStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [pulseMessage, setPulseMessage] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -52,7 +55,7 @@ export default function CEODashboard() {
         setSummary(summaryData);
       } catch (e) {
         if (signal.aborted) return;
-        console.warn("CEO dashboard data is temporarily unavailable", e);
+        console.warn("CEO dashboard data could not be loaded", e);
       } finally {
         if (!signal.aborted) setLoading(false);
       }
@@ -62,12 +65,17 @@ export default function CEODashboard() {
   }, []);
 
   const shareWeeklyPulse = async () => {
+    setPulseStatus("loading");
+    setPulseMessage("Preparing WhatsApp weekly pulse...");
     try {
       const data = await fetchJson(`${API_BASE}/weekly-summary/whatsapp`);
       if (!data.whatsapp_url) throw new Error("Weekly pulse link is unavailable.");
-      window.open(data.whatsapp_url, '_blank');
+      window.open(data.whatsapp_url, "_blank", "noopener,noreferrer");
+      setPulseStatus("success");
+      setPulseMessage("Weekly pulse opened in WhatsApp with the latest revenue and week-on-week summary.");
     } catch (e) {
-      alert("Weekly pulse is temporarily unavailable.");
+      setPulseStatus("error");
+      setPulseMessage(e instanceof Error ? e.message : "Could not prepare the weekly pulse.");
     }
   };
 
@@ -94,12 +102,30 @@ export default function CEODashboard() {
         </div>
         <button 
           onClick={shareWeeklyPulse}
-          className="group flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-orange-500 transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95"
+          disabled={pulseStatus === "loading"}
+          className="group flex items-center gap-2 px-6 py-3 bg-white text-black font-semibold rounded-2xl hover:bg-orange-500 transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.1)] active:scale-95 disabled:cursor-wait disabled:opacity-60"
         >
           <Share2 className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-          One-Click Weekly Pulse
+          {pulseStatus === "loading" ? "Preparing Pulse..." : "One-Click Weekly Pulse"}
         </button>
       </div>
+
+      {pulseMessage && (
+        <div
+          className={`mb-6 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            pulseStatus === "error"
+              ? "border-red-500/30 bg-red-500/10 text-red-100"
+              : "border-green-500/30 bg-green-500/10 text-green-100"
+          }`}
+        >
+          {pulseStatus === "error" ? (
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <span>{pulseMessage}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Health Score & Recommendation */}

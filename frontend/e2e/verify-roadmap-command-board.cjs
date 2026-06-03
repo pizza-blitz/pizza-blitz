@@ -101,6 +101,8 @@ async function main() {
     await page.getByText("verify-safe-action-buttons.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-feature-action-coverage.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-route-action-inventory.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-action-placeholder-hygiene.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-action-feedback-hygiene.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-source-text-hygiene.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
@@ -123,9 +125,13 @@ async function main() {
     await page.getByText("feature-action-coverage.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Route action inventory audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("route-action-inventory.json", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Action placeholder hygiene audit", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("action-placeholder-hygiene.json", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Action feedback browser proof", { exact: true }).first().waitFor({ timeout: 15000 });
+    await page.getByText("action-feedback-hygiene.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Source text hygiene audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("source-text-hygiene.json", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("38 / 38", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("40 / 40", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });

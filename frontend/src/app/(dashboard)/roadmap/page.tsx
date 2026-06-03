@@ -384,6 +384,16 @@ const completedValue: RoadmapItem[] = [
     value: "A route-by-route inventory now classifies public, admin and dynamic workflow actions as navigation, POS, checkout, mutation, payment-gated, provider-gated or reporting controls.",
   },
   {
+    title: "Action placeholder hygiene audit",
+    status: "done",
+    value: "CEO weekly pulse and purchase order PDF import now use inline action feedback, purchase-order search is wired, and a source proof blocks alert popups, inert hash links and unfinished action copy.",
+  },
+  {
+    title: "Action feedback browser proof",
+    status: "done",
+    value: "CEO weekly pulse and purchase-order history search now have browser proof for inline feedback, no alert dialogs, disabled missing-WhatsApp handling and filtered order history.",
+  },
+  {
     title: "Source text hygiene audit",
     status: "done",
     value: "Inventory scan navigation now uses a lucide camera icon instead of corrupted emoji text, and source files are checked for mojibake or emoji UI text.",
@@ -950,8 +960,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "36",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, source text hygiene and roadmap.",
+    value: "38",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, source text hygiene and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1210,6 +1220,20 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "route-action-inventory.json",
   },
   {
+    area: "Action placeholder hygiene",
+    proof: "verify-action-placeholder-hygiene.cjs",
+    status: "passed",
+    value: "Frontend source files are checked for blocking browser alerts, inert hash links, javascript links and unfinished action placeholder copy.",
+    artifact: "action-placeholder-hygiene.json",
+  },
+  {
+    area: "Action feedback browser proof",
+    proof: "verify-action-feedback-hygiene.cjs",
+    status: "passed",
+    value: "CEO weekly pulse and purchase-order search/fallback actions are clicked in browser and checked for inline feedback without blocking dialogs.",
+    artifact: "action-feedback-hygiene.json",
+  },
+  {
     area: "Source text hygiene",
     proof: "verify-source-text-hygiene.cjs",
     status: "passed",
@@ -1242,8 +1266,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "38 / 38",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "40 / 40",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

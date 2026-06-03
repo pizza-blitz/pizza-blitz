@@ -119,7 +119,7 @@ const routeInventory = [
     "reporting",
     "protected",
   ], { admin: true }),
-  entry("/ceo", "Owner command view", "verify-restaurant-ready-audit.cjs", [
+  entry("/ceo", "Owner command view", "verify-action-feedback-hygiene.cjs", [
     "analytics",
     "reporting",
     "protected",
@@ -257,7 +257,7 @@ const routeInventory = [
     "reporting",
     "protected",
   ], { admin: true }),
-  entry("/purchase-orders", "Purchase order workflow", "verify-inventory-command-board.cjs", [
+  entry("/purchase-orders", "Purchase order workflow", "verify-action-feedback-hygiene.cjs", [
     "inventory",
     "approval",
     "mutation",

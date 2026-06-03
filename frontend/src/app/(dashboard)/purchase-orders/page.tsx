@@ -29,6 +29,7 @@ export default function PurchaseOrders() {
   const [isCreatingDrafts, setIsCreatingDrafts] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState("");
   const [message, setMessage] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -46,7 +47,7 @@ export default function PurchaseOrders() {
       setReorderGroups(arrayRows(lowStock.groups));
     } catch (error) {
       if (signal?.aborted) return;
-      console.warn("Purchase order data is temporarily unavailable", error);
+      console.warn("Purchase order data could not be loaded", error);
       setOrders([]);
       setReorderGroups([]);
       setMessage("Could not load purchase order data.");
@@ -107,22 +108,25 @@ export default function PurchaseOrders() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
+    const input = e.currentTarget;
+    if (input.files && input.files.length > 0) {
       setIsUploading(true);
+      setMessage("");
       const formData = new FormData();
-      formData.append('file', e.target.files[0]);
+      formData.append('file', input.files[0]);
 
       try {
         const result = await fetchJson(getApiUrl('/api/v1/restaurant/import/pdf'), {
           method: 'POST',
           body: formData
         });
-        alert(`Successfully imported ${result.imported} records from PDF!`);
+        setMessage(`Imported ${result.imported || 0} record${result.imported === 1 ? "" : "s"} from the PDF note.`);
         await fetchOrders();
       } catch (error) {
-        alert("Failed to process PDF note.");
+        setMessage(error instanceof Error ? error.message : "Failed to process PDF note.");
       } finally {
         setIsUploading(false);
+        input.value = "";
       }
     }
   };
@@ -133,6 +137,24 @@ export default function PurchaseOrders() {
       `\n\nPlease confirm availability and total bill.\nRegards,\nPizza Blitz`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   };
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const filteredOrders = normalizedSearch
+    ? orders.filter((order) => {
+        const orderText = [
+          `po-${order.id}`,
+          order.id,
+          order.status,
+          order.supplier_name,
+          order.supplier_whatsapp,
+          Number(order.total_amount || 0).toLocaleString(),
+          ...(arrayRows<any>(order.items).map((item) => item.name)),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return orderText.includes(normalizedSearch);
+      })
+    : orders;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -180,18 +202,26 @@ export default function PurchaseOrders() {
                       {data.supplier_whatsapp ? `WhatsApp: +${data.supplier_whatsapp}` : "No WhatsApp saved"}
                     </p>
                  </div>
-                 <Link
-                    href={data.supplier_whatsapp ? getWhatsAppLink(data.supplier_name, data.supplier_whatsapp, data.items) : "#"}
-                    target="_blank"
-                    className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center ${
-                      data.supplier_whatsapp
-                        ? "bg-[#25D366] hover:bg-[#128C7E] text-white"
-                        : "bg-gray-100 text-gray-400 pointer-events-none"
-                    }`}
-                 >
-                    <Send className="w-4 h-4 mr-2" />
-                    Send via WhatsApp
-                 </Link>
+                 {data.supplier_whatsapp ? (
+                   <Link
+                      href={getWhatsAppLink(data.supplier_name, data.supplier_whatsapp, data.items)}
+                      target="_blank"
+                      className="px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center bg-[#25D366] hover:bg-[#128C7E] text-white"
+                   >
+                      <Send className="w-4 h-4 mr-2" />
+                      Send via WhatsApp
+                   </Link>
+                 ) : (
+                   <button
+                      type="button"
+                      disabled
+                      title="Add supplier WhatsApp number before sending"
+                      className="px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors flex items-center bg-gray-100 text-gray-400 disabled:cursor-not-allowed"
+                   >
+                      <Send className="w-4 h-4 mr-2" />
+                      WhatsApp Missing
+                   </button>
+                 )}
               </div>
               <div className="p-4 space-y-3">
                 {arrayRows<any>(data.items).map((item: any) => (
@@ -216,23 +246,34 @@ export default function PurchaseOrders() {
         </div>
 
         <div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col">
+          <div
+            data-testid="purchase-order-history-panel"
+            className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-full flex flex-col"
+          >
             <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                <h3 className="text-lg font-bold text-gray-900">Recent PO History</h3>
                <div className="relative">
                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                 <input type="text" placeholder="Search orders..." className="pl-9 pr-3 py-1.5 border border-gray-200 rounded-md text-sm outline-none focus:border-orange-500" />
+                 <input
+                   type="text"
+                   placeholder="Search orders..."
+                   value={searchQuery}
+                   onChange={(event) => setSearchQuery(event.target.value)}
+                   className="pl-9 pr-3 py-1.5 border border-gray-200 rounded-md text-sm outline-none focus:border-orange-500"
+                 />
                </div>
             </div>
 
             <div className="p-4 flex-1 overflow-y-auto">
               {isLoading ? (
                 <div className="flex justify-center p-8"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
-              ) : orders.length === 0 ? (
-                <div className="text-center p-8 text-gray-400 italic">No purchase orders found.</div>
+              ) : filteredOrders.length === 0 ? (
+                <div className="text-center p-8 text-gray-400 italic">
+                  {orders.length === 0 ? "No purchase orders found." : "No purchase orders match this search."}
+                </div>
               ) : (
                 <div className="space-y-4">
-                  {orders.map((order) => (
+                  {filteredOrders.map((order) => (
                     <div key={order.id} className="flex justify-between items-center gap-4 p-3 border border-gray-100 rounded-lg hover:border-orange-200 hover:shadow-sm transition-all group">
                       <div>
                         <div className="flex items-center gap-2">
