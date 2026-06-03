@@ -1013,6 +1013,7 @@ def readiness_report(db: Session) -> dict:
         checks=checks,
         payment_status=payment_status,
         backup_freshness=backup_freshness,
+        live_deployment=live_deployment,
         go_live_items=go_live_items,
     )
     restaurant_ready_audit = _restaurant_ready_audit(
@@ -3031,6 +3032,7 @@ def _launch_module_readiness(
     checks: list[dict],
     payment_status: dict,
     backup_freshness: dict,
+    live_deployment: dict,
     go_live_items: list[dict],
 ) -> list[dict]:
     check_by_key = {check["key"]: check for check in checks}
@@ -3120,13 +3122,23 @@ def _launch_module_readiness(
         + (25 if expense_metrics["expense_signal_days"] else 0)
         + (20 if expense_metrics["high_risk_days"] == 0 else 10)
     )
+    live_deployment_score = int(live_deployment.get("score") or 0)
+    live_deployment_ready = live_deployment.get("status") == "pass"
     production_score = round(
-        (_readiness_score(go_live_items) * 0.75)
-        + (25 if successful_backups else 10)
+        (_readiness_score(go_live_items) * 0.45)
+        + (15 if successful_backups else 8)
+        + (live_deployment_score * 0.40)
     )
     production_next_actions = [
         (
-            "Move from local SQLite to managed production database."
+            "Keep live deployment proof fresh after each production deploy."
+            if live_deployment_ready
+            else "Run live deployment proof from Production Ops after each production deploy."
+        ),
+        (
+            "Local dev is still using SQLite; production proof is tracked separately."
+            if database_backend() == "sqlite" and live_deployment_ready
+            else "Move from local SQLite to managed production database."
             if database_backend() == "sqlite"
             else "Record the first managed database backup/restore proof so backup freshness turns green."
             if backup_freshness["status"] != "pass"
@@ -3304,6 +3316,7 @@ def _launch_module_readiness(
             detail="Environment inventory, backup history, payment contracts, and deployment blockers are centralized.",
             metrics=[
                 {"label": "Go-live score", "value": f"{_readiness_score(go_live_items)}%"},
+                {"label": "Live proof", "value": f"{live_deployment.get('status', 'warn')} {live_deployment_score}%"},
                 {"label": "Backup status", "value": backup_freshness["status"]},
             ],
             next_actions=production_next_actions,

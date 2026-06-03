@@ -91,6 +91,79 @@ class LiveDeploymentProbeTest(unittest.TestCase):
             self.assertEqual(response.json()["event"]["event_type"], "deployment")
             self.assertEqual(response.json()["event"]["action"], "live_deployment_probe")
 
+    def test_live_deployment_proof_lifts_production_operations_readiness(self):
+        checks = [
+            {"key": "admin_password", "status": "pass"},
+            {"key": "staff_password", "status": "pass"},
+            {"key": "auth_secret", "status": "pass"},
+            {"key": "portal_session_secret", "status": "pass"},
+            {"key": "cors_origins", "status": "warn"},
+        ]
+        go_live_items = [
+            {"key": f"gate_{index}", "status": "pass" if index < 3 else "warn"}
+            for index in range(4)
+        ]
+        with (
+            patch.object(ops_service, "_count", return_value=1),
+            patch.object(
+                ops_service,
+                "_kitchen_station_metrics",
+                return_value={
+                    "stationed_orders": 1,
+                    "station_count": 3,
+                    "stationed_lines": 1,
+                },
+            ),
+            patch.object(
+                ops_service,
+                "_employee_attendance_metrics",
+                return_value={
+                    "shift_count": 4,
+                    "leave_count": 3,
+                    "staff_count": 7,
+                    "covered_role_count": 4,
+                },
+            ),
+            patch.object(
+                ops_service,
+                "_expense_audit_metrics",
+                return_value={
+                    "expense_count": 2,
+                    "category_count": 8,
+                    "expense_signal_days": 1,
+                    "high_risk_days": 0,
+                },
+            ),
+            patch.object(
+                ops_service,
+                "campaign_provider_status",
+                return_value={"configured": False},
+            ),
+            patch.object(
+                ops_service,
+                "social_provider_status",
+                return_value={"configured": False},
+            ),
+            patch.object(
+                ops_service,
+                "ad_provider_status",
+                return_value={"configured": False},
+            ),
+        ):
+            modules = ops_service._launch_module_readiness(
+                None,
+                checks=checks,
+                payment_status={"provider": "manual"},
+                backup_freshness={"status": "pass"},
+                live_deployment={"status": "pass", "score": 100},
+                go_live_items=go_live_items,
+            )
+
+        production = next(module for module in modules if module["key"] == "production_operations")
+        self.assertEqual(production["status"], "pass")
+        self.assertGreaterEqual(production["score"], 85)
+        self.assertIn("Keep live deployment proof fresh", production["next_actions"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
