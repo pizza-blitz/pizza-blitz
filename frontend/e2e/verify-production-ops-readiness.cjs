@@ -179,6 +179,22 @@ async function screenshotProductionOps() {
     await page.getByRole("heading", { name: "Environment Inventory" }).waitFor({ timeout: 15000 });
     await page.getByText("Portal session secret", { exact: false }).first().waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /Create Backup/i }).waitFor({ timeout: 15000 });
+    await page.getByTestId("managed-backup-proof-form").waitFor({ timeout: 15000 });
+    await page.getByTestId("backup-proof-type").selectOption("restore_rehearsal");
+    await page.getByTestId("restore-proof-checklist").waitFor({ timeout: 15000 });
+    await page.getByText("Needed: Restore target", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByTestId("backup-proof-reference").fill("restore-clean-db-20260603");
+    await page.getByTestId("backup-proof-notes").fill(
+      "restore target: clean database; admin login smoke: ops dashboard opened; order smoke: checkout receipt opened; report/export smoke: customer sales export checked"
+    );
+    await page.getByText("Ready: Restore target", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Ready: Admin login smoke", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Ready: Order smoke", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Ready: Report/export smoke", { exact: true }).waitFor({ timeout: 15000 });
+    assert(
+      !(await page.getByTestId("backup-proof-submit").isDisabled()),
+      "Backup proof submit should be enabled after complete restore evidence."
+    );
     await page.screenshot({
       path: path.join(artifactsDir, "visible-production-ops-readiness.png"),
       fullPage: true,

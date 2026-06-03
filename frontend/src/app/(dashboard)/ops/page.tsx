@@ -659,6 +659,38 @@ export default function ProductionOpsPage() {
   const [backupProofNotes, setBackupProofNotes] = useState("");
 
   const latestBackup = useMemo(() => backups[0] || null, [backups]);
+  const backupProofReferenceValue = backupProofReference.trim();
+  const backupProofNotesValue = backupProofNotes.trim();
+  const isRestoreProof = backupProofType === "restore_rehearsal";
+  const restoreEvidenceText = `${backupProofReferenceValue} ${backupProofNotesValue}`.toLowerCase();
+  const restoreEvidenceChecks = [
+    {
+      key: "restore_target",
+      label: "Restore target",
+      ready: /restore|restored|target|clean database/.test(restoreEvidenceText),
+    },
+    {
+      key: "admin_login",
+      label: "Admin login smoke",
+      ready: /admin|login|ops|dashboard/.test(restoreEvidenceText),
+    },
+    {
+      key: "order_smoke",
+      label: "Order smoke",
+      ready: /order|checkout|pos|receipt|tracking/.test(restoreEvidenceText),
+    },
+    {
+      key: "report_export",
+      label: "Report/export smoke",
+      ready: /report|export|customer|sales/.test(restoreEvidenceText),
+    },
+  ];
+  const restoreEvidenceReady =
+    !isRestoreProof ||
+    (backupProofReferenceValue.length >= 12 &&
+      backupProofNotesValue.length >= 60 &&
+      restoreEvidenceChecks.every((check) => check.ready));
+  const backupProofReady = backupProofReferenceValue.length >= (isRestoreProof ? 12 : 6) && restoreEvidenceReady;
 
   useEffect(() => {
     fetchOps();
@@ -775,9 +807,19 @@ export default function ProductionOpsPage() {
   };
 
   const recordBackupProof = async () => {
-    const reference = backupProofReference.trim();
-    if (reference.length < 6) {
-      setMessage("Backup proof reference must be at least 6 characters.");
+    if (backupProofReferenceValue.length < (isRestoreProof ? 12 : 6)) {
+      setMessage(
+        isRestoreProof
+          ? "Restore rehearsal proof reference must be at least 12 characters."
+          : "Backup proof reference must be at least 6 characters."
+      );
+      return;
+    }
+    if (isRestoreProof && !restoreEvidenceReady) {
+      const missing = restoreEvidenceChecks.filter((check) => !check.ready).map((check) => check.label);
+      setMessage(
+        `Restore rehearsal notes need at least 60 characters and evidence for: ${missing.join(", ") || "all checks"}.`
+      );
       return;
     }
     setRecordingBackupProof(true);
@@ -786,8 +828,8 @@ export default function ProductionOpsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         proof_type: backupProofType,
-        reference,
-        notes: backupProofNotes.trim() || null,
+        reference: backupProofReferenceValue,
+        notes: backupProofNotesValue || null,
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -1225,12 +1267,13 @@ export default function ProductionOpsPage() {
                 {backups.length} runs
               </span>
             </div>
-            <div className="mb-5 rounded-xl border border-orange-500/15 bg-orange-500/10 p-4">
+            <div data-testid="managed-backup-proof-form" className="mb-5 rounded-xl border border-orange-500/15 bg-orange-500/10 p-4">
               <p className="mb-3 text-xs font-black uppercase tracking-widest text-orange-200">
                 Managed Backup Proof
               </p>
               <div className="grid gap-3">
                 <select
+                  data-testid="backup-proof-type"
                   value={backupProofType}
                   onChange={(event) => setBackupProofType(event.target.value)}
                   className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
@@ -1240,21 +1283,48 @@ export default function ProductionOpsPage() {
                   <option value="restore_rehearsal">Restore rehearsal</option>
                 </select>
                 <input
+                  data-testid="backup-proof-reference"
                   value={backupProofReference}
                   onChange={(event) => setBackupProofReference(event.target.value)}
                   className="rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
-                  placeholder="Snapshot/export/restore proof reference"
+                  placeholder={isRestoreProof ? "Restore job id or clean restore target reference" : "Snapshot or pg_dump export reference"}
                 />
                 <textarea
+                  data-testid="backup-proof-notes"
                   value={backupProofNotes}
                   onChange={(event) => setBackupProofNotes(event.target.value)}
                   className="min-h-20 rounded-md border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold text-white outline-none"
-                  placeholder="Owner note, restore target, or verification result"
+                  placeholder={
+                    isRestoreProof
+                      ? "restore target, admin login smoke, order smoke, report/export smoke"
+                      : "Owner note or verification result"
+                  }
                 />
+                {isRestoreProof ? (
+                  <div data-testid="restore-proof-checklist" className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {restoreEvidenceChecks.map((check) => (
+                      <span
+                        key={check.key}
+                        className={`rounded-md border px-3 py-2 text-xs font-black uppercase ${
+                          check.ready
+                            ? "border-green-500/20 bg-green-500/10 text-green-200"
+                            : "border-white/10 bg-black/20 text-gray-500"
+                        }`}
+                      >
+                        {check.ready ? "Ready" : "Needed"}: {check.label}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold leading-5 text-orange-100/80">
+                    Snapshot or pg_dump proof clears backup freshness; restore rehearsal is recorded separately after a clean restore smoke.
+                  </p>
+                )}
                 <button
+                  data-testid="backup-proof-submit"
                   type="button"
                   onClick={recordBackupProof}
-                  disabled={recordingBackupProof || backupProofReference.trim().length < 6}
+                  disabled={recordingBackupProof || !backupProofReady}
                   className="rounded-md bg-orange-500 px-4 py-3 text-sm font-black text-black hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {recordingBackupProof ? "Recording Proof" : "Record Proof"}
