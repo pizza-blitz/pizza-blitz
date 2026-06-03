@@ -1185,16 +1185,35 @@ export default function Settings() {
         setPaymentMessage(data.detail || "Staff settlement proof failed.");
         return;
       }
-      setWebhookResult(data);
-      await loadPaymentReadiness();
-      await loadOperationalAudit();
+      const proofOrderId = data.order?.id || orderId;
+      const proofReference = data.order?.payment_reference || webhookReference.trim() || null;
+      const proofStatus =
+        data.order?.payment_status ||
+        (data.status === "processed" || data.status === "already_paid" ? "paid" : data.status);
+      setWebhookResult({
+        ...data,
+        order: data.order
+          ? data.order
+          : proofStatus === "paid"
+            ? {
+                id: proofOrderId,
+                payment_status: proofStatus,
+                payment_provider: webhookProvider,
+                payment_reference: proofReference,
+              }
+            : undefined,
+      });
       setPaymentMessage(
-        data.status === "processed"
-          ? `Order #${data.order?.id || orderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
+        proofStatus === "paid"
+          ? `Order #${proofOrderId} is paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
+          : data.status === "processed"
+          ? `Order #${proofOrderId} marked paid through ${staffSettlementProviderLabels[webhookProvider]} proof.`
           : data.status === "already_paid"
-            ? `Order #${data.order?.id || orderId} was already paid.`
+            ? `Order #${proofOrderId} was already paid.`
             : `Settlement proof received with status: ${data.status}.`
       );
+      void loadPaymentReadiness();
+      void loadOperationalAudit();
     } catch {
       setPaymentMessage("Staff settlement proof API is not available right now.");
     } finally {
