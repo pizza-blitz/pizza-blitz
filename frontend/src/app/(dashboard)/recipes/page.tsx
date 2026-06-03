@@ -167,6 +167,7 @@ export default function RecipesPage() {
                   />
                   <input 
                     type="number" 
+                    aria-label={`Quantity for ingredient ${idx + 1}`}
                     className="w-20 p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm italic"
                     value={ing.quantity}
                     onChange={e => handleIngredientChange(idx, 'quantity', Number(e.target.value))}
@@ -182,6 +183,7 @@ export default function RecipesPage() {
                   </select>
                   <button 
                     type="button" 
+                    aria-label={`Remove ingredient ${idx + 1}`}
                     onClick={() => handleRemoveIngredient(idx)}
                     className="p-3 text-red-200 hover:text-red-500 transition-colors"
                   >

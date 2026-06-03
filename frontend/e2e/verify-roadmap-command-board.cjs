@@ -97,6 +97,7 @@ async function main() {
     await page.getByText("verify-delivery-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-navigation-link-health.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-interactive-control-labels.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
@@ -112,6 +113,7 @@ async function main() {
     await page.getByText("34 x 2", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Login and customer account route audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Navigation link health audit", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Interactive control label audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });

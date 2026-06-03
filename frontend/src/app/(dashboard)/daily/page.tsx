@@ -77,7 +77,8 @@ export default function DailyEntry() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-3">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Accounting Date</label>
-                <input 
+                  <input
+                    aria-label="Business date"
                   type="date" 
                   required
                   value={formData.date}
@@ -104,7 +105,8 @@ export default function DailyEntry() {
                 <label className="text-xs font-black text-orange-600 uppercase tracking-widest ml-1">Gross Sales</label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-400 font-bold">₹</div>
-                  <input 
+                  <input
+                    aria-label="Gross sales amount"
                     type="number" 
                     required
                     step="0.01"
@@ -119,7 +121,8 @@ export default function DailyEntry() {
                 <label className="text-xs font-black text-blue-600 uppercase tracking-widest ml-1">Cash In Hand</label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-bold">₹</div>
-                  <input 
+                  <input
+                    aria-label="Cash in hand amount"
                     type="number" 
                     required
                     step="0.01"
@@ -134,7 +137,8 @@ export default function DailyEntry() {
                 <label className="text-xs font-black text-red-600 uppercase tracking-widest ml-1">Burn / Expense</label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 text-red-400 font-bold">₹</div>
-                  <input 
+                  <input
+                    aria-label="Burn or expense amount"
                     type="number" 
                     required
                     step="0.01"

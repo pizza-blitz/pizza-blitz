@@ -116,6 +116,7 @@ export default function WastePage() {
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Date</label>
                 <input 
                   type="date" 
+                  aria-label="Waste event date"
                   required
                   value={newWaste.date}
                   onChange={e => setNewWaste({...newWaste, date: e.target.value})}
@@ -126,6 +127,7 @@ export default function WastePage() {
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Item Name</label>
                 <input 
                   type="text" 
+                  aria-label="Waste item name"
                   required
                   value={newWaste.item_name}
                   onChange={e => setNewWaste({...newWaste, item_name: e.target.value})}
@@ -141,12 +143,14 @@ export default function WastePage() {
                 <div className="flex space-x-2">
                   <input 
                     type="number" 
+                    aria-label="Waste quantity"
                     required
                     value={newWaste.quantity}
                     onChange={e => setNewWaste({...newWaste, quantity: Number(e.target.value)})}
                     className="w-full mt-1 p-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-xs"
                   />
                   <select 
+                    aria-label="Waste quantity unit"
                     value={newWaste.unit}
                     onChange={e => setNewWaste({...newWaste, unit: e.target.value})}
                     className="p-3 mt-1 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold"
@@ -164,6 +168,7 @@ export default function WastePage() {
                   <span className="absolute left-3 top-4 text-gray-400 text-xs">₹</span>
                   <input 
                     type="number" 
+                    aria-label="Estimated waste cost"
                     required
                     value={newWaste.estimated_cost}
                     onChange={e => setNewWaste({...newWaste, estimated_cost: Number(e.target.value)})}

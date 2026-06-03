@@ -363,6 +363,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "A safe browser proof now checks same-site links across 34 source routes and records broken-link evidence without pressing destructive action buttons.",
   },
+  {
+    title: "Interactive control label audit",
+    status: "done",
+    value: "Visible buttons, links, inputs, selects and textareas now have a repeatable accessibility audit, and unlabeled controls on Shifts, Daily, Recipes, Waste and Settings were fixed.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -925,8 +930,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "31",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health and roadmap.",
+    value: "32",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1157,6 +1162,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "navigation-link-health.json",
   },
   {
+    area: "Interactive control labels",
+    proof: "verify-interactive-control-labels.cjs",
+    status: "passed",
+    value: "Visible controls across the public and admin route set are checked for usable labels so buttons and fields remain operable and testable.",
+    artifact: "interactive-control-labels.json",
+  },
+  {
     area: "Dashboard visual polish",
     proof: "verify-dashboard-visual-polish.cjs",
     status: "passed",
@@ -1182,8 +1194,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "33 / 33",
-    note: "Critical browser, API, typecheck, navigation link health and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "34 / 34",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

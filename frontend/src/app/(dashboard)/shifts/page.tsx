@@ -303,8 +303,10 @@ export default function ShiftLogPage() {
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300">
             <CalendarDays className="h-4 w-4 text-orange-300" />
+            <span className="sr-only">Attendance date</span>
             <input
               type="date"
+              aria-label="Attendance date"
               value={shiftForm.date}
               onChange={(event) => setShiftForm({ ...shiftForm, date: event.target.value })}
               className="bg-transparent text-sm outline-none"
@@ -647,55 +649,73 @@ export default function ShiftLogPage() {
               Log Leave
             </h2>
             <form data-testid="employee-leave-form" onSubmit={handleLeaveSubmit} className="space-y-3">
-              <input
-                data-testid="leave-staff-name"
-                required
-                value={leaveForm.staff_name}
-                onChange={(event) => setLeaveForm({ ...leaveForm, staff_name: event.target.value })}
-                className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
-                placeholder="Employee name"
-              />
+              <label className="block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                Employee Name
+                <input
+                  data-testid="leave-staff-name"
+                  required
+                  value={leaveForm.staff_name}
+                  onChange={(event) => setLeaveForm({ ...leaveForm, staff_name: event.target.value })}
+                  className="mt-2 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
+                  placeholder="Employee name"
+                />
+              </label>
               <div className="grid grid-cols-2 gap-3">
-                <select
-                  data-testid="leave-type"
-                  value={leaveForm.leave_type}
-                  onChange={(event) => setLeaveForm({ ...leaveForm, leave_type: event.target.value })}
-                  className="rounded-md border border-white/10 bg-[#0b0d10] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
-                >
-                  {leaveTypes.map((type) => (
-                    <option key={type}>{type}</option>
-                  ))}
-                </select>
-                <select
-                  value={leaveForm.status}
-                  onChange={(event) => setLeaveForm({ ...leaveForm, status: event.target.value })}
-                  className="rounded-md border border-white/10 bg-[#0b0d10] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
-                >
-                  <option>planned</option>
-                  <option>approved</option>
-                </select>
+                <label className="block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                  Leave Type
+                  <select
+                    data-testid="leave-type"
+                    value={leaveForm.leave_type}
+                    onChange={(event) => setLeaveForm({ ...leaveForm, leave_type: event.target.value })}
+                    className="mt-2 w-full rounded-md border border-white/10 bg-[#0b0d10] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
+                  >
+                    {leaveTypes.map((type) => (
+                      <option key={type}>{type}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                  Leave Status
+                  <select
+                    value={leaveForm.status}
+                    onChange={(event) => setLeaveForm({ ...leaveForm, status: event.target.value })}
+                    className="mt-2 w-full rounded-md border border-white/10 bg-[#0b0d10] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
+                  >
+                    <option>planned</option>
+                    <option>approved</option>
+                  </select>
+                </label>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input
-                  data-testid="leave-start-date"
-                  type="date"
-                  value={leaveForm.start_date}
-                  onChange={(event) => setLeaveForm({ ...leaveForm, start_date: event.target.value, end_date: event.target.value })}
-                  className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
-                />
-                <input
-                  type="date"
-                  value={leaveForm.end_date}
-                  onChange={(event) => setLeaveForm({ ...leaveForm, end_date: event.target.value })}
-                  className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
-                />
+                <label className="block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                  Start Date
+                  <input
+                    data-testid="leave-start-date"
+                    type="date"
+                    value={leaveForm.start_date}
+                    onChange={(event) => setLeaveForm({ ...leaveForm, start_date: event.target.value, end_date: event.target.value })}
+                    className="mt-2 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
+                  />
+                </label>
+                <label className="block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                  End Date
+                  <input
+                    type="date"
+                    value={leaveForm.end_date}
+                    onChange={(event) => setLeaveForm({ ...leaveForm, end_date: event.target.value })}
+                    className="mt-2 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
+                  />
+                </label>
               </div>
-              <input
-                value={leaveForm.reason}
-                onChange={(event) => setLeaveForm({ ...leaveForm, reason: event.target.value })}
-                className="w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
-                placeholder="Reason"
-              />
+              <label className="block text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                Reason
+                <input
+                  value={leaveForm.reason}
+                  onChange={(event) => setLeaveForm({ ...leaveForm, reason: event.target.value })}
+                  className="mt-2 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm text-white outline-none focus:border-cyan-300"
+                  placeholder="Reason"
+                />
+              </label>
               <button
                 data-testid="leave-submit"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-cyan-400"

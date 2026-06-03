@@ -3276,6 +3276,7 @@ export default function Settings() {
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto]">
             <input
               value={newDeliveryZone.keywords}
+              aria-label="New delivery zone coverage keywords"
               onChange={(event) =>
                 updateNewDeliveryZone({ keywords: event.target.value })
               }
@@ -3306,6 +3307,7 @@ export default function Settings() {
                   <div className="flex items-center justify-between gap-3">
                     <input
                       value={draft.name}
+                      aria-label={`${zone.name} delivery zone name`}
                       onChange={(event) =>
                         updateDeliveryDraft(zone.id, { name: event.target.value })
                       }
@@ -3440,6 +3442,7 @@ export default function Settings() {
           <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[1.5fr_0.6fr_0.8fr_auto]">
             <input
               value={quoteAddress}
+              aria-label="Delivery quote address"
               onChange={(event) => setQuoteAddress(event.target.value)}
               className="rounded-md border border-gray-200 px-3 py-3 text-sm font-semibold outline-none focus:border-red-500"
               placeholder="House/building and area"
@@ -3447,6 +3450,7 @@ export default function Settings() {
             <input
               type="number"
               min="0"
+              aria-label="Delivery quote subtotal"
               value={quoteSubtotal}
               onChange={(event) => setQuoteSubtotal(Number(event.target.value) || 0)}
               className="rounded-md border border-gray-200 px-3 py-3 text-sm font-semibold outline-none focus:border-red-500"
@@ -3454,6 +3458,7 @@ export default function Settings() {
             />
             <select
               value={quoteZoneId || ""}
+              aria-label="Delivery quote zone"
               onChange={(event) => setQuoteZoneId(Number(event.target.value) || null)}
               className="rounded-md border border-gray-200 bg-white px-3 py-3 text-sm font-bold text-gray-700 outline-none focus:border-red-500"
             >
@@ -3547,6 +3552,7 @@ export default function Settings() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Spreadsheet URL</label>
             <input
               type="url"
+              aria-label="Spreadsheet URL"
               value={sheetUrl}
               onChange={(e) => setSheetUrl(e.target.value)}
               placeholder="https://docs.google.com/spreadsheets/d/..."
@@ -3661,6 +3667,7 @@ export default function Settings() {
               <div className="flex items-center">
                 <input
                   type="checkbox"
+                  aria-label={`Toggle ${cat.name} category`}
                   checked={cat.active}
                   onChange={() => toggleCategory(cat.id)}
                   className="w-4 h-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500 cursor-pointer mr-3"
@@ -3671,6 +3678,7 @@ export default function Settings() {
               </div>
               <button
                 onClick={() => deleteCategory(cat.id)}
+                aria-label={`Delete ${cat.name} category`}
                 className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
@@ -3682,6 +3690,7 @@ export default function Settings() {
         <div className="flex gap-2">
           <input
             type="text"
+            aria-label="New expense category name"
             value={newCategory}
             onChange={(e) => setNewCategory(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && addCategory()}
@@ -3713,6 +3722,7 @@ export default function Settings() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Admin ID</label>
               <input
                 type="text"
+                aria-label="Admin ID"
                 value={adminId}
                 onChange={(e) => setAdminId(e.target.value)}
                 disabled={isAdminCredentialLoading || isSavingAdminCredential}
@@ -3723,6 +3733,7 @@ export default function Settings() {
             <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
               <input
                 type="password"
+                aria-label="New admin password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
                 placeholder="Enter new password"
