@@ -972,6 +972,31 @@ export default function ProductionOpsPage() {
     setCreatingBackup(false);
   };
 
+  const scrollToBackupHistory = () => {
+    document.getElementById("backup-history")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
+  const prepareManagedBackupProof = () => {
+    setBackupProofType("managed_snapshot");
+    setBackupProofReference("");
+    setBackupProofNotes("");
+    scrollToBackupHistory();
+    setMessage(
+      "Backup proof form is ready. Record the Supabase snapshot id or pg_dump export reference after the backup is created."
+    );
+  };
+
+  const handleBackupAction = async () => {
+    if (isManagedDatabase) {
+      prepareManagedBackupProof();
+      return;
+    }
+    await createBackup();
+  };
+
   const runLogicalBackupProof = async () => {
     setRunningLogicalBackupProof(true);
     const response = await fetchWithAuth(`${OPS_API}/backups/logical-proof/run`, { method: "POST" });
@@ -988,6 +1013,16 @@ export default function ProductionOpsPage() {
       `Logical export proof recorded: ${manifest.table_count || 0} tables, ${manifest.total_rows || 0} rows, checksum ${checksum}. Managed snapshot or pg_dump is still required before public launch.`
     );
     setRunningLogicalBackupProof(false);
+  };
+
+  const prepareManagedRestoreProof = () => {
+    setBackupProofType("restore_rehearsal");
+    setBackupProofReference("");
+    setBackupProofNotes("");
+    scrollToBackupHistory();
+    setMessage(
+      "Restore proof form is ready. Restore a Supabase snapshot into a clean target first, then record the target, admin login, order smoke and report/export evidence."
+    );
   };
 
   const runRestoreRehearsal = async () => {
@@ -1010,6 +1045,14 @@ export default function ProductionOpsPage() {
         : "Restore rehearsal passed."
     );
     setRunningRestoreRehearsal(false);
+  };
+
+  const handleRestoreRehearsalAction = async () => {
+    if (isManagedDatabase) {
+      prepareManagedRestoreProof();
+      return;
+    }
+    await runRestoreRehearsal();
   };
 
   const runLiveDeploymentProof = async () => {
@@ -1092,11 +1135,11 @@ export default function ProductionOpsPage() {
           </button>
           <button
             data-testid="create-backup-action"
-            onClick={createBackup}
+            onClick={handleBackupAction}
             disabled={creatingBackup}
             className="flex items-center gap-2 rounded-xl bg-white px-5 py-3 font-bold text-black hover:bg-orange-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <HardDrive className="h-4 w-4" /> {isManagedDatabase ? "Managed Proof" : "Create Backup"}
+            <HardDrive className="h-4 w-4" /> {isManagedDatabase ? "Backup Proof Form" : "Create Backup"}
           </button>
           <button
             data-testid="run-logical-backup-proof"
@@ -1109,12 +1152,12 @@ export default function ProductionOpsPage() {
           </button>
           <button
             data-testid="run-restore-rehearsal"
-            onClick={runRestoreRehearsal}
+            onClick={handleRestoreRehearsalAction}
             disabled={runningRestoreRehearsal}
             className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-5 py-3 font-bold text-cyan-50 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Database className={`h-4 w-4 ${runningRestoreRehearsal ? "animate-pulse" : ""}`} />
-            {runningRestoreRehearsal ? "Running Drill" : "Run Restore Drill"}
+            {runningRestoreRehearsal ? "Running Drill" : isManagedDatabase ? "Prepare Restore Proof" : "Run Restore Drill"}
           </button>
           <button
             data-testid="run-live-deployment-proof"

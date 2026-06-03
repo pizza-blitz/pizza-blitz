@@ -343,6 +343,11 @@ const completedValue: RoadmapItem[] = [
     status: "done",
     value: "Production Ops now has a one-click logical export proof that checks live database table readability and records a checksum without exposing secrets.",
   },
+  {
+    title: "Managed backup action clarity",
+    status: "done",
+    value: "Production Ops backup and restore header buttons now adapt for managed PostgreSQL by preparing the correct proof form instead of triggering unsupported local backup actions.",
+  },
 ];
 
 const immediateRemaining: RoadmapItem[] = [
@@ -445,6 +450,11 @@ const immediateRemaining: RoadmapItem[] = [
     title: "Logical database export proof",
     status: "done",
     value: "Ops can now run a software-verifiable table-count and checksum proof for the live database; managed Supabase snapshot/pg_dump and restore rehearsal remain separate external gates.",
+  },
+  {
+    title: "Managed backup/restore button behavior",
+    status: "done",
+    value: "The managed database backup and restore buttons now guide the owner to snapshot/pg_dump and clean restore evidence capture with browser proof coverage.",
   },
   {
     title: "Live provider smoke pilot",

@@ -186,7 +186,7 @@ async function screenshotProductionOps() {
     await page.getByRole("heading", { name: "Environment Inventory" }).waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByText("Portal session secret", { exact: false }).first().waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByTestId("create-backup-action").waitFor({ timeout: opsCommandTimeoutMs });
-    await page.getByTestId("create-backup-action").getByText(/Create Backup|Managed Proof/i).waitFor({ timeout: opsCommandTimeoutMs });
+    await page.getByTestId("create-backup-action").getByText(/Create Backup|Backup Proof Form/i).waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByTestId("managed-backup-proof-form").waitFor({ timeout: opsCommandTimeoutMs });
     await page.getByTestId("backup-proof-type").selectOption("restore_rehearsal");
     await page.getByTestId("restore-proof-checklist").waitFor({ timeout: opsCommandTimeoutMs });
