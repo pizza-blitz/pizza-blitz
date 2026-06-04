@@ -190,7 +190,7 @@ const routeInventory = [
     "mutation",
     "protected",
   ], { admin: true }),
-  entry("/inventory/scan", "Inventory bill scanner", "verify-visual-polish-suite.cjs", [
+  entry("/inventory/scan", "Inventory bill scanner", "verify-inventory-scan-feedback.cjs", [
     "inventory",
     "form-input",
     "mutation",
