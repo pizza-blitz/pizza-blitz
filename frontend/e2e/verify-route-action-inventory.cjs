@@ -253,9 +253,10 @@ const routeInventory = [
     "mutation",
     "protected",
   ], { admin: true }),
-  entry("/ai-insights", "AI owner insights", "verify-operational-dashboard-command.cjs", [
+  entry("/ai-insights", "AI owner insights", "verify-ai-insights-feedback.cjs", [
     "analytics",
     "reporting",
+    "mutation",
     "protected",
   ], { admin: true }),
   entry("/purchase-orders", "Purchase order workflow", "verify-action-feedback-hygiene.cjs", [

@@ -399,6 +399,11 @@ const completedValue: RoadmapItem[] = [
     value: "Break-even setup now exposes rent, salaries, utilities, other fixed cost and average order value, with a saving state, inline result feedback and browser proof for the full update.",
   },
   {
+    title: "AI insights feedback proof",
+    status: "done",
+    value: "AI insights resync now shows loading, success and provider-error feedback, keeps the last good summary on failure and has direct browser proof for both resync buttons.",
+  },
+  {
     title: "Source text hygiene audit",
     status: "done",
     value: "Inventory scan navigation now uses a lucide camera icon instead of corrupted emoji text, and source files are checked for mojibake or emoji UI text.",
@@ -965,8 +970,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "39",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, source text hygiene and roadmap.",
+    value: "40",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, source text hygiene and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1246,6 +1251,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "breakeven-setup-feedback.json",
   },
   {
+    area: "AI insights feedback",
+    proof: "verify-ai-insights-feedback.cjs",
+    status: "passed",
+    value: "AI insight resync actions are clicked in browser for success and provider-failure paths with inline status and preserved last-good summary.",
+    artifact: "ai-insights-feedback.json",
+  },
+  {
     area: "Source text hygiene",
     proof: "verify-source-text-hygiene.cjs",
     status: "passed",
@@ -1278,8 +1290,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "41 / 41",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "42 / 42",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

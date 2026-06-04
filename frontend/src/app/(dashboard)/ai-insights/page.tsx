@@ -1,12 +1,13 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Sparkles, TrendingUp, TrendingDown, Target, Zap, Loader2, AlertCircle, BrainCircuit, Lightbulb, ChevronRight } from 'lucide-react';
+import { AlertCircle, BrainCircuit, CheckCircle2, ChevronRight, Loader2, Sparkles, Target, Zap } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 export default function AIInsights() {
   const [insights, setInsights] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<{ type: "success" | "error" | "loading"; text: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -17,27 +18,37 @@ export default function AIInsights() {
   const fetchInsights = async (signal?: AbortSignal) => {
     setIsLoading(true);
     setError(null);
+    setSyncMessage({ type: "loading", text: "Refreshing AI insight model..." });
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/insights/ai-insights'), {
         signal,
         credentials: "include",
         cache: "no-store",
       });
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
       if (res.ok && result.status === "success") {
         setInsights(result.data);
+        const tipCount = Array.isArray(result.data?.tips) ? result.data.tips.length : 0;
+        setSyncMessage({
+          type: "success",
+          text: `AI insights synced${tipCount ? ` with ${tipCount} directive${tipCount === 1 ? "" : "s"}` : ""}.`,
+        });
       } else {
-        setError(result.message || "Intelligence node synchronization failed.");
+        const message = result.message || result.detail || "Intelligence node synchronization failed.";
+        setError(message);
+        setSyncMessage({ type: "error", text: message });
       }
     } catch (err) {
       if (signal?.aborted) return;
-      setError("Unable to establish neural link with backend.");
+      const message = "Unable to establish neural link with backend.";
+      setError(message);
+      setSyncMessage({ type: "error", text: message });
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
   };
 
-  if (isLoading) return (
+  if (isLoading && !insights) return (
     <div className="h-[80vh] flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-1000">
       <div className="relative">
         <div className="absolute inset-0 bg-orange-500/30 blur-[100px] rounded-full animate-pulse"></div>
@@ -70,12 +81,38 @@ export default function AIInsights() {
             <p className="text-gray-500 mt-2 font-bold uppercase tracking-widest text-[10px] opacity-60">Artificial Intelligence Driven Strategy Layer</p>
           </div>
         </div>
-        <button onClick={() => void fetchInsights()} className="bg-gray-50 hover:bg-gray-100 text-gray-400 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all">
-          Force Resync
+        <button
+          onClick={() => void fetchInsights()}
+          disabled={isLoading}
+          className="flex items-center gap-2 bg-gray-50 hover:bg-gray-100 text-gray-500 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all disabled:cursor-wait disabled:opacity-60"
+        >
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isLoading ? "Syncing" : "Force Resync"}
         </button>
       </div>
 
-      {error && (
+      {syncMessage && (
+        <div
+          className={`flex items-center rounded-[2rem] border-2 p-5 text-sm font-black uppercase tracking-tight shadow-lg ${
+            syncMessage.type === "success"
+              ? "border-green-100 bg-green-50 text-green-700 shadow-green-50"
+              : syncMessage.type === "error"
+                ? "border-red-100 bg-red-50 text-red-700 shadow-red-50"
+                : "border-orange-100 bg-orange-50 text-orange-700 shadow-orange-50"
+          }`}
+        >
+          {syncMessage.type === "success" ? (
+            <CheckCircle2 className="mr-4 h-6 w-6 shrink-0" />
+          ) : syncMessage.type === "error" ? (
+            <AlertCircle className="mr-4 h-6 w-6 shrink-0" />
+          ) : (
+            <Loader2 className="mr-4 h-6 w-6 shrink-0 animate-spin" />
+          )}
+          <p>{syncMessage.text}</p>
+        </div>
+      )}
+
+      {error && syncMessage?.type !== "error" && (
         <div className="bg-red-50 border-2 border-red-100 p-6 rounded-[2rem] flex items-center text-red-700 shadow-lg shadow-red-50">
           <AlertCircle className="w-6 h-6 mr-4 shrink-0" />
           <p className="font-black uppercase tracking-tight text-sm">{error}</p>
@@ -136,9 +173,11 @@ export default function AIInsights() {
                 <button
                   type="button"
                   onClick={() => void fetchInsights()}
-                  className="w-full py-5 bg-orange-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-orange-900/50 hover:bg-orange-500 transition-all active:scale-95"
+                  disabled={isLoading}
+                  className="flex w-full items-center justify-center gap-2 py-5 bg-orange-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-orange-900/50 hover:bg-orange-500 transition-all active:scale-95 disabled:cursor-wait disabled:bg-orange-300"
                 >
-                   Optimize Model
+                   {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                   {isLoading ? "Optimizing" : "Optimize Model"}
                 </button>
              </div>
           </div>
@@ -152,15 +191,15 @@ export default function AIInsights() {
                <h4 className="font-black uppercase tracking-widest text-xs italic">Live Quick Wins</h4>
              </div>
              <ul className="space-y-6">
-               <li className="flex items-start group/li cursor-pointer">
+               <li className="flex items-start group/li">
                  <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0 group-hover/li:scale-150 transition-transform"></div>
                  <p className="text-sm font-black text-gray-600 tracking-tight group-hover/li:text-gray-900 transition-colors uppercase italic">Recalibrate weekend prep logic</p>
                </li>
-               <li className="flex items-start group/li cursor-pointer">
+               <li className="flex items-start group/li">
                  <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0 group-hover/li:scale-150 transition-transform"></div>
                  <p className="text-sm font-black text-gray-600 tracking-tight group-hover/li:text-gray-900 transition-colors uppercase italic">Audit vendor pricing variances</p>
                </li>
-               <li className="flex items-start group/li cursor-pointer">
+               <li className="flex items-start group/li">
                  <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0 group-hover/li:scale-150 transition-transform"></div>
                  <p className="text-sm font-black text-gray-600 tracking-tight group-hover/li:text-gray-900 transition-colors uppercase italic">Auto-sync ledger before peak shift</p>
                </li>
