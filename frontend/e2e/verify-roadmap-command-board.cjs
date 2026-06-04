@@ -106,6 +106,7 @@ async function main() {
     await page.getByText("verify-ai-insights-feedback.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-breakeven-setup-feedback.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-inventory-scan-feedback.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-vendor-waste-operations.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-source-text-hygiene.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
@@ -138,9 +139,11 @@ async function main() {
     await page.getByText("ai-insights-feedback.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Inventory scan feedback proof", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("inventory-scan-feedback.json", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Vendor and waste operations proof", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("vendor-waste-operations.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Source text hygiene audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("source-text-hygiene.json", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("43 / 43", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("44 / 44", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });

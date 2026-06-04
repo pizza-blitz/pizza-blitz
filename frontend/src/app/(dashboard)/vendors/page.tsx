@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  CheckCircle2,
   Loader2,
   Search,
   TrendingUp,
@@ -60,6 +61,11 @@ type CheapestVendor = {
   unit: string;
 };
 
+type VendorStatus = {
+  type: "success" | "error" | "loading";
+  text: string;
+};
+
 export default function VendorPricePage() {
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [history, setHistory] = useState<PriceHistory[]>([]);
@@ -67,7 +73,8 @@ export default function VendorPricePage() {
   const [itemSearch, setItemSearch] = useState("Tomato Sauce");
   const [cheapest, setCheapest] = useState<CheapestVendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [message, setMessage] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [message, setMessage] = useState<VendorStatus | null>(null);
 
   useEffect(() => {
     refreshDashboard();
@@ -84,7 +91,7 @@ export default function VendorPricePage() {
 
   const refreshDashboard = async () => {
     setIsLoading(true);
-    setMessage("");
+    setMessage(null);
     try {
       const [alertsData, recentData] = await Promise.all([
         fetchJson(`${API_BASE}/prices/alerts/increases`),
@@ -98,7 +105,7 @@ export default function VendorPricePage() {
       if (defaultItem !== itemSearch) setItemSearch(defaultItem);
       await loadItemData(defaultItem);
     } catch (error) {
-      setMessage("Could not load vendor intelligence.");
+      setMessage({ type: "error", text: "Could not load vendor intelligence." });
     } finally {
       setIsLoading(false);
     }
@@ -107,17 +114,27 @@ export default function VendorPricePage() {
   const loadItemData = async (name: string) => {
     if (!name.trim()) return;
     const encodedName = encodeURIComponent(name.trim());
+    setIsAnalyzing(true);
+    setMessage({ type: "loading", text: `Analyzing ${name.trim()} vendor prices...` });
     try {
       const [historyData, cheapestData] = await Promise.all([
         fetchJson(`${API_BASE}/prices/history/${encodedName}`),
         fetchJson(`${API_BASE}/intelligence/cheapest/${encodedName}`),
       ]);
-      setHistory(arrayRows<PriceHistory>(historyData));
-      setCheapest(arrayRows<CheapestVendor>(cheapestData));
+      const historyRows = arrayRows<PriceHistory>(historyData);
+      const cheapestRows = arrayRows<CheapestVendor>(cheapestData);
+      setHistory(historyRows);
+      setCheapest(cheapestRows);
+      setMessage({
+        type: "success",
+        text: `Vendor comparison loaded for ${name.trim()}: ${historyRows.length} price point${historyRows.length === 1 ? "" : "s"} and ${cheapestRows.length} vendor option${cheapestRows.length === 1 ? "" : "s"}.`,
+      });
     } catch {
       setHistory([]);
       setCheapest([]);
-      setMessage("Could not load vendor comparison.");
+      setMessage({ type: "error", text: "Could not load vendor comparison." });
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -133,6 +150,7 @@ export default function VendorPricePage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
+              aria-label="Vendor item search"
               value={itemSearch}
               onChange={(event) => setItemSearch(event.target.value)}
               className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-orange-500"
@@ -142,16 +160,34 @@ export default function VendorPricePage() {
           <button
             type="button"
             onClick={() => loadItemData(itemSearch)}
-            className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-bold text-white hover:bg-orange-700"
+            disabled={isLoading || isAnalyzing}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-sm font-bold text-white hover:bg-orange-700 disabled:cursor-wait disabled:opacity-60"
           >
-            Analyze
+            {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {isAnalyzing ? "Analyzing" : "Analyze"}
           </button>
         </div>
       </div>
 
       {message && (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
-          {message}
+        <div
+          role={message.type === "error" ? "alert" : "status"}
+          className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${
+            message.type === "success"
+              ? "border-green-200 bg-green-50 text-green-800"
+              : message.type === "error"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : "border-orange-200 bg-orange-50 text-orange-800"
+          }`}
+        >
+          {message.type === "success" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : message.type === "loading" ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          )}
+          <span>{message.text}</span>
         </div>
       )}
 

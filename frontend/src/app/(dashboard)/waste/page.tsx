@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { Trash2, Calendar, ClipboardList, TrendingDown, Plus, Loader2, AlertTriangle, PieChart } from 'lucide-react';
+import { Trash2, ClipboardList, TrendingDown, Plus, Loader2, AlertTriangle, PieChart, CheckCircle2 } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 interface WasteItem {
@@ -19,11 +19,17 @@ interface WasteSummary {
   count: number;
 }
 
+type WasteStatus = {
+  type: "success" | "error" | "loading";
+  text: string;
+};
+
 export default function WastePage() {
   const [wasteLogs, setWasteLogs] = useState<WasteItem[]>([]);
   const [summary, setSummary] = useState<WasteSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [status, setStatus] = useState<WasteStatus | null>(null);
   const [newWaste, setNewWaste] = useState({
     date: new Date().toISOString().split('T')[0],
     item_name: '',
@@ -53,7 +59,7 @@ export default function WastePage() {
       if (summaryRes.ok) setSummary(await summaryRes.json());
     } catch (error) {
       if (signal?.aborted) return;
-      console.warn("Waste data is temporarily unavailable", error);
+      setStatus({ type: "error", text: "Waste data is temporarily unavailable." });
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
@@ -62,6 +68,7 @@ export default function WastePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setStatus({ type: "loading", text: "Saving waste entry..." });
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/sales/waste'), {
         method: 'POST',
@@ -69,19 +76,21 @@ export default function WastePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newWaste)
       });
-      if (res.ok) {
-        setNewWaste({
-          date: new Date().toISOString().split('T')[0],
-          item_name: '',
-          quantity: 0,
-          unit: 'kg',
-          estimated_cost: 0,
-          reason: ''
-        });
-        fetchWasteData();
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || "Failed to log waste.");
+      setNewWaste({
+        date: new Date().toISOString().split('T')[0],
+        item_name: '',
+        quantity: 0,
+        unit: 'kg',
+        estimated_cost: 0,
+        reason: ''
+      });
+      setStatus({ type: "success", text: `${data.item_name || "Waste item"} logged to waste audit for Rs ${Number(data.estimated_cost || 0).toLocaleString()}.` });
+      await fetchWasteData();
     } catch (error) {
-      console.error("Failed to log waste", error);
+      const message = error instanceof Error ? error.message : "Failed to log waste.";
+      setStatus({ type: "error", text: message });
     } finally {
       setIsSubmitting(false);
     }
@@ -97,7 +106,7 @@ export default function WastePage() {
         <div className="bg-orange-50 px-6 py-3 rounded-2xl border border-orange-100 flex items-center space-x-4">
           <div className="text-right">
              <p className="text-[10px] uppercase font-bold text-orange-600">Total Loss (30D)</p>
-             <p className="text-xl font-black text-orange-900">₹{summary?.total_waste_cost?.toLocaleString() || '0'}</p>
+             <p className="text-xl font-black text-orange-900">Rs {summary?.total_waste_cost?.toLocaleString() || '0'}</p>
           </div>
           <TrendingDown className="w-8 h-8 text-orange-600 opacity-20" />
         </div>
@@ -165,14 +174,14 @@ export default function WastePage() {
               <div>
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Estimated Cost</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-4 text-gray-400 text-xs">₹</span>
+                  <span className="absolute left-3 top-4 text-gray-400 text-xs">Rs</span>
                   <input 
                     type="number" 
                     aria-label="Estimated waste cost"
                     required
                     value={newWaste.estimated_cost}
                     onChange={e => setNewWaste({...newWaste, estimated_cost: Number(e.target.value)})}
-                    className="w-full mt-1 p-3 pl-6 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-xs"
+                    className="w-full mt-1 p-3 pl-9 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-xs"
                   />
                 </div>
               </div>
@@ -181,11 +190,12 @@ export default function WastePage() {
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase">Reason for Waste</label>
               <textarea 
+                aria-label="Reason for waste"
                 required
                 value={newWaste.reason}
                 onChange={e => setNewWaste({...newWaste, reason: e.target.value})}
                 className="w-full mt-1 p-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all text-xs h-20"
-                placeholder="Expaired, Burned, Customer Return..."
+                placeholder="Expired, burned, customer return..."
               />
             </div>
             <button 
@@ -194,9 +204,30 @@ export default function WastePage() {
               className="w-full bg-red-600 text-white p-4 rounded-2xl font-black hover:bg-black transition-all disabled:opacity-50 uppercase tracking-widest text-xs flex items-center justify-center space-x-2"
             >
               {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-              <span>Commit to Waste Log</span>
+              <span>{isSubmitting ? "Saving Waste Entry" : "Commit to Waste Log"}</span>
             </button>
           </form>
+          {status ? (
+            <div
+              role={status.type === "error" ? "alert" : "status"}
+              className={`mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${
+                status.type === "success"
+                  ? "border-green-200 bg-green-50 text-green-800"
+                  : status.type === "error"
+                    ? "border-red-200 bg-red-50 text-red-800"
+                    : "border-orange-200 bg-orange-50 text-orange-800"
+              }`}
+            >
+              {status.type === "success" ? (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              ) : status.type === "loading" ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+              )}
+              <span>{status.text}</span>
+            </div>
+          ) : null}
         </div>
 
         {/* Analytics & Table */}
@@ -212,7 +243,7 @@ export default function WastePage() {
                 <div key={i}>
                   <div className="flex justify-between text-xs font-bold mb-1">
                     <span className="text-gray-700">{item.item_name}</span>
-                    <span className="text-red-600">₹{item.cost.toLocaleString()} ({item.percentage}%)</span>
+                    <span className="text-red-600">Rs {item.cost.toLocaleString()} ({item.percentage}%)</span>
                   </div>
                   <div className="w-full bg-gray-50 h-2 rounded-full overflow-hidden">
                     <div 
@@ -251,7 +282,7 @@ export default function WastePage() {
                       <td className="py-4 text-[11px] text-gray-500 tabular-nums">{log.date}</td>
                       <td className="py-4 text-[11px] font-bold text-gray-900">{log.item_name}</td>
                       <td className="py-4 text-[11px] text-gray-600 text-center">{log.quantity} {log.unit}</td>
-                      <td className="py-4 text-[11px] font-black text-red-600 text-right">₹{log.estimated_cost.toLocaleString()}</td>
+                      <td className="py-4 text-[11px] font-black text-red-600 text-right">Rs {log.estimated_cost.toLocaleString()}</td>
                       <td className="py-4 text-[10px] text-gray-400 pl-6 italic">{log.reason}</td>
                     </tr>
                   ))}

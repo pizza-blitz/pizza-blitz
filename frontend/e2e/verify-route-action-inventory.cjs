@@ -236,12 +236,14 @@ const routeInventory = [
     "export",
     "protected",
   ], { admin: true }),
-  entry("/vendors", "Vendor operations", "verify-operational-audit-trail.cjs", [
+  entry("/vendors", "Vendor operations", "verify-vendor-waste-operations.cjs", [
     "inventory",
+    "form-input",
     "reporting",
+    "safe-filter",
     "protected",
   ], { admin: true }),
-  entry("/waste", "Waste and loss tracking", "verify-operational-audit-trail.cjs", [
+  entry("/waste", "Waste and loss tracking", "verify-vendor-waste-operations.cjs", [
     "inventory",
     "form-input",
     "mutation",
