@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AlertTriangle, Info, Loader2, Printer, Receipt, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Loader2, Printer, Receipt, Search } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/orders/invoices");
@@ -17,16 +17,23 @@ type Invoice = {
   total: number;
 };
 
+type InvoiceStatus = {
+  type: "success" | "error" | "info";
+  text: string;
+};
+
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [status, setStatus] = useState<InvoiceStatus | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
     setError("");
+    setStatus(null);
     fetch(API_BASE, { cache: "no-store", credentials: "include" })
       .then(async (res) => {
         const payload = await res.json().catch(() => []);
@@ -38,6 +45,10 @@ export default function InvoicesPage() {
       .then((payload) => {
         if (isMounted) {
           setInvoices(Array.isArray(payload) ? payload : []);
+          setStatus({
+            type: "success",
+            text: `Invoice archive loaded with ${Array.isArray(payload) ? payload.length : 0} invoice${Array.isArray(payload) && payload.length === 1 ? "" : "s"}.`,
+          });
         }
       })
       .catch((err) => {
@@ -61,6 +72,21 @@ export default function InvoicesPage() {
     i.customer_name?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const handlePrint = (invoice: Invoice) => {
+    try {
+      setStatus({
+        type: "info",
+        text: `Print view prepared for invoice ${invoice.invoice_number}.`,
+      });
+      window.print();
+    } catch {
+      setStatus({
+        type: "error",
+        text: `Could not open print view for invoice ${invoice.invoice_number}.`,
+      });
+    }
+  };
+
   return (
     <div className="p-8 bg-[#0a0a0b] min-h-screen text-white">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
@@ -77,6 +103,7 @@ export default function InvoicesPage() {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
           <input 
             type="text" 
+            aria-label="Search invoices"
             placeholder="Search by ID or Customer..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -84,6 +111,28 @@ export default function InvoicesPage() {
           />
         </div>
       </div>
+
+      {status && !isLoading && (
+        <div
+          role={status.type === "error" ? "alert" : "status"}
+          className={`mb-6 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${
+            status.type === "success"
+              ? "border-green-400/30 bg-green-500/10 text-green-100"
+              : status.type === "error"
+                ? "border-red-400/30 bg-red-500/10 text-red-100"
+                : "border-orange-400/30 bg-orange-500/10 text-orange-100"
+          }`}
+        >
+          {status.type === "success" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : status.type === "error" ? (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          ) : (
+            <Printer className="h-4 w-4 shrink-0" />
+          )}
+          <span>{status.text}</span>
+        </div>
+      )}
 
       {isLoading && (
         <div className="flex flex-col items-center justify-center rounded-lg border border-white/5 bg-[#1a1a1c] py-24 text-gray-400">
@@ -127,7 +176,9 @@ export default function InvoicesPage() {
                 <span className="text-2xl font-black">Rs {inv.total.toLocaleString()}</span>
               </div>
               <button 
-                onClick={() => window.print()}
+                type="button"
+                aria-label={`Print invoice ${inv.invoice_number}`}
+                onClick={() => handlePrint(inv)}
                 className="p-4 bg-white/5 rounded-2xl hover:bg-white hover:text-black transition-all border border-white/5 active:scale-95 shadow-xl"
               >
                 <Printer className="w-5 h-5" />

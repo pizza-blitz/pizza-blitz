@@ -168,9 +168,10 @@ const routeInventory = [
     "export",
     "protected",
   ], { admin: true }),
-  entry("/invoices", "Invoice reporting", "verify-reporting-action-board.cjs", [
+  entry("/invoices", "Invoice reporting", "verify-invoice-archive-actions.cjs", [
     "reporting",
     "export",
+    "safe-filter",
     "protected",
   ], { admin: true }),
   entry("/breakeven", "Breakeven analytics", "verify-breakeven-setup-feedback.cjs", [
