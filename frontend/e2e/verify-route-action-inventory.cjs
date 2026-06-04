@@ -197,9 +197,11 @@ const routeInventory = [
     "mutation",
     "protected",
   ], { admin: true }),
-  entry("/recipes", "Recipe costing and prep data", "verify-product-customization.cjs", [
+  entry("/recipes", "Recipe costing and prep data", "verify-recipe-intelligence-actions.cjs", [
     "content",
     "inventory",
+    "form-input",
+    "mutation",
     "protected",
   ], { admin: true }),
   entry("/customers", "Customer CRM and segments", "verify-customer-segment-reporting.cjs", [

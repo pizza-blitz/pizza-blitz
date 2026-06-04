@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { UtensilsCrossed, Plus, Sparkles, Scale, Trash2, Save, Loader2, ChevronRight, Brain } from 'lucide-react';
+import { AlertTriangle, Brain, CheckCircle2, Loader2, Plus, Save, Scale, Sparkles, Trash2, UtensilsCrossed } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 interface Ingredient {
@@ -22,12 +22,18 @@ interface Prediction {
   confidence: number;
 }
 
+type RecipeStatus = {
+  type: "success" | "error" | "loading" | "info";
+  text: string;
+};
+
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPrediction, setShowPrediction] = useState(false);
+  const [status, setStatus] = useState<RecipeStatus | null>(null);
   
   const [newRecipe, setNewRecipe] = useState({
     menu_item: '',
@@ -43,13 +49,13 @@ export default function RecipesPage() {
   const fetchRecipes = async (signal?: AbortSignal) => {
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'), { signal, credentials: "include", cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        setRecipes(Array.isArray(data) ? data : []);
-      }
+      const data = await res.json().catch(() => []);
+      if (!res.ok) throw new Error(data.detail || data.message || "Recipe data is temporarily unavailable.");
+      setRecipes(Array.isArray(data) ? data : []);
     } catch (error) {
       if (signal?.aborted) return;
-      console.warn("Recipe data is temporarily unavailable", error);
+      const message = error instanceof Error ? error.message : "Recipe data is temporarily unavailable.";
+      setStatus({ type: "error", text: message });
     } finally {
       if (!signal?.aborted) setIsLoading(false);
     }
@@ -77,6 +83,7 @@ export default function RecipesPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setStatus({ type: "loading", text: "Saving master recipe..." });
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/'), {
         method: 'POST',
@@ -84,12 +91,17 @@ export default function RecipesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newRecipe)
       });
-      if (res.ok) {
-        setNewRecipe({ menu_item: '', ingredients: [{ name: '', quantity: 0, unit: 'gm' }] });
-        fetchRecipes();
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || "Failed to save recipe.");
+      setNewRecipe({ menu_item: '', ingredients: [{ name: '', quantity: 0, unit: 'gm' }] });
+      setStatus({
+        type: "success",
+        text: `${data.menu_item || newRecipe.menu_item} recipe saved with ${Array.isArray(data.ingredients) ? data.ingredients.length : newRecipe.ingredients.length} ingredient${(Array.isArray(data.ingredients) ? data.ingredients.length : newRecipe.ingredients.length) === 1 ? "" : "s"}.`,
+      });
+      await fetchRecipes();
     } catch (error) {
-      console.error("Failed to save recipe", error);
+      const message = error instanceof Error ? error.message : "Failed to save recipe.";
+      setStatus({ type: "error", text: message });
     } finally {
       setIsSubmitting(false);
     }
@@ -98,17 +110,24 @@ export default function RecipesPage() {
   const fetchPredictions = async () => {
     setIsSubmitting(true);
     setShowPrediction(true);
+    setStatus({ type: "loading", text: "Running prep prediction..." });
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/recipes/next-day-prediction'), {
         credentials: "include",
         cache: "no-store",
       });
-      if (res.ok) {
-        const data = await res.json();
-        setPredictions(Array.isArray(data.predictions) ? data.predictions : []);
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || data.message || "Failed to fetch predictions.");
+      const predictionRows = Array.isArray(data.predictions) ? data.predictions : [];
+      setPredictions(predictionRows);
+      setStatus({
+        type: "success",
+        text: `Prep prediction ready with ${predictionRows.length} ingredient forecast${predictionRows.length === 1 ? "" : "s"}.`,
+      });
     } catch (error) {
-      console.error("Failed to fetch predictions", error);
+      const message = error instanceof Error ? error.message : "Failed to fetch predictions.";
+      setPredictions([]);
+      setStatus({ type: "error", text: message });
     } finally {
       setIsSubmitting(false);
     }
@@ -131,6 +150,32 @@ export default function RecipesPage() {
         </button>
       </div>
 
+      {status && (
+        <div
+          role={status.type === "error" ? "alert" : "status"}
+          className={`flex items-center gap-2 rounded-2xl border px-5 py-4 text-sm font-bold ${
+            status.type === "success"
+              ? "border-green-200 bg-green-50 text-green-800"
+              : status.type === "error"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : status.type === "loading"
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                  : "border-gray-200 bg-gray-50 text-gray-700"
+          }`}
+        >
+          {status.type === "success" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : status.type === "error" ? (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          ) : status.type === "loading" ? (
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <Sparkles className="h-4 w-4 shrink-0" />
+          )}
+          <span>{status.text}</span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Save Recipe Card */}
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 overflow-hidden relative">
@@ -146,6 +191,7 @@ export default function RecipesPage() {
               <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Menu Item Selection</label>
               <input 
                 type="text" 
+                aria-label="Recipe menu item"
                 required
                 value={newRecipe.menu_item}
                 onChange={e => setNewRecipe({...newRecipe, menu_item: e.target.value})}
@@ -160,6 +206,7 @@ export default function RecipesPage() {
                 <div key={idx} className="flex space-x-3 group animate-in slide-in-from-left-2 fade-in">
                   <input 
                     type="text" 
+                    aria-label={`Ingredient ${idx + 1} name`}
                     placeholder="Ingredient"
                     className="flex-1 p-3 bg-gray-50 border border-gray-100 rounded-xl text-sm"
                     value={ing.name}
@@ -173,6 +220,7 @@ export default function RecipesPage() {
                     onChange={e => handleIngredientChange(idx, 'quantity', Number(e.target.value))}
                   />
                   <select 
+                    aria-label={`Unit for ingredient ${idx + 1}`}
                     className="w-20 p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold"
                     value={ing.unit}
                     onChange={e => handleIngredientChange(idx, 'unit', e.target.value)}

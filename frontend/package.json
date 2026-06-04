@@ -21,6 +21,7 @@
     "verify:breakeven-setup": "node e2e/verify-breakeven-setup-feedback.cjs",
     "verify:inventory-scan": "node e2e/verify-inventory-scan-feedback.cjs",
     "verify:invoice-archive": "node e2e/verify-invoice-archive-actions.cjs",
+    "verify:recipe-intelligence": "node e2e/verify-recipe-intelligence-actions.cjs",
     "verify:vendor-waste": "node e2e/verify-vendor-waste-operations.cjs",
     "verify:text-hygiene": "node e2e/verify-source-text-hygiene.cjs",
     "verify:roadmap": "node e2e/verify-roadmap-command-board.cjs",
