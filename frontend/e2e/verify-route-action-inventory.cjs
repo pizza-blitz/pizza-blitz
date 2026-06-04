@@ -173,9 +173,10 @@ const routeInventory = [
     "export",
     "protected",
   ], { admin: true }),
-  entry("/breakeven", "Breakeven analytics", "verify-reporting-comparison-dashboard.cjs", [
+  entry("/breakeven", "Breakeven analytics", "verify-breakeven-setup-feedback.cjs", [
     "analytics",
     "reporting",
+    "mutation",
     "protected",
   ], { admin: true }),
   entry("/menu", "Menu and pricing controls", "verify-product-customization.cjs", [

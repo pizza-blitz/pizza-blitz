@@ -17,6 +17,7 @@
     "verify:route-actions": "node e2e/verify-route-action-inventory.cjs",
     "verify:action-hygiene": "node e2e/verify-action-placeholder-hygiene.cjs",
     "verify:action-feedback": "node e2e/verify-action-feedback-hygiene.cjs",
+    "verify:breakeven-setup": "node e2e/verify-breakeven-setup-feedback.cjs",
     "verify:text-hygiene": "node e2e/verify-source-text-hygiene.cjs",
     "verify:roadmap": "node e2e/verify-roadmap-command-board.cjs",
     "verify:quality": "npm run typecheck && npm run build && npm run verify:live"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { PieChart, Settings } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, PieChart, Settings } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats/breakeven");
@@ -21,6 +21,8 @@ function completionPercent(revenue: unknown, breakEvenRevenue: unknown) {
 export default function BreakevenPage() {
   const [data, setData] = useState<any>(null);
   const [showSetup, setShowSetup] = useState(false);
+  const [isSavingSetup, setIsSavingSetup] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [setupData, setSetupData] = useState({
     month: new Date().toISOString().slice(0,7),
     rent: 55000,
@@ -48,21 +50,51 @@ export default function BreakevenPage() {
     } catch (error) {
       if (signal?.aborted) return;
       console.warn("Break-even data is temporarily unavailable", error);
+      if (!data) {
+        setMessage({ type: "error", text: "Break-even data could not be loaded right now." });
+      }
     }
   };
 
   const saveSetup = async () => {
+    if (isSavingSetup) return;
+    if (!/^\d{4}-\d{2}$/.test(setupData.month)) {
+      setMessage({ type: "error", text: "Select a valid month before saving fixed costs." });
+      return;
+    }
+    if (setupData.avg_order_value <= 0) {
+      setMessage({ type: "error", text: "Average order value must be greater than zero." });
+      return;
+    }
+
+    setIsSavingSetup(true);
+    setMessage(null);
     try {
       const response = await fetch(`${API_BASE}/setup?${new URLSearchParams(setupData as any)}`, {
         method: 'POST',
         credentials: "include",
       });
-      if (!response.ok) throw new Error(`Request failed with HTTP ${response.status}.`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || `Request failed with HTTP ${response.status}.`);
       setShowSetup(false);
       await fetchData();
+      setMessage({ type: "success", text: `Break-even setup saved for ${result.month || setupData.month}.` });
     } catch (error) {
       console.warn("Break-even setup could not be updated", error);
+      setMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : "Break-even setup could not be updated.",
+      });
+    } finally {
+      setIsSavingSetup(false);
     }
+  };
+
+  const updateSetupNumber = (key: "rent" | "salaries" | "utilities" | "other_fixed" | "avg_order_value", value: string) => {
+    setSetupData((current) => ({
+      ...current,
+      [key]: Number.isFinite(Number(value)) ? Number(value) : 0,
+    }));
   };
 
   return (
@@ -78,6 +110,23 @@ export default function BreakevenPage() {
           <Settings className="w-5 h-5" /> Configure Fixed Costs
         </button>
       </div>
+
+      {message && (
+        <div
+          className={`mb-6 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            message.type === "success"
+              ? "border-green-500/30 bg-green-500/10 text-green-100"
+              : "border-red-500/30 bg-red-500/10 text-red-100"
+          }`}
+        >
+          {message.type === "success" ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <span>{message.text}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Main Analysis */}
@@ -149,26 +198,46 @@ export default function BreakevenPage() {
 
       {showSetup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-xl p-4">
-          <div className="w-full max-w-lg bg-[#1a1a1c] rounded-[3rem] p-10 border border-white/10 animate-in zoom-in-95 duration-350">
+          <div
+            data-testid="breakeven-setup-modal"
+            className="w-full max-w-2xl bg-[#1a1a1c] rounded-[3rem] p-10 border border-white/10 animate-in zoom-in-95 duration-350"
+          >
             <h2 className="text-2xl font-bold mb-8 text-center bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">Configure Monthly Base</h2>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Rent</span>
-                  <input type="number" value={setupData.rent} onChange={(e)=>setSetupData({...setupData, rent: parseInt(e.target.value)}) } className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-white/20" />
+                  <input aria-label="Rent" type="number" value={setupData.rent} disabled={isSavingSetup} onChange={(e)=>updateSetupNumber("rent", e.target.value)} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-white/20 disabled:cursor-wait disabled:opacity-60" />
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Salaries</span>
-                  <input type="number" value={setupData.salaries} onChange={(e)=>setSetupData({...setupData, salaries: parseInt(e.target.value)}) } className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-white/20" />
+                  <input aria-label="Salaries" type="number" value={setupData.salaries} disabled={isSavingSetup} onChange={(e)=>updateSetupNumber("salaries", e.target.value)} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-white/20 disabled:cursor-wait disabled:opacity-60" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Utilities</span>
+                  <input aria-label="Utilities" type="number" value={setupData.utilities} disabled={isSavingSetup} onChange={(e)=>updateSetupNumber("utilities", e.target.value)} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-white/20 disabled:cursor-wait disabled:opacity-60" />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Other Fixed</span>
+                  <input aria-label="Other Fixed" type="number" value={setupData.other_fixed} disabled={isSavingSetup} onChange={(e)=>updateSetupNumber("other_fixed", e.target.value)} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-white/20 disabled:cursor-wait disabled:opacity-60" />
                 </div>
               </div>
-              <div>
-                <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Month Select (YYYY-MM)</span>
-                <input type="month" value={setupData.month} onChange={(e)=>setSetupData({...setupData, month: e.target.value})} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none" />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Month Select (YYYY-MM)</span>
+                  <input aria-label="Month Select" type="month" value={setupData.month} disabled={isSavingSetup} onChange={(e)=>setSetupData({...setupData, month: e.target.value})} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none disabled:cursor-wait disabled:opacity-60" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black text-gray-500 uppercase ml-1">Average Order Value</span>
+                  <input aria-label="Average Order Value" type="number" value={setupData.avg_order_value} disabled={isSavingSetup} onChange={(e)=>updateSetupNumber("avg_order_value", e.target.value)} className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none disabled:cursor-wait disabled:opacity-60" />
+                </div>
               </div>
               <div className="flex gap-4 pt-6">
-                 <button onClick={() => setShowSetup(false)} className="flex-1 p-5 rounded-2xl font-bold text-gray-400 hover:text-white transition-colors">Cancel</button>
-                 <button onClick={saveSetup} className="flex-1 bg-white text-black p-5 rounded-2xl font-black hover:bg-green-500 hover:text-white transition-all active:scale-95 shadow-2xl">Apply & Update</button>
+                 <button disabled={isSavingSetup} onClick={() => setShowSetup(false)} className="flex-1 p-5 rounded-2xl font-bold text-gray-400 hover:text-white transition-colors disabled:cursor-wait disabled:opacity-50">Cancel</button>
+                 <button disabled={isSavingSetup} onClick={saveSetup} className="flex flex-1 items-center justify-center gap-2 bg-white text-black p-5 rounded-2xl font-black hover:bg-green-500 hover:text-white transition-all active:scale-95 shadow-2xl disabled:cursor-wait disabled:bg-white/20 disabled:text-white/60">
+                  {isSavingSetup && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {isSavingSetup ? "Saving..." : "Apply & Update"}
+                 </button>
               </div>
             </div>
           </div>
