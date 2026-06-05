@@ -287,9 +287,10 @@ const routeInventory = [
     "tracking",
     "protected",
   ], { sourceRoute: false, sourcePath: path.join("kitchen-ticket", "[orderId]", "page.tsx") }),
-  entry("/purchase-orders/:orderId", "Purchase order detail route", "verify-inventory-command-board.cjs", [
+  entry("/purchase-orders/:orderId", "Purchase order detail route", "verify-action-feedback-hygiene.cjs", [
     "inventory",
     "approval",
+    "mutation",
     "protected",
   ], {
     admin: true,

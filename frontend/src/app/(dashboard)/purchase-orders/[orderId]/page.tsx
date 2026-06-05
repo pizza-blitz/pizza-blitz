@@ -178,7 +178,7 @@ export default function PurchaseOrderDetail() {
         <Link href="/purchase-orders" className="inline-flex items-center text-sm font-bold text-orange-700">
           <ArrowLeft className="mr-2 h-4 w-4" /> Back to purchase orders
         </Link>
-        <div className="rounded-xl border border-red-100 bg-red-50 p-5 font-semibold text-red-700">
+        <div role="alert" className="rounded-xl border border-red-100 bg-red-50 p-5 font-semibold text-red-700">
           {message || "Purchase order not found."}
         </div>
       </div>
@@ -188,7 +188,7 @@ export default function PurchaseOrderDetail() {
   const canEdit = order.status !== "received";
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div data-testid="purchase-order-detail" className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <Link href="/purchase-orders" className="inline-flex items-center text-sm font-bold text-orange-700 hover:text-orange-900">
@@ -209,6 +209,7 @@ export default function PurchaseOrderDetail() {
           {canEdit && (
             <button
               type="button"
+              data-testid="purchase-order-save-bill"
               onClick={saveReconciliation}
               disabled={saving !== ""}
               className="inline-flex items-center rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-60"
@@ -220,6 +221,7 @@ export default function PurchaseOrderDetail() {
           {order.status === "draft" && (
             <button
               type="button"
+              data-testid="purchase-order-mark-sent"
               onClick={() => updateStatus("sent")}
               disabled={saving !== ""}
               className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
@@ -231,6 +233,7 @@ export default function PurchaseOrderDetail() {
           {canEdit && (
             <button
               type="button"
+              data-testid="purchase-order-receive-stock"
               onClick={() => updateStatus("receive")}
               disabled={saving !== ""}
               className="inline-flex items-center rounded-lg border border-green-200 bg-green-50 px-4 py-2 font-bold text-green-700 hover:bg-green-100 disabled:opacity-60"
@@ -243,7 +246,11 @@ export default function PurchaseOrderDetail() {
       </div>
 
       {message && (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
+        <div
+          role="alert"
+          data-testid="purchase-order-action-message"
+          className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800"
+        >
           {message}
         </div>
       )}
@@ -255,7 +262,9 @@ export default function PurchaseOrderDetail() {
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Current Total</p>
-          <p className="mt-2 text-2xl font-black text-gray-900">Rs. {totalAmount.toLocaleString()}</p>
+          <p data-testid="purchase-order-current-total" className="mt-2 text-2xl font-black text-gray-900">
+            Rs. {totalAmount.toLocaleString()}
+          </p>
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wide text-gray-400">Created</p>
@@ -288,6 +297,7 @@ export default function PurchaseOrderDetail() {
                   </td>
                   <td className="px-4 py-3">
                     <input
+                      aria-label={`Ordered quantity for ${line.name}`}
                       type="number"
                       min="0"
                       step="0.01"
@@ -299,6 +309,7 @@ export default function PurchaseOrderDetail() {
                   </td>
                   <td className="px-4 py-3">
                     <input
+                      aria-label={`Received quantity for ${line.name}`}
                       type="number"
                       min="0"
                       step="0.01"
@@ -310,6 +321,7 @@ export default function PurchaseOrderDetail() {
                   </td>
                   <td className="px-4 py-3">
                     <input
+                      aria-label={`Unit cost for ${line.name}`}
                       type="number"
                       min="0"
                       step="0.01"

@@ -70,6 +70,29 @@ async function signInAsAdmin(context) {
 }
 
 async function installApiFixtures(page) {
+  const purchaseOrderDetailRequests = [];
+  let purchaseOrderSaveMode = "error";
+  const purchaseOrderDetail = {
+    id: 804,
+    supplier_name: "Fresh Dairy",
+    supplier_whatsapp: "919999000001",
+    status: "draft",
+    total_amount: 2400,
+    created_at: "2026-06-03T10:00:00Z",
+    items: [
+      {
+        inventory_item_id: 11,
+        name: "Mozzarella",
+        unit: "kg",
+        quantity: 8,
+        needed: 8,
+        received_quantity: 8,
+        unit_cost: 300,
+        estimated_cost: 2400,
+      },
+    ],
+  };
+
   await page.route(/\/api\/v1\/restaurant\/stats\/insights\/health-score$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -127,6 +150,97 @@ async function installApiFixtures(page) {
     });
   });
 
+  await page.route("**/api/v1/restaurant/purchase-orders/804**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const pathname = url.pathname.replace(/\/$/, "");
+    purchaseOrderDetailRequests.push(`${request.method()} ${pathname}`);
+
+    if (request.method() === "GET" && pathname.endsWith("/purchase-orders/804")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(purchaseOrderDetail),
+      });
+      return;
+    }
+
+    if (request.method() === "PATCH" && pathname.endsWith("/purchase-orders/804/items")) {
+      await sleep(500);
+      if (purchaseOrderSaveMode === "error") {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Supplier bill service is unavailable for this proof." }),
+        });
+        return;
+      }
+
+      const payload = request.postDataJSON();
+      purchaseOrderDetail.items = payload.items;
+      purchaseOrderDetail.total_amount = payload.items.reduce(
+        (sum, item) => sum + Number(item.estimated_cost || 0),
+        0
+      );
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          purchase_order: purchaseOrderDetail,
+          items: purchaseOrderDetail.items,
+          total_amount: purchaseOrderDetail.total_amount,
+        }),
+      });
+      return;
+    }
+
+    if (request.method() === "PATCH" && pathname.endsWith("/purchase-orders/804/sent")) {
+      await sleep(400);
+      purchaseOrderDetail.status = "sent";
+      purchaseOrderDetail.whatsapp_sent_at = "2026-06-03T11:00:00Z";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: purchaseOrderDetail.status,
+          purchase_order: purchaseOrderDetail,
+        }),
+      });
+      return;
+    }
+
+    if (request.method() === "PATCH" && pathname.endsWith("/purchase-orders/804/receive")) {
+      await sleep(400);
+      purchaseOrderDetail.status = "received";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: purchaseOrderDetail.status,
+          purchase_order: purchaseOrderDetail,
+          inventory_updates: [
+            {
+              inventory_item_id: 11,
+              name: "Mozzarella",
+              quantity: 9,
+              unit: "kg",
+              previous_stock: 2,
+              new_stock: 11,
+              unit_cost: 310,
+              total_cost: 2790,
+            },
+          ],
+          skipped_items: [],
+          expense: { amount: 2790 },
+          vendor_prices: [{ item_name: "Mozzarella", price_per_unit: 310, unit: "kg" }],
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
   await page.route(/\/api\/v1\/restaurant\/purchase-orders\/$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -175,6 +289,13 @@ async function installApiFixtures(page) {
       }),
     });
   });
+
+  return {
+    purchaseOrderDetailRequests,
+    setPurchaseOrderSaveMode(nextMode) {
+      purchaseOrderSaveMode = nextMode;
+    },
+  };
 }
 
 async function proveCeoFeedback(page, watch) {
@@ -213,6 +334,77 @@ async function provePurchaseOrderFeedback(page, watch) {
   watch.assertClean("purchase order search and disabled WhatsApp feedback");
 }
 
+async function provePurchaseOrderDetailFeedback(page, watch, fixtures) {
+  watch.clear();
+  const response = await page.goto(`${baseURL}/purchase-orders/804`, { waitUntil: "domcontentloaded" });
+  assert(response && response.ok(), `/purchase-orders/804 returned HTTP ${response?.status() || "no response"}.`);
+  await page.getByTestId("purchase-order-detail").waitFor({ timeout: 15000 });
+  await page.getByRole("heading", { name: "PO-804" }).waitFor({ timeout: 15000 });
+  await page.getByText("Fresh Dairy", { exact: true }).waitFor({ timeout: 15000 });
+
+  await page.getByLabel("Received quantity for Mozzarella", { exact: true }).fill("9");
+  await page.getByLabel("Unit cost for Mozzarella", { exact: true }).fill("310");
+  await page.getByTestId("purchase-order-current-total").getByText("Rs. 2,790", { exact: true }).waitFor({
+    timeout: 15000,
+  });
+
+  await page.getByTestId("purchase-order-save-bill").click();
+  await page.getByRole("alert").getByText("Supplier bill service is unavailable for this proof.", { exact: true }).waitFor({
+    timeout: 15000,
+  });
+
+  fixtures.setPurchaseOrderSaveMode("success");
+  await page.getByTestId("purchase-order-save-bill").click();
+  await page.getByTestId("purchase-order-action-message").getByText(
+    "Saved supplier bill reconciliation. New PO total is Rs. 2,790.",
+    { exact: true }
+  ).waitFor({ timeout: 15000 });
+
+  await page.getByTestId("purchase-order-mark-sent").click();
+  await page.getByTestId("purchase-order-action-message").getByText("Marked PO-804 as sent.", { exact: true }).waitFor({
+    timeout: 15000,
+  });
+  await page.getByText("sent", { exact: true }).waitFor({ timeout: 15000 });
+  assert(
+    (await page.getByTestId("purchase-order-mark-sent").count()) === 0,
+    "Mark Sent button remained visible after the purchase order was sent."
+  );
+
+  await page.getByTestId("purchase-order-receive-stock").click();
+  await page.getByTestId("purchase-order-action-message").getByText(
+    "Received PO-804; inventory updated for 1 item, expense posted for Rs. 2,790, and 1 supplier price logged.",
+    { exact: true }
+  ).waitFor({ timeout: 15000 });
+  await page.getByText("received", { exact: true }).waitFor({ timeout: 15000 });
+  assert(
+    (await page.getByTestId("purchase-order-save-bill").count()) === 0,
+    "Save Bill button remained visible after the purchase order was received."
+  );
+  assert(
+    (await page.getByTestId("purchase-order-receive-stock").count()) === 0,
+    "Receive Stock button remained visible after the purchase order was received."
+  );
+
+  assert(
+    fixtures.purchaseOrderDetailRequests.some((request) => request.endsWith("/purchase-orders/804/items")),
+    "The proof did not exercise supplier bill reconciliation."
+  );
+  assert(
+    fixtures.purchaseOrderDetailRequests.some((request) => request.endsWith("/purchase-orders/804/sent")),
+    "The proof did not exercise Mark Sent."
+  );
+  assert(
+    fixtures.purchaseOrderDetailRequests.some((request) => request.endsWith("/purchase-orders/804/receive")),
+    "The proof did not exercise Receive Stock."
+  );
+  watch.assertClean("purchase order detail actions");
+
+  await page.screenshot({
+    path: path.join(artifactsDir, "visible-purchase-order-detail-actions.png"),
+    fullPage: true,
+  });
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(baseURL, "frontend");
@@ -227,9 +419,10 @@ async function main() {
 
   try {
     await signInAsAdmin(context);
-    await installApiFixtures(page);
+    const fixtures = await installApiFixtures(page);
     await proveCeoFeedback(page, watch);
     await provePurchaseOrderFeedback(page, watch);
+    await provePurchaseOrderDetailFeedback(page, watch, fixtures);
 
     const artifact = {
       checkedAt: new Date().toISOString(),
@@ -238,11 +431,30 @@ async function main() {
         "CEO weekly pulse failure shows inline feedback without alert dialog.",
         "Purchase order supplier missing WhatsApp uses disabled button, not href hash.",
         "Purchase order search filters visible order history and shows empty result state.",
+        "Purchase order detail actions reconcile supplier bill, show backend errors inline, mark sent, receive stock and lock received orders.",
       ],
     };
     fs.writeFileSync(
       path.join(artifactsDir, "action-feedback-hygiene.json"),
       `${JSON.stringify(artifact, null, 2)}\n`
+    );
+
+    const detailArtifact = {
+      checkedAt: new Date().toISOString(),
+      baseURL,
+      route: "/purchase-orders/804",
+      requestCount: fixtures.purchaseOrderDetailRequests.length,
+      proofs: [
+        "Purchase order detail route loads a specific supplier order.",
+        "Received quantity and unit cost update the calculated line and PO total.",
+        "Supplier bill save failure displays backend detail inline without a dialog.",
+        "Successful reconciliation, Mark Sent, and Receive Stock actions update status and feedback.",
+        "Received purchase orders hide edit and receive controls.",
+      ],
+    };
+    fs.writeFileSync(
+      path.join(artifactsDir, "purchase-order-detail-actions.json"),
+      `${JSON.stringify(detailArtifact, null, 2)}\n`
     );
 
     console.log("Action feedback hygiene browser proof passed.");
