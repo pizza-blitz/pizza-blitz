@@ -164,8 +164,9 @@ async function verifyBrowser(report) {
     await page.getByText("E2E Failure Review", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Production Blocker Review", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Release Decision", { exact: true }).waitFor({ timeout: 15000 });
-    await board.getByRole("link", { name: /Production Ops/i }).waitFor({ timeout: 15000 });
-    await board.getByRole("link", { name: /Customer Checkout/i }).waitFor({ timeout: 15000 });
+    const criticalRoutes = page.getByTestId("critical-route-stability");
+    await criticalRoutes.locator('a[href="/ops"]').waitFor({ timeout: 15000 });
+    await criticalRoutes.locator('a[href="/order"]').waitFor({ timeout: 15000 });
     await page
       .getByTestId("e2e-failure-review")
       .getByText("verify-launch-candidate-hardening.cjs", { exact: true })
