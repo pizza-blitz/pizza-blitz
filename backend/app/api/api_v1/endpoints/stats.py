@@ -1152,6 +1152,10 @@ def weekly_whatsapp_summary(db: Session = Depends(get_db)):
     wow = round((this_rev - last_rev) / last_rev * 100, 1) if last_rev > 0 else 0
     margin = round(float(this_week.profit) / this_rev * 100, 1) if this_rev > 0 else 0
     arrow = "↑" if wow >= 0 else "↓"
+    best_label = best.date.strftime('%a %d %b') if best else "N/A"
+    best_revenue = round(float(best.total_sale or 0)) if best else 0
+    worst_label = worst.date.strftime('%a %d %b') if worst else "N/A"
+    worst_revenue = round(float(worst.total_sale or 0)) if worst else 0
     message = f"""🍕 *Pizza Blitz — Weekly Summary*
 📅 {week_start.strftime('%d %b')} – {today.strftime('%d %b %Y')}
 
@@ -1159,8 +1163,8 @@ def weekly_whatsapp_summary(db: Session = Depends(get_db)):
 {arrow} *vs Last Week:* {wow}%
 📊 *Profit Margin:* {margin}%
 
-🏆 *Best Day:* {best.date.strftime('%a %d %b') if best else 'N/A'} — ₹{round(float(best.total_sale)):,}
-📉 *Slowest Day:* {worst.date.strftime('%a %d %b') if worst else 'N/A'} — ₹{round(float(worst.total_sale)):,}
+🏆 *Best Day:* {best_label} — ₹{best_revenue:,}
+📉 *Slowest Day:* {worst_label} — ₹{worst_revenue:,}
 🗑️ *Top Waste:* {top_waste.item_name if top_waste else 'None'} (₹{round(float(top_waste.cost)) if top_waste else 0})
 
 {'✅ Strong week!' if wow > 5 else '⚠️ Revenue dipped. Review slow days.' if wow < -5 else '➡️ Stable week. Push weekend offers.'}
