@@ -64,7 +64,7 @@ const progressCards = [
   {
     label: "Overall Product",
     value: "86%",
-    note: "Current implementation score is 86%: portal, POS, kitchen, delivery, CRM, reporting and proof boards are working with zero blocked modules; the remaining gap is external production proof.",
+    note: "Current implementation score is 86%: portal, POS, kitchen, delivery, CRM, reporting and proof boards are working with zero blocked modules; remaining gaps are production proofs and direct staff credential provisioning.",
   },
   {
     label: "Order Operations",
@@ -221,7 +221,7 @@ const completedValue: RoadmapItem[] = [
   {
     title: "Authentication and role hardening",
     status: "done",
-    value: "Security overview is now admin-only, Settings shows role gates, account recovery controls and audit controls, and browser/API proof covers admin, staff and customer boundaries.",
+    value: "Security overview is admin-only, Settings shows role gates, account recovery controls and audit controls, and browser/API proof covers admin, customer and staff-route boundaries; direct staff credentials still need production provisioning.",
   },
   {
     title: "Customer account lifecycle",
