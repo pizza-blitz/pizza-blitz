@@ -411,11 +411,13 @@ function main() {
         baseURL: safeActionArtifact.baseURL,
         sourceRoutes: safeActionArtifact.sourceRoutes,
         clickedCount: safeActionArtifact.clickedCount,
+        skippedCount: safeActionArtifact.skipped?.length || 0,
       }
     : {
         baseURL: "",
         sourceRoutes: 0,
         clickedCount: 0,
+        skippedCount: 0,
         note: "Run verify:actions to refresh safe-click counts.",
       };
 
@@ -510,6 +512,10 @@ function main() {
   assert(
     !safeActionArtifact || latestSafeActionAudit.clickedCount >= 20,
     `Latest safe action audit clicked only ${latestSafeActionAudit.clickedCount} controls.`
+  );
+  assert(
+    !safeActionArtifact || latestSafeActionAudit.skippedCount === 0,
+    `Latest safe action audit still has ${latestSafeActionAudit.skippedCount} skipped candidates.`
   );
 
   console.log(
