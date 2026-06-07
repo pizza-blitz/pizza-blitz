@@ -83,6 +83,7 @@ function entry(route, area, proof, actionClasses, options = {}) {
     sourceRoute: options.sourceRoute !== false,
     sourcePath: routeSource(route, options),
     proof,
+    artifact: options.artifact || "",
     actionClasses,
     gate: options.gate || "",
   };
@@ -281,12 +282,20 @@ const routeInventory = [
     "tracking",
     "payment-gated",
     "navigation",
-  ], { sourceRoute: false, sourcePath: path.join("receipt", "[orderId]", "page.tsx") }),
+  ], {
+    sourceRoute: false,
+    sourcePath: path.join("receipt", "[orderId]", "page.tsx"),
+    artifact: "visible-customer-receipt-route.png",
+  }),
   entry("/kitchen-ticket/:orderId", "Kitchen ticket route", "verify-counter-kitchen-ticket.cjs", [
     "kitchen",
     "tracking",
     "protected",
-  ], { sourceRoute: false, sourcePath: path.join("kitchen-ticket", "[orderId]", "page.tsx") }),
+  ], {
+    sourceRoute: false,
+    sourcePath: path.join("kitchen-ticket", "[orderId]", "page.tsx"),
+    artifact: "visible-counter-kitchen-ticket.png",
+  }),
   entry("/purchase-orders/:orderId", "Purchase order detail route", "verify-action-feedback-hygiene.cjs", [
     "inventory",
     "approval",
@@ -296,6 +305,7 @@ const routeInventory = [
     admin: true,
     sourceRoute: false,
     sourcePath: path.join("(dashboard)", "purchase-orders", "[orderId]", "page.tsx"),
+    artifact: "purchase-order-detail-actions.json",
   }),
 ];
 
@@ -350,6 +360,7 @@ function main() {
   const results = routeInventory.map((route) => {
     const absoluteSourcePath = path.join(appDir, route.sourcePath);
     const proofPath = path.join(e2eDir, route.proof);
+    const artifactPath = route.artifact ? path.join(artifactsDir, route.artifact) : "";
     const invalidActionClasses = route.actionClasses.filter((actionClass) => !allowedActionClasses.has(actionClass));
     const sourceControls = interactiveArtifact?.byRoute?.[route.route] || null;
 
@@ -357,6 +368,8 @@ function main() {
       ...route,
       sourceExists: fs.existsSync(absoluteSourcePath),
       proofExists: fs.existsSync(proofPath),
+      artifactExists:
+        !route.artifact || fs.existsSync(artifactPath) || proofWritesArtifact(route.proof, route.artifact),
       invalidActionClasses,
       sourceControls,
       hasControlArtifactCoverage: !route.sourceRoute || Boolean(sourceControls),
@@ -372,6 +385,7 @@ function main() {
   );
   const missingSource = results.filter((item) => !item.sourceExists);
   const missingProof = results.filter((item) => !item.proofExists);
+  const missingDynamicArtifact = results.filter((item) => !item.sourceRoute && !item.artifactExists);
   const invalidClasses = results.filter((item) => item.invalidActionClasses.length > 0);
   const missingInteractiveProofRoutes = results.filter((item) => item.missingFromInteractiveProof);
   const missingSafeActionProofRoutes = results.filter((item) => item.missingFromSafeActionProof);
@@ -441,6 +455,7 @@ function main() {
       sourceRouteMismatches,
       missingSource: missingSource.map((item) => ({ route: item.route, sourcePath: item.sourcePath })),
       missingProof: missingProof.map((item) => ({ route: item.route, proof: item.proof })),
+      missingDynamicArtifact: missingDynamicArtifact.map((item) => ({ route: item.route, artifact: item.artifact })),
       invalidClasses: invalidClasses.map((item) => ({
         route: item.route,
         invalidActionClasses: item.invalidActionClasses,
@@ -457,6 +472,7 @@ function main() {
       sourceRoute: item.sourceRoute,
       sourcePath: item.sourcePath,
       proof: item.proof,
+      artifact: item.artifact,
       actionClasses: item.actionClasses,
       gate: item.gate,
       sourceControls: item.sourceControls,
@@ -483,6 +499,7 @@ function main() {
   assert(sourceRouteMismatches.length === 0, `Route action inventory is missing source routes: ${sourceRouteMismatches.join(", ")}`);
   assert(missingSource.length === 0, `Route action inventory has missing source files:\n${missingSource.map((item) => `${item.route}: ${item.sourcePath}`).join("\n")}`);
   assert(missingProof.length === 0, `Route action inventory has missing proof files:\n${missingProof.map((item) => `${item.route}: ${item.proof}`).join("\n")}`);
+  assert(missingDynamicArtifact.length === 0, `Route action inventory has dynamic routes without named artifact evidence:\n${missingDynamicArtifact.map((item) => `${item.route}: ${item.artifact || "missing artifact"}`).join("\n")}`);
   assert(invalidClasses.length === 0, `Route action inventory has invalid action classes:\n${invalidClasses.map((item) => `${item.route}: ${item.invalidActionClasses.join(", ")}`).join("\n")}`);
   assert(missingInteractiveProofRoutes.length === 0, `Interactive control proof is missing routes: ${missingInteractiveProofRoutes.map((item) => item.route).join(", ")}`);
   assert(missingSafeActionProofRoutes.length === 0, `Safe action proof is missing routes: ${missingSafeActionProofRoutes.map((item) => item.route).join(", ")}`);

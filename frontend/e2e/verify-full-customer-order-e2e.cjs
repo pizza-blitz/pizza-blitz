@@ -241,9 +241,15 @@ async function main() {
 
     await page.goto(`${baseURL}${receiptHref}`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Customer Receipt" }).waitFor({ timeout: 15000 });
+    await page.getByTestId("customer-receipt-ticket").waitFor({ timeout: 15000 });
+    await page.getByTestId("receipt-print-command").waitFor({ timeout: 15000 });
     await assertHealthyPage(page, "customer receipt page");
     await page.getByText(`PB-ORDER-${orderId}`, { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText(customizableItem.optionName, { exact: false }).waitFor({ timeout: 15000 });
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-customer-receipt-route.png"),
+      fullPage: true,
+    });
 
     await page.goto(`${baseURL}${trackingHref}`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: new RegExp(`Order #${orderId}`, "i") }).waitFor({ timeout: 15000 });

@@ -179,6 +179,7 @@ export default function ReceiptPage() {
           <div className="flex gap-2">
             {!isCustomerReceipt && (
               <button
+                data-testid="receipt-generate-invoice"
                 onClick={generateInvoice}
                 disabled={!order || isGeneratingInvoice}
                 className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700 disabled:opacity-50"
@@ -192,6 +193,7 @@ export default function ReceiptPage() {
               </button>
             )}
             <button
+              data-testid="receipt-print-command"
               onClick={() => window.print()}
               disabled={!order}
               className="flex items-center gap-2 rounded-md bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:bg-slate-300"
@@ -202,7 +204,11 @@ export default function ReceiptPage() {
         </div>
 
         {message && (
-          <div className="mb-4 rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800 print:hidden">
+          <div
+            role="alert"
+            data-testid="receipt-message"
+            className="mb-4 rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800 print:hidden"
+          >
             {message}
           </div>
         )}
@@ -215,7 +221,10 @@ export default function ReceiptPage() {
         )}
 
         {!isLoading && order && (
-          <main className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm print:rounded-none print:border-0 print:p-0 print:shadow-none">
+          <main
+            data-testid="customer-receipt-ticket"
+            className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm print:rounded-none print:border-0 print:p-0 print:shadow-none"
+          >
             <header className="border-b border-slate-200 pb-5">
               <div className="flex items-start justify-between gap-4">
                 <div>

@@ -429,6 +429,11 @@ const completedValue: RoadmapItem[] = [
     value: "Purchase order detail now has direct browser proof for bill reconciliation, backend-error feedback, mark-sent status, receive-stock handoff and locked received orders.",
   },
   {
+    title: "Customer receipt route artifact proof",
+    status: "done",
+    value: "Customer receipt route now exposes stable controls and saves its own receipt screenshot artifact instead of relying only on the order-flow screenshot.",
+  },
+  {
     title: "Direct bank settlement artifact proof",
     status: "done",
     value: "Direct bank settlement proof now saves visible evidence after confirming prepaid order settlement, audit entry and cleanup.",
@@ -1005,8 +1010,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "47",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, direct bank settlement, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, restore rehearsal, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, source text hygiene and roadmap.",
+    value: "48",
+    note: "Checkout, customer E2E, customer receipt route, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, direct bank settlement, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, restore rehearsal, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, source text hygiene and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1039,6 +1044,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Catalog, customization, delivery checkout, receipt route, tracking route and backend handoff stay connected.",
     artifact: "visible-full-customer-order-e2e.png",
+  },
+  {
+    area: "Customer receipt route",
+    proof: "verify-full-customer-order-e2e.cjs",
+    status: "passed",
+    value: "Receipt ticket, print command, customer-safe order lookup and customization lines now save a dedicated receipt-route artifact.",
+    artifact: "visible-customer-receipt-route.png",
   },
   {
     area: "Counter order E2E",
@@ -1374,8 +1386,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "49 / 49",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, direct bank settlement, restore rehearsal, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "50 / 50",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, customer receipt route, purchase order detail actions, direct bank settlement, restore rehearsal, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

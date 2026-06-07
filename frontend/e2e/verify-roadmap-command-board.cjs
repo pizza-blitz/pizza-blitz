@@ -94,7 +94,7 @@ async function main() {
     await page.getByText("verify-deployment-pipeline.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-direct-bank-settlement-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-restore-rehearsal-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-full-customer-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("verify-full-customer-order-e2e.cjs", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("verify-counter-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-delivery-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
@@ -149,6 +149,8 @@ async function main() {
     await page.getByText("invoice-archive-actions.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Recipe intelligence actions proof", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("recipe-intelligence-actions.json", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("Customer receipt route artifact proof", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("visible-customer-receipt-route.png", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Purchase order detail actions proof", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("purchase-order-detail-actions.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Direct bank settlement artifact proof", { exact: true }).waitFor({ timeout: 15000 });
@@ -157,7 +159,7 @@ async function main() {
     await page.getByText("visible-restore-rehearsal-command.png", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Source text hygiene audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("source-text-hygiene.json", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("49 / 49", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("50 / 50", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("30 / 60 / 90 Day Direction", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Daily Execution Plan To 20 June", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Payment gateway production pass", { exact: true }).waitFor({ timeout: 15000 });
