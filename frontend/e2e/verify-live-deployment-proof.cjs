@@ -7,6 +7,9 @@ const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 const artifactsDir = path.join(__dirname, "artifacts");
+const liveProofTimeoutMs = Number(
+  process.env.E2E_LIVE_DEPLOYMENT_TIMEOUT_MS || (baseURL.includes("vercel.app") ? 90000 : 30000)
+);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -144,7 +147,7 @@ async function verifyBrowser(proof) {
     await page
       .getByTestId("ops-message")
       .getByText("Live deployment proof passed", { exact: false })
-      .waitFor({ timeout: 30000 });
+      .waitFor({ timeout: liveProofTimeoutMs });
     await page.screenshot({
       path: path.join(artifactsDir, "visible-live-deployment-proof.png"),
       fullPage: true,
