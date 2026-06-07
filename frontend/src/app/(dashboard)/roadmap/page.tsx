@@ -429,6 +429,16 @@ const completedValue: RoadmapItem[] = [
     value: "Purchase order detail now has direct browser proof for bill reconciliation, backend-error feedback, mark-sent status, receive-stock handoff and locked received orders.",
   },
   {
+    title: "Direct bank settlement artifact proof",
+    status: "done",
+    value: "Direct bank settlement proof now saves visible evidence after confirming prepaid order settlement, audit entry and cleanup.",
+  },
+  {
+    title: "Restore rehearsal artifact proof",
+    status: "done",
+    value: "Restore rehearsal proof now saves visible evidence after strict weak-proof rejection and either an automated restore pass or an explicit restore-proof blocker.",
+  },
+  {
     title: "Source text hygiene audit",
     status: "done",
     value: "Inventory scan navigation now uses a lucide camera icon instead of corrupted emoji text, and source files are checked for mojibake or emoji UI text.",
@@ -995,8 +1005,8 @@ const june20Push: DailyPlan[] = [
 const stabilizationMetrics: StabilizationMetric[] = [
   {
     label: "Critical Proofs",
-    value: "45",
-    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, source text hygiene and roadmap.",
+    value: "47",
+    note: "Checkout, customer E2E, counter E2E, delivery E2E, typecheck gate, dashboard polish, operational command board, launch candidate, final acceptance, beta delivery, production launch, live environment, credential activation, order flow, customization, delivery, payment, direct bank settlement, messaging, social, ad sync, marketing live-readiness, data quality export, reporting, beta review, DB path, restore rehearsal, secrets, deploy, production ops, visual audit, navigation link health, interactive control labels, safe action buttons, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, source text hygiene and roadmap.",
   },
   {
     label: "Route / View Audit",
@@ -1073,6 +1083,13 @@ const stabilizationProofs: StabilizationProof[] = [
     artifact: "visible-payment-production-pass.png",
   },
   {
+    area: "Direct bank settlement",
+    proof: "verify-direct-bank-settlement-command.cjs",
+    status: "passed",
+    value: "Prepaid order settlement through direct bank, payment-event audit visibility and cleanup now produce visible proof evidence.",
+    artifact: "visible-direct-bank-settlement-command.png",
+  },
+  {
     area: "Frontend typecheck gate",
     proof: "npm run typecheck",
     status: "passed",
@@ -1127,6 +1144,13 @@ const stabilizationProofs: StabilizationProof[] = [
     status: "passed",
     value: "Managed DB target, migration checklist, backup/restore drill and blockers are visible.",
     artifact: "visible-production-database-path.png",
+  },
+  {
+    area: "Restore rehearsal command",
+    proof: "verify-restore-rehearsal-command.cjs",
+    status: "watch",
+    value: "Strict weak-proof rejection plus automated pass or explicit managed-restore blocker now produce visible proof evidence.",
+    artifact: "visible-restore-rehearsal-command.png",
   },
   {
     area: "Environment secrets security",
@@ -1350,8 +1374,8 @@ const stabilizationProofs: StabilizationProof[] = [
 const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Proof Audit",
-    value: "47 / 47",
-    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
+    value: "49 / 49",
+    note: "Critical browser, API, typecheck, navigation link health, interactive control label, safe action button, feature action coverage, route action inventory, action placeholder hygiene, action feedback browser proof, break-even setup feedback, AI insights feedback, inventory scan feedback, vendor and waste operations, invoice archive actions, recipe intelligence actions, purchase order detail actions, direct bank settlement, restore rehearsal, source text hygiene and production proof-order hygiene checks now have named artifacts on the roadmap.",
   },
   {
     label: "Known Blockers",

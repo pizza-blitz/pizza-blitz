@@ -88,6 +88,7 @@ const requirements = [
       "visible-payment-readiness-webhook.png",
       "visible-payment-counter-proof-command.png",
       "visible-payment-gateway-activation.png",
+      "visible-direct-bank-settlement-command.png",
     ],
     gate: "Needs real gateway/bank credentials and one low-value live transaction.",
   },
@@ -237,6 +238,7 @@ const requirements = [
       "visible-deployment-pipeline.png",
       "visible-logical-backup-proof.png",
       "visible-managed-backup-proof-actions.png",
+      "visible-restore-rehearsal-command.png",
     ],
     gate: "Needs a clean restore target and recurring managed backup evidence.",
   },
@@ -282,11 +284,13 @@ function main() {
       pendingArtifacts,
       proofCount: requirement.proofs.length,
       artifactCount: requirement.artifacts.length,
+      evidenceCountGap: requirement.proofs.length > requirement.artifacts.length,
       ready: missingProofs.length === 0 && missingArtifacts.length === 0,
     };
   });
 
   const missing = results.filter((result) => !result.ready);
+  const evidenceCountGaps = results.filter((result) => result.evidenceCountGap);
   const providerOrEnvironmentGated = results.filter((result) => result.status !== "covered");
   const allProofs = unique(requirements.flatMap((requirement) => requirement.proofs));
   const allArtifacts = unique(requirements.flatMap((requirement) => requirement.artifacts));
@@ -302,6 +306,7 @@ function main() {
       uniqueProofFiles: allProofs.length,
       uniqueArtifacts: allArtifacts.length,
       providerOrEnvironmentGates: providerOrEnvironmentGated.length,
+      evidenceCountGaps: evidenceCountGaps.length,
     },
     gates: providerOrEnvironmentGated.map((result) => ({
       area: result.area,
@@ -322,6 +327,12 @@ function main() {
             item.missingArtifacts.join(", ") || "ok"
           }`
       )
+      .join("\n")}`
+  );
+  assert(
+    evidenceCountGaps.length === 0,
+    `Feature action coverage has proof/artifact count gaps:\n${evidenceCountGaps
+      .map((item) => `${item.area}: proofs=${item.proofCount} artifacts=${item.artifactCount}`)
       .join("\n")}`
   );
 

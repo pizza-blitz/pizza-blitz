@@ -1,4 +1,6 @@
 const { chromium } = require("@playwright/test");
+const fs = require("fs");
+const path = require("path");
 const { cleanupProofOrder, cookieHeaderFromSetCookie } = require("./helpers/order-cleanup.cjs");
 
 const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
@@ -10,6 +12,7 @@ const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 const paymentActionTimeoutMs = Number(
   process.env.E2E_PAYMENT_ACTION_TIMEOUT_MS || (baseURL.includes("vercel.app") ? 45000 : 20000)
 );
+const artifactsDir = path.join(__dirname, "artifacts");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -47,6 +50,7 @@ async function createPrepaidOrder() {
 }
 
 async function main() {
+  fs.mkdirSync(artifactsDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     baseURL,
@@ -94,6 +98,11 @@ async function main() {
     assert(order.payment_status === "paid", `Expected paid order, got ${order.payment_status}.`);
     assert(order.payment_provider === "direct_bank", `Expected direct_bank, got ${order.payment_provider}.`);
     assert(order.payment_reference === reference, `Payment reference mismatch: ${order.payment_reference}.`);
+
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-direct-bank-settlement-command.png"),
+      fullPage: true,
+    });
 
     await cleanupProofOrder({
       apiURL,
