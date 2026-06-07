@@ -63,8 +63,8 @@ type DeliveryPhase = {
 const progressCards = [
   {
     label: "Overall Product",
-    value: "94%",
-    note: "Live implementation score is 94%: portal, POS, kitchen, delivery, CRM, reporting and proof boards are working; the remaining gap is external production proof.",
+    value: "86%",
+    note: "Current implementation score is 86%: portal, POS, kitchen, delivery, CRM, reporting and proof boards are working with zero blocked modules; the remaining gap is external production proof.",
   },
   {
     label: "Order Operations",
@@ -73,8 +73,8 @@ const progressCards = [
   },
   {
     label: "Production Readiness",
-    value: "73%",
-    note: "Live readiness score is 73 with no blocked modules; restore rehearsal proof and real payment/growth provider credentials remain the production gates.",
+    value: "83%",
+    note: "Restaurant-ready score is 83 with no blocked modules; managed backup proof, restore rehearsal proof and real payment/growth provider credentials remain the production gates.",
   },
   {
     label: "Execution Mode",
