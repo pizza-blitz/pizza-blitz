@@ -265,48 +265,108 @@ async function maybeVerifyManagedStaffCredential(adminCookie) {
 
   const managedStaffId = `counter-e2e-${Date.now()}`;
   const managedStaffPassword = `Staff-${Date.now()}!`;
-  const saveResponse = await assertStatus(
-    "/api/v1/auth/staff/credential",
-    200,
-    adminCookie,
-    "admin managed staff credential save",
-    {
+  let activated = false;
+
+  try {
+    const saveResponse = await assertStatus(
+      "/api/v1/auth/staff/credential",
+      200,
+      adminCookie,
+      "admin managed staff credential save",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: managedStaffId,
+          password: managedStaffPassword,
+          display_name: "E2E Counter Staff",
+          is_active: true,
+        }),
+      }
+    );
+    const saved = await saveResponse.json();
+    activated = true;
+    assert(saved.configured === true, "Managed staff credential was not marked active after save.");
+    assert(saved.staff_id === managedStaffId, "Managed staff credential did not return the saved staff ID.");
+
+    const managedStaffCookie = await portalLoginWithCredentials({
+      id: managedStaffId,
+      password: managedStaffPassword,
+      role: "staff",
+      expectedRole: "staff",
+      expectedStartPath: "/orders",
+    });
+    await assertStatus("/api/v1/restaurant/orders/today", 200, managedStaffCookie, "managed staff today's orders");
+
+    const managedStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: managedStaffId,
-        password: managedStaffPassword,
-        display_name: "E2E Counter Staff",
-        is_active: true,
-      }),
+      body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
+    });
+    const managedStaffJwt = await managedStaffJwtResponse.json();
+    assert(
+      managedStaffJwtResponse.ok && managedStaffJwt.role === "staff" && managedStaffJwt.access_token,
+      `Managed staff JWT login failed: ${JSON.stringify(managedStaffJwt)}`
+    );
+
+    await assertStaffSettingsRedirect({
+      id: managedStaffId,
+      password: managedStaffPassword,
+      artifactName: "visible-role-gates-managed-staff-redirect.png",
+    });
+  } finally {
+    if (!activated) {
+      return;
     }
-  );
-  const saved = await saveResponse.json();
-  assert(saved.configured === true, "Managed staff credential was not marked active after save.");
-  assert(saved.staff_id === managedStaffId, "Managed staff credential did not return the saved staff ID.");
 
-  const managedStaffCookie = await portalLoginWithCredentials({
-    id: managedStaffId,
-    password: managedStaffPassword,
-    role: "staff",
-    expectedRole: "staff",
-    expectedStartPath: "/orders",
-  });
-  await assertStatus("/api/v1/restaurant/orders/today", 200, managedStaffCookie, "managed staff today's orders");
+    const cleanupPassword = `${managedStaffPassword}-inactive`;
+    const cleanupResponse = await assertStatus(
+      "/api/v1/auth/staff/credential",
+      200,
+      adminCookie,
+      "managed staff credential cleanup",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: managedStaffId,
+          password: cleanupPassword,
+          display_name: "E2E Counter Staff",
+          is_active: false,
+        }),
+      }
+    );
+    const cleanup = await cleanupResponse.json();
+    assert(cleanup.staff_id === managedStaffId, "Managed staff cleanup returned a different staff ID.");
+    assert(cleanup.configured === false && cleanup.is_active === false, "Managed staff cleanup did not deactivate the credential.");
 
-  const managedStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
-  });
-  const managedStaffJwt = await managedStaffJwtResponse.json();
-  assert(
-    managedStaffJwtResponse.ok && managedStaffJwt.role === "staff" && managedStaffJwt.access_token,
-    `Managed staff JWT login failed: ${JSON.stringify(managedStaffJwt)}`
-  );
+    const rejectedJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
+    });
+    assert(
+      [401, 503].includes(rejectedJwtResponse.status),
+      `Deactivated managed staff JWT login should fail, received ${rejectedJwtResponse.status}.`
+    );
+
+    const rejectedPortalResponse = await fetch(`${baseURL}/api/admin-session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword, role: "staff" }),
+    });
+    assert(
+      [401, 503].includes(rejectedPortalResponse.status),
+      `Deactivated managed staff portal login should fail, received ${rejectedPortalResponse.status}.`
+    );
+  }
 }
 
-async function assertStaffSettingsRedirect() {
+async function assertStaffSettingsRedirect({
+  id = staffId,
+  password = staffPassword,
+  artifactName = "visible-role-gates-staff-redirect.png",
+} = {}) {
   const staffBrowserURL = baseURL.replace("127.0.0.1", "localhost");
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -318,7 +378,7 @@ async function assertStaffSettingsRedirect() {
 
   try {
     const login = await context.request.post(`${staffBrowserURL}/api/admin-session`, {
-      data: { id: staffId, password: staffPassword, role: "staff" },
+      data: { id, password, role: "staff" },
     });
     assert(login.ok(), `Staff browser login failed: ${await login.text()}`);
 
@@ -326,7 +386,7 @@ async function assertStaffSettingsRedirect() {
     await page.waitForURL(/\/orders/, { timeout: 10000 });
     await page.getByRole("heading", { name: "Counter POS" }).waitFor({ timeout: 10000 });
     await page.screenshot({
-      path: path.join(artifactsDir, "visible-role-gates-staff-redirect.png"),
+      path: path.join(artifactsDir, artifactName),
       fullPage: true,
     });
     watch.assertClean("staff settings redirect");
