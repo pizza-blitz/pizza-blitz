@@ -131,6 +131,10 @@ async function main() {
     await page.getByText("Safe action button audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Feature action coverage audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("feature-action-coverage.json", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("13 / 13 Proofed", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("8 of 13 areas are live-ready", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("5 remain gated by real provider or environment proof", { exact: false }).waitFor({ timeout: 15000 });
+    await page.getByText("Live payment, messaging, social, ad provider credentials and production backup/restore evidence", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Route action inventory audit", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("route-action-inventory.json", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Action placeholder hygiene audit", { exact: true }).waitFor({ timeout: 15000 });

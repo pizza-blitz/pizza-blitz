@@ -64,7 +64,7 @@ const progressCards = [
   {
     label: "Overall Product",
     value: "86%",
-    note: "Current implementation score is 86%: portal, POS, kitchen, delivery, CRM, reporting and proof boards are working with zero blocked modules; remaining gaps are production proofs and direct staff credential provisioning.",
+    note: "Current implementation score is 86%: portal, POS, kitchen, delivery, CRM, reporting and proof boards are working with zero blocked modules; remaining gaps are live provider smoke and backup/restore proof.",
   },
   {
     label: "Order Operations",
@@ -78,8 +78,8 @@ const progressCards = [
   },
   {
     label: "Execution Mode",
-    value: "Feature Coverage",
-    note: "The roadmap now has a 13-area feature action audit that maps business workflows to proof scripts, artifacts, and live-provider gates.",
+    value: "13 / 13 Proofed",
+    note: "Feature audit is 100% proof-covered; 8 of 13 areas are live-ready today and 5 remain gated by real payment, messaging, social, ads and backup/restore provider work.",
   },
 ];
 
@@ -376,7 +376,7 @@ const completedValue: RoadmapItem[] = [
   {
     title: "Feature action coverage audit",
     status: "done",
-    value: "A consolidated audit now maps 13 major restaurant feature areas to proof scripts, saved artifacts and the remaining live-provider or environment gates.",
+    value: "A consolidated audit now maps 13 major restaurant feature areas to proof scripts, saved artifacts, 8 live-ready areas and 5 remaining live-provider or environment gates.",
   },
   {
     title: "Route action inventory audit",
@@ -1280,7 +1280,7 @@ const stabilizationProofs: StabilizationProof[] = [
     area: "Feature action coverage",
     proof: "verify-feature-action-coverage.cjs",
     status: "passed",
-    value: "Thirteen major restaurant feature areas are mapped to proof scripts, saved artifacts and explicit live-provider or environment gates.",
+    value: "Thirteen major restaurant feature areas are proof-covered; 8 are live-ready and 5 remain gated by real provider or environment proof.",
     artifact: "feature-action-coverage.json",
   },
   {
@@ -1392,7 +1392,7 @@ const betaReviewMetrics: StabilizationMetric[] = [
   {
     label: "Known Blockers",
     value: "5",
-    note: "Live credentials, production DB, backups, deployment secrets and live delivery tracking remain production blockers.",
+    note: "Live payment, messaging, social, ad provider credentials and production backup/restore evidence remain production blockers.",
   },
   {
     label: "Beta Decision",
@@ -1415,7 +1415,7 @@ const betaReviewOutcomes: RoadmapItem[] = [
   {
     title: "Remaining blocker list refreshed",
     status: "done",
-    value: "Real payment credentials, provider tokens, delivery live tracking, production DB, backups and deployment secrets are now called out as production blockers.",
+    value: "Real payment credentials, messaging tokens, social/ad provider access and production backup/restore evidence are now called out as production blockers.",
   },
   {
     title: "Controlled beta decision",
