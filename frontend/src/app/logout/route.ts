@@ -13,11 +13,18 @@ function expireCookie(response: NextResponse, name: string) {
   });
 }
 
+function internalRedirect(pathname: string) {
+  return new NextResponse(null, {
+    status: 307,
+    headers: { Location: pathname },
+  });
+}
+
 export function GET(request: Request) {
   const url = new URL(request.url);
   const role = url.searchParams.get("role");
   const redirectTo = role === "customer" ? "/account/login" : "/login";
-  const response = NextResponse.redirect(new URL(redirectTo, request.url));
+  const response = internalRedirect(redirectTo);
   expireCookie(response, ADMIN_COOKIE);
   expireCookie(response, STAFF_COOKIE);
   expireCookie(response, CUSTOMER_COOKIE);

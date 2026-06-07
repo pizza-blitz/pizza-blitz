@@ -17,11 +17,7 @@ function redirectWithClearedCookie(
   cookieNames: string | string[],
   nextPath?: string
 ) {
-  const url = new URL(pathname, request.url);
-  if (nextPath) {
-    url.searchParams.set("next", nextPath);
-  }
-  const response = NextResponse.redirect(url);
+  const response = internalRedirect(request, pathname, nextPath);
   const names = Array.isArray(cookieNames) ? cookieNames : [cookieNames];
   names.forEach((cookieName) => {
     response.cookies.set({
@@ -35,6 +31,31 @@ function redirectWithClearedCookie(
     });
   });
   return response;
+}
+
+function internalRedirect(request: NextRequest, pathname: string, nextPath?: string) {
+  const url = new URL(pathname, request.url);
+  const host = (
+    request.headers.get("x-forwarded-host") ??
+    request.headers.get("host") ??
+    ""
+  )
+    .split(",")[0]
+    .trim();
+  const protocol = (request.headers.get("x-forwarded-proto") ?? "")
+    .split(",")[0]
+    .trim()
+    .replace(/:$/, "");
+  if (host) {
+    url.host = host;
+  }
+  if (protocol) {
+    url.protocol = `${protocol}:`;
+  }
+  if (nextPath) {
+    url.searchParams.set("next", nextPath);
+  }
+  return NextResponse.redirect(url);
 }
 
 export async function middleware(request: NextRequest) {
@@ -53,15 +74,15 @@ export async function middleware(request: NextRequest) {
   );
 
   if (pathname === "/login" && adminSession) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return internalRedirect(request, "/dashboard");
   }
 
   if (pathname === "/login" && staffSession) {
-    return NextResponse.redirect(new URL("/orders", request.url));
+    return internalRedirect(request, "/orders");
   }
 
   if (pathname === "/account/login" && customerSession) {
-    return NextResponse.redirect(new URL("/account", request.url));
+    return internalRedirect(request, "/account");
   }
 
   if (pathname.startsWith("/receipt/") && request.nextUrl.searchParams.get("phone")) {
@@ -73,7 +94,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next();
     }
     if (staffSession) {
-      return NextResponse.redirect(new URL("/orders", request.url));
+      return internalRedirect(request, "/orders");
     }
     return redirectWithClearedCookie(
       request,
