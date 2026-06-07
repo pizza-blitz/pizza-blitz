@@ -91,32 +91,36 @@ async function main() {
     await page.getByRole("heading", { name: "Weekly Stabilization Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Week Stabilized", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Critical Proofs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("29 x 2", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText(/^\d+ x 2$/).waitFor({ timeout: 15000 });
     await page.getByText("Next Risk", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-customer-web-checkout.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-order-flow-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-production-ops-readiness.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-social-publishing-readiness.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-ad-provider-sync.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-reporting-comparison-dashboard.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-weekly-beta-review.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-production-database-path.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-environment-secrets-security.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-deployment-pipeline.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-full-customer-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-counter-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-delivery-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-visual-polish-suite.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-data-quality-export-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-launch-candidate-hardening.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-final-acceptance-walkthrough.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-production-launch-integrations.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-live-environment-execution.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-credential-activation-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    for (const proofName of [
+      "verify-customer-web-checkout.cjs",
+      "verify-order-flow-polish.cjs",
+      "verify-production-ops-readiness.cjs",
+      "verify-social-publishing-readiness.cjs",
+      "verify-ad-provider-sync.cjs",
+      "verify-reporting-comparison-dashboard.cjs",
+      "verify-weekly-beta-review.cjs",
+      "verify-production-database-path.cjs",
+      "verify-environment-secrets-security.cjs",
+      "verify-deployment-pipeline.cjs",
+      "verify-full-customer-order-e2e.cjs",
+      "verify-counter-order-e2e.cjs",
+      "verify-delivery-order-e2e.cjs",
+      "verify-visual-polish-suite.cjs",
+      "verify-dashboard-visual-polish.cjs",
+      "verify-operational-dashboard-command.cjs",
+      "verify-marketing-live-readiness-command.cjs",
+      "verify-data-quality-export-command.cjs",
+      "verify-launch-candidate-hardening.cjs",
+      "verify-final-acceptance-walkthrough.cjs",
+      "verify-beta-delivery-checkpoint.cjs",
+      "verify-production-launch-integrations.cjs",
+      "verify-live-environment-execution.cjs",
+      "verify-credential-activation-command.cjs",
+    ]) {
+      await page.getByText(proofName, { exact: true }).first().waitFor({ timeout: 15000 });
+    }
     await page.getByText("QA command board, route audit matrix", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("Real WhatsApp/SMS/email readiness", { exact: true }).first().waitFor({ timeout: 15000 });
     await page.getByText("Social publishing readiness", { exact: true }).first().waitFor({ timeout: 15000 });

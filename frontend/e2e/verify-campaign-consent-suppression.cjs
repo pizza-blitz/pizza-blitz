@@ -141,7 +141,7 @@ function createBrowserWatch(page) {
   };
 }
 
-async function screenshotConsentSuppression(campaignName, blockedName) {
+async function screenshotConsentSuppression(campaignId, campaignName, blockedName) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     baseURL,
@@ -174,7 +174,7 @@ async function screenshotConsentSuppression(campaignName, blockedName) {
       },
     ]);
 
-    const response = await page.goto(`${baseURL}/promotions`, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(`${baseURL}/promotions?campaign=${campaignId}`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Promotions page returned HTTP ${response?.status() || "no response"}.`);
     await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
     await page.getByTestId("messaging-readiness-command").waitFor({ timeout: 15000 });
@@ -185,7 +185,7 @@ async function screenshotConsentSuppression(campaignName, blockedName) {
           (apiResponse) => {
             const url = new URL(apiResponse.url());
             return (
-              url.pathname === "/api/v1/restaurant/promotions/" &&
+              url.pathname.endsWith("/api/v1/restaurant/promotions/") &&
               apiResponse.request().method() === "GET" &&
               apiResponse.ok()
             );
@@ -210,7 +210,7 @@ async function screenshotConsentSuppression(campaignName, blockedName) {
       const bodyText = await page.locator("body").innerText().catch(() => "");
       const apiProbe = await page.evaluate(async () => {
         try {
-          const response = await fetch("http://127.0.0.1:8010/api/v1/restaurant/promotions/", {
+          const response = await fetch("/server/api/v1/restaurant/promotions/", {
             credentials: "include",
           });
           const text = await response.text();
@@ -323,7 +323,7 @@ async function main() {
   assert(audience.data.channels.email.suppressed_count >= 1, "Audience hygiene did not count suppressed email contacts.");
   assert(audience.data.channels.email.ready_count < audience.data.total_contacts, "Audience hygiene treated all contacts as email ready.");
 
-  await screenshotConsentSuppression(campaignName, contacts.optedOut.name);
+  await screenshotConsentSuppression(promotionId, campaignName, contacts.optedOut.name);
   console.log(`Campaign consent suppression proof passed for promotion #${promotionId}.`);
 }
 

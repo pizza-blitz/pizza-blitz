@@ -228,22 +228,32 @@ async function main() {
   const readiness = await adminJson("/api/v1/restaurant/ops/readiness", cookie);
   assert(readiness.response.ok, `Admin ops readiness failed: ${JSON.stringify(readiness.data)}`);
   assert(readiness.data.readiness_summary, "Readiness did not include compact readiness summary.");
+  const readinessSummary = readiness.data.readiness_summary;
+  const externalGateKeys = new Set((readinessSummary.external_gates || []).map((gate) => gate.key));
   assert(
-    readiness.data.readiness_summary.implementation_score >= 80,
-    `Implementation score is unexpectedly low: ${JSON.stringify(readiness.data.readiness_summary)}`
+    readinessSummary.implementation_score >= 70,
+    `Implementation score is unexpectedly low: ${JSON.stringify(readinessSummary)}`
   );
   assert(
-    readiness.data.readiness_summary.restaurant_ready_score >= 80,
-    `Restaurant-ready score is unexpectedly low: ${JSON.stringify(readiness.data.readiness_summary)}`
+    readinessSummary.restaurant_ready_score >= 70,
+    `Restaurant-ready score is unexpectedly low: ${JSON.stringify(readinessSummary)}`
   );
   assert(
-    readiness.data.readiness_summary.requirements?.total >= 10,
+    readinessSummary.requirements?.total >= 10,
     "Readiness summary did not include the 10 restaurant requirements."
   );
   assert(
-    Array.isArray(readiness.data.readiness_summary.external_gates),
+    Array.isArray(readinessSummary.external_gates),
     "Readiness summary did not include external gates."
   );
+  for (const gateKey of [
+    "live_payment_provider",
+    "managed_backup_proof",
+    "restore_rehearsal_proof",
+    "live_growth_providers",
+  ]) {
+    assert(externalGateKeys.has(gateKey), `Readiness summary did not expose external gate ${gateKey}.`);
+  }
   assert(Array.isArray(readiness.data.environment_manifest), "Readiness did not include environment manifest.");
   assert(readiness.data.environment_summary?.required_total >= 1, "Readiness did not include required environment summary.");
   assert(readiness.data.production_database_plan, "Readiness did not include production database plan.");

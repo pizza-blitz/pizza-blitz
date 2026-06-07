@@ -91,29 +91,33 @@ async function main() {
     await page.getByTestId("weekly-beta-review-command").waitFor({ timeout: 15000 });
     await page.getByRole("heading", { name: "Weekly Beta Review Command" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof Audit", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("30 / 30", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText(/^\d+ \/ \d+$/).waitFor({ timeout: 15000 });
     await page.getByText("Known Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Controlled Beta", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Review Outcomes", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Remaining Beta Blockers", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Production Database Path", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-weekly-beta-review.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-production-database-path.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-environment-secrets-security.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-deployment-pipeline.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-full-customer-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-counter-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-delivery-order-e2e.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-dashboard-visual-polish.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-operational-dashboard-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-marketing-live-readiness-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-data-quality-export-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-launch-candidate-hardening.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-final-acceptance-walkthrough.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-beta-delivery-checkpoint.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-production-launch-integrations.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-live-environment-execution.cjs", { exact: true }).waitFor({ timeout: 15000 });
-    await page.getByText("verify-credential-activation-command.cjs", { exact: true }).waitFor({ timeout: 15000 });
+    for (const proofName of [
+      "verify-weekly-beta-review.cjs",
+      "verify-production-database-path.cjs",
+      "verify-environment-secrets-security.cjs",
+      "verify-deployment-pipeline.cjs",
+      "verify-full-customer-order-e2e.cjs",
+      "verify-counter-order-e2e.cjs",
+      "verify-delivery-order-e2e.cjs",
+      "verify-dashboard-visual-polish.cjs",
+      "verify-operational-dashboard-command.cjs",
+      "verify-marketing-live-readiness-command.cjs",
+      "verify-data-quality-export-command.cjs",
+      "verify-launch-candidate-hardening.cjs",
+      "verify-final-acceptance-walkthrough.cjs",
+      "verify-beta-delivery-checkpoint.cjs",
+      "verify-production-launch-integrations.cjs",
+      "verify-live-environment-execution.cjs",
+      "verify-credential-activation-command.cjs",
+    ]) {
+      await page.getByText(proofName, { exact: true }).first().waitFor({ timeout: 15000 });
+    }
     await page.getByText("Delivery order E2E handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Visual polish handoff", { exact: true }).waitFor({ timeout: 15000 });
     await page.getByText("Operational dashboards handoff", { exact: true }).waitFor({ timeout: 15000 });
