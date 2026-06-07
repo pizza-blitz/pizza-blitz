@@ -1202,6 +1202,7 @@ export default function PublicOrderPage() {
             <button
               data-testid="customer-command-pickup"
               type="button"
+              aria-label="Pickup Order"
               onClick={() => {
                 setOrderType("pickup");
                 setMessage("");
@@ -1219,6 +1220,7 @@ export default function PublicOrderPage() {
             <button
               data-testid="customer-command-delivery"
               type="button"
+              aria-label="Delivery Order"
               onClick={() => {
                 setOrderType("delivery");
                 setMessage("");

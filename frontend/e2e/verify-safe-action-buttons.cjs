@@ -259,6 +259,12 @@ async function main() {
     );
 
     assert(clicked.length >= 20, `Expected at least 20 safe action clicks, only clicked ${clicked.length}.`);
+    assert(
+      skipped.length === 0,
+      `Safe action buttons had unclickable role/name candidates:\n${skipped
+        .map((item) => `${item.route}: ${item.name} (${item.reason})`)
+        .join("\n")}`
+    );
     console.log(
       `Safe action buttons passed: ${clicked.length} non-destructive clicks across ${
         publicRoutes.length + adminRoutes.length

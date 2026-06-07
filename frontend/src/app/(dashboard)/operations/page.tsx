@@ -1633,6 +1633,7 @@ export default function OperationsPage() {
         >
           <button
             onClick={() => setFilter("active")}
+            aria-label="Active orders"
             className="flex h-12 items-center justify-between rounded-md bg-gray-950 px-3 text-sm font-black text-white"
           >
             <span>Active</span>
@@ -1640,6 +1641,7 @@ export default function OperationsPage() {
           </button>
           <button
             onClick={() => setFilter("ready")}
+            aria-label="Ready To Bill"
             className="flex h-12 items-center justify-between rounded-md bg-emerald-50 px-3 text-sm font-black text-emerald-700 hover:bg-emerald-100"
           >
             <span>Ready To Bill</span>
@@ -1647,6 +1649,7 @@ export default function OperationsPage() {
           </button>
           <button
             onClick={() => setFilter("payment_due")}
+            aria-label="Payment Due"
             className="flex h-12 items-center justify-between rounded-md bg-amber-50 px-3 text-sm font-black text-amber-700 hover:bg-amber-100"
           >
             <span>Blocked</span>
@@ -1654,6 +1657,7 @@ export default function OperationsPage() {
           </button>
           <button
             onClick={() => setFilter("delivery")}
+            aria-label="Delivery orders"
             className="flex h-12 items-center justify-between rounded-md bg-red-50 px-3 text-sm font-black text-red-700 hover:bg-red-100"
           >
             <span>Handoff</span>
@@ -2170,6 +2174,7 @@ export default function OperationsPage() {
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setFilter("ready")}
+              aria-label="Ready To Close"
               className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-black text-emerald-700 hover:bg-emerald-100"
             >
               <CheckCircle2 className="h-4 w-4" />
@@ -2177,6 +2182,7 @@ export default function OperationsPage() {
             </button>
             <button
               onClick={() => setFilter("payment_due")}
+              aria-label="Payment Blocks"
               className="inline-flex h-9 items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-black text-amber-700 hover:bg-amber-100"
             >
               <CreditCard className="h-4 w-4" />
