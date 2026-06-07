@@ -277,6 +277,8 @@ function main() {
     const pendingArtifacts = requirement.artifacts.filter(
       (artifact) => !existsIn(artifactsDir, artifact) && proofWritesArtifact(requirement, artifact)
     );
+    const proofReady = missingProofs.length === 0 && missingArtifacts.length === 0;
+    const liveReady = proofReady && requirement.status === "covered";
     return {
       ...requirement,
       missingProofs,
@@ -285,24 +287,31 @@ function main() {
       proofCount: requirement.proofs.length,
       artifactCount: requirement.artifacts.length,
       evidenceCountGap: requirement.proofs.length > requirement.artifacts.length,
-      ready: missingProofs.length === 0 && missingArtifacts.length === 0,
+      proofReady,
+      liveReady,
+      ready: liveReady,
     };
   });
 
-  const missing = results.filter((result) => !result.ready);
+  const missingEvidence = results.filter((result) => !result.proofReady);
   const evidenceCountGaps = results.filter((result) => result.evidenceCountGap);
   const providerOrEnvironmentGated = results.filter((result) => result.status !== "covered");
+  const liveReady = results.filter((result) => result.liveReady);
   const allProofs = unique(requirements.flatMap((requirement) => requirement.proofs));
   const allArtifacts = unique(requirements.flatMap((requirement) => requirement.artifacts));
-  const proofCoveragePercent = Math.round(((results.length - missing.length) / results.length) * 100);
+  const proofCoveragePercent = Math.round(((results.length - missingEvidence.length) / results.length) * 100);
+  const liveReadinessPercent = Math.round((liveReady.length / results.length) * 100);
 
   const report = {
     checkedAt: new Date().toISOString(),
     summary: {
       requirements: results.length,
-      readyRequirements: results.length - missing.length,
-      missingRequirements: missing.length,
+      proofReadyRequirements: results.length - missingEvidence.length,
+      proofMissingRequirements: missingEvidence.length,
+      readyRequirements: liveReady.length,
+      missingRequirements: results.length - liveReady.length,
       proofCoveragePercent,
+      liveReadinessPercent,
       uniqueProofFiles: allProofs.length,
       uniqueArtifacts: allArtifacts.length,
       providerOrEnvironmentGates: providerOrEnvironmentGated.length,
@@ -319,8 +328,8 @@ function main() {
   fs.writeFileSync(artifactPath, `${JSON.stringify(report, null, 2)}\n`);
 
   assert(
-    missing.length === 0,
-    `Feature action coverage has missing evidence:\n${missing
+    missingEvidence.length === 0,
+    `Feature action coverage has missing evidence:\n${missingEvidence
       .map(
         (item) =>
           `${item.area}: proofs=${item.missingProofs.join(", ") || "ok"} artifacts=${
@@ -337,7 +346,7 @@ function main() {
   );
 
   console.log(
-    `Feature action coverage passed: ${results.length}/${results.length} areas have proof scripts and artifacts; ${providerOrEnvironmentGated.length} live-provider/environment gates remain.`
+    `Feature action coverage passed: ${results.length - missingEvidence.length}/${results.length} areas have proof scripts and artifacts; ${liveReady.length}/${results.length} areas are live-ready; ${providerOrEnvironmentGated.length} live-provider/environment gates remain.`
   );
 }
 
