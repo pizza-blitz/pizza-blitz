@@ -139,6 +139,14 @@ function createBrowserWatch(page) {
 }
 
 async function placeOrderFromOfferLink(orderLink, code) {
+  const browserOrderLink = new URL(orderLink);
+  const baseOrigin = new URL(baseURL).origin;
+  const localFrontendOrigin = /^https?:\/\/(127\.0\.0\.1|localhost):3011$/i;
+  if (localFrontendOrigin.test(browserOrderLink.origin) && localFrontendOrigin.test(baseOrigin)) {
+    browserOrderLink.protocol = new URL(baseURL).protocol;
+    browserOrderLink.host = new URL(baseURL).host;
+  }
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     baseURL,
@@ -148,7 +156,7 @@ async function placeOrderFromOfferLink(orderLink, code) {
   const watch = createBrowserWatch(page);
 
   try {
-    const response = await page.goto(orderLink, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(browserOrderLink.toString(), { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Offer order page returned HTTP ${response?.status() || "no response"}.`);
     await page.getByText(`${code} selected from this offer link`, { exact: false }).waitFor({ timeout: 15000 });
     await page.getByRole("button", { name: /^Add$/i }).first().click();

@@ -174,7 +174,9 @@ async function main() {
     await page.getByRole("button", { name: new RegExp(`Load Proof #${orderId}`) }).click();
     await page.getByTestId("staff-settlement-reference").fill(paymentReference);
     await page.getByRole("button", { name: /Record Direct Bank Paid Proof/i }).click();
-    await page.getByText(`Order #${orderId} marked paid`, { exact: false }).waitFor({ timeout: 10000 });
+    await page
+      .getByText(new RegExp(`(Paid proof recorded for order #${orderId}|Order #${orderId} marked paid)`, "i"))
+      .waitFor({ timeout: 10000 });
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-payment-counter-proof-command.png"),
