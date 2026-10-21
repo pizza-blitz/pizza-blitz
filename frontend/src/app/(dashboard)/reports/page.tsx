@@ -20,8 +20,276 @@ const segmentCampaignAudiences = new Set([
   "win_back_customers",
 ]);
 
+type ReportMetrics = {
+  revenue?: number;
+  profit?: number;
+  orders?: number;
+  total_sales?: number;
+  total_expense?: number;
+  total_profit?: number;
+  avg_daily_sale?: number;
+  sales_growth?: number;
+  daily_velocity?: number;
+};
+
+type MetricBucket = {
+  orders?: number;
+  revenue?: number;
+  quantity?: number;
+  average_order_value?: number;
+};
+
+type SummaryCard = {
+  key: string;
+  label: string;
+  current: number;
+  previous: number;
+  last_year: number;
+  yoy_change_percent: number;
+  previous_change_percent?: number;
+};
+
+type DailyComparisonRow = {
+  date?: string;
+  label?: string;
+  weekday?: string;
+  current_sale?: number;
+  previous_sale?: number;
+  last_year_sale?: number;
+  current_profit?: number;
+  previous_change_percent?: number;
+  yoy_change_percent?: number;
+};
+
+type WeekdayComparisonRow = {
+  weekday?: string;
+  days?: number;
+  current_sale?: number;
+  previous_sale?: number;
+  last_year_sale?: number;
+  yoy_change_percent?: number;
+};
+
+type ComparisonPayload = {
+  period: { current_start?: string; current_end?: string };
+  summary_cards: SummaryCard[];
+  daily_comparison: DailyComparisonRow[];
+  weekday_breakdown?: WeekdayComparisonRow[];
+  best_day?: DailyComparisonRow;
+  slowest_day?: DailyComparisonRow;
+  risk_flags: string[];
+  current?: MetricBucket;
+  previous?: MetricBucket;
+  last_year?: MetricBucket;
+};
+
+type MoverRow = {
+  key: string;
+  name: string;
+  category?: string;
+  movement?: string;
+  current: MetricBucket;
+  current_share_percent?: number;
+  previous_change_percent?: number;
+  yoy_change_percent?: number;
+  recommended_action?: string;
+};
+
+type MixRow = {
+  key: string;
+  label: string;
+  current: MetricBucket;
+  previous?: MetricBucket;
+  last_year?: MetricBucket;
+  current_share_percent?: number;
+  previous_change_percent?: number;
+  yoy_change_percent?: number;
+};
+
+type OwnerDaySnapshot = {
+  weekday?: string;
+  date?: string;
+  sales?: number;
+  orders?: number;
+  profit?: number;
+};
+
+type OwnerComparisonPayload = {
+  period: { current_start?: string; current_end?: string };
+  same_day: {
+    current: OwnerDaySnapshot;
+    same_weekday_last_week: OwnerDaySnapshot;
+    same_day_last_year: OwnerDaySnapshot;
+    last_week_change_percent?: number;
+    last_year_change_percent?: number;
+  };
+  same_month: {
+    current: { revenue?: number; start_date?: string; end_date?: string };
+    same_month_last_year: { revenue?: number; start_date?: string; end_date?: string };
+    previous_month_change_percent?: number;
+    last_year_change_percent?: number;
+  };
+  product_movers?: MoverRow[];
+  category_movers?: MoverRow[];
+  channel_mix?: MixRow[];
+  owner_actions?: string[];
+};
+
+type SegmentRow = {
+  segment: string;
+  label: string;
+  intent?: string;
+  customer_count: number;
+  order_count: number;
+  total_spend: number;
+  reachable_count: number;
+  readiness_percent?: number;
+  recommended_channel?: string;
+  recommended_action?: string;
+  customer_list_url?: string;
+  revenue_share_percent?: number;
+  email_gap_count?: number;
+  phone_gap_count?: number;
+};
+
+type CustomerSegmentsPayload = {
+  summary: {
+    total_customers?: number;
+    reachable_customers?: number;
+    total_spend?: number;
+    email_gap_customers?: number;
+    phone_gap_customers?: number;
+    readiness_percent?: number;
+  };
+  segments?: SegmentRow[];
+  top_segment?: SegmentRow;
+  strongest_value_segment?: SegmentRow;
+  largest_cleanup_segment?: SegmentRow;
+};
+
+type CampaignRow = {
+  promotion_detail: { id?: number; name?: string; code?: string; channel?: string };
+  campaign_window: { phase?: string };
+  outreach: {
+    sent_count?: number;
+    dry_run_count?: number;
+    needs_attention_count?: number;
+    conversion_rate_percent?: number;
+    failed_count?: number;
+  };
+  redemptions: {
+    revenue?: number;
+    discount?: number;
+    count?: number;
+    average_order_value?: number;
+  };
+  social: { post_count?: number; ready_count?: number };
+  ads: {
+    planned_budget?: number;
+    campaign_count?: number;
+    launch_count?: number;
+    spend?: number;
+    reported_revenue?: number;
+    roas?: number;
+  };
+};
+
+type MarketingDecisionRow = CampaignRow & {
+  readyReach: number;
+  netValue: number;
+  conversionRate: number;
+  action: string;
+};
+
+type MarketingPayload = {
+  campaigns?: CampaignRow[];
+  best_campaign?: CampaignRow;
+  summary: {
+    redemption_revenue?: number;
+    redemption_discount?: number;
+    redemption_orders?: number;
+    social_post_count?: number;
+    planned_ad_budget?: number;
+  };
+};
+
+type OrderChannelsPayload = {
+  period: { current_start?: string; current_end?: string };
+  current: MetricBucket;
+  summary: { unsettled_orders?: number };
+  channel_mix?: MixRow[];
+  payment_mix?: MixRow[];
+  payment_status_mix?: MixRow[];
+  fulfillment_status_mix?: MixRow[];
+  insights?: string[];
+};
+
+type ForecastPayload = {
+  month?: string;
+  projected_total?: number;
+  change_percent?: number;
+  daily_average?: number;
+  last_year_actual?: number;
+};
+
+type ProfitTrendPoint = {
+  month: string;
+  total_sale: number;
+  total_expense: number;
+  profit: number;
+  margin_percent: number;
+};
+
+type TargetPacingPayload = {
+  month?: string;
+  monthly_target?: number;
+  revenue_so_far?: number;
+  projected_month_total?: number;
+  target_achieved_pct?: number;
+  achievement_percent?: number;
+  required_daily_to_hit_target?: number;
+  days_remaining?: number;
+  daily_average?: number;
+  on_track?: boolean;
+  status_message?: string;
+};
+
+type BreakevenPayload = {
+  today_revenue?: number;
+  daily_breakeven_revenue?: number;
+  today_above_breakeven?: boolean;
+  status_message?: string;
+};
+
+type ReportsData = {
+  summary?: ReportMetrics;
+  comparison?: ComparisonPayload;
+  ownerComparison?: OwnerComparisonPayload;
+  customerSegments?: CustomerSegmentsPayload;
+  marketing?: MarketingPayload;
+  orderChannels?: OrderChannelsPayload;
+  forecast?: ForecastPayload;
+  trends?: ProfitTrendPoint[];
+  targetPacing?: TargetPacingPayload;
+  breakeven?: BreakevenPayload;
+};
+
+type VarianceRow = DailyComparisonRow & {
+  previousChange: number;
+  yoyChange: number;
+};
+
+type VarianceActionRow = VarianceRow & {
+  currentSale: number;
+  gap: number;
+  gapLabel: string;
+  momentum: boolean;
+};
+
+type ReportResult = { key: string; value: unknown; error: string };
+
 export default function Reports() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<ReportsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reportError, setReportError] = useState("");
   const [reportWarnings, setReportWarnings] = useState<string[]>([]);
@@ -60,15 +328,15 @@ export default function Reports() {
         }
         return payload;
       };
-      const loadReport = async (
+      const loadReport = async <T = unknown,>(
         key: string,
         label: string,
         endpoint: string,
-        transform: (payload: any) => any = (payload) => payload
-      ) => {
+        transform?: (payload: unknown) => T
+      ): Promise<ReportResult> => {
         try {
           const payload = await fetchJson(endpoint, label);
-          return { key, value: transform(payload), error: "" };
+          return { key, value: transform ? transform(payload) : payload, error: "" };
         } catch (err) {
           if (signal?.aborted) return { key, value: null, error: "" };
           return {
@@ -79,11 +347,11 @@ export default function Reports() {
         }
       };
       const applyReportResults = (
-        results: Array<{ key: string; value: any; error: string }>,
+        results: ReportResult[],
         replace = false
       ) => {
         if (signal?.aborted) return;
-        const nextData = results.reduce((next: any, result) => {
+        const nextData = results.reduce<Record<string, unknown>>((next, result) => {
           if (!result.error) next[result.key] = result.value;
           return next;
         }, {});
@@ -91,7 +359,11 @@ export default function Reports() {
           .filter((result) => result.error)
           .map((result) => result.error);
         if (Object.keys(nextData).length) {
-          setData((current: any) => (replace ? nextData : { ...(current || {}), ...nextData }));
+          setData((current) =>
+            replace
+              ? (nextData as unknown as ReportsData)
+              : ({ ...(current || {}), ...nextData } as unknown as ReportsData)
+          );
         }
         if (warnings.length) {
           setReportWarnings((current) => Array.from(new Set([...current, ...warnings])));
@@ -99,8 +371,7 @@ export default function Reports() {
       };
 
       const coreResults = await Promise.all([
-        loadReport("summary", "Dashboard stats", `/api/v1/restaurant/stats/dashboard-stats?period=${period}`, (payload) => payload.metrics || {}),
-        loadReport("records", "Sales ledger", "/api/v1/restaurant/sales/", (payload) => Array.isArray(payload) ? [...payload].reverse().slice(0, 10) : []),
+        loadReport<ReportMetrics>("summary", "Dashboard stats", `/api/v1/restaurant/stats/dashboard-stats?period=${period}`, (payload) => (payload as { metrics?: ReportMetrics }).metrics || {}),
         loadReport("comparison", "Performance comparison", `/api/v1/restaurant/stats/compare/performance-dashboard?period=${comparisonPeriod}`),
         loadReport("ownerComparison", "Owner comparison", `/api/v1/restaurant/stats/compare/owner-command-dashboard?period=${comparisonPeriod}`),
         loadReport("customerSegments", "Customer segments", "/api/v1/restaurant/customers/segments/report"),
@@ -110,7 +381,7 @@ export default function Reports() {
 
       const detailResults = await Promise.all([
         loadReport("forecast", "Monthly forecast", "/api/v1/restaurant/stats/insights/monthly-forecast"),
-        loadReport("trends", "Profit trend", "/api/v1/restaurant/stats/insights/profit-trend?months=12", (payload) => payload.trend || []),
+        loadReport<ProfitTrendPoint[]>("trends", "Profit trend", "/api/v1/restaurant/stats/insights/profit-trend?months=12", (payload) => (payload as { trend?: ProfitTrendPoint[] }).trend || []),
         loadReport("marketing", "Marketing performance", "/api/v1/restaurant/promotions/performance?limit=25"),
         loadReport("orderChannels", "Order channel comparison", `/api/v1/restaurant/stats/compare/order-channel-dashboard?period=${comparisonPeriod}`),
         loadReport("targetPacing", "Target pacing", `/api/v1/restaurant/stats/target/status${targetQuery}`),
@@ -132,8 +403,8 @@ export default function Reports() {
   };
 
   const handleShare = () => {
-    const summary = data?.summary || {};
-    const target = data?.targetPacing || {};
+    const summary: ReportMetrics = data?.summary || {};
+    const target: TargetPacingPayload = data?.targetPacing || {};
     const text = [
       "Pizza Blitz Performance Report",
       `Period: ${period}`,
@@ -150,7 +421,7 @@ export default function Reports() {
     setMonthlyTarget(normalizedTarget);
   };
 
-  const launchSegmentCampaign = async (row: any) => {
+  const launchSegmentCampaign = async (row: SegmentRow) => {
     if (!row || !segmentCampaignAudiences.has(row.segment)) {
       setSegmentLaunchMessage("This segment needs cleanup before campaign launch.");
       return;
@@ -190,16 +461,16 @@ export default function Reports() {
     return `Rs ${nextValue.toLocaleString()}`;
   };
 
-  const formatMoney = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
+  const formatMoney = (value: number | null | undefined) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
 
-  const segmentChannelLabel = (value: string) => {
+  const segmentChannelLabel = (value: string | undefined) => {
     if (value === "whatsapp") return "WhatsApp";
     if (value === "email") return "Email";
     if (value === "sms") return "SMS";
     return "Cleanup";
   };
 
-  const percentChange = (current: number, baseline: number) => {
+  const percentChange = (current: number | undefined, baseline: number | undefined) => {
     const currentValue = Number(current || 0);
     const baselineValue = Number(baseline || 0);
     if (baselineValue === 0) return 0;
@@ -226,21 +497,21 @@ export default function Reports() {
   const marketingDiscount = Number(marketing?.summary?.redemption_discount || 0);
   const marketingNetValue = Math.max(marketingRevenue - marketingDiscount, 0);
   const marketingReadyReach = campaignRows.reduce(
-    (total: number, row: any) => total + Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0),
+    (total: number, row) => total + Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0),
     0
   );
   const marketingAttentionCount = campaignRows.reduce(
-    (total: number, row: any) => total + Number(row.outreach?.needs_attention_count || 0),
+    (total: number, row) => total + Number(row.outreach?.needs_attention_count || 0),
     0
   );
   const marketingConversionRate = marketingReadyReach
     ? Math.round((Number(marketing?.summary?.redemption_orders || 0) / marketingReadyReach) * 1000) / 10
     : 0;
   const marketingChannelMix = ["email", "whatsapp", "sms"].map((channel) => {
-    const rows = campaignRows.filter((row: any) => row.promotion_detail?.channel === channel);
-    const revenue = rows.reduce((total: number, row: any) => total + Number(row.redemptions?.revenue || 0), 0);
+    const rows = campaignRows.filter((row) => row.promotion_detail?.channel === channel);
+    const revenue = rows.reduce((total: number, row) => total + Number(row.redemptions?.revenue || 0), 0);
     const readyReach = rows.reduce(
-      (total: number, row: any) => total + Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0),
+      (total: number, row) => total + Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0),
       0
     );
     return {
@@ -251,7 +522,7 @@ export default function Reports() {
       share: marketingRevenue ? Math.round((revenue / marketingRevenue) * 1000) / 10 : 0,
     };
   });
-  const marketingDecisionRows = campaignRows.slice(0, 5).map((row: any) => {
+  const marketingDecisionRows: MarketingDecisionRow[] = campaignRows.slice(0, 5).map((row) => {
     const readyReach = Number(row.outreach?.sent_count || 0) + Number(row.outreach?.dry_run_count || 0);
     const netValue = Math.max(Number(row.redemptions?.revenue || 0) - Number(row.redemptions?.discount || 0), 0);
     const conversionRate = Number(row.outreach?.conversion_rate_percent || 0);
@@ -262,7 +533,7 @@ export default function Reports() {
     return { ...row, readyReach, netValue, conversionRate, action };
   });
   const selectedMarketingCampaign =
-    campaignRows.find((row: any) => Number(row.promotion_detail?.id) === Number(selectedMarketingCampaignId)) ||
+    campaignRows.find((row) => Number(row.promotion_detail?.id) === Number(selectedMarketingCampaignId)) ||
     marketingLeader;
   const selectedMarketingReadyReach = selectedMarketingCampaign
     ? Number(selectedMarketingCampaign.outreach?.sent_count || 0) + Number(selectedMarketingCampaign.outreach?.dry_run_count || 0)
@@ -279,10 +550,10 @@ export default function Reports() {
   const valueLeader = customerSegments?.strongest_value_segment || segmentLeader;
   const cleanupLeader = customerSegments?.largest_cleanup_segment || segmentLeader;
   const weekdayRows = comparison?.weekday_breakdown
-    ? [...comparison.weekday_breakdown].sort((a: any, b: any) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
+    ? [...comparison.weekday_breakdown].sort((a, b) => Number(b.current_sale || 0) - Number(a.current_sale || 0))
     : [];
   const varianceRows = comparison?.daily_comparison
-    ? comparison.daily_comparison.slice(-7).map((row: any) => ({
+    ? comparison.daily_comparison.slice(-7).map((row) => ({
         ...row,
         previousChange: percentChange(row.current_sale, row.previous_sale),
         yoyChange: percentChange(row.current_sale, row.last_year_sale),
@@ -292,8 +563,8 @@ export default function Reports() {
   const categoryMoverRows = ownerComparison?.category_movers || [];
   const ownerChannelRows = ownerComparison?.channel_mix || [];
   const ownerActionRows = ownerComparison?.owner_actions || [];
-  const revenueCard = comparison?.summary_cards?.find((card: any) => card.key === "revenue");
-  const profitCard = comparison?.summary_cards?.find((card: any) => card.key === "profit");
+  const revenueCard = comparison?.summary_cards?.find((card) => card.key === "revenue");
+  const profitCard = comparison?.summary_cards?.find((card) => card.key === "profit");
   const currentRevenue = Number(comparison?.current?.revenue || 0);
   const previousRevenueGap = Math.max(Number(comparison?.previous?.revenue || 0) - currentRevenue, 0);
   const lastYearRevenueGap = Math.max(Number(comparison?.last_year?.revenue || 0) - currentRevenue, 0);
@@ -302,10 +573,10 @@ export default function Reports() {
   const bestWeekday = weekdayRows[0] || null;
   const softWeekday = weekdayRows.length ? weekdayRows[weekdayRows.length - 1] : null;
   const protectedMomentumCount = varianceRows.filter(
-    (row: any) => Number(row.previousChange || 0) >= 0 && Number(row.yoyChange || 0) >= 0
+    (row) => Number(row.previousChange || 0) >= 0 && Number(row.yoyChange || 0) >= 0
   ).length;
-  const varianceActionRows = varianceRows
-    .map((row: any) => {
+  const varianceActionRows: VarianceActionRow[] = varianceRows
+    .map((row) => {
       const currentSale = Number(row.current_sale || 0);
       const previousGap = Math.max(Number(row.previous_sale || 0) - currentSale, 0);
       const yoyGap = Math.max(Number(row.last_year_sale || 0) - currentSale, 0);
@@ -318,7 +589,7 @@ export default function Reports() {
         momentum: Number(row.previousChange || 0) >= 0 && Number(row.yoyChange || 0) >= 0,
       };
     })
-    .sort((a: any, b: any) => Number(b.gap || 0) - Number(a.gap || 0) || Number(b.currentSale || 0) - Number(a.currentSale || 0));
+    .sort((a, b) => Number(b.gap || 0) - Number(a.gap || 0) || Number(b.currentSale || 0) - Number(a.currentSale || 0));
   const reportingActionCards = [
     {
       label: "Revenue Recovery",
@@ -815,7 +1086,7 @@ export default function Reports() {
                     </div>
                     <div className="space-y-3">
                       {productMoverRows.length ? (
-                        productMoverRows.slice(0, 5).map((row: any) => (
+                        productMoverRows.slice(0, 5).map((row) => (
                           <div key={`product-mover-${row.key}`} className="rounded-lg border border-gray-200 bg-white p-4">
                             <div className="mb-2 flex items-start justify-between gap-3">
                               <div>
@@ -850,7 +1121,7 @@ export default function Reports() {
                       <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">Category Movers</p>
                       <div className="space-y-2">
                         {categoryMoverRows.length ? (
-                          categoryMoverRows.slice(0, 5).map((row: any) => (
+                          categoryMoverRows.slice(0, 5).map((row) => (
                             <div key={`category-mover-${row.key}`} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2">
                               <div>
                                 <p className="text-sm font-black text-gray-950">{row.name}</p>
@@ -882,7 +1153,7 @@ export default function Reports() {
                     <div className="rounded-lg border border-gray-200 bg-white p-4">
                       <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">Channel Snapshot</p>
                       <div className="space-y-2">
-                        {ownerChannelRows.slice(0, 4).map((row: any) => (
+                        {ownerChannelRows.slice(0, 4).map((row) => (
                           <div key={`owner-channel-${row.key}`} className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2">
                             <span className="text-sm font-black text-gray-950">{row.label}</span>
                             <span className="text-xs font-black text-gray-600">{Number(row.current_share_percent || 0).toFixed(1)}%</span>
@@ -911,7 +1182,7 @@ export default function Reports() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-5">
-                  {data.comparison.summary_cards.map((card: any) => {
+                  {data.comparison.summary_cards.map((card) => {
                     const positive = card.yoy_change_percent >= 0;
                     const DirectionIcon = positive ? ArrowUpRight : ArrowDownRight;
                     return (
@@ -949,7 +1220,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
-                      {data.comparison.daily_comparison.slice(-7).map((row: any) => (
+                      {data.comparison.daily_comparison.slice(-7).map((row) => (
                         <tr key={row.date} className="hover:bg-orange-50/50">
                           <td className="px-4 py-3">
                             <p className="text-sm font-black text-gray-900">{row.label}</p>
@@ -1022,7 +1293,7 @@ export default function Reports() {
                     <Target className="h-5 w-5 text-orange-600" />
                   </div>
                   <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    {varianceActionRows.slice(0, 4).map((row: any) => {
+                    {varianceActionRows.slice(0, 4).map((row) => {
                       const hasGap = Number(row.gap || 0) > 0;
                       const label = hasGap ? `Recover ${formatMoney(Number(row.gap || 0))}` : row.momentum ? "Protect momentum" : "Build baseline";
                       return (
@@ -1120,7 +1391,7 @@ export default function Reports() {
                   </div>
                   <div className="space-y-3">
                     {orderChannelRows.length ? (
-                      orderChannelRows.map((row: any) => {
+                      orderChannelRows.map((row) => {
                         const positive = Number(row.yoy_change_percent || 0) >= 0;
                         return (
                           <div key={`channel-${row.key}`} className="rounded-lg border border-gray-200 bg-white p-4">
@@ -1170,7 +1441,7 @@ export default function Reports() {
                     </div>
                     <div className="space-y-3">
                       {paymentRows.length ? (
-                        paymentRows.map((row: any) => (
+                        paymentRows.map((row) => (
                           <div key={`payment-${row.key}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 p-3">
                             <div>
                               <p className="text-sm font-black text-gray-950">{row.label}</p>
@@ -1319,7 +1590,7 @@ export default function Reports() {
                       <h3 className="mt-1 text-xl font-black text-gray-950">Value, reach, and cleanup priority</h3>
                     </div>
                     <span className="rounded-md bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-gray-600">
-                      {customerSegments.summary.readiness_percent.toFixed(1)}% ready
+                      {Number(customerSegments.summary.readiness_percent || 0).toFixed(1)}% ready
                     </span>
                   </div>
 
@@ -1328,13 +1599,13 @@ export default function Reports() {
                       title="Value Leader"
                       label={valueLeader?.label || "No segment"}
                       value={valueLeader ? formatMoney(valueLeader.total_spend) : "Rs 0"}
-                      detail={valueLeader ? `${valueLeader.revenue_share_percent.toFixed(1)}% of recorded spend` : "Awaiting customer spend"}
+                      detail={valueLeader ? `${Number(valueLeader.revenue_share_percent || 0).toFixed(1)}% of recorded spend` : "Awaiting customer spend"}
                     />
                     <SegmentFocusCard
                       title="Cleanup Leader"
                       label={cleanupLeader?.label || "No segment"}
                       value={cleanupLeader ? `${Number(cleanupLeader.email_gap_count || 0) + Number(cleanupLeader.phone_gap_count || 0)} gaps` : "0 gaps"}
-                      detail={cleanupLeader ? cleanupLeader.recommended_action : "No cleanup action yet"}
+                      detail={cleanupLeader ? cleanupLeader.recommended_action || "No cleanup action yet" : "No cleanup action yet"}
                     />
                   </div>
 
@@ -1352,7 +1623,7 @@ export default function Reports() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {customerSegmentRows.length ? (
-                          customerSegmentRows.map((row: any) => (
+                          customerSegmentRows.map((row) => (
                             <tr key={`segment-${row.segment}`} className="hover:bg-orange-50/50">
                               <td className="px-4 py-3">
                                 <p className="text-sm font-black text-gray-950">{row.label}</p>
@@ -1523,7 +1794,7 @@ export default function Reports() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {marketingDecisionRows.length ? (
-                            marketingDecisionRows.map((row: any) => (
+                            marketingDecisionRows.map((row) => (
                               <tr key={`decision-${row.promotion_detail.id}`} className="hover:bg-orange-50/50">
                                 <td className="px-4 py-3">
                                   <p className="text-sm font-black text-gray-950">{row.promotion_detail.name}</p>
@@ -1536,7 +1807,7 @@ export default function Reports() {
                                 <td className="px-4 py-3 text-right">
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedMarketingCampaignId(row.promotion_detail.id)}
+                                    onClick={() => setSelectedMarketingCampaignId(row.promotion_detail.id ?? null)}
                                     className="rounded-md bg-gray-100 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-gray-700 hover:bg-orange-100 hover:text-orange-700"
                                   >
                                     {row.action}
@@ -1642,7 +1913,7 @@ export default function Reports() {
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {marketingRows.length ? (
-                      marketingRows.map((row: any) => (
+                      marketingRows.map((row) => (
                         <tr key={row.promotion_detail.id} className="hover:bg-orange-50/50">
                           <td className="px-4 py-3">
                             <p className="text-sm font-black text-gray-950">{row.promotion_detail.name}</p>
@@ -1694,7 +1965,7 @@ export default function Reports() {
                   <BarChart3 className="h-5 w-5 text-orange-600" />
                 </div>
                 <div className="space-y-3">
-                  {weekdayRows.map((row: any, index: number) => {
+                  {weekdayRows.map((row, index: number) => {
                     const maxSale = Number(weekdayRows[0]?.current_sale || 0);
                     const width = maxSale > 0 ? Math.max(8, (Number(row.current_sale || 0) / maxSale) * 100) : 0;
                     const yoyPositive = Number(row.yoy_change_percent || 0) >= 0;
@@ -1748,7 +2019,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
-                      {varianceRows.map((row: any) => {
+                      {varianceRows.map((row) => {
                         const previousPositive = Number(row.previousChange || 0) >= 0;
                         const yoyPositive = Number(row.yoyChange || 0) >= 0;
                         return (
@@ -1803,7 +2074,7 @@ export default function Reports() {
               <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 mt-2">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Efficiency Index</p>
                 <div className="text-xl font-black tracking-tight">
-                  OVERHEAD: {data?.summary?.total_sales > 0 ? ((data.summary.total_expense / data.summary.total_sales) * 100).toFixed(1) : '0.0'}% YIELD COST
+                  OVERHEAD: {Number(data?.summary?.total_sales || 0) > 0 ? ((Number(data?.summary?.total_expense || 0) / Number(data?.summary?.total_sales || 1)) * 100).toFixed(1) : '0.0'}% YIELD COST
                 </div>
               </div>
             </div>
@@ -1835,8 +2106,8 @@ export default function Reports() {
                   </div>
                   <div className="text-right">
                      <p className="text-[10px] font-bold uppercase mb-1">VS Last Year</p>
-                     <p className={`text-2xl font-black ${data?.forecast?.change_percent >= 0 ? 'text-green-300' : 'text-red-300'}`}>
-                        {data?.forecast?.change_percent > 0 ? '+' : ''}{data?.forecast?.change_percent || '0'}%
+                     <p className={`text-2xl font-black ${Number(data?.forecast?.change_percent || 0) >= 0 ? 'text-green-300' : 'text-red-300'}`}>
+                        {Number(data?.forecast?.change_percent || 0) > 0 ? '+' : ''}{data?.forecast?.change_percent || '0'}%
                      </p>
                   </div>
                </div>
@@ -1858,7 +2129,7 @@ export default function Reports() {
                   <h4 className="font-black text-gray-900 uppercase tracking-widest text-xs">Reporting Context</h4>
                </div>
                <p className="text-xs font-bold text-gray-500 leading-relaxed italic">
-                 &ldquo;Our monthly forecast indicates a significant {data?.forecast?.change_percent >= 0 ? 'surplus' : 'deficit'} compared to the previous year. Strategic price adjustments in late 2025 have stabilized margins across all core categories.&rdquo;
+                 &ldquo;Our monthly forecast indicates a significant {Number(data?.forecast?.change_percent || 0) >= 0 ? 'surplus' : 'deficit'} compared to the previous year. Strategic price adjustments in late 2025 have stabilized margins across all core categories.&rdquo;
                </p>
             </div>
           </div>
@@ -1883,10 +2154,10 @@ export default function Reports() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {((data?.trends || []) as any[]).length === 0 ? (
+                  {(data?.trends || []).length === 0 ? (
                     <tr><td colSpan={5} className="py-20 text-center text-gray-400 font-bold uppercase tracking-widest">No historical trend data available.</td></tr>
                   ) : (
-                    (data?.trends || []).map((t: any, i: number) => (
+                    (data?.trends || []).map((t, i) => (
                       <tr key={i} className="hover:bg-gray-50 transition-colors">
                         <td className="px-10 py-6 font-black text-gray-900 tracking-tight lowercase">{t.month}</td>
                         <td className="px-10 py-6 text-right font-black text-gray-700"><IndianRupee className="w-4 h-4 inline mr-1" />{t.total_sale.toLocaleString()}</td>
@@ -2073,7 +2344,7 @@ function OwnerSnapshotCard({
   detail,
 }: {
   title: string;
-  label: string;
+  label?: string;
   value: string;
   detail: string;
 }) {
@@ -2100,7 +2371,7 @@ function SegmentFocusCard({
   detail,
 }: {
   title: string;
-  label: string;
+  label?: string;
   value: string;
   detail: string;
 }) {
@@ -2123,7 +2394,7 @@ function DrilldownList({
   rows,
 }: {
   title: string;
-  rows: Array<[string, string | number]>;
+  rows: Array<[string, string | number | undefined]>;
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
@@ -2146,15 +2417,15 @@ function StatusMix({
   formatMoney,
 }: {
   title: string;
-  rows: any[];
-  formatMoney: (value: number) => string;
+  rows: MixRow[];
+  formatMoney: (value: number | undefined) => string;
 }) {
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
       <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-gray-500">{title}</p>
       <div className="space-y-2">
         {rows.length ? (
-          rows.map((row: any) => (
+          rows.map((row) => (
             <div key={`${title}-${row.key}`} className="rounded-md bg-white px-3 py-2">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-black text-gray-950">{row.label}</p>
