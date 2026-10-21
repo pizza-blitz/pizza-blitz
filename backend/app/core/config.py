@@ -39,6 +39,14 @@ class Settings(BaseSettings):
         "on",
     }
     
+    # In-process guard for sensitive public endpoints. A horizontally scaled
+    # deployment should also use a shared limiter or a provider WAF rule.
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")
     PIZZA_BLITZ_ADMIN_ID: str = os.getenv("PIZZA_BLITZ_ADMIN_ID", RESTAURANT_ADMIN_ID)

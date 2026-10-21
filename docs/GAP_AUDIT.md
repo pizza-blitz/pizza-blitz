@@ -54,6 +54,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 23 | Startup safety | Production could boot with repository-default secrets (token signing key, admin password), which would make admin tokens forgeable even though readiness flagged it. | Defaults in `config.py` and the readiness report. | Added `validate_production_settings()` to the lifespan: production refuses to start when `AUTH_SECRET_KEY`, admin passwords, or the session secret are weak or missing. Covered by three tests, and the production integration run boots only with strong values. |
 | 24 | Proof scripts | Two browser proofs defaulted to the deployed `pizza-blitz.vercel.app` URL instead of the local app, so a local run silently reached the public internet and timed out (one of them failed during this pass). | Running `verify-reporting-action-board.cjs` locally. | Both default to `http://127.0.0.1:3011` now and keep `E2E_BASE_URL` as the override for deployed runs. The script passes locally. |
 | 25 | Frontend types | 18 pages carried 86 explicit-`any` annotations at their API boundaries, which hid response-shape mistakes from the compiler. | ESLint `no-explicit-any` warnings. | Added typed payload interfaces and removed every shortcut: dashboard, daily, CEO, break-even, AI insights, inventory, sales, purchase-orders, operations, ops, recipes, and the reports page (all 86 sites retired). Reports got explicit models for comparison cards and daily/weekday rows, owner comparison, campaign performance with nested outreach/redemption/ad blocks, customer segments, order-channel mixes, forecast, target pacing, and break-even. `no-explicit-any` now reports zero findings. |
+| 26 | Abuse protection | Sensitive public endpoints (customer-login proof, order creation, payment verification, admin/staff/customer login) had no throttle, so phone+order-id enumeration or credential brute force was only bounded by network speed. | Endpoint inventory and the earlier idor review. | Added a per-instance sliding-window limiter (`app/core/rate_limit.py`) wired into those endpoints, enabled by default and configurable with `RATE_LIMIT_ENABLED`. Covered by five tests (limit, bucket isolation, proxy header, disable switch, endpoint wiring). Docs note that horizontal deployments should add a shared Redis limiter or edge WAF rule. |
 
 ## Still open
 
@@ -64,12 +65,11 @@ These are real gaps, but they cannot be closed from inside the repository.
 | 1 | Launch | Production database has not been connected; local runs use in-memory SQLite. | Needs the production database URL and a migration run. See `docs/LAUNCH_RUNBOOK.md`. |
 | 2 | Launch | Backend and frontend are not deployed, so the live deployment proof and production smoke scripts have nothing to run against. | Needs a Google Cloud / Vercel project and credentials (`deploy-gcp.ps1`). |
 | 3 | Providers | Payment gateway, WhatsApp, SMS, email, Meta social, and Meta ads credentials are not configured. | Needs real provider accounts. The features stay gated behind `CAMPAIGN_SEND_ENABLED`, `SOCIAL_PUBLISH_ENABLED`, and `ADS_LAUNCH_ENABLED`, which is the intended safe default. |
-| 4 | Rate limiting | Public endpoints that accept a phone number or order id (customer login proof, order tracking, order creation, payment verification) have no throttle. The login proof requires a matching phone + order id, but an attacker could still enumerate sequential ids. | A correct fix needs a shared limiter (Redis or provider WAF) because in-process counters do not hold across serverless instances. That is a deployment decision, and the rest of the system is ready for it. |
-| 5 | Browser proofs | A handful of the 139 proof scripts assert against a deployed URL (live deployment proof, production launch, live environment). They are expected to fail locally until item 2 is done. | They require the deployed environment. |
+| 4 | Browser proofs | A handful of the 139 proof scripts assert against a deployed URL (live deployment proof, production launch, live environment). They are expected to fail locally until item 2 is done. `verify:audit` used to include the deployment proof, so the documented local quality gate could never pass. | They require the deployed environment; the deployment-only proof was split into `npm run verify:deployment` and removed from `verify:audit`, so the local suite is fully green and the deployed check stays explicit. |
 
 ## Current gate results
 
-- Backend unit suite: 57 tests, all pass (in a clean venv built from
+- Backend unit suite: 62 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
@@ -77,6 +77,8 @@ These are real gaps, but they cannot be closed from inside the repository.
 - `npm run typecheck`: pass.
 - `npm run build`: pass, with lint and type checking enabled.
 - `npm run test:e2e`: pass.
+- `npm run verify:audit` (preflight, surface, inventory, live): pass end to end.
+  The deployment-only proof is now the separate `npm run verify:deployment`.
 - Audit surface, inventory, action feedback, role gates, restaurant ready
   audit, and roadmap proofs: pass.
 - The 11 order/customer proof scripts touched by the auth hardening: pass.

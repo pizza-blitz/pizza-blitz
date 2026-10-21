@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 57 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, the business clock, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 62 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, rate limiting, the business clock, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -58,6 +58,15 @@ configured beyond a GitHub remote.
 the same value drives sales days, order "today" filters, promotions, shifts,
 and readiness. Set it explicitly on the deployment host; the API does not rely
 on the host's clock or `TZ` setting.
+
+## Abuse protection
+
+`RATE_LIMIT_ENABLED` (default true) throttles the customer-login proof, order
+creation, payment verification, and login routes per client IP and per
+instance. Limits are generous for normal service (30 login attempts, 120 order
+creations, and 30 order-history lookups per minute). For a horizontally scaled
+deployment, add a shared limiter (Redis) or an edge WAF rate rule as well; this
+in-process guard is defense in depth, not a global quota.
 
 ## Live gates (servers needed)
 
@@ -91,10 +100,13 @@ and the browser smoke in one command when both servers are already running.
 These prove the deployed system and only pass against a real deployment:
 
 - `npm run verify:live` (login loop and simple POS against `E2E_BASE_URL`)
-- `npm run verify:audit:live` deployment proof scripts (`verify-live-deployment-proof.cjs`)
+- `npm run verify:deployment` (live deployment proof: public API health,
+  checkout DB readiness, CORS origin lock, and public order page)
 
-Set `E2E_BASE_URL`, `E2E_API_URL`, `E2E_ADMIN_ID`, and `E2E_ADMIN_PASSWORD`
-before running them. See `docs/LAUNCH_RUNBOOK.md` for the deployment sequence.
+They are deliberately **not** part of `verify:audit`, so the local suite can be
+green without a deployment. Set `E2E_BASE_URL`, `E2E_API_URL`, `E2E_ADMIN_ID`,
+and `E2E_ADMIN_PASSWORD` before running them. See `docs/LAUNCH_RUNBOOK.md` for
+the deployment sequence.
 
 Production behavior is fail-closed: the backend refuses to start with
 repository-default secrets, and a production frontend rejects `admin/admin123`
@@ -112,8 +124,6 @@ first, otherwise login is refused by design.
 
 ## Known non-blocking warnings
 
-- `no-explicit-any` warnings in older dashboard pages. They are tracked in
-  `docs/GAP_AUDIT.md`.
 - `react-hooks/exhaustive-deps` warnings where a loader intentionally runs once
   on mount.
 - `<img>` usage on marketing surfaces instead of `next/image`.

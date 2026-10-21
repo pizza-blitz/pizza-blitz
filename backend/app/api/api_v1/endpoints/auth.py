@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_session, get_db, require_roles
 from app.core.config import settings
+from app.core.rate_limit import enforce_rate_limit
 from app.models.domain import Customer
 from app.services.operational_audit_service import record_operational_audit_event
 from app.services.auth_service import (
@@ -57,7 +58,8 @@ class CustomerLoginRequest(BaseModel):
 
 
 @router.post("/admin/login")
-def admin_login(payload: AdminLoginRequest, db: Session = Depends(get_db)):
+def admin_login(payload: AdminLoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "auth-login", 30)
     managed_admin = verify_managed_admin_credentials(
         admin_id=payload.id,
         password=payload.password,
@@ -80,7 +82,8 @@ def admin_login(payload: AdminLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/staff/login")
-def staff_login(payload: StaffLoginRequest, db: Session = Depends(get_db)):
+def staff_login(payload: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "auth-login", 30)
     managed_admin = verify_managed_admin_credentials(
         admin_id=payload.id,
         password=payload.password,
@@ -174,7 +177,8 @@ def save_admin_credential(
 
 
 @router.post("/admin/portal-verify")
-def verify_admin_for_portal(payload: AdminLoginRequest, db: Session = Depends(get_db)):
+def verify_admin_for_portal(payload: AdminLoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "auth-login", 30)
     managed_credential = verify_managed_admin_credentials(
         admin_id=payload.id,
         password=payload.password,
@@ -272,7 +276,8 @@ def save_staff_credential(
 
 
 @router.post("/staff/portal-verify")
-def verify_staff_for_portal(payload: StaffLoginRequest, db: Session = Depends(get_db)):
+def verify_staff_for_portal(payload: StaffLoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "auth-login", 30)
     managed_credential = verify_managed_staff_credentials(
         staff_id=payload.id,
         password=payload.password,
@@ -310,7 +315,8 @@ def verify_staff_for_portal(payload: StaffLoginRequest, db: Session = Depends(ge
 
 
 @router.post("/customer/login")
-def customer_login(payload: CustomerLoginRequest, db: Session = Depends(get_db)):
+def customer_login(payload: CustomerLoginRequest, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "auth-login", 30)
     phone = payload.phone.strip()
     if not phone:
         raise HTTPException(status_code=422, detail="Phone number is required.")

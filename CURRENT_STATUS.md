@@ -23,13 +23,13 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 57 backend tests, 139 browser proof scripts, a backend Ruff
+- Automation: 62 backend tests, 139 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
 ## Verified State (2026-10-21)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 57 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 62 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the
@@ -38,15 +38,21 @@ The standalone copy excludes generated dependency and build folders
 - `npm run build`: passes with lint and type checking enabled (the previous
   `ignoreDuringBuilds` / `ignoreBuildErrors` bypasses are removed).
 - `npm run test:e2e`: portal browser smoke passes.
-- Audit suite: link health, control labels, safe action buttons, feature
-  coverage, route action inventory, placeholder hygiene, action feedback, role
-  gates, restaurant ready audit, and the roadmap proof board all pass.
+- Audit suite: `npm run verify:audit` passes end to end (preflight, link
+  health, control labels, safe actions, feature coverage, route inventory,
+  placeholder hygiene, action feedback, role gates, restaurant readiness, and
+  the roadmap board). The deployment-only proof is `npm run verify:deployment`
+  and runs against a deployed URL.
 - Health probes: `/health` returns process status; `/ready` checks the database
   and returns 503 when it is unreachable.
 - Secret scan of tracked files: clean.
 
 ## Recent Hardening
 
+- Sensitive public endpoints (customer-login proof, order creation, payment
+  verification, and login routes) are throttled per instance, configurable
+  with `RATE_LIMIT_ENABLED`; horizontally scaled deployments should add a
+  shared limiter at the edge.
 - Production now fails closed on security: the backend refuses to start with
   repository-default secrets, a production frontend rejects `admin/admin123`
   unless admin credentials are configured, and both deploy scripts pass the

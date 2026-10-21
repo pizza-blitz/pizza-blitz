@@ -18,6 +18,7 @@ from app.api.deps import (
     session_from_request,
 )
 from app.core.config import settings
+from app.core.rate_limit import enforce_rate_limit
 from app.models.domain import (
     Customer,
     DailySales,
@@ -1775,7 +1776,8 @@ def checkout_readiness():
 
 
 @router.post("/")
-def create_order(order: OrderCreate, db: Session = Depends(get_db)):
+def create_order(order: OrderCreate, request: Request, db: Session = Depends(get_db)):
+    enforce_rate_limit(request, "order-create", 120)
     checkout_readiness = checkout_readiness_payload()
     if not checkout_readiness["accepting_orders"]:
         raise HTTPException(status_code=503, detail=checkout_readiness["message"])
@@ -2688,8 +2690,10 @@ def confirm_order_payment(
 def verify_order_payment(
     order_id: int,
     payload: ProviderPaymentVerification,
+    request: Request,
     db: Session = Depends(get_db),
 ):
+    enforce_rate_limit(request, "payment-verify", 60)
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -3017,10 +3021,12 @@ def authorize_customer_history_access(
 @router.get("/customer-history/{phone}")
 def customer_order_history(
     phone: str,
+    request: Request,
     order_id: int | None = None,
     db: Session = Depends(get_db),
     session: dict | None = Depends(get_optional_session),
 ):
+    enforce_rate_limit(request, "customer-history", 30)
     normalized_phone = phone.strip()
     if not normalized_phone:
         raise HTTPException(status_code=422, detail="Phone number is required.")
