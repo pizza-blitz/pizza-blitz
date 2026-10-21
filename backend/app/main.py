@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.api.api_v1.api import api_router
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
-from app.models import domain
+from app.models import domain  # noqa: F401 - registers the complete SQLAlchemy metadata
 from app.models.domain import DiningTable, ExpenseCategory, MenuItem, Vendor
 from app.services.delivery_service import seed_default_delivery_zones
 from app.services.menu_customization_service import seed_default_customizations

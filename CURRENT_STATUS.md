@@ -23,13 +23,15 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 43 backend tests, 139 browser proof scripts, a lint gate, a
-  TypeScript gate, and a production build gate.
+- Automation: 47 backend tests, 139 browser proof scripts, a backend Ruff
+  lint gate, a lint gate, a TypeScript gate, a production build gate, and a
+  GitHub Actions workflow that runs them all.
 
 ## Verified State (2026-10-21)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 43 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 47 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
+- `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes; remaining `no-explicit-any` findings are warnings.
 - `npm run typecheck`: passes.
 - `npm run build`: passes with lint and type checking enabled (the previous
@@ -44,6 +46,11 @@ The standalone copy excludes generated dependency and build folders
 
 ## Recent Hardening
 
+- Every business date (sales days, order "today" filters, promotions, shifts,
+  readiness) now comes from one configurable restaurant timezone
+  (`RESTAURANT_TIMEZONE`, default `Asia/Kolkata`) instead of mixing UTC and
+  host-local dates. This fixed the dashboard dropping the current day's sales
+  after local midnight.
 - Customer order history and order detail endpoints now require a verified
   session or a phone+order ownership proof instead of trusting a phone number
   or a sequential order id.
@@ -56,6 +63,8 @@ The standalone copy excludes generated dependency and build folders
 - Build and deploy configuration was corrected (npm lockfile install, real
   API URL defaults, no stale Vercel fallback, Python 3.11 alignment,
   `.dockerignore` for both images).
+- A Ruff lint gate and a GitHub Actions workflow now cover backend lint,
+  tests, migrations, and the frontend lint/typecheck/build gates.
 - Docs were refreshed, and `docs/VERIFICATION.md` plus `docs/GAP_AUDIT.md` now
   record every gate and every open item.
 

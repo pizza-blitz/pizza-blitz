@@ -5,6 +5,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, text
+from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales, FixedCost, MenuItem, RestaurantOrder
 
@@ -321,7 +322,7 @@ def _category_map_from_items(items: dict) -> dict:
 
 @router.get("/dashboard-stats")
 def get_dashboard_stats(period: str = "30days", db: Session = Depends(get_db)):
-    today = datetime.utcnow().date()
+    today = business_today()
     if period == "7days":
         start_date = today - timedelta(days=6)
     elif period == "90days" or period == "3months":
@@ -464,7 +465,7 @@ def get_lifetime_summary(db: Session = Depends(get_db)):
 def compare_same_period(period: str = "7days", db: Session = Depends(get_db)):
     days = _period_days(period)
     
-    today = datetime.utcnow().date()
+    today = business_today()
     current_start = today - timedelta(days=days - 1)
     last_year_start = current_start - timedelta(days=365)
     last_year_end = today - timedelta(days=365)
@@ -490,7 +491,7 @@ def compare_same_period(period: str = "7days", db: Session = Depends(get_db)):
 @router.get("/compare/performance-dashboard")
 def performance_comparison_dashboard(period: str = "30days", db: Session = Depends(get_db)):
     days = _period_days(period)
-    today = datetime.utcnow().date()
+    today = business_today()
     current_start = today - timedelta(days=days - 1)
     current_end = today
     previous_start = current_start - timedelta(days=days)
@@ -630,7 +631,7 @@ def order_channel_comparison_dashboard(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     days = _period_days(period)
-    today = datetime.utcnow().date()
+    today = business_today()
     current_start = today - timedelta(days=days - 1)
     current_end = today
     previous_start = current_start - timedelta(days=days)
@@ -735,7 +736,7 @@ def owner_comparison_command_dashboard(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     days = _period_days(period)
-    today = datetime.utcnow().date()
+    today = business_today()
     current_start = today - timedelta(days=days - 1)
     current_end = today
     previous_start = current_start - timedelta(days=days)
@@ -895,7 +896,7 @@ def best_worst_days(limit: int = 10, db: Session = Depends(get_db)):
 
 @router.get("/insights/monthly-forecast")
 def monthly_forecast(db: Session = Depends(get_db)):
-    today = datetime.utcnow().date()
+    today = business_today()
     month_start = today.replace(day=1)
     
     current_month = db.query(DailySales).filter(DailySales.date >= month_start).all()
@@ -927,7 +928,7 @@ def monthly_forecast(db: Session = Depends(get_db)):
 
 @router.get("/insights/profit-trend")
 def profit_trend(months: int = 12, db: Session = Depends(get_db)):
-    today = datetime.utcnow().date()
+    today = business_today()
     result = []
     
     for i in range(months - 1, -1, -1):
@@ -959,9 +960,9 @@ def profit_trend(months: int = 12, db: Session = Depends(get_db)):
 
 @router.get("/insights/health-score")
 def operational_health_score(db: Session = Depends(get_db)):
-    from datetime import date, timedelta
+    from datetime import timedelta
     
-    today = date.today()
+    today = business_today()
     month_start = today.replace(day=1)
     week_ago = today - timedelta(days=7)
     
@@ -1018,10 +1019,14 @@ def operational_health_score(db: Session = Depends(get_db)):
     
     total_score = round(margin_score + growth_score + expense_score + waste_score)
     
-    if total_score >= 80: grade, color = "Excellent", "green"
-    elif total_score >= 60: grade, color = "Good", "blue"
-    elif total_score >= 40: grade, color = "Average", "yellow"
-    else: grade, color = "Needs Attention", "red"
+    if total_score >= 80:
+        grade, color = "Excellent", "green"
+    elif total_score >= 60:
+        grade, color = "Good", "blue"
+    elif total_score >= 40:
+        grade, color = "Average", "yellow"
+    else:
+        grade, color = "Needs Attention", "red"
     
     return {
         "health_score": total_score,
@@ -1043,9 +1048,8 @@ def operational_health_score(db: Session = Depends(get_db)):
 
 @router.get("/breakeven")
 def breakeven_analysis(db: Session = Depends(get_db)):
-    from datetime import date
     import calendar
-    today = date.today()
+    today = business_today()
     month_str = today.strftime("%Y-%m")
     fixed = db.query(FixedCost).filter(FixedCost.month == month_str).first()
     rent = float(fixed.rent) if fixed else 0
@@ -1101,9 +1105,8 @@ def set_fixed_costs(month: str, rent: float = 0, salaries: float = 0,
 
 @router.get("/target/status")
 def target_status(monthly_target: float = 0, db: Session = Depends(get_db)):
-    from datetime import date
     import calendar
-    today = date.today()
+    today = business_today()
     month_start = today.replace(day=1)
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     days_elapsed = today.day
@@ -1137,9 +1140,9 @@ def target_status(monthly_target: float = 0, db: Session = Depends(get_db)):
 
 @router.get("/weekly-summary/whatsapp")
 def weekly_whatsapp_summary(db: Session = Depends(get_db)):
-    from datetime import date, timedelta
+    from datetime import timedelta
     import urllib.parse
-    today = date.today()
+    today = business_today()
     week_start = today - timedelta(days=7)
     prev_week_start = week_start - timedelta(days=7)
     this_week = db.execute(text("SELECT COALESCE(SUM(total_sale),0) as rev, COALESCE(SUM(profit),0) as profit FROM daily_sales WHERE date >= :s"), {"s": week_start}).fetchone()
@@ -1175,8 +1178,8 @@ _Pizza Blitz Management System_"""
 
 @router.get("/ceo-summary")
 def ceo_weekly_summary(db: Session = Depends(get_db)):
-    from datetime import date, timedelta
-    today = date.today()
+    from datetime import timedelta
+    today = business_today()
     week_start = today - timedelta(days=7)
     prev_week_start = week_start - timedelta(days=7)
     this_week = db.execute(text("SELECT COALESCE(SUM(total_sale),0) as rev, COALESCE(SUM(profit),0) as profit FROM daily_sales WHERE date >= :s"), {"s": week_start}).fetchone()
@@ -1196,5 +1199,5 @@ def ceo_weekly_summary(db: Session = Depends(get_db)):
         "profit_margin": margin,
         "best_day": {"date": _format_sql_date(best.date, "%A %d %b") if best else "N/A", "revenue": float(best.total_sale) if best else 0},
         "worst_day": {"date": _format_sql_date(worst.date, "%A %d %b") if worst else "N/A", "revenue": float(worst.total_sale) if worst else 0},
-        "ai_recommendation": (f"Strong week with {wow}% growth. Maintain consistency on slower days." if wow > 10 else f"Stable week. Push weekend promotions." if wow > 0 else f"Revenue declined {abs(wow)}% vs last week. Review pricing and staffing.")
+        "ai_recommendation": (f"Strong week with {wow}% growth. Maintain consistency on slower days." if wow > 10 else "Stable week. Push weekend promotions." if wow > 0 else f"Revenue declined {abs(wow)}% vs last week. Review pricing and staffing.")
     }

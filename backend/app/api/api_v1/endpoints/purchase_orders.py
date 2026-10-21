@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Any
+from app.core.clock import business_today
 from app.api.deps import get_db
 from app.models.domain import (
     DailySales,
@@ -13,7 +14,7 @@ from app.models.domain import (
     VendorPriceHistory,
 )
 from pydantic import BaseModel
-from datetime import date, datetime
+from datetime import datetime
 
 router = APIRouter()
 
@@ -281,7 +282,7 @@ def _post_purchase_order_expense(order: PurchaseOrder, db: Session) -> Expense |
     )
     db.add(expense)
 
-    today = date.today()
+    today = business_today()
     daily = db.query(DailySales).filter(DailySales.date == today).first()
     if daily:
         daily.total_expense = round(float(daily.total_expense or 0) + amount, 2)

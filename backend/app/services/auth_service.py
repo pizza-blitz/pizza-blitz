@@ -15,9 +15,9 @@ from app.core.config import settings
 from app.models.domain import AdminCredential, StaffCredential
 
 
-TOKEN_ALGORITHM = "HS256"
+TOKEN_ALGORITHM = "HS256"  # noqa: S105 - algorithm name, not a secret
 SESSION_ROLES = {"admin", "staff", "customer"}
-PASSWORD_SCHEME = "pbkdf2_sha256"
+PASSWORD_SCHEME = "pbkdf2_sha256"  # noqa: S105 - hashing scheme name, not a secret
 PASSWORD_ITERATIONS = 260000
 
 

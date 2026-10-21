@@ -2,11 +2,12 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.models.domain import Promotion
 
 
 def due_scheduled_campaigns(db: Session, today_value: date | None = None) -> list[Promotion]:
-    current_date = today_value or date.today()
+    current_date = today_value or business_today()
     return (
         db.query(Promotion)
         .filter(Promotion.status == "scheduled")

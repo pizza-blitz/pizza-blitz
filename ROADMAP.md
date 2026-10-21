@@ -111,5 +111,7 @@ probe, runbook).
 - [x] Complete the Alembic chain so a migrated database has every model table.
 - [x] Replace the scheduled sheet-sync placeholder with a gated real refresh.
 - [x] Add Docker build-context ignores for both apps.
+- [x] Unify every business-date read behind one configurable restaurant timezone.
+- [x] Add a backend Ruff lint gate and a CI workflow for both apps.
 - [x] Record the full gap audit and verification guide in `docs/`.
 - [ ] Replace remaining explicit `any` response types with per-endpoint models.

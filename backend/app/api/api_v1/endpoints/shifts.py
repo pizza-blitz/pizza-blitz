@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales, ShiftLog, StaffLeaveRequest
 from app.services.operational_audit_service import record_operational_audit_event
@@ -327,7 +328,7 @@ def attendance_command(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     del session
-    working_date = _parse_date(target_date) if target_date else date.today()
+    working_date = _parse_date(target_date) if target_date else business_today()
     shifts = (
         db.query(ShiftLog)
         .filter(ShiftLog.date == working_date)
@@ -525,7 +526,7 @@ def payroll_preview(
     session: dict = Depends(require_roles("admin")),
 ):
     del session
-    today = date.today()
+    today = business_today()
     period_start = _parse_date(start_date) if start_date else today.replace(day=1)
     period_end = _parse_date(end_date) if end_date else today
     if period_end < period_start:

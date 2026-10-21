@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.api.deps import (
     customer_subject_phone,
     get_db,
@@ -755,7 +756,7 @@ def latest_cash_drawer_close(db: Session, drawer_date: date) -> OperationalAudit
 
 
 def cash_drawer_command_payload(db: Session, drawer_date: date | None = None) -> dict:
-    drawer_date = drawer_date or date.today()
+    drawer_date = drawer_date or business_today()
     today_orders = (
         db.query(RestaurantOrder)
         .filter(RestaurantOrder.date == drawer_date)
@@ -1200,7 +1201,7 @@ def apply_coupon_to_subtotal(
     if not promo:
         raise HTTPException(status_code=404, detail="Coupon code not found.")
 
-    today = date.today()
+    today = business_today()
     if promo.start_date > today or promo.end_date < today:
         raise HTTPException(status_code=409, detail="Coupon is not active today.")
     if promo.status not in {"active", "scheduled"}:
@@ -1408,7 +1409,7 @@ def kitchen_station_for_saved_item(item: dict) -> dict:
 def order_age_minutes(order: RestaurantOrder) -> int:
     created_at = order.created_at
     if created_at is None:
-        created_at = datetime.combine(order.date or date.today(), datetime.min.time())
+        created_at = datetime.combine(order.date or business_today(), datetime.min.time())
     if created_at.tzinfo is not None:
         created_at = created_at.replace(tzinfo=None)
     return max(int((datetime.utcnow() - created_at).total_seconds() // 60), 0)
@@ -1513,7 +1514,7 @@ def build_station_command_report(db: Session) -> dict:
     active_orders = (
         db.query(RestaurantOrder)
         .filter(
-            RestaurantOrder.date == date.today(),
+            RestaurantOrder.date == business_today(),
             RestaurantOrder.status.notin_(["closed", "cancelled"]),
         )
         .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
@@ -2045,7 +2046,7 @@ def close_order(
                 table.current_order_id = None
                 table.last_updated = datetime.utcnow()
 
-        daily = db.query(DailySales).filter(DailySales.date == date.today()).first()
+        daily = db.query(DailySales).filter(DailySales.date == business_today()).first()
         if daily:
             daily.total_sale = float(daily.total_sale or 0) + float(order.total_amount or 0)
             if (order.payment_method or "").lower() == "cash":
@@ -2053,7 +2054,7 @@ def close_order(
             daily.profit = float(daily.total_sale or 0) - float(daily.total_expense or 0)
         else:
             daily = DailySales(
-                date=date.today(),
+                date=business_today(),
                 total_sale=order.total_amount or 0,
                 cash_collected=order.total_amount if (order.payment_method or "").lower() == "cash" else 0,
                 total_expense=0,
@@ -2309,7 +2310,7 @@ def payment_production_readiness(
     )
 
     paid_today_query = db.query(RestaurantOrder).filter(
-        RestaurantOrder.date == date.today(),
+        RestaurantOrder.date == business_today(),
         RestaurantOrder.payment_status == "paid",
     )
     paid_today_orders = paid_today_query.all()
@@ -2508,7 +2509,7 @@ def payment_reconciliation(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
-    today_start = datetime.combine(date.today(), datetime.min.time())
+    today_start = datetime.combine(business_today(), datetime.min.time())
     events_today = (
         db.query(PaymentEventAudit)
         .filter(PaymentEventAudit.received_at >= today_start)
@@ -2575,7 +2576,7 @@ def close_cash_drawer(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin", "staff")),
 ):
-    drawer_date = date.today()
+    drawer_date = business_today()
     command = cash_drawer_command_payload(db, drawer_date)
     method_expected = {
         row["method"]: money(row["expected_amount"])
@@ -2842,7 +2843,7 @@ def generate_invoice(
         return serialize_invoice(existing)
 
     count = db.query(Invoice).count()
-    invoice_number = f"PB-{date.today().strftime('%Y%m')}-{str(count + 1).zfill(4)}"
+    invoice_number = f"PB-{business_today().strftime('%Y%m')}-{str(count + 1).zfill(4)}"
     cgst = round((order.subtotal or 0) * 0.025, 2)
     sgst = round((order.subtotal or 0) * 0.025, 2)
 
@@ -2879,7 +2880,7 @@ def todays_orders(
     session: dict = Depends(require_roles("admin", "staff")),
 ):
     rows = db.query(RestaurantOrder).filter(
-        RestaurantOrder.date == date.today()
+        RestaurantOrder.date == business_today()
     ).order_by(RestaurantOrder.created_at.desc()).all()
     total = sum(float(row.total_amount or 0) for row in rows if row.status == "closed")
     return {
@@ -2898,7 +2899,7 @@ def order_flow_readiness(
 ):
     rows = (
         db.query(RestaurantOrder)
-        .filter(RestaurantOrder.date == date.today())
+        .filter(RestaurantOrder.date == business_today())
         .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
         .all()
     )

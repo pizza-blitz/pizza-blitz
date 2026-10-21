@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Restaurant Portal API"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    # Day boundaries for sales, orders, and promotions follow this timezone,
+    # independent of the host clock (Cloud Run runs in UTC by default).
+    RESTAURANT_TIMEZONE: str = os.getenv("RESTAURANT_TIMEZONE", "Asia/Kolkata")
 
     BACKEND_CORS_ORIGINS: str = os.getenv("BACKEND_CORS_ORIGINS", "")
 

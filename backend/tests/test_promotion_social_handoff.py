@@ -1,8 +1,9 @@
 import unittest
-from datetime import date, timedelta
+from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
+from app.core.clock import business_today
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
@@ -24,7 +25,7 @@ def cleanup_social_handoff(promo_id: int, post_id: int) -> None:
 
 class PromotionSocialHandoffTest(unittest.TestCase):
     def test_promotion_can_create_ready_social_post(self):
-        today = date.today()
+        today = business_today()
         with TestClient(app) as client:
             admin_login = client.post(
                 "/api/v1/auth/admin/login",

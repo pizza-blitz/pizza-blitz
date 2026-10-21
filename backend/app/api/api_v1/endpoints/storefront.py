@@ -1,8 +1,8 @@
-from datetime import date
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.api.deps import get_db
 from app.api.api_v1.endpoints.orders import checkout_readiness_payload
 from app.api.api_v1.endpoints.promotions import _promotion_dict
@@ -47,7 +47,7 @@ def is_public_storefront_promotion(promotion: Promotion) -> bool:
 
 
 def public_promotions(db: Session, limit: int = 8) -> list[dict]:
-    today = date.today()
+    today = business_today()
     promotions = (
         db.query(Promotion)
         .filter(Promotion.start_date <= today, Promotion.end_date >= today)

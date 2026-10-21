@@ -1,8 +1,9 @@
 import unittest
-from datetime import date, timedelta
+from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
+from app.core.clock import business_today
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
@@ -11,7 +12,7 @@ from app.models.domain import AdCampaign, Customer, Promotion, RestaurantOrder, 
 
 class PromotionPerformanceReportingTest(unittest.TestCase):
     def test_coupon_order_updates_promotion_performance_report(self):
-        today = date.today()
+        today = business_today()
         promo_id = None
         order_id = None
         post_id = None

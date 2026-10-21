@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
 from app.core.config import settings
 from app.models.domain import (
@@ -297,7 +298,7 @@ def _validate_promotion_payload(promo: PromotionCreate) -> tuple[date, date]:
 
 
 def _promotion_schedule_state(promo: Promotion) -> dict:
-    today = date.today()
+    today = business_today()
     if today < promo.start_date:
         phase = "upcoming"
     elif today > promo.end_date:
@@ -989,7 +990,7 @@ def _render_provider_test_message(template: str) -> str:
         "name": "Test Customer",
         "offer": "10% off",
         "code": "TEST10",
-        "end_date": date.today().isoformat(),
+        "end_date": business_today().isoformat(),
         "order_link": f"{_public_site_url()}/order",
     }
     try:
@@ -1069,7 +1070,7 @@ def _dispatch_contact(customer: Customer, promo: Promotion) -> dict:
 
 
 def _scheduled_campaign_phase(promo: Promotion) -> str:
-    today = date.today()
+    today = business_today()
     if promo.end_date < today:
         return "overdue"
     if promo.start_date <= today <= promo.end_date:
@@ -1588,7 +1589,7 @@ def _coupon_orders_query(db: Session, promo: Promotion):
 
 
 def _promotion_window(promo: Promotion) -> dict:
-    today = date.today()
+    today = business_today()
     total_days = max((promo.end_date - promo.start_date).days + 1, 1)
     elapsed_days = min(max((today - promo.start_date).days + 1, 0), total_days)
     remaining_days = max((promo.end_date - today).days, 0)
@@ -1946,7 +1947,7 @@ def list_promotions(
 
 @router.get("/active")
 def active_promotions(db: Session = Depends(get_db)):
-    today = date.today()
+    today = business_today()
     promotions = (
         db.query(Promotion)
         .filter(Promotion.start_date <= today, Promotion.end_date >= today)
@@ -2011,7 +2012,7 @@ def campaign_send_queue(
     if normalized_view not in allowed_views:
         raise HTTPException(status_code=422, detail="Unsupported send queue view.")
 
-    today = date.today()
+    today = business_today()
     promotions = (
         db.query(Promotion)
         .filter(Promotion.status.in_(["active", "scheduled"]))
@@ -2081,7 +2082,7 @@ def activate_scheduled_campaign(
         raise HTTPException(status_code=404, detail="Promotion not found")
     if promo.status != "scheduled":
         raise HTTPException(status_code=409, detail="Only scheduled campaigns can be activated.")
-    today = date.today()
+    today = business_today()
     if promo.start_date > today:
         raise HTTPException(
             status_code=409,
@@ -2111,7 +2112,7 @@ def schedule_promotion_campaign(
         raise HTTPException(status_code=404, detail="Promotion not found")
 
     start_date = _parse_date(payload.start_date)
-    if start_date < date.today():
+    if start_date < business_today():
         raise HTTPException(status_code=422, detail="Scheduled date cannot be in the past.")
 
     promo.start_date = start_date
@@ -2133,7 +2134,7 @@ def validate_coupon(payload: CouponValidationRequest, db: Session = Depends(get_
     if not promo:
         raise HTTPException(status_code=404, detail="Coupon code not found.")
 
-    today = date.today()
+    today = business_today()
     if promo.start_date > today or promo.end_date < today:
         raise HTTPException(status_code=409, detail="Coupon is not active today.")
     if promo.status not in {"active", "scheduled"}:
@@ -2200,7 +2201,7 @@ def create_retention_playbook_campaign(
         raise HTTPException(status_code=422, detail="Unsupported retention playbook audience.")
 
     template = RETENTION_PLAYBOOK[audience]
-    start_date = date.today()
+    start_date = business_today()
     end_date = start_date + timedelta(days=payload.duration_days - 1)
     code = _normalize_code(payload.code) or _unique_retention_code(db, template["code_prefix"])
     if db.query(Promotion).filter(Promotion.code == code).first():
@@ -2242,7 +2243,7 @@ def create_segment_campaign(
         raise HTTPException(status_code=422, detail="Unsupported campaign audience.")
 
     template = _segment_campaign_template(audience)
-    start_date = date.today()
+    start_date = business_today()
     end_date = start_date + timedelta(days=payload.duration_days - 1)
     code = _normalize_code(payload.code) or _unique_retention_code(db, template["code_prefix"])
     if db.query(Promotion).filter(Promotion.code == code).first():
@@ -2787,7 +2788,7 @@ def send_promotion_campaign(
         )
     if (
         promo.status == "scheduled"
-        and promo.start_date > date.today()
+        and promo.start_date > business_today()
         and not payload.dry_run
         and not payload.force_resend
     ):
@@ -2925,7 +2926,7 @@ def retry_campaign_deliveries(
         )
     if (
         promo.status == "scheduled"
-        and promo.start_date > date.today()
+        and promo.start_date > business_today()
         and not payload.dry_run
     ):
         raise HTTPException(

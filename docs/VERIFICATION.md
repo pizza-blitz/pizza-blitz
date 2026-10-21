@@ -31,7 +31,8 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 43 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 47 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, the business clock, and health probes. |
+| Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
 | Production build | `cd frontend; npm run build` | Compiles, lints, and type-checks. `next.config.mjs` no longer bypasses either check. |
@@ -43,6 +44,20 @@ Shortcut for the backend suite plus the production build:
 ```powershell
 .\scripts\verify-local.ps1
 ```
+
+## Continuous integration
+
+`.github/workflows/verify.yml` runs the same gates on every push and pull
+request: backend lint, backend tests, `alembic upgrade head` + `alembic check`,
+frontend lint, typecheck, and production build. Nothing else needs to be
+configured beyond a GitHub remote.
+
+## Business timezone
+
+`RESTAURANT_TIMEZONE` (default `Asia/Kolkata`) defines the restaurant calendar:
+the same value drives sales days, order "today" filters, promotions, shifts,
+and readiness. Set it explicitly on the deployment host; the API does not rely
+on the host's clock or `TZ` setting.
 
 ## Live gates (servers needed)
 

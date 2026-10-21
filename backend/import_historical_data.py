@@ -1,8 +1,6 @@
 import os
 import sys
 from datetime import datetime
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import json
@@ -44,7 +42,7 @@ def parse_date(date_str, tab_name):
         # Parse Month Year from tab (e.g., "Jan 2024")
         tab_dt = datetime.strptime(tab_name, '%b %Y')
         return tab_dt.replace(day=day).date()
-    except:
+    except (ValueError, TypeError):
         return None
 
 def import_data():
@@ -74,10 +72,12 @@ def import_data():
             start_idx = 1 if 'date' in str(values[0][0]).lower() else 0
             
             for row in values[start_idx:]:
-                if len(row) < 4: continue
-                
+                if len(row) < 4:
+                    continue
+
                 date_val = parse_date(row[0], tab)
-                if not date_val: continue
+                if not date_val:
+                    continue
                 
                 try:
                     # Map: A:Date, B:Cash, C:Expense, D:Sale

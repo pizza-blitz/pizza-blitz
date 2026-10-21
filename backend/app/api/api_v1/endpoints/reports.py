@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.models.domain import DailySales
 from datetime import date
-from typing import List, Optional
+from typing import Optional
 from pydantic import BaseModel
 
 router = APIRouter()

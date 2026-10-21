@@ -49,9 +49,9 @@ def import_from_sheets(
     except HTTPException:
         raise
     except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @router.post("/pdf")
 async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -103,4 +103,4 @@ async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(ge
         return {"status": "success", "imported": imported_count, "data": extracted_data}
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"PDF Processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"PDF Processing failed: {str(e)}") from e

@@ -3,19 +3,20 @@ import hmac
 import json
 import os
 import unittest
-from datetime import date, timedelta
+from datetime import timedelta
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
 from fastapi.testclient import TestClient
 
+from app.core.clock import business_today
 from app.core.config import settings
 from app.main import app
 
 
 class InternalPortalValidationTest(unittest.TestCase):
     def test_sales_comparison_pos_invoice_recipes_and_waste(self):
-        today = date.today()
+        today = business_today()
         yesterday = today - timedelta(days=1)
         last_year_today = today - timedelta(days=365)
         last_year_yesterday = yesterday - timedelta(days=365)

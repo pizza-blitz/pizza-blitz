@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
 from app.core.config import settings
 from app.models.domain import AdCampaign, AdCampaignAction, AdCampaignLaunch
@@ -355,7 +356,7 @@ def _inclusive_days(start: date, end: date) -> int:
 
 
 def _campaign_budget_health(campaign: AdCampaign, today: Optional[date] = None) -> dict:
-    current_date = today or date.today()
+    current_date = today or business_today()
     start_date = campaign.start_date or current_date
     end_date = campaign.end_date or start_date
     if end_date < start_date:

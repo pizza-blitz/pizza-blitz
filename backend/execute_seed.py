@@ -12,7 +12,7 @@ def run_seed():
 
     engine = create_engine(db_uri)
     with engine.connect() as conn:
-        print(f"Executing SQL seed script...")
+        print("Executing SQL seed script...")
         conn.execute(text(sql))
         conn.commit()
         print("Database seeded successfully!")

@@ -30,6 +30,7 @@ Backend:
 
 - `SQLALCHEMY_DATABASE_URI`: production database connection. Do not use `sqlite:///:memory:` for production.
 - `ENVIRONMENT=production`
+- `RESTAURANT_TIMEZONE`: calendar timezone for sales days, orders, promotions, and shifts (default `Asia/Kolkata`). Set it explicitly; Cloud Run hosts run in UTC.
 - `BACKEND_CORS_ORIGINS`: deployed frontend origin only.
 - `RESTAURANT_ADMIN_ID`: production admin login id.
 - `RESTAURANT_ADMIN_PASSWORD`: strong password stored as a secret.

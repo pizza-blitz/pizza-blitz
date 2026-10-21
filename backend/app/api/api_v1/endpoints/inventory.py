@@ -143,7 +143,8 @@ def get_inventory_transactions(
 def update_or_create_item(item: InventoryItemSchema, db: Session = Depends(get_db)):
     if item.id:
         db_item = db.query(InventoryItem).filter(InventoryItem.id == item.id).first()
-        if not db_item: raise HTTPException(status_code=404, detail="Item not found")
+        if not db_item:
+            raise HTTPException(status_code=404, detail="Item not found")
         for key, value in item.model_dump().items():
             setattr(db_item, key, value)
     else:
@@ -157,7 +158,8 @@ def update_or_create_item(item: InventoryItemSchema, db: Session = Depends(get_d
 @router.post("/transaction")
 def record_transaction(req: TransactionRequest, db: Session = Depends(get_db)):
     item = db.query(InventoryItem).filter(InventoryItem.id == req.item_id).first()
-    if not item: raise HTTPException(status_code=404, detail="Item not found")
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
     if req.quantity <= 0:
         raise HTTPException(status_code=422, detail="Quantity must be greater than zero")
     if req.transaction_type not in ["purchase", "usage", "wastage"]:
@@ -166,7 +168,8 @@ def record_transaction(req: TransactionRequest, db: Session = Depends(get_db)):
     # Update stock
     if req.transaction_type == "purchase":
         item.current_stock = round(float(item.current_stock or 0) + req.quantity, 4)
-        if req.unit_cost: item.cost_per_unit = req.unit_cost
+        if req.unit_cost:
+            item.cost_per_unit = req.unit_cost
     elif req.transaction_type in ["usage", "wastage"]:
         item.current_stock = round(float(item.current_stock or 0) - req.quantity, 4)
     
@@ -210,4 +213,4 @@ async def extract_invoice(file: UploadFile = File(...)):
         except json.JSONDecodeError:
             return {"status": "error", "message": "Failed to parse JSON from AI response", "raw_response": text}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

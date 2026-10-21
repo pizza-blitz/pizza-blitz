@@ -3,9 +3,9 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales, Expense, ExpenseCategory
 
@@ -42,7 +42,7 @@ def get_categories(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    return db.query(ExpenseCategory).filter(ExpenseCategory.is_active == True).all()
+    return db.query(ExpenseCategory).filter(ExpenseCategory.is_active.is_(True)).all()
 
 @router.post("/expenses", response_model=ExpenseSchema)
 def add_expense(
@@ -52,7 +52,7 @@ def add_expense(
 ):
     category = db.query(ExpenseCategory).filter(
         ExpenseCategory.id == req.category_id,
-        ExpenseCategory.is_active == True,
+        ExpenseCategory.is_active.is_(True),
     ).first()
     if not category:
         raise HTTPException(status_code=404, detail="Expense category not found")
@@ -110,14 +110,14 @@ def expense_audit_command(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    today = datetime.utcnow().date()
+    today = business_today()
     start_date = today - timedelta(days=days - 1)
     start_at = datetime.combine(start_date, time.min)
     end_at = datetime.combine(today, time.max)
 
     categories = (
         db.query(ExpenseCategory)
-        .filter(ExpenseCategory.is_active == True)
+        .filter(ExpenseCategory.is_active.is_(True))
         .order_by(ExpenseCategory.name.asc())
         .all()
     )

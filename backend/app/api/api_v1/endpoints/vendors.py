@@ -91,7 +91,7 @@ def price_increase_alerts(db: Session = Depends(get_db)):
 
     alerts = []
     for rows in grouped.values():
-        for previous, current in zip(rows, rows[1:]):
+        for previous, current in zip(rows, rows[1:], strict=False):
             if previous.price_per_unit and current.price_per_unit / previous.price_per_unit > 1.05:
                 alert = _history_dict(current)
                 alert["prev_price"] = previous.price_per_unit

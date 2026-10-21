@@ -45,6 +45,9 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 14 | Backend | The daily Google Sheets scheduler job was a `pass` placeholder that logged "(Placeholder)" every run. | `backend/app/core/scheduler.py`. | Implemented a real refresh of the most recently linked sheet, behind the new `SHEET_AUTO_SYNC_ENABLED` flag (default off) so it never surprises an installation. |
 | 15 | Deployment | Neither app had a `.dockerignore`, so `COPY . .` pulled the host's `node_modules`, stale `.next` output, SQLite files, and logs into the images. On Windows that can replace the container's Linux dependencies with host binaries. | `backend/Dockerfile`, `frontend/Dockerfile`, directory listing. | Added `.dockerignore` for both applications. |
 | 16 | Proof scripts | Hardening the order endpoints broke 11 browser proofs that relied on the old public reads (anonymous order detail or phone-only history). | Audit run failures in `verify-customer-web-checkout`, `verify-customer-account-lifecycle`, and peers. | Updated them to use an admin cookie, the customer receipt proof, or the history `order_id` proof, and fixed one pre-existing strict-locator bug in `verify-delivery-zone-assignment`. All 11 now pass. |
+| 17 | Reporting | Analytics used `datetime.utcnow().date()` while orders, daily entry, and promotions used server-local `date.today()`. With India at UTC+5:30, the dashboard dropped the current day's sales for the first five and a half hours of every local day. | The backend suite failed once the clock crossed local midnight (`800.0 != 1800` in `test_sales_comparison_pos_invoice_recipes_and_waste`). | Added `app/core/clock.py` with a configurable `RESTAURANT_TIMEZONE` (default `Asia/Kolkata`) and routed every business-date read in stats, orders, promotions, shifts, expenses, purchase orders, storefront, ads, readiness, sheets, and the tests through `business_today()`. Added clock tests and the `tzdata` runtime dependency. |
+| 18 | Automation | There was no CI: lint, tests, builds, and the migration check all ran by hand, so a regression could land unnoticed. | No `.github` directory in the repository. | Added `.github/workflows/verify.yml`, which runs backend lint + tests + `alembic upgrade head`/`alembic check` and frontend lint + typecheck + production build on pushes and pull requests. |
+| 19 | Backend quality | The backend had no static lint gate, and a focused scan found 34 real issues: unused imports, a bare `except`, raises without exception chaining, one-line `if` bodies, and an unguarded equality comparison. | Ruff scan with `E4,E7,E9,F,B,S`. | Added `[tool.ruff]` configuration to `pyproject.toml`, fixed every finding (including the bare except in the historical import script), added `ruff` to `requirements-dev.txt`, and documented the gate. The backend is now clean with zero findings. |
 
 ## Still open
 
@@ -60,8 +63,9 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 43 tests, all pass (in a clean venv built from
+- Backend unit suite: 47 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
+- Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors, warnings only.
 - `npm run typecheck`: pass.
 - `npm run build`: pass, with lint and type checking enabled.
@@ -71,4 +75,5 @@ These are real gaps, but they cannot be closed from inside the repository.
 - The 11 order/customer proof scripts touched by the auth hardening: pass.
 - `alembic upgrade head` on an empty database: 37 tables, and `alembic check`
   reports no drift.
+- GitHub Actions workflow parses and covers both apps.
 - Secret scan of tracked files: no findings.

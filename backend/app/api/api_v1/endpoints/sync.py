@@ -16,7 +16,7 @@ def sync_sheets(request: SyncRequest, db: Session = Depends(get_db)):
         result = service.process_and_import(db, request.sheet_url)
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 @router.get("/sync-status")
 def sync_status(db: Session = Depends(get_db)):

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, text
 from sqlalchemy.orm import Session
+from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales, GoogleSheetSync, SalesRepairBlock, WasteLog
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ def sales_reconciliation(
     if detail not in {"full", "summary"}:
       raise HTTPException(status_code=400, detail="detail must be full or summary")
 
-    today = date.today()
+    today = business_today()
     parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
     parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else today
 
@@ -197,7 +197,7 @@ def block_sales_repair_month(
     try:
       datetime.strptime(f"{month_key}-01", "%Y-%m-%d")
     except ValueError:
-      raise HTTPException(status_code=422, detail="Month must use YYYY-MM format.")
+      raise HTTPException(status_code=422, detail="Month must use YYYY-MM format.") from None
 
     existing = db.query(SalesRepairBlock).filter(SalesRepairBlock.month == month_key).first()
     actor = request.blocked_by or session.get("role") or "admin"
@@ -302,7 +302,7 @@ def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)
         }
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 @router.get("/export/csv")
 def export_sales_csv(
@@ -383,7 +383,7 @@ def create_waste_entry(request: WasteEntryRequest, db: Session = Depends(get_db)
 def waste_summary(db: Session = Depends(get_db)):
     from datetime import timedelta
 
-    start_date = date.today() - timedelta(days=30)
+    start_date = business_today() - timedelta(days=30)
     rows = db.query(WasteLog).filter(WasteLog.date >= start_date).all()
     total = sum(float(row.estimated_cost or 0) for row in rows)
     by_item = {}

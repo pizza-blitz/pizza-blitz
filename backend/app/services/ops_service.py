@@ -13,6 +13,7 @@ from sqlalchemy import func, text
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.core.config import settings
 from app.models.domain import (
     AdCampaign,
@@ -3822,7 +3823,7 @@ def _employee_attendance_metrics(db: Session) -> dict:
 
 
 def _expense_audit_metrics(db: Session) -> dict:
-    today = datetime.utcnow().date()
+    today = business_today()
     start_date = today - timedelta(days=29)
     expenses = (
         db.query(Expense)
@@ -4806,8 +4807,11 @@ def _verify_restored_sqlite_database(restore_path: Path) -> dict:
                 + "."
             )
 
+        # Table names come from the fixed RESTORE_REHEARSAL_REQUIRED_TABLES list.
         row_counts = {
-            table: int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
+            table: int(
+                connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]  # noqa: S608
+            )
             for table in RESTORE_REHEARSAL_REQUIRED_TABLES
         }
 

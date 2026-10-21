@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import business_today
 from app.models.domain import DailySales, GoogleSheetSync
 
 
@@ -361,7 +362,7 @@ class SheetsService:
         skipped = 0
         skip_reasons: List[str] = []
         imported_dates: List[str] = []
-        current = datetime.utcnow().date()
+        current = business_today()
 
         for display_index, row in enumerate(rows[start_index:], start=start_index + 1):
             if not any(str(cell or "").strip() for cell in row):
@@ -562,7 +563,7 @@ class SheetsService:
         target_month: str | None = None,
     ) -> List[Dict[str, Any]]:
         tabs = self.discover_public_tabs(sheet_url)
-        current = datetime.utcnow().date()
+        current = business_today()
         month_candidates: Dict[str, List[Dict[str, Any]]] = {}
 
         for tab in tabs[:80]:
