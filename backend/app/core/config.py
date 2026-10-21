@@ -125,3 +125,44 @@ try:
     settings = Settings()
 except Exception:
     settings = Settings(_env_file=".env", _env_file_encoding="utf-8")
+
+
+# Values that ship in the repository for local development. Production must
+# never start on any of them.
+WEAK_SECRET_VALUES = {
+    "",
+    "admin123",
+    "change-me",
+    "change-this-long-random-secret",
+    "pizza-blitz-local-secret",
+    "pizza-blitz-local-session-secret",
+}
+
+
+def validate_production_settings() -> None:
+    """Refuse to boot production on local default secrets.
+
+    A deploy that forgets AUTH_SECRET_KEY would otherwise sign admin tokens
+    with a repository default that anyone can read. Failing at startup is the
+    only safe outcome, and it is reported as one actionable error.
+    """
+    if settings.ENVIRONMENT.strip().lower() != "production":
+        return
+
+    problems: list[str] = []
+    if settings.AUTH_SECRET_KEY in WEAK_SECRET_VALUES:
+        problems.append("AUTH_SECRET_KEY")
+    if settings.RESTAURANT_ADMIN_PASSWORD in WEAK_SECRET_VALUES:
+        problems.append("RESTAURANT_ADMIN_PASSWORD")
+    if settings.PIZZA_BLITZ_ADMIN_PASSWORD in WEAK_SECRET_VALUES:
+        problems.append("PIZZA_BLITZ_ADMIN_PASSWORD")
+    if not settings.PIZZA_BLITZ_SESSION_SECRET or (
+        settings.PIZZA_BLITZ_SESSION_SECRET in WEAK_SECRET_VALUES
+    ):
+        problems.append("PIZZA_BLITZ_SESSION_SECRET")
+    if problems:
+        raise RuntimeError(
+            "Refusing to start in production with default secrets: "
+            + ", ".join(problems)
+            + ". Set strong unique values for these environment variables."
+        )

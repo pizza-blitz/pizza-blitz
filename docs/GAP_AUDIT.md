@@ -48,6 +48,10 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 17 | Reporting | Analytics used `datetime.utcnow().date()` while orders, daily entry, and promotions used server-local `date.today()`. With India at UTC+5:30, the dashboard dropped the current day's sales for the first five and a half hours of every local day. | The backend suite failed once the clock crossed local midnight (`800.0 != 1800` in `test_sales_comparison_pos_invoice_recipes_and_waste`). | Added `app/core/clock.py` with a configurable `RESTAURANT_TIMEZONE` (default `Asia/Kolkata`) and routed every business-date read in stats, orders, promotions, shifts, expenses, purchase orders, storefront, ads, readiness, sheets, and the tests through `business_today()`. Added clock tests and the `tzdata` runtime dependency. |
 | 18 | Automation | There was no CI: lint, tests, builds, and the migration check all ran by hand, so a regression could land unnoticed. | No `.github` directory in the repository. | Added `.github/workflows/verify.yml`, which runs backend lint + tests + `alembic upgrade head`/`alembic check` and frontend lint + typecheck + production build on pushes and pull requests. |
 | 19 | Backend quality | The backend had no static lint gate, and a focused scan found 34 real issues: unused imports, a bare `except`, raises without exception chaining, one-line `if` bodies, and an unguarded equality comparison. | Ruff scan with `E4,E7,E9,F,B,S`. | Added `[tool.ruff]` configuration to `pyproject.toml`, fixed every finding (including the bare except in the historical import script), added `ruff` to `requirements-dev.txt`, and documented the gate. The backend is now clean with zero findings. |
+| 20 | Security | The Google Sheets importer fetched any URL that contained `export?format=csv`, so an admin-supplied value could make the server request arbitrary hosts, including cloud metadata endpoints (SSRF). | Source read of `fetch_public_csv_rows`/`_fetch_public_text`; no host or scheme validation existed. | Fetches are now limited to HTTPS on `docs.google.com`/`docs.googleusercontent.com`, and seven regression tests cover foreign hosts, plain HTTP, metadata IPs, and safe URL normalization. |
+| 21 | Security | A production frontend started without `PIZZA_BLITZ_ADMIN_*` environment variables still accepted the repository defaults `admin/admin123`: the cloud guard treated a default-credential match as a master login. The backend already failed closed, but the frontend route answered first. | Source read of `admin-session/route.ts`, then a live proof against a production build. | Unconfigured credentials no longer count in a cloud runtime. Verified live: production build returns `503` for `admin/admin123` and `200` for the configured strong password; the backend returns `401`/`200` respectively. |
+| 22 | Deployment | `deploy-gcp.ps1`/`.sh` passed only `NEXT_PUBLIC_API_URL` to the frontend service, so a deployment had no configured admin credentials, API URL for server routes, or session secret; the backend also lacked the shared `PIZZA_BLITZ_*` values and the payment return URL. | Script read. | Both scripts now require `PIZZA_BLITZ_SESSION_SECRET` and `PAYMENT_RETURN_URL`, pass admin credentials (both spellings), API URL, session secret, and optional staff/site/timezone values to the correct service, and pass ShellCheck with no findings. |
+| 23 | Startup safety | Production could boot with repository-default secrets (token signing key, admin password), which would make admin tokens forgeable even though readiness flagged it. | Defaults in `config.py` and the readiness report. | Added `validate_production_settings()` to the lifespan: production refuses to start when `AUTH_SECRET_KEY`, admin passwords, or the session secret are weak or missing. Covered by three tests, and the production integration run boots only with strong values. |
 
 ## Still open
 
@@ -64,7 +68,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 47 tests, all pass (in a clean venv built from
+- Backend unit suite: 57 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors, warnings only.
@@ -77,4 +81,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 - `alembic upgrade head` on an empty database: 37 tables, and `alembic check`
   reports no drift.
 - GitHub Actions workflow parses and covers both apps.
+- Production credential behavior: default `admin/admin123` is rejected by a
+  production frontend and backend; configured strong credentials are accepted.
+- Deploy scripts pass ShellCheck with no findings.
 - Secret scan of tracked files: no findings.

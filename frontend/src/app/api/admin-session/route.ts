@@ -116,8 +116,16 @@ export async function POST(request: Request) {
   const adminCredentials = credentialsForRole("admin");
   const id = String(payload.id || "").trim();
   const password = String(payload.password || "");
-  const isEnvironmentAdminLogin = credentialsMatch(id, password, adminCredentials);
-  const isRequestedRoleLogin = credentialsMatch(id, password, requestedCredentials);
+  // In a cloud runtime a credential only counts when it was explicitly
+  // configured. Otherwise the repository defaults (admin/admin123) would still
+  // authenticate a deployment that forgot to set its environment variables.
+  const allowUnconfiguredCredentials = !isCloudRuntime();
+  const isEnvironmentAdminLogin =
+    credentialsMatch(id, password, adminCredentials) &&
+    (adminCredentials.isConfigured || allowUnconfiguredCredentials);
+  const isRequestedRoleLogin =
+    credentialsMatch(id, password, requestedCredentials) &&
+    (requestedCredentials.isConfigured || allowUnconfiguredCredentials);
   const managedAdminLogin = !isEnvironmentAdminLogin
     ? await verifyManagedAdminCredentials(id, password)
     : null;

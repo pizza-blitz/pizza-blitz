@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 47 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, the business clock, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 57 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, the business clock, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -95,6 +95,13 @@ These prove the deployed system and only pass against a real deployment:
 
 Set `E2E_BASE_URL`, `E2E_API_URL`, `E2E_ADMIN_ID`, and `E2E_ADMIN_PASSWORD`
 before running them. See `docs/LAUNCH_RUNBOOK.md` for the deployment sequence.
+
+Production behavior is fail-closed: the backend refuses to start with
+repository-default secrets, and a production frontend rejects `admin/admin123`
+unless `PIZZA_BLITZ_ADMIN_ID` and `PIZZA_BLITZ_ADMIN_PASSWORD` are configured.
+When serving a production build locally for smoke checks
+(`npm start` sets `NODE_ENV=production`), export the admin ID and password
+first, otherwise login is refused by design.
 
 ## Health endpoints
 

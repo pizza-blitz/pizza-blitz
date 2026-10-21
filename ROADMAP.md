@@ -113,5 +113,7 @@ probe, runbook).
 - [x] Add Docker build-context ignores for both apps.
 - [x] Unify every business-date read behind one configurable restaurant timezone.
 - [x] Add a backend Ruff lint gate and a CI workflow for both apps.
+- [x] Block SSRF in the Google Sheets importer.
+- [x] Fail closed on default production secrets and complete deploy env wiring.
 - [x] Record the full gap audit and verification guide in `docs/`.
 - [ ] Replace remaining explicit `any` response types with per-endpoint models.

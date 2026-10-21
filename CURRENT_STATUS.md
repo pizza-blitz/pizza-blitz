@@ -23,13 +23,13 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 47 backend tests, 139 browser proof scripts, a backend Ruff
+- Automation: 57 backend tests, 139 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
 ## Verified State (2026-10-21)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 47 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 57 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes; remaining `no-explicit-any` findings are warnings.
@@ -46,6 +46,12 @@ The standalone copy excludes generated dependency and build folders
 
 ## Recent Hardening
 
+- Production now fails closed on security: the backend refuses to start with
+  repository-default secrets, a production frontend rejects `admin/admin123`
+  unless admin credentials are configured, and both deploy scripts pass the
+  required admin, session, API, and payment-return variables to each service.
+- The Google Sheets importer only fetches Google-hosted HTTPS URLs, closing an
+  SSRF path that could reach arbitrary or internal hosts.
 - Every business date (sales days, order "today" filters, promotions, shifts,
   readiness) now comes from one configurable restaurant timezone
   (`RESTAURANT_TIMEZONE`, default `Asia/Kolkata`) instead of mixing UTC and

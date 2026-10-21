@@ -16,6 +16,10 @@ from app.models.domain import DailySales, GoogleSheetSync
 
 
 class SheetsService:
+    # Only Google's own sheet hosts may be fetched server-side. This blocks
+    # using the importer as an SSRF probe for internal addresses.
+    ALLOWED_SHEET_HOSTS = {"docs.google.com", "docs.googleusercontent.com"}
+
     def __init__(self):
         self.scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
@@ -47,6 +51,11 @@ class SheetsService:
         return f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit?usp=sharing"
 
     def _fetch_public_text(self, url: str, accept: str = "text/plain,*/*") -> str:
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or parsed.hostname not in self.ALLOWED_SHEET_HOSTS:
+            raise ValueError(
+                "Only Google Sheets URLs on docs.google.com can be imported."
+            )
         request = Request(
             url,
             headers={

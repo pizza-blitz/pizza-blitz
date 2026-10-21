@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from app.core.config import settings
+from app.core.config import settings, validate_production_settings
 from app.api.api_v1.api import api_router
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
@@ -141,6 +141,7 @@ def bootstrap_database() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_production_settings()
     if should_bootstrap_database_on_startup():
         bootstrap_database()
     if should_start_scheduler():
