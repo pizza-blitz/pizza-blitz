@@ -107,7 +107,10 @@ export default function ReceiptPage() {
       const receiptEndpoint = isCustomerReceipt
         ? `${ORDERS_API}/customer-receipt/${orderId}?phone=${encodeURIComponent(customerPhone)}`
         : `${ORDERS_API}/${orderId}`;
-      const response = await fetch(receiptEndpoint, { cache: "no-store" });
+      const response = await fetch(receiptEndpoint, {
+        cache: "no-store",
+        credentials: "include",
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not load receipt.");
       setOrder(data);

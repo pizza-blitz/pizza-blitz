@@ -2,6 +2,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.core.config import settings
 from app.api.api_v1.api import api_router
@@ -172,3 +173,21 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.get("/health")
 def health_check():
     return {"status": "ok", "project": settings.PROJECT_NAME}
+
+
+@app.get("/ready")
+def readiness_check():
+    """Deployment readiness probe: confirms the database is reachable."""
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "database": "error"},
+        )
+    return {
+        "status": "ready",
+        "database": "ok",
+        "project": settings.PROJECT_NAME,
+    }

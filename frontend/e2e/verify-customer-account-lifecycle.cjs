@@ -97,8 +97,10 @@ function createBrowserWatch(page) {
   };
 }
 
-async function assertUpdatedHistory(phone, expectedEmail) {
-  const { response, data } = await apiJson(`/api/v1/restaurant/orders/customer-history/${encodeURIComponent(phone)}`);
+async function assertUpdatedHistory(phone, expectedEmail, orderId) {
+  const { response, data } = await apiJson(
+    `/api/v1/restaurant/orders/customer-history/${encodeURIComponent(phone)}?order_id=${orderId}`
+  );
   assert(response.ok, `Customer history failed after profile save: ${JSON.stringify(data)}`);
   assert(data.customer?.name === "Lifecycle Customer", `Expected updated name, got ${data.customer?.name}.`);
   assert(data.customer?.email === expectedEmail, `Expected updated email, got ${data.customer?.email}.`);
@@ -173,7 +175,7 @@ async function main() {
     await browser.close();
   }
 
-  await assertUpdatedHistory(phone, expectedEmail);
+  await assertUpdatedHistory(phone, expectedEmail, orderId);
   console.log(`Customer account lifecycle proof passed for ${phone}.`);
 }
 

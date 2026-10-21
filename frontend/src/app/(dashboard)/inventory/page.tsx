@@ -7,7 +7,7 @@ import { getApiUrl } from '@/lib/api';
 export default function Inventory() {
   const [items, setItems] = useState<any[]>([]);
   const [lowStock, setLowStock] = useState<any>({ count: 0, items: [], groups: [], total_estimated_cost: 0 });
-  const [isLoading, setIsLoading] = useState(true);
+  const [, setIsLoading] = useState(true);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isCreatingPO, setIsCreatingPO] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);

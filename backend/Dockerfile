@@ -1,4 +1,3 @@
-# Use 3.11 as some deps (like contourpy) require it
 FROM python:3.11-slim
 
 # Set environment variables

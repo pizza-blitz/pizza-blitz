@@ -36,3 +36,8 @@ backend/backups/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local scratch area for audit logs, throwaway databases, and probes
+/scratch/
+# Runtime log directory (server output, audit logs, summaries)
+/logs/

@@ -207,13 +207,14 @@ async function main() {
     `Expected unit price ${expectedUnitPrice}, received ${quoteResult.data.unit_price}.`
   );
 
+  const customerPhone = `96${Date.now().toString().slice(-8)}`;
   const orderResult = await apiJson("/api/v1/restaurant/orders/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       order_type: "takeaway",
       customer_name: "Customization Proof",
-      customer_phone: `96${Date.now().toString().slice(-8)}`,
+      customer_phone: customerPhone,
       customer_email: "customization-proof@example.com",
       payment_method: "cash",
       notes: "E2E customized item proof with tampered client price",
@@ -234,7 +235,9 @@ async function main() {
   assert(Number(orderResult.data.subtotal) === expectedUnitPrice, "Backend did not recalculate the tampered item price.");
 
   const orderId = orderResult.data.order_id;
-  const orderRead = await apiJson(`/api/v1/restaurant/orders/${orderId}`);
+  const orderRead = await apiJson(
+    `/api/v1/restaurant/orders/customer-receipt/${orderId}?phone=${encodeURIComponent(customerPhone)}`
+  );
   assert(orderRead.response.ok, `Could not read customized order: ${JSON.stringify(orderRead.data)}`);
   const orderedItem = orderRead.data.items[0];
   assert(Number(orderedItem.price) === expectedUnitPrice, "Stored order item price was not server calculated.");

@@ -1858,7 +1858,7 @@ export default function Reports() {
                   <h4 className="font-black text-gray-900 uppercase tracking-widest text-xs">Reporting Context</h4>
                </div>
                <p className="text-xs font-bold text-gray-500 leading-relaxed italic">
-                 "Our monthly forecast indicates a significant {data?.forecast?.change_percent >= 0 ? 'surplus' : 'deficit'} compared to the previous year. Strategic price adjustments in late 2025 have stabilized margins across all core categories."
+                 &ldquo;Our monthly forecast indicates a significant {data?.forecast?.change_percent >= 0 ? 'surplus' : 'deficit'} compared to the previous year. Strategic price adjustments in late 2025 have stabilized margins across all core categories.&rdquo;
                </p>
             </div>
           </div>

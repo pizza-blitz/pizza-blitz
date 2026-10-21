@@ -6,9 +6,41 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 def sync_job():
-    logger.info("Executing scheduled Google Sheets Sync (Placeholder)")
-    # Logic to fetch the configured sheet URL from DB or env and sync it.
-    pass
+    """Refresh the last linked Google Sheet when scheduled sync is enabled.
+
+    The sheet sync is normally user-triggered from Settings; this job only runs
+    when SHEET_AUTO_SYNC_ENABLED is on, and it re-imports the most recently
+    linked spreadsheet so existing daily rows are updated instead of guessed.
+    """
+    from app.core.config import settings
+
+    if not settings.SHEET_AUTO_SYNC_ENABLED:
+        return
+
+    from app.db.session import SessionLocal
+    from app.models.domain import GoogleSheetSync
+    from app.services.sheets_service import SheetsService
+
+    session = SessionLocal()
+    try:
+        last_sync = (
+            session.query(GoogleSheetSync)
+            .filter(GoogleSheetSync.sheet_id.isnot(None))
+            .order_by(GoogleSheetSync.last_synced_at.desc())
+            .first()
+        )
+        if last_sync is None or not last_sync.sheet_id:
+            logger.info("Scheduled sheet sync skipped: no linked Google Sheet yet")
+            return
+        summary = SheetsService().process_and_import(
+            session,
+            f"https://docs.google.com/spreadsheets/d/{last_sync.sheet_id}/edit",
+        )
+        logger.info("Scheduled sheet sync summary: %s", summary)
+    except Exception:
+        logger.exception("Scheduled sheet sync failed")
+    finally:
+        session.close()
 
 
 def social_publish_job():

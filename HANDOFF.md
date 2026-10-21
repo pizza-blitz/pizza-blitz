@@ -4,29 +4,38 @@ If context is compressed, continue from this file first.
 
 ## What Matters
 
-- Pizza Blitz is now a standalone workspace at `D:\Development\pizza Blitz`.
-- Do not continue working inside `D:\Development\EduEcosystem\restaurant-portal`.
-- The immediate target is internal portal stability, not the public ordering website yet.
-- Production URLs seen earlier were stale or broken, so do not trust deployment status until rechecked.
-- Secrets were removed from copied files; use `.env.example` files as templates.
+- Pizza Blitz is a standalone workspace at `D:\Development\pizza Blitz`.
+- Do not work inside `D:\Development\EduEcosystem\restaurant-portal`.
+- Both products are built: the internal restaurant portal and the public
+  customer ordering website.
+- The repository is healthy: backend tests, lint, typecheck, production build,
+  browser smoke, and the local audit suite all pass as of 2026-10-21.
+- The open work is deployment and provider integration, not application code.
+- Secrets were removed from copied files; use the `.env.example` files as
+  templates.
 
-## Next Best Step
+## Current Verified Gates
 
-Baseline already completed:
+1. Backend: `python -W error::FutureWarning -m unittest discover -s tests -v`
+   → 43 tests pass.
+2. Frontend: `npm run lint`, `npm run typecheck`, `npm run build` → pass.
+3. Browser smoke: `npm run test:e2e` with servers on 8010/3011 → pass.
+4. Audit suite: `npm run verify:audit` with servers running → pass.
 
-1. Backend `/health` returns 200 through FastAPI test client.
-2. Frontend dependencies were installed.
-3. Frontend production build passes.
-4. Secret scan is clean for copied production strings.
-5. Stale hardcoded backend URLs were removed from frontend pages.
-6. Backend contracts were added/fixed for POS orders, invoices, recipes, and waste.
-7. POS lifecycle test passes through FastAPI test client.
-8. Frontend production build passes after backend contract work.
-9. Backend validation suite passes with `python -m unittest discover -s tests -v`.
-10. Recharts prerender sizing warning is fixed with explicit `initialDimension` on responsive charts.
+Full commands and what each gate proves: `docs/VERIFICATION.md`.
 
-Next best step:
+## Next Best Steps
 
-1. Replace deprecated `google.generativeai` usage when OCR/import work is next.
-2. Run the app locally in browser and verify each internal portal page.
-3. Start deployment preparation after browser verification passes.
+1. Connect the production database (`SQLALCHEMY_DATABASE_URI`), run Alembic,
+   and verify `/ready` against it.
+2. Configure production secrets: admin credentials, `AUTH_SECRET_KEY`,
+   `PIZZA_BLITZ_SESSION_SECRET`, `BACKEND_CORS_ORIGINS`, and the public URLs.
+3. Deploy with `deploy-gcp.ps1` (backend then frontend), then run the
+   production-only proofs listed in `docs/VERIFICATION.md`.
+4. Add provider credentials one at a time (payment sandbox first), keeping
+   `CAMPAIGN_SEND_ENABLED`, `SOCIAL_PUBLISH_ENABLED`, and `ADS_LAUNCH_ENABLED`
+   off until each provider is verified.
+5. Pay down the remaining `no-explicit-any` warnings in the older dashboard
+   pages when those screens are next touched.
+
+Open gaps and their status: `docs/GAP_AUDIT.md`.

@@ -157,7 +157,9 @@ async function main() {
   await waitForHttp(baseURL, "frontend");
 
   const seeded = await seedDeliveryOrder();
-  const historyResult = await apiJson(`/api/v1/restaurant/orders/customer-history/${encodeURIComponent(seeded.phone)}`);
+  const historyResult = await apiJson(
+    `/api/v1/restaurant/orders/customer-history/${encodeURIComponent(seeded.phone)}?order_id=${seeded.orderId}`
+  );
   assert(historyResult.response.ok, `Customer history failed: ${JSON.stringify(historyResult.data)}`);
   assert(historyResult.data.delivery_profile?.address === seeded.address, "Customer history did not expose latest delivery address.");
   assert(historyResult.data.delivery_profile?.zone === seeded.zone.name, "Customer history did not expose latest delivery zone.");

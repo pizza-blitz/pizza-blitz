@@ -104,7 +104,7 @@ export default function VendorPricePage() {
       const defaultItem = recentRows[0]?.item_name || itemSearch;
       if (defaultItem !== itemSearch) setItemSearch(defaultItem);
       await loadItemData(defaultItem);
-    } catch (error) {
+    } catch {
       setMessage({ type: "error", text: "Could not load vendor intelligence." });
     } finally {
       setIsLoading(false);

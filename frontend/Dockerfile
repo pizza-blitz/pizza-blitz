@@ -2,9 +2,9 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Install dependencies (use cache)
+# Install dependencies exactly as locked
 COPY package.json package-lock.json* ./
-RUN npm install --frozen-lockfile
+RUN npm ci
 
 # Copy source code
 COPY . .

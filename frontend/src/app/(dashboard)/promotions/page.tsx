@@ -3164,7 +3164,7 @@ export default function PromotionsPage() {
                           Re-check newly ready contacts
                         </h3>
                         <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-emerald-100/80">
-                          {dispatch?.cleanup_recovered_ready_count || 0} contacts from this campaign's consent or email cleanup are now send-ready.
+                          {dispatch?.cleanup_recovered_ready_count || 0} contacts from this campaign&apos;s consent or email cleanup are now send-ready.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">

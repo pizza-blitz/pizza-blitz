@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     )
     BACKUP_DIR: str = os.getenv("BACKUP_DIR", "backups")
     BACKUP_RETENTION_DAYS: int = int(os.getenv("BACKUP_RETENTION_DAYS", "14"))
+    SHEET_AUTO_SYNC_ENABLED: bool = os.getenv("SHEET_AUTO_SYNC_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     
     RESTAURANT_ADMIN_ID: str = os.getenv("RESTAURANT_ADMIN_ID", "admin")
     RESTAURANT_ADMIN_PASSWORD: str = os.getenv("RESTAURANT_ADMIN_PASSWORD", "admin123")
@@ -49,8 +55,8 @@ class Settings(BaseSettings):
     CUSTOMER_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("CUSTOMER_TOKEN_EXPIRE_MINUTES", "43200"))
     PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "manual")
     PAYMENT_CURRENCY: str = os.getenv("PAYMENT_CURRENCY", "INR")
-    PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://localhost:3000/account")
-    PIZZA_BLITZ_PUBLIC_URL: str = os.getenv("PIZZA_BLITZ_PUBLIC_URL", "https://pizza-blitz.vercel.app")
+    PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://127.0.0.1:3011/account")
+    PIZZA_BLITZ_PUBLIC_URL: str = os.getenv("PIZZA_BLITZ_PUBLIC_URL", "http://127.0.0.1:3011")
     PIZZA_BLITZ_PUBLIC_API_PREFIX: str = os.getenv("PIZZA_BLITZ_PUBLIC_API_PREFIX", "/server")
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")

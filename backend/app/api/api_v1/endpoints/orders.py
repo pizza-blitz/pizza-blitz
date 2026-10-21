@@ -9,7 +9,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles, session_from_request
+from app.api.deps import (
+    customer_subject_phone,
+    get_db,
+    get_optional_session,
+    require_roles,
+    session_from_request,
+)
 from app.core.config import settings
 from app.models.domain import (
     Customer,
@@ -2963,11 +2969,61 @@ def kitchen_station_command(
     return build_station_command_report(db)
 
 
+def authorize_customer_history_access(
+    session: dict | None,
+    phone: str,
+    order_id: int | None,
+    db: Session,
+) -> None:
+    """Allow staff, the matching customer session, or a phone/order proof.
+
+    Phone numbers alone are guessable, so an anonymous caller must prove
+    ownership by naming one of that customer's real order ids. This keeps the
+    public account login flow working without exposing every customer's
+    order history, home address, and spend totals to a phone-number lookup.
+    """
+    if session is not None:
+        role = session.get("role")
+        if role in {"admin", "staff"}:
+            return
+        if role == "customer":
+            if customer_subject_phone(session) == phone:
+                return
+            raise HTTPException(
+                status_code=403,
+                detail="This customer session cannot read another phone number's orders.",
+            )
+    if order_id is not None:
+        proof = (
+            db.query(RestaurantOrder.id)
+            .filter(
+                RestaurantOrder.id == order_id,
+                RestaurantOrder.customer_phone == phone,
+            )
+            .first()
+        )
+        if proof is not None:
+            return
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "A customer session or a matching recent order id is required to view "
+            "this order history."
+        ),
+    )
+
+
 @router.get("/customer-history/{phone}")
-def customer_order_history(phone: str, db: Session = Depends(get_db)):
+def customer_order_history(
+    phone: str,
+    order_id: int | None = None,
+    db: Session = Depends(get_db),
+    session: dict | None = Depends(get_optional_session),
+):
     normalized_phone = phone.strip()
     if not normalized_phone:
         raise HTTPException(status_code=422, detail="Phone number is required.")
+    authorize_customer_history_access(session, normalized_phone, order_id, db)
 
     customer = db.query(Customer).filter(Customer.phone == normalized_phone).first()
     orders = (
@@ -3060,7 +3116,12 @@ def customer_receipt_order(order_id: int, phone: str, db: Session = Depends(get_
 
 
 @router.get("/{order_id}")
-def get_order(order_id: int, db: Session = Depends(get_db)):
+def get_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")

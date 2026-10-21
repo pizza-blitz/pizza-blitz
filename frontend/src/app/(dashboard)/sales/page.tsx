@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, DollarSign, TrendingUp, Calendar, Filter, Download, ArrowUpRight, ArrowDownRight, Loader2, Award } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, DollarSign, TrendingUp, Calendar, Download, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getApiUrl } from '@/lib/api';
 
@@ -144,7 +144,7 @@ export default function SalesHistory() {
         `${monthKey}: imported ${data.data.rows_imported || 0} rows, created ${data.data.rows_created || 0}, updated ${data.data.rows_updated || 0}.`
       );
       await fetchData();
-    } catch (error) {
+    } catch {
       setRepairImportMessage("Month repair import API is not available right now.");
     } finally {
       setRepairImportingMonth("");
@@ -173,7 +173,7 @@ export default function SalesHistory() {
       }
       setRepairImportMessage(`${row.month} marked source missing. Continuing to the next chronological repair month.`);
       await fetchData();
-    } catch (error) {
+    } catch {
       setRepairImportMessage("Source-missing marker API is not available right now.");
     } finally {
       setBlockingMonth("");
@@ -195,7 +195,7 @@ export default function SalesHistory() {
       }
       setRepairImportMessage(`${monthKey} reopened in the active repair queue.`);
       await fetchData();
-    } catch (error) {
+    } catch {
       setRepairImportMessage("Source-missing marker API is not available right now.");
     } finally {
       setBlockingMonth("");

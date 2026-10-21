@@ -1,0 +1,14 @@
+# Keep the build context to the sources the Next.js image needs. Without this
+# file `COPY . .` would overwrite the container's Linux dependencies with the
+# host's node_modules and stale .next output.
+node_modules
+.next
+out
+dist
+.env
+.env.*
+!.env.example
+*.log
+e2e/artifacts
+tsconfig.tsbuildinfo
+.git

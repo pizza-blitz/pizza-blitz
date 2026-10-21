@@ -262,9 +262,10 @@ async function main() {
     await browser.close();
   }
 
-  const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/${orderId}`, {
-    cache: "no-store",
-  });
+  const orderResponse = await fetch(
+    `${apiURL}/api/v1/restaurant/orders/customer-receipt/${orderId}?phone=${encodeURIComponent(phone)}`,
+    { cache: "no-store" }
+  );
   const order = await orderResponse.json();
   assert(orderResponse.ok, `Could not fetch full customer order: ${JSON.stringify(order)}`);
   assert(order.order_type === "delivery", `Expected delivery order, got ${order.order_type}.`);

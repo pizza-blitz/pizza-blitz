@@ -120,7 +120,9 @@ export default function CustomerAccountPage() {
     setMessage("");
     setHistory(null);
 
-    const response = await fetch(`${HISTORY_API}/${encodeURIComponent(normalizedPhone)}`);
+    const response = await fetch(`${HISTORY_API}/${encodeURIComponent(normalizedPhone)}`, {
+      credentials: "include",
+    });
     const data = await response.json();
     setIsLoading(false);
 

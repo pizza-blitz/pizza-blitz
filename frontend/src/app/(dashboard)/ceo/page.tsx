@@ -3,14 +3,9 @@
 import { useEffect, useState } from "react";
 import { 
   TrendingUp, TrendingDown, Target, Zap, 
-  MessageSquare, LayoutDashboard, Share2, 
-  CheckCircle2, AlertCircle, Info, Calendar
+  LayoutDashboard, Share2, 
+  CheckCircle2, AlertCircle, Calendar
 } from "lucide-react";
-import { 
-  LineChart, Line, AreaChart, Area, XAxis, YAxis, 
-  CartesianGrid, Tooltip, ResponsiveContainer, 
-  BarChart, Bar, Cell 
-} from "recharts";
 import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats");
@@ -176,7 +171,7 @@ export default function CEODashboard() {
               <Zap className="w-4 h-4 text-orange-500" /> Executive Note
             </h3>
             <p className="text-lg leading-relaxed text-gray-100 italic">
-              "{health?.recommendation || "System processing data. Please wait."}"
+              &ldquo;{health?.recommendation || "System processing data. Please wait."}&rdquo;
             </p>
           </div>
         </div>
@@ -231,7 +226,7 @@ export default function CEODashboard() {
           <div className="rounded-[2.5rem] bg-[#1a1a1c] border border-white/5 overflow-hidden">
             <div className="p-8 border-b border-white/5 flex justify-between items-center bg-[#1e1e21]">
               <h3 className="text-lg font-bold flex items-center gap-2">
-                <Zap className="w-5 h-5 text-orange-500" /> This Week's Operational Health
+                <Zap className="w-5 h-5 text-orange-500" /> This Week&apos;s Operational Health
               </h3>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-white/5">

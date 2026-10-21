@@ -12,4 +12,4 @@ images:
 substitutions:
   _ARTIFACT_REGION: us-central1
   _ARTIFACT_REPOSITORY: pizza-blitz-repo
-  _NEXT_PUBLIC_API_URL: http://localhost:8000
+  _NEXT_PUBLIC_API_URL: http://127.0.0.1:8010

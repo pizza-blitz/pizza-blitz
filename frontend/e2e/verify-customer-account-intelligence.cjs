@@ -129,8 +129,10 @@ async function signInAsCustomer(context, phone, orderId) {
   assert(sessionData.session?.phone === phone, "Customer session returned the wrong phone.");
 }
 
-async function assertCustomerHistory(phone) {
-  const { response, data } = await apiJson(`/api/v1/restaurant/orders/customer-history/${encodeURIComponent(phone)}`);
+async function assertCustomerHistory(phone, orderId) {
+  const { response, data } = await apiJson(
+    `/api/v1/restaurant/orders/customer-history/${encodeURIComponent(phone)}?order_id=${orderId}`
+  );
   assert(response.ok, `Customer history failed: ${JSON.stringify(data)}`);
   assert(data.customer?.phone === phone, "Customer history returned the wrong phone.");
   assert(data.customer?.total_orders >= 2, "Customer history did not include seeded orders.");
@@ -222,7 +224,7 @@ async function main() {
     ],
     "Customer intelligence proof two"
   );
-  await assertCustomerHistory(phone);
+  await assertCustomerHistory(phone, proofOrderId);
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({

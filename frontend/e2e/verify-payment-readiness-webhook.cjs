@@ -207,6 +207,7 @@ async function main() {
 
     const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/${orderId}`, {
       cache: "no-store",
+      headers: { Cookie: adminCookie },
     });
     const order = await orderResponse.json();
     assert(orderResponse.ok, `Could not fetch paid order: ${JSON.stringify(order)}`);

@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pizza Blitz Frontend
 
-## Getting Started
+Next.js app for the Pizza Blitz public customer website and internal restaurant portal.
 
-First, run the development server:
+## Main Routes
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- `/` - public website homepage.
+- `/order` - customer menu, customization, cart, coupon, pickup/delivery, and checkout.
+- `/track` - customer order tracking.
+- `/login` - admin login.
+- `/dashboard` - internal business intelligence dashboard.
+- `/orders` - POS and order management.
+- `/operations` - kitchen operations board.
+- `/reports` - financial reports and comparison dashboard.
+- `/promotions`, `/social`, `/ads` - marketing workflows.
+- `/ops` - production readiness, environment, and backup controls.
+
+## Local Development
+
+```powershell
+copy .env.example .env.local
+npm ci
+npm run dev -- --hostname 127.0.0.1 --port 3011
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The frontend expects the backend at `NEXT_PUBLIC_API_URL`, normally `http://127.0.0.1:8010` locally. When it is unset, browser calls go through the same-origin `/server` proxy.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Verification
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```powershell
+npm run lint
+npm run typecheck
+npm run build
+```
 
-## Learn More
+With the backend on `8010` and this app on `3011`:
 
-To learn more about Next.js, take a look at the following resources:
+```powershell
+npm run test:e2e
+npm run verify:audit
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The browser smoke and audit scripts expect `http://127.0.0.1:8010` and
+`http://127.0.0.1:3011`. Full gate documentation lives in
+[../docs/VERIFICATION.md](../docs/VERIFICATION.md).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The browser smoke test expects backend `http://127.0.0.1:8010` and frontend `http://127.0.0.1:3011` to be running.
 
-## Deploy on Vercel
+## Environment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use `.env.example` as the local template. Keep real admin passwords and session secrets outside git.

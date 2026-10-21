@@ -597,11 +597,6 @@ export default function MenuManagement() {
   );
 }
 
-function avgMargin(items: ProfitabilityItem[]) {
-  if (!items.length) return 0;
-  return items.reduce((total, item) => total + item.margin_percent, 0) / items.length;
-}
-
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-xl border border-white/5 bg-[#1a1a1c] p-5">

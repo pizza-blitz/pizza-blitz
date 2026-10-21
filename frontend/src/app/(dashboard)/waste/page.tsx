@@ -57,7 +57,7 @@ export default function WastePage() {
         setWasteLogs(Array.isArray(data) ? data : []);
       }
       if (summaryRes.ok) setSummary(await summaryRes.json());
-    } catch (error) {
+    } catch {
       if (signal?.aborted) return;
       setStatus({ type: "error", text: "Waste data is temporarily unavailable." });
     } finally {

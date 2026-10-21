@@ -1,6 +1,6 @@
 # Pizza Blitz Current Status
 
-Last Updated: 2026-05-21
+Last Updated: 2026-10-21
 
 ## Source Of Truth
 
@@ -8,52 +8,64 @@ Standalone workspace:
 
 `D:\Development\pizza Blitz`
 
-This project was copied from:
+This project was copied from `D:\Development\EduEcosystem\restaurant-portal`.
+The standalone copy excludes generated dependency and build folders
+(`node_modules`, `.next`, `venv`, `__pycache__`).
 
-`D:\Development\EduEcosystem\restaurant-portal`
+## What Exists
 
-The standalone copy excludes generated dependency/build folders such as `node_modules`, `.next`, `venv`, and `__pycache__`.
+- Backend: FastAPI app with 207 endpoints across auth, sales, stats, menu,
+  inventory, expenses, orders/POS, invoices, delivery, promotions, social,
+  ads, customers, shifts, vendors, purchase orders, recipes, waste, imports,
+  OCR, insurance-style readiness probes, and production ops.
+- Frontend: Next.js 14 app with the public customer website (menu, cart,
+  checkout, tracking, account) and the internal portal (dashboard, POS/counter,
+  operations, reports, marketing, ops readiness, settings).
+- Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
+  local development, PostgreSQL support for production.
+- Automation: 43 backend tests, 139 browser proof scripts, a lint gate, a
+  TypeScript gate, and a production build gate.
 
-## Current State
+## Verified State (2026-10-21)
 
-- Backend exists as a FastAPI app.
-- Frontend exists as a Next.js app.
-- Internal restaurant portal pages already exist for dashboard, daily entry, sales, reports, menu, inventory, recipes, waste, expenses, settings, AI insights, CEO command, orders, shifts, invoices, vendors, promotions, purchase orders, and breakeven.
-- Backend endpoints already exist for sales, stats, menu, inventory, expenses, OCR, imports, reports, purchase orders, shifts, orders, vendors, promotions, and sync.
-- Deployment URLs checked on 2026-05-21 returned 404 or deployment-not-found responses, so production deployment is not currently trusted.
-- Hardcoded copied secrets were removed from the standalone project.
-- Runtime config now uses environment variables.
-- Local git repository has been initialized.
-- Backend `/health` check passes through FastAPI test client: `200 {"status": "ok", "project": "Restaurant Portal API"}`.
-- Frontend production build passes with Next.js.
-- Recharts container sizing warning during frontend prerender is fixed.
-- Remaining cleanup debt: backend imports `google.generativeai`, which now emits a deprecation warning and should eventually move to `google.genai`.
-- Frontend pages now use the shared API URL helper instead of stale hardcoded production backend URLs.
-- Backend now uses an in-memory SQLite dev DB by default because file-backed SQLite writes produced disk I/O errors in this workspace. Production should still use `SQLALCHEMY_DATABASE_URI` for PostgreSQL.
-- POS/order tables, invoices, recipes, waste log, and fixed costs now have backend models.
-- Existing frontend pages for POS orders, invoices, recipes, and waste now have matching backend API contracts.
-- POS lifecycle verified through FastAPI test client: create order, generate invoice, close order, and update dashboard sales.
-- Analytics endpoints verified after formula portability fixes:
-  - dashboard stats
-  - monthly breakdown
-  - lifetime summary
-  - same-period comparison
-  - target status
-- Added standard-library backend validation test suite for realistic internal portal flows.
-- Validation suite covers:
-  - current-period sales totals
-  - last-year same-period comparison
-  - lifetime revenue/profit
-  - POS order creation
-  - invoice generation
-  - order close syncing into daily sales
-  - recipe prediction endpoint
-  - waste logging and summary
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 43 tests
+  pass, including a clean-venv run installed from `requirements-dev.txt`.
+- `npm run lint`: passes; remaining `no-explicit-any` findings are warnings.
+- `npm run typecheck`: passes.
+- `npm run build`: passes with lint and type checking enabled (the previous
+  `ignoreDuringBuilds` / `ignoreBuildErrors` bypasses are removed).
+- `npm run test:e2e`: portal browser smoke passes.
+- Audit suite: link health, control labels, safe action buttons, feature
+  coverage, route action inventory, placeholder hygiene, action feedback, role
+  gates, restaurant ready audit, and the roadmap proof board all pass.
+- Health probes: `/health` returns process status; `/ready` checks the database
+  and returns 503 when it is unreachable.
+- Secret scan of tracked files: clean.
 
-## Immediate Priority
+## Recent Hardening
 
-Make the internal restaurant portal locally stable first:
+- Customer order history and order detail endpoints now require a verified
+  session or a phone+order ownership proof instead of trusting a phone number
+  or a sequential order id.
+- The Alembic chain now builds the complete schema: all 37 model tables from a
+  fresh database, with `alembic check` reporting no drift.
+- Backend runtime dependencies were reduced from 206 unbounded packages to the
+  14 the code actually uses, with bounded versions.
+- The scheduled Google Sheets job is a real, env-gated refresh instead of a
+  placeholder.
+- Build and deploy configuration was corrected (npm lockfile install, real
+  API URL defaults, no stale Vercel fallback, Python 3.11 alignment,
+  `.dockerignore` for both images).
+- Docs were refreshed, and `docs/VERIFICATION.md` plus `docs/GAP_AUDIT.md` now
+  record every gate and every open item.
 
-1. Replace deprecated `google.generativeai` usage when we work on OCR/import flows.
-2. Run browser verification once local server startup is approached again.
-3. Only after the internal portal is reliable, build the public customer ordering website.
+## Remaining Before Launch
+
+1. Connect the production database and run migrations.
+2. Configure production secrets and rotate local defaults.
+3. Deploy backend and frontend, then run the production-only proofs and smoke.
+4. Add real payment, WhatsApp, SMS, email, social, and ads provider
+   credentials, keeping the send/launch flags off until each is verified.
+
+See `docs/LAUNCH_RUNBOOK.md`, `docs/VERIFICATION.md`, and
+`docs/GAP_AUDIT.md`.

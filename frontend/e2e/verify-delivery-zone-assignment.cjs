@@ -162,7 +162,7 @@ async function screenshotOperations(orderId) {
     const response = await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
     assert(response && response.ok(), `Operations returned HTTP ${response?.status() || "no response"}.`);
     await page.getByText("Delivery Dispatch Board", { exact: false }).waitFor({ timeout: 10000 });
-    await page.getByText(`Order #${orderId}`, { exact: false }).waitFor({ timeout: 10000 });
+    await page.getByText(`Order #${orderId}`, { exact: false }).first().waitFor({ timeout: 10000 });
     await page.waitForFunction(
       () => Array.from(document.querySelectorAll("input")).some((input) => input.value === "Ravi Rider"),
       null,
@@ -209,7 +209,10 @@ async function main() {
   assert(quoteResult.data.charge_breakdown?.total_with_delivery === 318, "Delivery total should include Rs 69 fee.");
 
   const orderId = await createDeliveryOrder(outerZone.id, address);
-  const orderResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`);
+  const readCookie = await portalLogin("admin");
+  const orderResult = await apiJson(`/api/v1/restaurant/orders/${orderId}`, {
+    headers: { Cookie: readCookie },
+  });
   assert(orderResult.response.ok, `Could not read delivery order: ${JSON.stringify(orderResult.data)}`);
   assert(orderResult.data.delivery_assignment?.status === "unassigned", "New delivery order did not create an unassigned dispatch record.");
   assert(orderResult.data.delivery_assignment?.zone?.name === outerZone.name, "Dispatch record did not keep the delivery zone.");

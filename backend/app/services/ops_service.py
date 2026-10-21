@@ -727,7 +727,7 @@ def sqlite_database_path() -> Optional[Path]:
 
 
 def _public_base_url() -> str:
-    return (settings.PIZZA_BLITZ_PUBLIC_URL or "https://pizza-blitz.vercel.app").rstrip("/")
+    return settings.PIZZA_BLITZ_PUBLIC_URL.rstrip("/")
 
 
 def _public_api_prefix() -> str:

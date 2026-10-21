@@ -1308,7 +1308,7 @@ export default function Settings() {
       setSyncMessage(
         `Imported ${data.data.rows_imported} sales rows into the portal.`
       );
-    } catch (error) {
+    } catch {
       setSyncMessage("Google Sheets import API is not available right now.");
     } finally {
       setIsSyncing(false);
@@ -2578,7 +2578,7 @@ export default function Settings() {
                       <div>
                         <p className="font-black text-gray-900">Expected Method Split</p>
                         <p className="text-sm text-gray-500">
-                          Generated from today's closed paid orders.
+                          Generated from today&apos;s closed paid orders.
                         </p>
                       </div>
                       <button

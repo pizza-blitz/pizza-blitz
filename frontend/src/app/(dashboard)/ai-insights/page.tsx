@@ -38,7 +38,7 @@ export default function AIInsights() {
         setError(message);
         setSyncMessage({ type: "error", text: message });
       }
-    } catch (err) {
+    } catch {
       if (signal?.aborted) return;
       const message = "Unable to establish neural link with backend.";
       setError(message);
@@ -132,7 +132,7 @@ export default function AIInsights() {
                </div>
                <h3 className="text-3xl font-black text-gray-900 mb-6 tracking-tighter italic uppercase underline decoration-orange-500 decoration-8 underline-offset-8">Executive Summary</h3>
                <p className="text-gray-700 leading-relaxed text-2xl font-bold tracking-tight">
-                 "{displayData.summary}"
+                 &ldquo;{displayData.summary}&rdquo;
                </p>
              </div>
           </div>

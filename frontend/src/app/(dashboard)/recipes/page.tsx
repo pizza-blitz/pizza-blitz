@@ -266,7 +266,7 @@ export default function RecipesPage() {
             <div className="bg-indigo-900 p-8 rounded-3xl text-white shadow-2xl shadow-indigo-200 animate-in zoom-in-95 duration-500">
                <div className="flex justify-between items-start mb-8">
                 <div>
-                  <h3 className="text-2xl font-black italic tracking-tighter">TOMORROW'S PREP</h3>
+                  <h3 className="text-2xl font-black italic tracking-tighter">TOMORROW&apos;S PREP</h3>
                   <p className="text-indigo-300 text-xs font-bold opacity-80 uppercase">AI Generated Resource Forecast</p>
                 </div>
                 <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-md">
@@ -289,7 +289,7 @@ export default function RecipesPage() {
                  ))}
                  {predictions.length === 0 && !isSubmitting && (
                    <div className="py-8 text-center text-indigo-400 text-sm italic">
-                     Insufficient sales data for tomorrow's prediction. Keep logging sales!
+                     Insufficient sales data for tomorrow&apos;s prediction. Keep logging sales!
                    </div>
                  )}
                </div>

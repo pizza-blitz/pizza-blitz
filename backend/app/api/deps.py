@@ -68,6 +68,29 @@ def get_current_session(
     return session_from_request(request, credentials)
 
 
+def get_optional_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict | None:
+    """Return the caller's session when one is present, otherwise None.
+
+    Used by endpoints that are public but expose more data to a verified
+    owner or staff session than to an anonymous caller.
+    """
+    try:
+        return session_from_request(request, credentials)
+    except HTTPException:
+        return None
+
+
+def customer_subject_phone(session: dict | None) -> str:
+    """Return the phone number carried by a customer session subject, if any."""
+    subject = str((session or {}).get("subject") or "")
+    if subject.startswith("customer:"):
+        return subject.split("customer:", 1)[1].strip()
+    return ""
+
+
 def require_roles(*roles: str) -> Callable:
     allowed_roles = set(roles)
 

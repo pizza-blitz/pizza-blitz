@@ -1,0 +1,15 @@
+# Keep the build context to what the API image needs.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+.venv/
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+*.db
+*.log
+backups/
+tests/
+scratch/

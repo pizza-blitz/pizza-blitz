@@ -1328,6 +1328,7 @@ export default function OrdersPage() {
         >
           <button
             data-testid="counter-command-express-walkin"
+            aria-label="Express Walk-in"
             disabled={!canStartExpressWalkIn}
             onClick={startExpressWalkIn}
             className="rounded-xl border border-emerald-400/30 bg-emerald-500 px-4 py-4 text-left text-white shadow-lg transition hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"

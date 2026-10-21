@@ -58,7 +58,11 @@ export async function POST(request: Request) {
   }
 
   const historyResponse = await fetch(
-    getServerApiUrl(`/api/v1/restaurant/orders/customer-history/${encodeURIComponent(phone)}`),
+    getServerApiUrl(
+      `/api/v1/restaurant/orders/customer-history/${encodeURIComponent(
+        phone
+      )}?order_id=${proofOrderId}`
+    ),
     { cache: "no-store" }
   );
   const history = await historyResponse.json().catch(() => ({}));
