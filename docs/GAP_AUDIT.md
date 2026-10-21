@@ -59,7 +59,8 @@ These are real gaps, but they cannot be closed from inside the repository.
 | 2 | Launch | Backend and frontend are not deployed, so the live deployment proof and production smoke scripts have nothing to run against. | Needs a Google Cloud / Vercel project and credentials (`deploy-gcp.ps1`). |
 | 3 | Providers | Payment gateway, WhatsApp, SMS, email, Meta social, and Meta ads credentials are not configured. | Needs real provider accounts. The features stay gated behind `CAMPAIGN_SEND_ENABLED`, `SOCIAL_PUBLISH_ENABLED`, and `ADS_LAUNCH_ENABLED`, which is the intended safe default. |
 | 4 | Type safety | 86 `@typescript-eslint/no-explicit-any` warnings remain in older dashboard pages (mostly `reports`, `ceo`, `sales`, `inventory`, `purchase-orders`, `dashboard`). | They are now warnings instead of hidden errors. Replacing them needs response models per endpoint; `tsc --noEmit` already passes and gates the build. |
-| 5 | Browser proofs | A handful of the 139 proof scripts assert against a deployed URL (live deployment proof, production launch, live environment). They are expected to fail locally until item 2 is done. | They require the deployed environment. |
+| 5 | Rate limiting | Public endpoints that accept a phone number or order id (customer login proof, order tracking, order creation, payment verification) have no throttle. The login proof requires a matching phone + order id, but an attacker could still enumerate sequential ids. | A correct fix needs a shared limiter (Redis or provider WAF) because in-process counters do not hold across serverless instances. That is a deployment decision, and the rest of the system is ready for it. |
+| 6 | Browser proofs | A handful of the 139 proof scripts assert against a deployed URL (live deployment proof, production launch, live environment). They are expected to fail locally until item 2 is done. | They require the deployed environment. |
 
 ## Current gate results
 
