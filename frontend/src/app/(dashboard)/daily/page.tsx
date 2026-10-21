@@ -3,6 +3,11 @@ import React, { useState } from 'react';
 import { Save, AlertCircle, CheckCircle2, IndianRupee, Loader2, ArrowRight } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
+type DailyEntryResult = {
+  date?: string;
+  profit?: number;
+};
+
 export default function DailyEntry() {
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -13,7 +18,7 @@ export default function DailyEntry() {
     notes: ""
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [status, setStatus] = useState<{type: 'success' | 'error', msg: string, detail?: any} | null>(null);
+  const [status, setStatus] = useState<{type: 'success' | 'error', msg: string, detail?: DailyEntryResult} | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,8 +60,9 @@ export default function DailyEntry() {
         total_expense: "",
         notes: ""
       });
-    } catch (err: any) {
-      setStatus({ type: 'error', msg: err.message || "Something went wrong" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setStatus({ type: 'error', msg: message });
     } finally {
       setIsSubmitting(false);
     }

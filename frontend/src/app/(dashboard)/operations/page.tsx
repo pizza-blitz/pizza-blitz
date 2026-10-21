@@ -591,6 +591,25 @@ function flowStepClass(isComplete: boolean, isCurrent: boolean) {
   return "border-slate-200 bg-slate-50 text-slate-400";
 }
 
+type DeliveryQueueOrder = {
+  id: number;
+  delivery_address?: string | null;
+  delivery_zone?: string | null;
+  delivery_fee?: number | string | null;
+  assignment?: NonNullable<Order["delivery_assignment"]> | null;
+  eta_window?: string | null;
+  address_validation?: AddressValidation | null;
+  requires_address_review?: boolean;
+  next_action?: string;
+  payment_due?: boolean;
+  customer_name?: string;
+  customer_phone?: string | null;
+  total_amount?: number | string | null;
+  payment_status?: string;
+  order_status?: string;
+  notes?: string | null;
+};
+
 export default function OperationsPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState("active");
@@ -982,9 +1001,9 @@ export default function OperationsPage() {
           : "",
       ].filter(Boolean);
 
-      const queueOrders = queueResponse.ok ? queueData.orders || [] : [];
-      const queueById = new Map<number, any>(
-        queueOrders.map((order: any) => [order.id, order])
+      const queueOrders: DeliveryQueueOrder[] = queueResponse.ok ? queueData.orders || [] : [];
+      const queueById = new Map(
+        queueOrders.map((order) => [order.id, order] as const)
       );
       setDeliveryQueueSummary(queueResponse.ok ? queueData.summary || null : null);
       setDeliveryMission(missionResponse.ok ? missionData || null : null);
@@ -1013,8 +1032,8 @@ export default function OperationsPage() {
       });
       const mergedOrderIds = new Set(mergedOrders.map((order) => order.id));
       const queueOnlyOrders: Order[] = queueOrders
-        .filter((queueOrder: any) => !mergedOrderIds.has(queueOrder.id))
-        .map((queueOrder: any) => ({
+        .filter((queueOrder) => !mergedOrderIds.has(queueOrder.id))
+        .map((queueOrder) => ({
           id: queueOrder.id,
           order_type: "delivery",
           source: "delivery_queue",

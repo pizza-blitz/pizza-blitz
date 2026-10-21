@@ -32,7 +32,8 @@ The standalone copy excludes generated dependency and build folders
 - `python -W error::FutureWarning -m unittest discover -s tests -v`: 57 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
-- `npm run lint`: passes; remaining `no-explicit-any` findings are warnings.
+- `npm run lint`: passes with warnings only; explicit-`any` debt is now
+  confined to `reports/page.tsx` (40 sites, down from 86 across 18 files).
 - `npm run typecheck`: passes.
 - `npm run build`: passes with lint and type checking enabled (the previous
   `ignoreDuringBuilds` / `ignoreBuildErrors` bypasses are removed).

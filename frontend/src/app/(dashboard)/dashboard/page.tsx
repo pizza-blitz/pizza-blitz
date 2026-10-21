@@ -174,11 +174,49 @@ function OwnerAlertRow({ alert }: { alert: OwnerAlert }) {
   );
 }
 
+type DashboardMetrics = {
+  total_sales: number;
+  total_expense: number;
+  total_profit: number;
+  avg_daily_sale: number;
+  sales_growth: number;
+};
+
+type DashboardChartPoint = {
+  date: string;
+  sale: number;
+};
+
+type DashboardStats = {
+  metrics?: DashboardMetrics;
+  chart_data?: DashboardChartPoint[];
+};
+
+type MonthlyBreakdownPoint = {
+  month: string;
+  total_sale: number;
+  profit: number;
+};
+
+type LifetimeSummary = {
+  start_date?: string;
+  total_revenue?: number;
+  avg_monthly_revenue?: number;
+  best_month?: { name?: string; amount?: number };
+};
+
+type DashboardInsights = {
+  comparison?: { change_percent: number; direction: string };
+  dayOfWeek?: { best_day?: { day?: string; average_sale?: number } };
+  forecast?: { projected_total?: number; change_percent?: number };
+  profitTrend?: { trend?: { margin_percent?: number }[] };
+};
+
 export default function Dashboard() {
-  const [stats, setStats] = useState<any>(null);
-  const [insights, setInsights] = useState<any>(null);
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
-  const [lifetime, setLifetime] = useState<any>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [insights, setInsights] = useState<DashboardInsights | null>(null);
+  const [monthlyData, setMonthlyData] = useState<MonthlyBreakdownPoint[]>([]);
+  const [lifetime, setLifetime] = useState<LifetimeSummary | null>(null);
   const [todayOrders, setTodayOrders] = useState<DashboardOrder[]>([]);
   const [totalCollectedToday, setTotalCollectedToday] = useState(0);
   const [flowReadiness, setFlowReadiness] = useState<FlowReadiness | null>(null);
@@ -253,6 +291,9 @@ export default function Dashboard() {
       return null;
     }
   };
+
+  const profitTrendPoints = insights?.profitTrend?.trend ?? [];
+  const chartPoints = stats?.chart_data ?? [];
 
   const commandBoard = React.useMemo(() => {
     const flow = flowReadiness?.summary;
@@ -518,7 +559,7 @@ export default function Dashboard() {
                   <Tooltip
                     cursor={{fill: '#F9FAFB'}}
                     contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}}
-                    formatter={(val: any) => [formatCurrency(Number(val), 2)]}
+                    formatter={(val) => [formatCurrency(Number(val), 2)]}
                   />
                   <Bar dataKey="total_sale" fill="#EA580C" radius={[6, 6, 0, 0]} barSize={20} />
                   <Bar dataKey="profit" fill="#6366F1" radius={[6, 6, 0, 0]} barSize={20} />
@@ -607,8 +648,8 @@ export default function Dashboard() {
          <div className="rounded-lg border border-l-4 border-gray-100 border-l-orange-500 bg-white p-4 shadow-sm md:p-6">
             <p className="text-xs font-bold text-orange-600 uppercase mb-2">AI Pulse</p>
             <p className="text-[11px] font-bold text-gray-700 leading-tight">
-              {insights?.profitTrend?.trend?.length > 0
-                ? `Profit margin is stable at ${insights.profitTrend.trend[0].margin_percent}%.`
+              {profitTrendPoints.length > 0
+                ? `Profit margin is stable at ${profitTrendPoints[0].margin_percent}%.`
                 : 'Analyzing sales velocity...'}
             </p>
          </div>
@@ -623,9 +664,9 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="h-64">
-          {stats?.chart_data?.length > 0 ? (
+          {chartPoints.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 900, height: 256 }}>
-              <AreaChart data={stats.chart_data}>
+              <AreaChart data={chartPoints}>
                 <defs>
                   <linearGradient id="colorSale" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#EA580C" stopOpacity={0.1}/>
@@ -636,7 +677,7 @@ export default function Dashboard() {
                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#9CA3AF', fontSize: 10}} dy={10} hide={period === 'lifetime'} />
                 <Tooltip
                   contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}}
-                  formatter={(val: any) => [formatCurrency(Number(val), 2)]}
+                  formatter={(val) => [formatCurrency(Number(val), 2)]}
                 />
                 <Area type="monotone" dataKey="sale" stroke="#EA580C" strokeWidth={3} fillOpacity={1} fill="url(#colorSale)" />
               </AreaChart>

@@ -910,7 +910,7 @@ export default function ProductionOpsPage() {
     const loadSection = async (
       label: string,
       request: Promise<Response>,
-      onData: (data: any) => void
+      onData: (data: unknown) => void
     ) => {
       try {
         const response = await request;
@@ -925,15 +925,15 @@ export default function ProductionOpsPage() {
     };
 
     const tasks = [
-      () => loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), setReadiness),
-      () => loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), setCredentialActivation),
-      () => loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), setProductionLaunch),
-      () => loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), setLiveEnvironment),
-      () => loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups(data.backups || [])),
-      () => loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), setDataQuality),
-      () => loadSection("launch candidate", fetchWithAuth(`${OPS_API}/launch-candidate`), setLaunchCandidate),
-      () => loadSection("beta delivery", fetchWithAuth(`${OPS_API}/beta-delivery`), setBetaDelivery),
-      () => loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), setFinalAcceptance),
+      () => loadSection("readiness", fetchWithAuth(`${OPS_API}/readiness`), (data) => setReadiness(data as Readiness)),
+      () => loadSection("credential activation", fetchWithAuth(`${OPS_API}/credential-activation`), (data) => setCredentialActivation(data as CredentialActivationReport)),
+      () => loadSection("production launch", fetchWithAuth(`${OPS_API}/production-launch`), (data) => setProductionLaunch(data as ProductionLaunchReport)),
+      () => loadSection("live environment", fetchWithAuth(`${OPS_API}/live-environment`), (data) => setLiveEnvironment(data as LiveEnvironmentReport)),
+      () => loadSection("backup history", fetchWithAuth(`${OPS_API}/backups`), (data) => setBackups((data as { backups?: BackupRun[] }).backups || [])),
+      () => loadSection("data quality", fetchWithAuth(`${OPS_API}/data-quality`), (data) => setDataQuality(data as DataQualityReport)),
+      () => loadSection("launch candidate", fetchWithAuth(`${OPS_API}/launch-candidate`), (data) => setLaunchCandidate(data as LaunchCandidateReport)),
+      () => loadSection("beta delivery", fetchWithAuth(`${OPS_API}/beta-delivery`), (data) => setBetaDelivery(data as BetaDeliveryReport)),
+      () => loadSection("final acceptance", fetchWithAuth(`${OPS_API}/final-acceptance`), (data) => setFinalAcceptance(data as FinalAcceptanceReport)),
     ];
     const workers = Array.from({ length: Math.min(4, tasks.length) }, async () => {
       while (tasks.length) {

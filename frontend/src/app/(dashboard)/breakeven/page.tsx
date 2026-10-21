@@ -6,6 +6,24 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats/breakeven");
 
+type FixedCosts = {
+  rent?: number;
+  salaries?: number;
+  utilities?: number;
+  other_fixed?: number;
+  total?: number;
+};
+
+type BreakevenData = {
+  today_above_breakeven?: boolean;
+  today_revenue?: number;
+  daily_breakeven_revenue?: number;
+  daily_breakeven_orders?: number;
+  avg_order_value?: number;
+  status_message?: string;
+  fixed_costs?: FixedCosts;
+};
+
 function formatNumber(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue.toLocaleString("en-IN") : "0";
@@ -19,7 +37,7 @@ function completionPercent(revenue: unknown, breakEvenRevenue: unknown) {
 }
 
 export default function BreakevenPage() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<BreakevenData | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [isSavingSetup, setIsSavingSetup] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -70,7 +88,15 @@ export default function BreakevenPage() {
     setIsSavingSetup(true);
     setMessage(null);
     try {
-      const response = await fetch(`${API_BASE}/setup?${new URLSearchParams(setupData as any)}`, {
+      const params = new URLSearchParams({
+        month: setupData.month,
+        rent: String(setupData.rent),
+        salaries: String(setupData.salaries),
+        utilities: String(setupData.utilities),
+        other_fixed: String(setupData.other_fixed),
+        avg_order_value: String(setupData.avg_order_value),
+      });
+      const response = await fetch(`${API_BASE}/setup?${params}`, {
         method: 'POST',
         credentials: "include",
       });
@@ -186,7 +212,7 @@ export default function BreakevenPage() {
             <PieChart className="w-5 h-5 text-blue-400" /> Cost Distribution
           </h3>
           <div className="space-y-6">
-            {data?.fixed_costs && Object.entries(data.fixed_costs).filter(([k]) => k !== 'total').map(([key, val]: any) => (
+            {data?.fixed_costs && Object.entries(data.fixed_costs).filter(([k]) => k !== 'total').map(([key, val]) => (
               <div key={key} className="flex justify-between items-center group">
                 <span className="text-gray-400 text-sm capitalize group-hover:text-white transition-colors">{key}</span>
                 <span className="font-mono text-white">Rs {formatNumber(val)}</span>

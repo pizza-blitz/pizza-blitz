@@ -4,14 +4,53 @@ import Link from 'next/link';
 import { Plus, Search, AlertTriangle, RefreshCw, Upload, Save, CheckCircle2, History, TrendingUp, Camera, Sparkles, ShoppingCart } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
+type InventoryItemRow = {
+  id: number;
+  name: string;
+  category?: string;
+  unit?: string;
+  supplier_name?: string | null;
+  current_stock: number;
+  minimum_stock: number;
+  cost_per_unit: number;
+};
+
+type LowStockItem = {
+  id: number;
+  name: string;
+  unit?: string;
+  supplier_name?: string | null;
+  reorder_quantity?: number;
+  estimated_cost?: number;
+};
+
+type LowStockSummary = {
+  count: number;
+  items: LowStockItem[];
+  groups?: unknown[];
+  total_estimated_cost: number;
+};
+
+type InventoryTransactionRow = {
+  id: number;
+  item_id: number;
+  item_name?: string;
+  item_unit?: string;
+  transaction_type: string;
+  notes?: string | null;
+  created_at?: string;
+  signed_quantity: number;
+  total_cost?: number;
+};
+
 export default function Inventory() {
-  const [items, setItems] = useState<any[]>([]);
-  const [lowStock, setLowStock] = useState<any>({ count: 0, items: [], groups: [], total_estimated_cost: 0 });
+  const [items, setItems] = useState<InventoryItemRow[]>([]);
+  const [lowStock, setLowStock] = useState<LowStockSummary>({ count: 0, items: [], groups: [], total_estimated_cost: 0 });
   const [, setIsLoading] = useState(true);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isCreatingPO, setIsCreatingPO] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<InventoryItemRow | null>(null);
+  const [transactions, setTransactions] = useState<InventoryTransactionRow[]>([]);
   const [adjustmentType, setAdjustmentType] = useState<'purchase' | 'usage' | 'wastage'>('purchase');
   const [adjustmentQty, setAdjustmentQty] = useState("1");
   const [adjustmentNotes, setAdjustmentNotes] = useState("");
@@ -297,7 +336,7 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredItems.map((item: any) => {
+                {filteredItems.map((item) => {
                   const isLow = item.current_stock < item.minimum_stock;
                   return (
                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
@@ -361,7 +400,7 @@ export default function Inventory() {
             </div>
 
             <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-              {(lowStock.items || []).map((item: any) => (
+              {(lowStock.items || []).map((item) => (
                 <div key={item.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                   <div className="flex justify-between gap-3">
                     <div>
@@ -482,7 +521,7 @@ export default function Inventory() {
               Recent Stock Movements
             </h3>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-              {transactions.map((transaction: any) => (
+              {transactions.map((transaction) => (
                 <div key={transaction.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

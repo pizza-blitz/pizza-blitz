@@ -3,8 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { AlertCircle, BrainCircuit, CheckCircle2, ChevronRight, Loader2, Sparkles, Target, Zap } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
+type AiInsightPayload = {
+  summary: string;
+  tips: string[];
+};
+
 export default function AIInsights() {
-  const [insights, setInsights] = useState<any>(null);
+  const [insights, setInsights] = useState<AiInsightPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<{ type: "success" | "error" | "loading"; text: string } | null>(null);

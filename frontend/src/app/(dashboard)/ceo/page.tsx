@@ -10,7 +10,45 @@ import { getApiUrl } from "@/lib/api";
 
 const API_BASE = getApiUrl("/api/v1/restaurant/stats");
 
-async function fetchJson(url: string, signal?: AbortSignal) {
+type HealthBreakdownEntry = {
+  label: string;
+  value: number;
+  score: number;
+};
+
+type HealthScore = {
+  health_score?: number;
+  grade?: string;
+  color?: string;
+  recommendation?: string;
+  breakdown?: Record<string, HealthBreakdownEntry>;
+};
+
+type TargetStatus = {
+  revenue_so_far?: number;
+  monthly_target?: number;
+  status_message?: string;
+  target_achieved_pct?: number;
+  days_remaining?: number;
+  projected_month_total?: number;
+  on_track?: boolean;
+};
+
+type CeoSummary = {
+  period?: string;
+  this_week_revenue?: number;
+  direction?: string;
+  week_on_week_change?: number;
+  profit_margin?: number;
+  best_day?: { date?: string; revenue?: number };
+  worst_day?: { date?: string; revenue?: number };
+};
+
+type WeeklyPulse = {
+  whatsapp_url?: string;
+};
+
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     credentials: "include",
     cache: "no-store",
@@ -20,7 +58,7 @@ async function fetchJson(url: string, signal?: AbortSignal) {
   if (!response.ok) {
     throw new Error(data.detail || `Request failed with HTTP ${response.status}.`);
   }
-  return data;
+  return data as T;
 }
 
 function formatNumber(value: unknown) {
@@ -29,9 +67,9 @@ function formatNumber(value: unknown) {
 }
 
 export default function CEODashboard() {
-  const [health, setHealth] = useState<any>(null);
-  const [target, setTarget] = useState<any>(null);
-  const [summary, setSummary] = useState<any>(null);
+  const [health, setHealth] = useState<HealthScore | null>(null);
+  const [target, setTarget] = useState<TargetStatus | null>(null);
+  const [summary, setSummary] = useState<CeoSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [pulseStatus, setPulseStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [pulseMessage, setPulseMessage] = useState("");
@@ -41,9 +79,9 @@ export default function CEODashboard() {
     async function fetchData(signal: AbortSignal) {
       try {
         const [healthData, targetData, summaryData] = await Promise.all([
-          fetchJson(`${API_BASE}/insights/health-score`, signal),
-          fetchJson(`${API_BASE}/target/status`, signal),
-          fetchJson(`${API_BASE}/ceo-summary`, signal)
+          fetchJson<HealthScore>(`${API_BASE}/insights/health-score`, signal),
+          fetchJson<TargetStatus>(`${API_BASE}/target/status`, signal),
+          fetchJson<CeoSummary>(`${API_BASE}/ceo-summary`, signal)
         ]);
         setHealth(healthData);
         setTarget(targetData);
@@ -63,7 +101,7 @@ export default function CEODashboard() {
     setPulseStatus("loading");
     setPulseMessage("Preparing WhatsApp weekly pulse...");
     try {
-      const data = await fetchJson(`${API_BASE}/weekly-summary/whatsapp`);
+      const data = await fetchJson<WeeklyPulse>(`${API_BASE}/weekly-summary/whatsapp`);
       if (!data.whatsapp_url) throw new Error("Weekly pulse link is unavailable.");
       window.open(data.whatsapp_url, "_blank", "noopener,noreferrer");
       setPulseStatus("success");
@@ -147,7 +185,7 @@ export default function CEODashboard() {
             </div>
 
             <div className="space-y-4">
-              {health?.breakdown && Object.entries(health.breakdown).map(([key, val]: [any, any]) => (
+              {health?.breakdown && Object.entries(health.breakdown).map(([key, val]) => (
                 <div key={key} className="flex flex-col gap-1.5">
                   <div className="flex justify-between text-xs text-gray-400">
                     <span>{val.label}</span>

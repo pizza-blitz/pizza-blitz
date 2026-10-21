@@ -4,17 +4,71 @@ import { AlertTriangle, CheckCircle2, DollarSign, TrendingUp, Calendar, Download
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getApiUrl } from '@/lib/api';
 
+type SalesRow = {
+  date: string;
+  total_sale: number;
+  total_expense: number;
+  profit: number;
+  cash_collected?: number;
+  payment_method?: string;
+};
+
+type SalesSummary = {
+  total_sales: number;
+  total_profit: number;
+  total_expense?: number;
+  avg_daily_sale: number;
+  sales_growth: number;
+};
+
+type ReconciliationMonth = {
+  month: string;
+  total_sale: number;
+  days_with_sales?: number;
+  expected_days?: number;
+  missing_days?: number;
+  zero_sale_days?: number;
+  coverage_percent?: number;
+  repair_priority?: string;
+  repair_action?: string;
+  missing_dates?: string[];
+  zero_sale_dates?: string[];
+  source_block?: { reason?: string };
+};
+
+type SalesReconciliation = {
+  months?: ReconciliationMonth[];
+  repair_queue?: ReconciliationMonth[];
+  blocked_queue?: ReconciliationMonth[];
+  gap_to_expected?: number;
+  imported_total?: number;
+  expected_min_total?: number;
+  months_imported?: number;
+  record_count?: number;
+  next_action?: string;
+  last_sheet_sync?: { last_synced_at?: string };
+  repair_queue_count?: number;
+  blocked_queue_count?: number;
+  next_repair_month?: string;
+};
+
+type RepairImportResult = {
+  skip_reasons?: string[];
+  rows_imported?: number;
+  months_processed?: number;
+};
+
 export default function SalesHistory() {
-  const [salesData, setSalesData] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>(null);
-  const [reconciliation, setReconciliation] = useState<any>(null);
+  const [salesData, setSalesData] = useState<SalesRow[]>([]);
+  const [summary, setSummary] = useState<SalesSummary | null>(null);
+  const [reconciliation, setReconciliation] = useState<SalesReconciliation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isReconciliationLoading, setIsReconciliationLoading] = useState(true);
   const [reconciliationError, setReconciliationError] = useState("");
   const [repairSheetUrl, setRepairSheetUrl] = useState("");
   const [repairImportingMonth, setRepairImportingMonth] = useState("");
   const [repairImportMessage, setRepairImportMessage] = useState("");
-  const [repairImportResult, setRepairImportResult] = useState<any>(null);
+  const [repairImportResult, setRepairImportResult] = useState<RepairImportResult | null>(null);
   const [blockingMonth, setBlockingMonth] = useState("");
   
   // New Month/Year Filter State
@@ -102,7 +156,7 @@ export default function SalesHistory() {
     "July", "August", "September", "October", "November", "December"
   ];
   const selectedMonthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}`;
-  const selectedMonthReconciliation = reconciliation?.months?.find((row: any) => row.month === selectedMonthKey);
+  const selectedMonthReconciliation = reconciliation?.months?.find((row) => row.month === selectedMonthKey);
   const money = (value: number) => `Rs ${Math.round(Number(value || 0)).toLocaleString()}`;
   const reconciliationGap = reconciliation ? Number(reconciliation.gap_to_expected || 0) : 3000000;
   const repairRows = (reconciliation?.repair_queue || []).slice(0, 12);
@@ -150,7 +204,7 @@ export default function SalesHistory() {
       setRepairImportingMonth("");
     }
   };
-  const blockRepairMonth = async (row: any) => {
+  const blockRepairMonth = async (row: ReconciliationMonth) => {
     if (!row?.month) return;
     setBlockingMonth(row.month);
     setRepairImportMessage("");
@@ -406,7 +460,7 @@ export default function SalesHistory() {
                   </td>
                 </tr>
               ) : (
-                repairRows.map((row: any) => {
+                repairRows.map((row) => {
                   const datesToCheck = [
                     ...(row.missing_dates || []).slice(0, 4),
                     ...(row.zero_sale_dates || []).slice(0, 3),
@@ -497,7 +551,7 @@ export default function SalesHistory() {
             </span>
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {blockedRows.map((row: any) => (
+            {blockedRows.map((row) => (
               <div key={`blocked-${row.month}`} className="rounded-lg border border-amber-100 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -538,7 +592,7 @@ export default function SalesHistory() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
           { title: "Avg. Daily Flow", value: summary ? `₹${Math.round(summary.avg_daily_sale).toLocaleString()}` : "...", trend: null, positive: true, icon: Calendar },
-          { title: "Period Profit", value: summary ? `₹${summary.total_profit.toLocaleString()}` : "...", trend: summary ? `${summary.sales_growth}%` : null, positive: summary?.sales_growth >= 0, icon: TrendingUp },
+          { title: "Period Profit", value: summary ? `₹${summary.total_profit.toLocaleString()}` : "...", trend: summary ? `${summary.sales_growth}%` : null, positive: (summary?.sales_growth ?? 0) >= 0, icon: TrendingUp },
           { title: "Total Scale", value: summary ? `₹${summary.total_sales.toLocaleString()}` : "...", sub: "Gross Revenue (30D)", icon: DollarSign },
         ].map((m, i) => {
           const Icon = m.icon;

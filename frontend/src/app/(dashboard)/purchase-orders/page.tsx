@@ -21,9 +21,33 @@ function arrayRows<T>(value: unknown): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+type PurchaseOrderItem = {
+  id?: number;
+  name: string;
+  reorder_quantity?: number;
+  needed?: number;
+  unit?: string;
+};
+
+type PurchaseOrder = {
+  id: number;
+  status: string;
+  supplier_name?: string;
+  supplier_whatsapp?: string | null;
+  total_amount?: number;
+  created_at: string;
+  items?: PurchaseOrderItem[];
+};
+
+type ReorderGroup = {
+  supplier_name: string;
+  supplier_whatsapp?: string | null;
+  items: PurchaseOrderItem[];
+};
+
 export default function PurchaseOrders() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [reorderGroups, setReorderGroups] = useState<any[]>([]);
+  const [orders, setOrders] = useState<PurchaseOrder[]>([]);
+  const [reorderGroups, setReorderGroups] = useState<ReorderGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isCreatingDrafts, setIsCreatingDrafts] = useState(false);
@@ -43,8 +67,8 @@ export default function PurchaseOrders() {
         fetchJson(getApiUrl('/api/v1/restaurant/purchase-orders/'), { signal }),
         fetchJson(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
       ]);
-      setOrders(arrayRows(data));
-      setReorderGroups(arrayRows(lowStock.groups));
+      setOrders(arrayRows<PurchaseOrder>(data));
+      setReorderGroups(arrayRows<ReorderGroup>(lowStock.groups));
     } catch (error) {
       if (signal?.aborted) return;
       console.warn("Purchase order data could not be loaded", error);
@@ -131,9 +155,9 @@ export default function PurchaseOrders() {
     }
   };
 
-  const getWhatsAppLink = (supplier: string, phone: string, items: any[]) => {
+  const getWhatsAppLink = (supplier: string, phone: string, items: PurchaseOrderItem[]) => {
     const text = `Hello ${supplier},\n\nPlease send the following supplies for Pizza Blitz today:\n\n` +
-      arrayRows<any>(items).map(i => `- ${i.name}: ${i.reorder_quantity || i.needed} ${i.unit}`).join('\n') +
+      items.map(i => `- ${i.name}: ${i.reorder_quantity || i.needed} ${i.unit}`).join('\n') +
       `\n\nPlease confirm availability and total bill.\nRegards,\nPizza Blitz`;
     return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   };
@@ -148,7 +172,7 @@ export default function PurchaseOrders() {
           order.supplier_name,
           order.supplier_whatsapp,
           Number(order.total_amount || 0).toLocaleString(),
-          ...(arrayRows<any>(order.items).map((item) => item.name)),
+          ...(order.items || []).map((item) => item.name),
         ]
           .join(" ")
           .toLowerCase();
@@ -193,7 +217,7 @@ export default function PurchaseOrders() {
             Smart Suggestions <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-600 rounded-full text-xs font-bold">Low Stock</span>
           </h3>
 
-          {reorderGroups.map((data: any) => (
+          {reorderGroups.map((data) => (
             <div key={`${data.supplier_name}-${data.supplier_whatsapp}`} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                  <div>
@@ -224,7 +248,7 @@ export default function PurchaseOrders() {
                  )}
               </div>
               <div className="p-4 space-y-3">
-                {arrayRows<any>(data.items).map((item: any) => (
+                {data.items.map((item) => (
                   <div key={item.id} className="flex justify-between items-center text-sm">
                     <div className="flex items-center text-gray-700">
                       <CornerDownRight className="w-4 h-4 mr-2 text-gray-400" />

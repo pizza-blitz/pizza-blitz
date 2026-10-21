@@ -76,7 +76,7 @@ export default function RecipesPage() {
 
   const handleIngredientChange = (index: number, field: keyof Ingredient, value: string | number) => {
     const list = [...newRecipe.ingredients];
-    (list[index] as any)[field] = value;
+    list[index] = { ...list[index], [field]: value };
     setNewRecipe({ ...newRecipe, ingredients: list });
   };
 
