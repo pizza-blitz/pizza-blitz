@@ -144,7 +144,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 ### Wave 3 (in progress)
 
 - [x] Refunds and voids with reason, audit trail and gateway handling.
-- [ ] Dedicated KDS device view with timers, bump/recall and sound.
+- [x] Dedicated KDS device view with timers, bump/recall and sound.
 - [ ] Order status notifications (confirmation, ready, out for delivery, delivered).
 - [ ] Menu media library (upload, alt text, responsive images).
 - [ ] Store profile hours editing from mobile: remaining settings density.

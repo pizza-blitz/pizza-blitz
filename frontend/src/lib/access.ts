@@ -1,6 +1,6 @@
 import type { SessionRole } from "@/lib/session";
 
-export const staffRoutePrefixes = ["/counter", "/orders", "/operations", "/receipt", "/kitchen-ticket"];
+export const staffRoutePrefixes = ["/counter", "/orders", "/operations", "/kds", "/receipt", "/kitchen-ticket"];
 
 export const adminOnlyRoutePrefixes = [
   "/dashboard",

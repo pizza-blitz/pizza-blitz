@@ -3215,6 +3215,157 @@ def order_flow_readiness(
     }
 
 
+@router.get("/kds")
+def kitchen_display_board(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    return build_kds_board(db)
+
+
+def build_kds_board(db: Session) -> dict:
+    now = datetime.utcnow()
+    active_orders = (
+        db.query(RestaurantOrder)
+        .filter(
+            RestaurantOrder.date == business_today(),
+            RestaurantOrder.status.notin_(["closed", "cancelled"]),
+        )
+        .order_by(RestaurantOrder.created_at.asc(), RestaurantOrder.id.asc())
+        .all()
+    )
+
+    priority_rank = {"rush": 0, "watch": 1, "new": 2, "cooking": 3, "ready": 4}
+    board_orders: list[dict] = []
+    used_stations: dict[str, dict] = {
+        rule["key"]: {
+            "key": rule["key"],
+            "label": rule["label"],
+            "sla_minutes": int(rule["sla_minutes"]),
+        }
+        for rule in KITCHEN_STATION_RULES
+    }
+    pending_lines = 0
+    preparing_lines = 0
+    ready_lines = 0
+    rush_lines = 0
+    oldest_age_minutes = 0
+
+    for order in active_orders:
+        # Scheduled orders stay off the board until they are within the next hour.
+        if order.scheduled_for and order.scheduled_for > now + timedelta(minutes=60):
+            continue
+
+        age_minutes = order_age_minutes(order)
+        lines = []
+        for line_index, item in enumerate(order.items or []):
+            if not isinstance(item, dict):
+                continue
+            station = kitchen_station_for_saved_item(item)
+            status = station_item_status(item, order)
+            priority = station_line_priority(
+                status, age_minutes, int(station["sla_minutes"])
+            )
+            if status == "ready":
+                ready_lines += 1
+            elif status == "preparing":
+                preparing_lines += 1
+            else:
+                pending_lines += 1
+            if priority == "rush":
+                rush_lines += 1
+            if station["key"] not in used_stations:
+                used_stations[station["key"]] = {
+                    "key": station["key"],
+                    "label": station["label"],
+                    "sla_minutes": int(station["sla_minutes"]),
+                }
+            lines.append(
+                {
+                    "line_id": f"{order.id}-{line_index}",
+                    "station_key": station["key"],
+                    "station_label": station["label"],
+                    "name": str(item.get("name") or "Item"),
+                    "quantity": int(item.get("quantity") or 0),
+                    "selected_options": item.get("selected_options") or [],
+                    "status": status,
+                    "priority": priority,
+                    "sla_minutes": int(station["sla_minutes"]),
+                }
+            )
+        if not lines:
+            continue
+
+        oldest_age_minutes = max(oldest_age_minutes, age_minutes)
+        due_in_minutes = (
+            int(round((order.scheduled_for - now).total_seconds() / 60))
+            if order.scheduled_for
+            else None
+        )
+        board_orders.append(
+            {
+                "id": order.id,
+                "status": order.status,
+                "order_type": order.order_type,
+                "fulfillment_type": order_metadata(order)["fulfillment_type"],
+                "table_number": order.table_number,
+                "customer_name": order.customer_name,
+                "customer_phone": order.customer_phone,
+                "payment_status": order.payment_status,
+                "created_at": order.created_at.isoformat() if order.created_at else None,
+                "age_minutes": age_minutes,
+                "age_seconds": (
+                    int((now - order.created_at).total_seconds())
+                    if order.created_at
+                    else 0
+                ),
+                "scheduled_for": order.scheduled_for.isoformat()
+                if order.scheduled_for
+                else None,
+                "scheduled_label": scheduled_label(order.scheduled_for),
+                "due_in_minutes": due_in_minutes,
+                "line_count": len(lines),
+                "item_quantity": sum(line["quantity"] for line in lines),
+                "priority": min(
+                    (line["priority"] for line in lines),
+                    key=lambda value: priority_rank.get(value, 9),
+                ),
+                "station_keys": sorted({line["station_key"] for line in lines}),
+                "lines": lines,
+            }
+        )
+
+    board_orders.sort(
+        key=lambda order: (
+            priority_rank.get(order["priority"], 9),
+            -(order["age_seconds"] or 0),
+            order["id"],
+        )
+    )
+
+    return {
+        "orders": board_orders,
+        "stations": sorted(used_stations.values(), key=lambda station: station["key"]),
+        "server_time": now.isoformat() + "Z",
+        "prep_sla_minutes": 20,
+        "metrics": {
+            "active_orders": len(board_orders),
+            "overdue_orders": sum(
+                1
+                for order in board_orders
+                if order["age_minutes"] > 20 and order["status"] != "ready"
+            ),
+            "ready_orders": sum(1 for order in board_orders if order["status"] == "ready"),
+            "pending_lines": pending_lines,
+            "preparing_lines": preparing_lines,
+            "ready_lines": ready_lines,
+            "rush_lines": rush_lines,
+            "oldest_age_minutes": oldest_age_minutes,
+        },
+    }
+
+
 @router.get("/station-command")
 def kitchen_station_command(
     db: Session = Depends(get_db),

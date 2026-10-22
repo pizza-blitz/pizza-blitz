@@ -68,7 +68,7 @@ python bootstrap_master_admin.py `
 | Area | Admin | Staff |
 |---|---|---|
 | Dashboard, CEO, Reports, Roadmap | yes | redirect to `/orders` |
-| Quick Counter, POS Orders, Kitchen Ops | yes | yes |
+| Quick Counter, POS Orders, Kitchen Ops, KDS Board | yes | yes |
 | Menu, Inventory, Purchase Orders, Recipes, Vendors, Waste | yes | redirect to `/orders` |
 | Customers, Comms, Promotions, Social, Ads | yes | redirect to `/orders` |
 | Sales, Daily Entry, Invoices, Breakeven, Expenses | yes | redirect to `/orders` |

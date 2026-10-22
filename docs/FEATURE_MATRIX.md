@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **208 API endpoints**, **37 routes/pages** (29 portal,
-8 public), **124 browser proof scripts**, **88 backend tests**, **39 database
-tables**, **19 integration points**.
+Numbers in this snapshot: **217 API endpoints**, **38 routes/pages** (29 portal,
+1 KDS, 8 public), **125 browser proof scripts**, **92 backend tests**, **39
+database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -78,14 +78,15 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Kitchen board | Operations page with kitchen state and queue | Built | Dedicated full-screen KDS per station | Dedicated KDS missing |
+| Kitchen board | Operations page with kitchen state and queue | Built | Dedicated full-screen KDS per station | — |
+| Kitchen display (KDS) | `/kds` full-screen board: Incoming/Preparing/Ready columns, per-station filters, live timers, overdue highlight, item bump/recall, order start/ready/recall, sound + fullscreen, 8s polling | Built | Full-screen timers, bump/recall, sound, station routing | Printer/hardware integration missing |
 | Station routing | Item/category → kitchen station, per-station status | Built | Configurable routing + filters | Good |
 | Kitchen ticket | Printable ticket per order | Built | Ticket routing, reprint | Printer routing missing |
 | SLA / priority | Age, priority, next action per line | Built | Timers, overdue alerts, sound | Timers/sound missing |
 | Item-level readiness | Station-level only | Partial | Per-item bump/recall | Must build |
 | Courses / sequencing | — | Missing | Fire/hold courses | Later |
 | Capacity / throttling | — | Missing | Order throttling when kitchen is saturated | With store ops |
-| Kitchen display device mode | — | Missing | Locked full-screen mode | With KDS |
+| Kitchen display device mode | Responsive full-screen `/kds` with station filters, chime and fullscreen toggle | Built | Locked full-screen mode | Kiosk/lockdown is browser-level |
 
 ## 4. Delivery and dispatch
 
@@ -261,6 +262,13 @@ unpaid orders are rejected, staff are forbidden, and the POS dialog, badge,
 receipt and tracking all show the refund. Covered by five backend tests and
 `verify:order-refunds`.
 
+W3 measured results (KDS): staff open `/kds` to a full-screen board fed by
+`GET /orders/kds` (active tickets, station line status, age, SLA priority,
+scheduled due time). Station bump/recall uses the existing station status API
+and moves the order status automatically; the board refreshes every 8 seconds,
+highlights overdue tickets, chimes on new orders, filters by station, and offers
+fullscreen. Covered by four backend tests and `verify:kds`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -287,7 +295,10 @@ receipt and tracking all show the refund. Covered by five backend tests and
    admin-only full/partial refunds with reason, method, reference, ledger,
    audit event and refunded/refundable totals. Gateway refund API calls remain a
    provider integration step.
-8. **Dedicated KDS** — full-screen station view, item bump/recall, timers, sound.
+8. ~~**Dedicated KDS**~~ — done in W3: a full-screen `/kds` board for staff with
+   Incoming/Preparing/Ready columns, station filters, live timers, overdue
+   highlighting, per-station bump/recall, order start/ready/recall, chime and
+   fullscreen.
 9. **Order notifications** — WhatsApp/SMS status events (confirmation, ready,
    out for delivery, delivered), respecting the existing provider gates.
 10. **Menu media** — item images uploaded/stored, alt text, responsive rendering.
@@ -324,7 +335,7 @@ receipt and tracking all show the refund. Covered by five backend tests and
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
-| W3 (in progress) | Refunds/voids with ledger + audit (done); KDS device view, order notifications, menu media (next) | Payment + kitchen proofs |
+| W3 (in progress) | Refunds/voids with ledger + audit (done); full-screen KDS (done); order notifications, menu media (next) | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |

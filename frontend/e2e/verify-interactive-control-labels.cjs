@@ -14,6 +14,7 @@ const adminRoutes = [
   "/orders",
   "/counter",
   "/operations",
+  "/kds",
   "/shifts",
   "/daily",
   "/sales",

@@ -15,6 +15,7 @@ const adminRoutes = [
   "/orders",
   "/counter",
   "/operations",
+  "/kds",
   "/shifts",
   "/daily",
   "/sales",
@@ -145,6 +146,12 @@ const routeInventory = [
     "mutation",
     "protected",
   ], { admin: true }),
+  entry("/kds", "Kitchen display", "verify-kds.cjs", [
+    "kitchen",
+    "mutation",
+    "safe-filter",
+    "protected",
+  ], { sourcePath: "kds/page.tsx", surface: "admin", ownerRole: "staff" }),
   entry("/shifts", "Employee attendance", "verify-employee-attendance-command.cjs", [
     "form-input",
     "mutation",
