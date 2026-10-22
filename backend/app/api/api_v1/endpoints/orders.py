@@ -28,6 +28,7 @@ from app.models.domain import (
     InventoryTransaction,
     Invoice,
     OperationalAuditEvent,
+    OrderNotification,
     OrderRefund,
     PaymentEventAudit,
     Promotion,
@@ -51,6 +52,12 @@ from app.services.refund_service import (
     refund_summary,
     refundable_amount,
     serialize_refund,
+)
+from app.services.order_notification_service import (
+    notify_order_event,
+    notify_order_status_change,
+    sent_notifications_for_order,
+    serialize_notification,
 )
 from app.services.scheduling_service import (
     DAYS_AHEAD,
@@ -524,6 +531,7 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
             "eta_window": order_eta_window(order),
             "tracking_steps": order_tracking_steps(order),
             "next_action": next_action,
+            "notifications": sent_notifications_for_order(order),
         }
     )
     return payload
@@ -1918,6 +1926,29 @@ def create_refund(
     }
 
 
+@router.get("/{order_id}/notifications")
+def list_order_notifications(
+    order_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    notifications = (
+        db.query(OrderNotification)
+        .filter(OrderNotification.order_id == order_id)
+        .order_by(OrderNotification.created_at.desc(), OrderNotification.id.desc())
+        .all()
+    )
+    return {
+        "order_id": order.id,
+        "notifications": [serialize_notification(row) for row in notifications],
+        "sent_count": sum(1 for row in notifications if row.status == "sent"),
+    }
+
+
 @router.get("/{order_id}/refunds")
 def list_order_refunds(
     order_id: int,
@@ -2210,6 +2241,7 @@ def cancel_order(
 
     db.commit()
     db.refresh(order)
+    notify_order_event(db, order, "cancelled")
     record_operational_audit_event(
         db,
         session=session,
@@ -2252,6 +2284,7 @@ def close_order(
         raise HTTPException(status_code=409, detail="Cancelled orders cannot be closed.")
 
     inventory_usage = []
+    notify_completed = False
     if order.status != "closed":
         close_blockers = order_close_blockers(order)
         if close_blockers:
@@ -2287,6 +2320,7 @@ def close_order(
         order.payment_status = "paid"
         order.status = "closed"
         order.closed_at = datetime.utcnow()
+        notify_completed = True
         inventory_usage = deduct_inventory_for_order(db, order)
 
         if order.table_number:
@@ -2317,6 +2351,8 @@ def close_order(
             db.add(daily)
 
     db.commit()
+    if notify_completed:
+        notify_order_event(db, order, "completed")
     record_operational_audit_event(
         db,
         session=session,
@@ -2379,10 +2415,12 @@ def update_order_status(
         updated_items.append(next_item)
 
     order.items = updated_items
+    previous_status = order.status
     order.status = status
     flag_modified(order, "items")
     db.commit()
     db.refresh(order)
+    notify_order_status_change(db, order, previous_status)
     record_operational_audit_event(
         db,
         session=session,
@@ -2452,6 +2490,7 @@ def update_order_station_status(
     flag_modified(order, "items")
     db.commit()
     db.refresh(order)
+    notify_order_status_change(db, order, previous_status)
     record_operational_audit_event(
         db,
         session=session,

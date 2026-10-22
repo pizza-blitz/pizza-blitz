@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.core.config import settings, validate_production_settings
+from app.core.rate_limit import reset_rate_limits
 from app.api.api_v1.api import api_router
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
@@ -141,6 +142,8 @@ def bootstrap_database() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # A fresh process (including each test client) starts with empty buckets.
+    reset_rate_limits()
     validate_production_settings()
     if should_bootstrap_database_on_startup():
         bootstrap_database()

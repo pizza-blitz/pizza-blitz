@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://127.0.0.1:3011/account")
     PIZZA_BLITZ_PUBLIC_URL: str = os.getenv("PIZZA_BLITZ_PUBLIC_URL", "http://127.0.0.1:3011")
     PIZZA_BLITZ_PUBLIC_API_PREFIX: str = os.getenv("PIZZA_BLITZ_PUBLIC_API_PREFIX", "/server")
+    # Transactional order-status notifications. The "console" channel records a
+    # sent notification without calling an external provider (development/demo).
+    ORDER_NOTIFICATIONS_ENABLED: bool = (
+        os.getenv("ORDER_NOTIFICATIONS_ENABLED", "false").strip().lower() == "true"
+    )
+    ORDER_NOTIFICATION_CHANNEL: str = os.getenv("ORDER_NOTIFICATION_CHANNEL", "sms")
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
     CASHFREE_WEBHOOK_SECRET: str | None = os.getenv("CASHFREE_WEBHOOK_SECRET")

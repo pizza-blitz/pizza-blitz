@@ -9,6 +9,7 @@ import {
   CreditCard,
   Loader2,
   MapPin,
+  MessageCircle,
   Phone,
   ReceiptText,
   Search,
@@ -69,6 +70,12 @@ type TrackedOrder = {
   eta_window: string;
   scheduled_for?: string | null;
   scheduled_label?: string | null;
+  notifications?: {
+    event: string;
+    channel: string;
+    provider?: string | null;
+    created_at?: string | null;
+  }[];
   next_action: string;
   tracking_steps: TrackingStep[];
   created_at?: string | null;
@@ -329,6 +336,43 @@ export default function TrackOrderPage() {
                   </div>
                 ))}
               </div>
+
+              {order.notifications && order.notifications.length > 0 && (
+                <section
+                  data-testid="track-notifications"
+                  className="mt-5 rounded-lg border border-sky-200 bg-sky-50 p-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-sky-700" />
+                    <p className="text-xs font-black uppercase tracking-widest text-sky-800">
+                      Order updates sent
+                    </p>
+                  </div>
+                  <ul className="mt-3 space-y-2">
+                    {order.notifications.map((notification) => (
+                      <li
+                        key={`${notification.event}-${notification.created_at}`}
+                        className="flex items-center justify-between gap-3 rounded-md bg-white px-3 py-2 text-sm"
+                      >
+                        <span className="font-bold text-slate-800">
+                          {notification.event
+                            .replace(/_/g, " ")
+                            .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-sky-700">
+                          {notification.channel}
+                          {notification.created_at
+                            ? ` · ${new Date(`${notification.created_at}Z`).toLocaleTimeString(
+                                "en-IN",
+                                { hour: "2-digit", minute: "2-digit" }
+                              )}`
+                            : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               {isPaymentPending && (
                 <div

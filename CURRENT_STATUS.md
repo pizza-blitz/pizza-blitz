@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 92 backend tests, 125 browser proof scripts, a backend Ruff
+- Automation: 98 backend tests, 126 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -84,11 +84,16 @@ Wave 3 (in progress):
   columns, station filters, live timers, overdue highlighting, per-station
   bump/recall, chime, fullscreen and 8-second refresh.
 - New `verify:kds` browser proof and four backend tests.
-- Next: order notifications, menu media.
+- Order status notifications: preparing, ready, out-for-delivery, delivered,
+  completed and cancelled events over the configured SMS/WhatsApp/email
+  provider, gated by `ORDER_NOTIFICATIONS_ENABLED`, recorded per order with
+  sent/skipped/failed status, and listed on customer tracking.
+- New `verify:order-notifications` browser proof and six backend tests.
+- Next: menu media library.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 92 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 98 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

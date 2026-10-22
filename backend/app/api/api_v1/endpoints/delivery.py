@@ -15,6 +15,7 @@ from app.services.delivery_service import (
     serialize_delivery_zone,
 )
 from app.services.operational_audit_service import record_operational_audit_event
+from app.services.order_notification_service import notify_order_event
 
 
 router = APIRouter()
@@ -797,6 +798,7 @@ def update_delivery_assignment(
         raise HTTPException(status_code=422, detail="Failure reason is required.")
 
     assignment = order.delivery_assignment
+    previous_status = assignment.status if assignment else None
     if assignment is None:
         assignment = DeliveryAssignment(order_id=order.id)
         db.add(assignment)
@@ -826,6 +828,8 @@ def update_delivery_assignment(
 
     db.commit()
     db.refresh(assignment)
+    if status in {"out_for_delivery", "delivered"} and status != previous_status:
+        notify_order_event(db, order, status)
     record_operational_audit_event(
         db,
         session=session,

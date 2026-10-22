@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Date, Numeric
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Date, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import date, datetime
 from app.db.base import Base
@@ -408,6 +408,9 @@ class RestaurantOrder(Base):
     closed_at = Column(DateTime, nullable=True)
     delivery_assignment = relationship("DeliveryAssignment", back_populates="order", uselist=False)
     refunds = relationship("OrderRefund", back_populates="order", cascade="all, delete-orphan")
+    notifications = relationship(
+        "OrderNotification", back_populates="order", cascade="all, delete-orphan"
+    )
 
 
 class OrderRefund(Base):
@@ -423,6 +426,26 @@ class OrderRefund(Base):
     created_by = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     order = relationship("RestaurantOrder", back_populates="refunds")
+
+
+class OrderNotification(Base):
+    __tablename__ = "order_notifications"
+    __table_args__ = (
+        UniqueConstraint("order_id", "event", name="uq_order_notifications_order_event"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True, nullable=False)
+    event = Column(String(40), nullable=False)
+    channel = Column(String(20), nullable=False, default="sms")
+    recipient = Column(String(30), nullable=True)
+    message = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="skipped")
+    provider = Column(String(40), nullable=True)
+    provider_message_id = Column(String(120), nullable=True)
+    error = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    sent_at = Column(DateTime, nullable=True)
+    order = relationship("RestaurantOrder", back_populates="notifications")
 
 class PaymentEventAudit(Base):
     __tablename__ = "payment_event_audits"

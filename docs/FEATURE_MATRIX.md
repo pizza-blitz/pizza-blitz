@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **217 API endpoints**, **38 routes/pages** (29 portal,
-1 KDS, 8 public), **125 browser proof scripts**, **92 backend tests**, **39
+Numbers in this snapshot: **218 API endpoints**, **38 routes/pages** (29 portal,
+1 KDS, 8 public), **126 browser proof scripts**, **98 backend tests**, **40
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -43,12 +43,12 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice, tips, scheduling | Built | Guest + saved checkout, tips, scheduling | Saved-cart recovery missing |
 | Coupons and offers | Validate/apply server-side, promotion engine | Built | Public offers page, auto-apply best offer | Offers surface on landing page missing |
 | Pickup / delivery | Delivery quote by zone, fees, minimums, ETAs | Built | Address autocomplete + geocoding | Keyword zones only |
-| Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No push/SMS/WhatsApp status events |
+| Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No live rider map |
 | Customer account | Phone + recent order login, order history, profile/consent | Built | Password/OTP, saved addresses, saved payments | No OTP/password, weak proof of identity |
 | Scheduled orders | 15-minute slots up to 14 days ahead, capacity-checked, validated against opening hours, stored on the order and shown in tracking/POS/kitchen/receipt | Built | Order for later time/date, slot capacity | Slot capacity is fixed at 6; no per-day holiday calendar |
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
 | Tips | Preset/custom tip at checkout and POS, persisted on the order, included in totals/receipts, tips summary API | Built | Preset/custom tip, tip reporting | Tip pooling and payout missing |
-| Order notifications | — | Missing | Confirmation, ready, out-for-delivery, delivered via WhatsApp/SMS/email | Must build |
+| Order notifications | Transactional status events (preparing, ready, out for delivery, delivered, completed, cancelled) over SMS/WhatsApp/email via the configured provider, gated by `ORDER_NOTIFICATIONS_ENABLED`, logged per order and exposed on tracking | Built | Confirmation, ready, out-for-delivery, delivered via WhatsApp/SMS/email | Email needs an email on the order; provider credentials required |
 | Allergens / nutrition | — | Missing | Allergen flags, vegetarian/vegan, nutrition per item | Must build (menu metadata) |
 | PWA / installable | — | Missing | Installable app, offline menu, push | Later |
 | Multi-language | — | Missing | Localisation (English/Hindi) | Later |
@@ -269,6 +269,14 @@ and moves the order status automatically; the board refreshes every 8 seconds,
 highlights overdue tickets, chimes on new orders, filters by station, and offers
 fullscreen. Covered by four backend tests and `verify:kds`.
 
+W3 measured results (notifications): order status changes enqueue exactly one
+notification per event (`order_notifications` unique order+event), using the
+configured SMS/WhatsApp/email provider. Disabled providers/no phone are recorded
+as `skipped` without blocking the order update, and the customer tracking page
+lists sent updates. A `console` channel records sent messages without a provider
+for development. Covered by six backend tests and
+`verify:order-notifications`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -299,8 +307,10 @@ fullscreen. Covered by four backend tests and `verify:kds`.
    Incoming/Preparing/Ready columns, station filters, live timers, overdue
    highlighting, per-station bump/recall, order start/ready/recall, chime and
    fullscreen.
-9. **Order notifications** — WhatsApp/SMS status events (confirmation, ready,
-   out for delivery, delivered), respecting the existing provider gates.
+9. ~~**Order notifications**~~ — done in W3: transactional status events over
+   SMS/WhatsApp/email through the existing provider layer, gated by
+   `ORDER_NOTIFICATIONS_ENABLED`, recorded per order (sent/skipped/failed) and
+   shown on the customer tracking page.
 10. **Menu media** — item images uploaded/stored, alt text, responsive rendering.
 11. ~~**Store profile settings**~~ — done in W2: name, tagline, phone, email,
     address, map, Instagram, hours and ordering controls are editable in
@@ -335,7 +345,7 @@ fullscreen. Covered by four backend tests and `verify:kds`.
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
-| W3 (in progress) | Refunds/voids with ledger + audit (done); full-screen KDS (done); order notifications, menu media (next) | Payment + kitchen proofs |
+| W3 (in progress) | Refunds/voids with ledger + audit (done); full-screen KDS (done); order notifications (done); menu media (next) | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
