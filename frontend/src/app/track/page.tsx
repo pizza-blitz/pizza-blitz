@@ -59,6 +59,7 @@ type TrackedOrder = {
   }[];
   total_amount: number;
   tip_amount?: number;
+  refunded_amount?: number;
   payment_status: string;
   payment_method?: string | null;
   payment_provider?: string | null;
@@ -483,6 +484,12 @@ export default function TrackOrderPage() {
                   <Detail
                     label="Tip"
                     value={`Rs ${Number(order.tip_amount || 0).toLocaleString()}`}
+                  />
+                )}
+                {Number(order.refunded_amount || 0) > 0 && (
+                  <Detail
+                    label="Refunded"
+                    value={`Rs ${Number(order.refunded_amount || 0).toLocaleString()}`}
                   />
                 )}
                 <Detail label="Status" value={order.status} />

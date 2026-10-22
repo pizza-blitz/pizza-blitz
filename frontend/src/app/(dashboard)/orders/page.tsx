@@ -20,6 +20,7 @@ import {
   Send,
   ShoppingBag,
   Truck,
+  Undo2,
   Utensils,
   Users,
   MessageCircle,
@@ -170,6 +171,8 @@ type Order = {
   discount_amount: number;
   tax_amount: number;
   tip_amount?: number;
+  refunded_amount?: number;
+  refundable_amount?: number;
   total_amount: number;
   payment_status: string;
   payment_method?: string | null;
@@ -284,6 +287,12 @@ export default function OrdersPage() {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [orderMode, setOrderMode] = useState<"takeaway" | "delivery">("takeaway");
   const [showOrderModal, setShowOrderModal] = useState(false);
+  const [refundTarget, setRefundTarget] = useState<Order | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [refundMethod, setRefundMethod] = useState("cash");
+  const [refundReference, setRefundReference] = useState("");
+  const [isRefunding, setIsRefunding] = useState(false);
   const [formData, setFormData] = useState(emptyCustomer);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1026,6 +1035,55 @@ export default function OrdersPage() {
         : data.detail || "Could not void order."
     );
     await fetchData();
+  };
+
+  const openRefund = (order: Order) => {
+    setRefundTarget(order);
+    setRefundAmount(String(Number(order.refundable_amount || 0)));
+    setRefundReason("");
+    setRefundMethod("cash");
+    setRefundReference("");
+    setMessage("");
+  };
+
+  const submitRefund = async () => {
+    if (!refundTarget) return;
+    const amount = Number(refundAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setMessage("Enter a refund amount greater than zero.");
+      return;
+    }
+    if (refundReason.trim().length < 3) {
+      setMessage("Add a short reason for the refund.");
+      return;
+    }
+    setIsRefunding(true);
+    try {
+      const response = await fetch(`${ORDERS_API}/${refundTarget.id}/refunds`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          reason: refundReason.trim(),
+          method: refundMethod,
+          reference: refundReference.trim() || null,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Refund could not be recorded.");
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === data.order.id ? { ...order, ...data.order } : order
+        )
+      );
+      setMessage(`Refund of Rs ${amount.toFixed(2)} recorded for order #${refundTarget.id}.`);
+      setRefundTarget(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Refund could not be recorded.");
+    } finally {
+      setIsRefunding(false);
+    }
   };
 
   const generateInvoice = async (order: Order) => {
@@ -1869,6 +1927,15 @@ export default function OrdersPage() {
                         <Coins className="h-3 w-3" /> Tip Rs {Math.round(Number(order.tip_amount))}
                       </span>
                     )}
+                    {Number(order.refunded_amount || 0) > 0 && (
+                      <span
+                        data-testid={`counter-order-refunded-${order.id}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-black text-rose-300"
+                      >
+                        <Undo2 className="h-3 w-3" /> Refunded Rs{" "}
+                        {Math.round(Number(order.refunded_amount))}
+                      </span>
+                    )}
                     {order.payment_due && (
                       <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300">
                         Payment due
@@ -1915,6 +1982,15 @@ export default function OrdersPage() {
                     >
                       <CheckCircle2 className="h-4 w-4" /> {blockers.length ? "Close Blocked" : "Close"}
                     </button>
+                    {Number(order.refundable_amount || 0) > 0 && (
+                      <button
+                        data-testid={`counter-refund-${order.id}`}
+                        onClick={() => openRefund(order)}
+                        className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-amber-500/15 py-2 text-xs font-bold text-amber-200 hover:bg-amber-500/25"
+                      >
+                        <Undo2 className="h-4 w-4" /> Refund
+                      </button>
+                    )}
                     <button
                       data-testid={`counter-void-${order.id}`}
                       onClick={() => cancelOrder(order)}
@@ -1944,6 +2020,108 @@ export default function OrdersPage() {
           </section>
         </aside>
       </div>
+
+      {refundTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1a1c] p-6 text-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+                  Refund
+                </p>
+                <h2 className="mt-1 text-xl font-black">Order #{refundTarget.id}</h2>
+                <p className="mt-1 text-xs font-semibold text-gray-400">
+                  Paid Rs {Math.round(Number(refundTarget.total_amount || 0)).toLocaleString()} |
+                  Refundable Rs{" "}
+                  {Math.round(Number(refundTarget.refundable_amount || 0)).toLocaleString()}
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close refund dialog"
+                onClick={() => setRefundTarget(null)}
+                className="grid h-10 w-10 place-items-center rounded-xl text-gray-400 hover:bg-white/5"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">
+                Amount (Rs)
+                <input
+                  data-testid="refund-amount"
+                  aria-label="Refund amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={refundAmount}
+                  onChange={(event) => setRefundAmount(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-black text-white outline-none focus:border-amber-300"
+                />
+              </label>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">
+                Reason
+                <input
+                  data-testid="refund-reason"
+                  aria-label="Refund reason"
+                  value={refundReason}
+                  onChange={(event) => setRefundReason(event.target.value)}
+                  placeholder="Cold pizza, missing item, customer complaint"
+                  className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-semibold text-white outline-none placeholder:text-gray-500 focus:border-amber-300"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Method
+                  <select
+                    data-testid="refund-method"
+                    aria-label="Refund method"
+                    value={refundMethod}
+                    onChange={(event) => setRefundMethod(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-amber-300"
+                  >
+                    {["cash", "upi", "card", "gateway", "bank", "other"].map((method) => (
+                      <option key={method} value={method}>
+                        {method.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  Reference
+                  <input
+                    aria-label="Refund reference"
+                    value={refundReference}
+                    onChange={(event) => setRefundReference(event.target.value)}
+                    placeholder="Optional"
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-semibold text-white outline-none placeholder:text-gray-500 focus:border-amber-300"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRefundTarget(null)}
+                className="rounded-lg border border-white/10 py-2.5 text-xs font-black uppercase tracking-widest text-gray-300 hover:bg-white/5"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="refund-submit"
+                onClick={submitRefund}
+                disabled={isRefunding}
+                className="rounded-lg bg-amber-500 py-2.5 text-xs font-black uppercase tracking-widest text-black hover:bg-amber-400 disabled:opacity-50"
+              >
+                {isRefunding ? "Recording" : "Record refund"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showOrderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/80 backdrop-blur-sm p-4">

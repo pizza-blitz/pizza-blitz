@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **208 API endpoints**, **37 routes/pages** (29 portal,
-8 public), **123 browser proof scripts**, **83 backend tests**, **38 database
+8 public), **124 browser proof scripts**, **88 backend tests**, **39 database
 tables**, **19 integration points**.
 
 ## Benchmark set
@@ -63,12 +63,12 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Quick builds | One-tap popular builds, express walk-in | Built | Same | — |
 | Customization | Full modifier pricing server-side | Built | Same | — |
 | Discounts / coupons | Manual discount + coupon codes | Built | Manager-approved discounts, comps | Permissions/audit weak |
-| Payments | Cash, UPI, card (manual), Razorpay/Cashfree, direct bank | Built | Split tender, partial payments, refunds | Split/refund missing |
+| Payments | Cash, UPI, card (manual), Razorpay/Cashfree, direct bank | Built | Split tender, partial payments, refunds | Split tender missing |
 | Invoicing | Invoice generation, numbering, tax split | Built | GST-compliant fields, e-invoice | Tax configuration partial |
 | Close / cancel | Close order, cancel with reason | Built | Void with approval + stock reversal | Void workflow needs audit |
 | Cash drawer | Drawer command, close, variance | Built | Cash drops, shift handover | Partial |
 | Receipts | Receipt page + print-ready kitchen ticket | Partial | Thermal printer, reprints, email receipt | Hardware integration missing |
-| Refunds | — | Missing | Full/partial refund with provider and ledger | Must build |
+| Refunds | Admin-only full/partial refunds with reason, method, reference, ledger and audit event; order tracks refunded/refundable totals | Built | Full/partial refund with provider and ledger | Gateway refund API call not wired |
 | Tips | Captured on orders; summary endpoint (total/today/average); shown on the POS header | Partial | Tip entry, tip pool, payout report | Pooling/payout missing |
 | Gift cards / store credit | — | Missing | Issue/redeem/balance | Later |
 | Customer display | — | Missing | Second screen / pole display | Out of scope |
@@ -177,12 +177,12 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
 | Payment modes | Cash, UPI, card, prepaid, direct bank | Built | Split tender, partials | Split missing |
-| Gateways | Razorpay + Cashfree sessions, webhooks, signatures | Built | Refunds, settlement import | Refunds missing |
+| Gateways | Razorpay + Cashfree sessions, webhooks, signatures | Built | Refunds, settlement import | Gateway refund API call not wired |
 | Verification | Signature verification, manual staff confirmation | Built | Automated reconciliation | Partial |
 | Reconciliation | Payment reconciliation page + events | Built | Provider settlement matching | Partial |
 | Cash management | Drawer open/close, variance, daily close | Built | Cash drops, handover | Partial |
 | Expenses | Categories, add, audit command | Built | Approval workflow depth | Partial |
-| Refunds / voids | Cancel only | Missing | Refund with reason/audit/provider call | Must build |
+| Refunds / voids | Void unpaid orders via cancel; refund captured payments with a reason, method, reference, ledger and audit trail | Built | Refund with reason/audit/provider call | Provider-initiated refund call not wired |
 | Tips | Captured per order, included in totals, receipts and the tips summary | Partial | Tip pool, payout report | Payout missing |
 | Tax | 5% split CGST/SGST in invoice | Partial | Configurable tax rules, GST reports | Must improve |
 | Gift cards | — | Missing | Issue/redeem | Later |
@@ -254,6 +254,13 @@ area. Covered by 23 backend tests and four new browser proofs
 (`verify:store-profile`, `verify:scheduled-orders`, `verify:order-tips`,
 `verify:responsive-tables`).
 
+W3 measured results (refunds): admin-only refunds create a ledger row and audit
+event, update `orders.refunded_amount` and move payment status through
+`partially_refunded` to `refunded`. Refunds cannot exceed the captured amount,
+unpaid orders are rejected, staff are forbidden, and the POS dialog, badge,
+receipt and tracking all show the refund. Covered by five backend tests and
+`verify:order-refunds`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -276,7 +283,10 @@ area. Covered by 23 backend tests and four new browser proofs
    POS, persisted on the order, included in totals and receipts, with a tips
    summary endpoint and a “Tips Today” POS tile. Tip pooling/payout remains
    future work.
-7. **Refunds and voids** — full/partial refund, reason, audit trail, gateway call.
+7. ~~**Refunds and voids**~~ — done in W3: voids via cancellation and
+   admin-only full/partial refunds with reason, method, reference, ledger,
+   audit event and refunded/refundable totals. Gateway refund API calls remain a
+   provider integration step.
 8. **Dedicated KDS** — full-screen station view, item bump/recall, timers, sound.
 9. **Order notifications** — WhatsApp/SMS status events (confirmation, ready,
    out for delivery, delivered), respecting the existing provider gates.
@@ -314,7 +324,7 @@ area. Covered by 23 backend tests and four new browser proofs
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
-| W3 | Refunds/voids, KDS device view, notifications | Payment + kitchen proofs |
+| W3 (in progress) | Refunds/voids with ledger + audit (done); KDS device view, order notifications, menu media (next) | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |

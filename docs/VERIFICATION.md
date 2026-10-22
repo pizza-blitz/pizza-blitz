@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 83 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 88 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -144,6 +144,20 @@ custom amount; POS has Rs 0/20/50/100 presets plus a custom field. The
 admin/staff `GET /api/v1/restaurant/orders/tips-summary?days=30` endpoint returns
 total/today/average/penetration. Covered by `backend/tests/test_order_tips.py`
 and `frontend/e2e/verify-order-tips.cjs`.
+
+## Refunds
+
+`POST /api/v1/restaurant/orders/{id}/refunds` (admin only) records a full or
+partial refund with a reason, method, optional provider reference and notes. It
+writes `order_refunds`, increments `orders.refunded_amount`, moves payment
+status to `partially_refunded`/`refunded`, and records an audit event. Unpaid
+orders are rejected (409), over-refunds are rejected (422), and staff receive
+403. `GET /{id}/refunds` returns the ledger; `GET /refunds/summary?days=30`
+returns period totals by method. The gateway call itself is not faked — record
+the provider reference, then perform the provider refund in the provider
+dashboard until that integration is wired. Covered by
+`backend/tests/test_order_refunds.py` and
+`frontend/e2e/verify-order-refunds.cjs`.
 
 ## Health endpoints
 

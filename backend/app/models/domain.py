@@ -391,6 +391,7 @@ class RestaurantOrder(Base):
     discount_amount = Column(Float, default=0.0)
     tax_amount = Column(Float, default=0.0)
     tip_amount = Column(Float, nullable=False, default=0.0, server_default="0")
+    refunded_amount = Column(Float, nullable=False, default=0.0, server_default="0")
     total_amount = Column(Float, default=0.0)
     payment_status = Column(String(20), default="pending")
     payment_method = Column(String(50), nullable=True)
@@ -406,6 +407,22 @@ class RestaurantOrder(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     closed_at = Column(DateTime, nullable=True)
     delivery_assignment = relationship("DeliveryAssignment", back_populates="order", uselist=False)
+    refunds = relationship("OrderRefund", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderRefund(Base):
+    __tablename__ = "order_refunds"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True, nullable=False)
+    amount = Column(Float, nullable=False)
+    reason = Column(String(255), nullable=False)
+    method = Column(String(40), nullable=False, default="cash")
+    reference = Column(String(120), nullable=True)
+    status = Column(String(20), nullable=False, default="recorded")
+    notes = Column(String, nullable=True)
+    created_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    order = relationship("RestaurantOrder", back_populates="refunds")
 
 class PaymentEventAudit(Base):
     __tablename__ = "payment_event_audits"

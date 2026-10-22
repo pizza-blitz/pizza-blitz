@@ -28,6 +28,7 @@ from app.models.domain import (
     InventoryTransaction,
     Invoice,
     OperationalAuditEvent,
+    OrderRefund,
     PaymentEventAudit,
     Promotion,
     Recipe,
@@ -43,6 +44,14 @@ from app.services.operational_audit_service import (
     serialize_operational_audit_event,
 )
 from app.services.store_profile_service import get_store_profile, store_status
+from app.services.refund_service import (
+    RefundAmountError,
+    RefundNotAllowed,
+    create_order_refund,
+    refund_summary,
+    refundable_amount,
+    serialize_refund,
+)
 from app.services.scheduling_service import (
     DAYS_AHEAD,
     LEAD_MINUTES,
@@ -204,6 +213,16 @@ class CancelOrderRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class RefundCreateRequest(BaseModel):
+    amount: float = Field(gt=0, le=100000)
+    reason: str = Field(min_length=3, max_length=255)
+    method: str = Field(
+        default="cash", pattern="^(cash|upi|card|gateway|bank|other)$"
+    )
+    reference: Optional[str] = Field(default=None, max_length=120)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
 class ProviderPaymentVerification(BaseModel):
     provider: str
     provider_order_id: Optional[str] = None
@@ -298,6 +317,8 @@ def serialize_order(order: RestaurantOrder) -> dict:
         "discount_amount": order.discount_amount,
         "tax_amount": order.tax_amount,
         "tip_amount": order.tip_amount or 0,
+        "refunded_amount": round(float(order.refunded_amount or 0), 2),
+        "refundable_amount": refundable_amount(order),
         "total_amount": order.total_amount,
         "payment_status": order.payment_status,
         "payment_method": order.payment_method,
@@ -1813,6 +1834,111 @@ def get_tables(
 @router.get("/checkout-readiness")
 def checkout_readiness(db: Session = Depends(get_db)):
     return checkout_readiness_payload(db)
+
+
+@router.get("/refunds/summary")
+def refunds_summary(
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    since = datetime.utcnow() - timedelta(days=days)
+    refunds = (
+        db.query(OrderRefund)
+        .filter(OrderRefund.created_at >= since, OrderRefund.status != "failed")
+        .all()
+    )
+    total = round(sum(float(refund.amount or 0) for refund in refunds), 2)
+    by_method: dict[str, float] = {}
+    for refund in refunds:
+        by_method[refund.method] = round(
+            by_method.get(refund.method, 0) + float(refund.amount or 0), 2
+        )
+    return {
+        "days": days,
+        "refunds_total": total,
+        "refund_count": len(refunds),
+        "average_refund": round(total / len(refunds), 2) if refunds else 0,
+        "by_method": by_method,
+    }
+
+
+@router.post("/{order_id}/refunds")
+def create_refund(
+    order_id: int,
+    payload: RefundCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    enforce_rate_limit(request, "refund-create", 30)
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    try:
+        refund = create_order_refund(
+            db,
+            order,
+            amount=payload.amount,
+            reason=payload.reason,
+            method=payload.method,
+            reference=payload.reference,
+            notes=payload.notes,
+            created_by=session.get("display_name") or session.get("subject"),
+        )
+    except RefundNotAllowed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RefundAmountError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="payment",
+        action="refund_recorded",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        status=order.payment_status,
+        detail=f"Refund of Rs {refund.amount:.2f} recorded for order #{order.id}: {refund.reason}",
+        metadata={
+            "refund_id": refund.id,
+            "amount": refund.amount,
+            "method": refund.method,
+            "reference": refund.reference,
+            "refunded_amount": round(float(order.refunded_amount or 0), 2),
+            "order_total": round(float(order.total_amount or 0), 2),
+        },
+    )
+    return {
+        "refund": serialize_refund(refund),
+        "order": serialize_order(order),
+        "summary": refund_summary(order),
+    }
+
+
+@router.get("/{order_id}/refunds")
+def list_order_refunds(
+    order_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    refunds = (
+        db.query(OrderRefund)
+        .filter(OrderRefund.order_id == order_id)
+        .order_by(OrderRefund.created_at.desc(), OrderRefund.id.desc())
+        .all()
+    )
+    return {
+        "order_id": order.id,
+        "refunds": [serialize_refund(refund) for refund in refunds],
+        **refund_summary(order),
+    }
 
 
 @router.get("/tips-summary")

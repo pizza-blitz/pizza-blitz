@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 34 frontend routes, the 123 browser proof scripts in
+- Listed all 34 frontend routes, the 124 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -63,6 +63,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 32 | Ordering | Customers could only order for immediate fulfilment; there was no way to book a pickup or delivery time, and the kitchen had no visibility of future orders. | Enterprise benchmark and order-flow review. | Added scheduled orders: a migrated `orders.scheduled_for` column, a validated 15-minute slot engine (14-day window, lead time, opening-hours check, six-order slot capacity), a public slots endpoint, checkout date/time picker, and scheduled labels in tracking, POS cards, kitchen cards, tickets and receipts. Covered by seven backend tests and a browser proof. |
 | 33 | Payments / workforce | There was no way to leave a tip, so service revenue and staff gratuity could not be captured or reported. | Enterprise benchmark (POS/checkout) and the tip rows in the feature matrix. | Added a non-null `orders.tip_amount`, preset/custom tips at customer checkout and POS, tip-inclusive totals, receipt and tracking lines, a POS "Tips Today" tile, and an admin `tips-summary` endpoint. Covered by six backend tests and a browser proof. Tip pooling/payout remains future work. |
 | 34 | Responsive UX | Reports (6), menu (1) and inventory (1) relied on wide horizontally scrolling tables at 390px, and dense rows had sub-40px tap targets. | 390px UI audit (`wideTables`, `smallTargets`). | Replaced those tables with mobile card lists (tables remain at md+), rebuilt the inventory header for small screens, enlarged menu row actions to 40px, and added a 40px hit area for icon-only controls. Audit now reports **0 wide tables** on every page; menu small targets fell 21 → 0, reports 14 → 7, settings 49 → 42. New `verify:responsive-tables` proof. |
+| 35 | Financial controls | Cancelling a paid order only set `refund_due`; there was no way to record a full or partial refund, no ledger, and no refund visibility for staff or customers. | W3 gap review and payment lifecycle read. | Added `order_refunds` + `orders.refunded_amount` (migration), admin-only refund API with validation and audit events, POS refund dialog/badge, receipt/tracking refund lines, refund list and period summary, and a dedicated browser proof. Gateway-initiated refund calls remain an integration step; refunds are recorded with provider reference rather than faked. |
 
 ## Still open
 
@@ -77,7 +78,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 83 tests, all pass (in a clean venv built from
+- Backend unit suite: 88 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

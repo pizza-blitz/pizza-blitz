@@ -38,6 +38,7 @@ type Order = {
   discount_amount: number;
   tax_amount: number;
   tip_amount?: number;
+  refunded_amount?: number;
   delivery_fee?: number;
   total_amount: number;
   payment_status: string;
@@ -309,6 +310,9 @@ export default function ReceiptPage() {
               <TotalRow label="SGST 2.5%" value={money(sgst)} />
               {!!order.tip_amount && (
                 <TotalRow label="Tip" value={money(order.tip_amount)} />
+              )}
+              {!!order.refunded_amount && (
+                <TotalRow label="Refunded" value={`- ${money(order.refunded_amount)}`} />
               )}
               {!!order.delivery_fee && (
                 <TotalRow label="Delivery" value={money(order.delivery_fee)} />

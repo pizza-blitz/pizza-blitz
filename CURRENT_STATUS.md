@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 83 backend tests, 123 browser proof scripts, a backend Ruff
+- Automation: 88 backend tests, 124 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -73,9 +73,18 @@ Wave 2 (in progress):
   are 40px, and icon-only controls get a 40px mobile hit area.
 - New `verify:responsive-tables` browser proof; W2 is complete.
 
+Wave 3 (in progress):
+
+- Refunds and voids: admin-only full/partial refunds with amount, reason,
+  method, reference, ledger and audit event; refunded/refundable totals on the
+  order; POS refund dialog and badge; receipt/tracking refund lines; refund
+  summary endpoint. Gateway-initiated refund calls remain a provider step.
+- New `verify:order-refunds` browser proof and five backend tests.
+- Next: dedicated KDS, order notifications, menu media.
+
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 83 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 88 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

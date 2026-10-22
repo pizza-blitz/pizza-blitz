@@ -141,9 +141,9 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Tips at checkout and POS, with reporting.
 - [x] Dense-page tap targets and table-to-card mobile layouts.
 
-### Wave 3 (next)
+### Wave 3 (in progress)
 
-- [ ] Refunds and voids with reason, audit trail and gateway handling.
+- [x] Refunds and voids with reason, audit trail and gateway handling.
 - [ ] Dedicated KDS device view with timers, bump/recall and sound.
 - [ ] Order status notifications (confirmation, ready, out for delivery, delivered).
 - [ ] Menu media library (upload, alt text, responsive images).
