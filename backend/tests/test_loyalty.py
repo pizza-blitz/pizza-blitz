@@ -171,6 +171,86 @@ class LoyaltyTest(unittest.TestCase):
         response = self.client.get("/api/v1/restaurant/customers/me/loyalty")
         self.assertEqual(response.status_code, 401)
 
+    def test_points_redeemed_at_checkout(self):
+        phone = "9812345697"
+        self.create_and_close(phone)
+        token = self.token_for(phone)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        below_minimum = self.client.post(
+            "/api/v1/restaurant/customers/me/loyalty/redemptions",
+            json={"points": 50},
+            headers=headers,
+        )
+        self.assertEqual(below_minimum.status_code, 422)
+
+        too_many = self.client.post(
+            "/api/v1/restaurant/customers/me/loyalty/redemptions",
+            json={"points": 100000},
+            headers=headers,
+        )
+        self.assertEqual(too_many.status_code, 422)
+
+        created = self.client.post(
+            "/api/v1/restaurant/customers/me/loyalty/redemptions",
+            json={"points": 100},
+            headers=headers,
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        redemption = created.json()
+        self.assertEqual(redemption["discount_amount"], 10)
+        self.assertTrue(redemption["token"].startswith("LR"))
+
+        order = self.client.post(
+            "/api/v1/restaurant/orders/",
+            json=order_payload(
+                phone, loyalty_redemption_token=redemption["token"]
+            ),
+        )
+        self.assertEqual(order.status_code, 200, order.text)
+        data = order.json()
+        self.assertEqual(data["loyalty_discount"], 10)
+        self.assertEqual(data["loyalty_points_redeemed"], 100)
+
+        reused = self.client.post(
+            "/api/v1/restaurant/orders/",
+            json=order_payload(
+                phone, loyalty_redemption_token=redemption["token"]
+            ),
+        )
+        self.assertEqual(reused.status_code, 422)
+
+        summary = self.loyalty(phone)
+        self.assertEqual(
+            summary["points_balance"],
+            summary["lifetime_points"] - 100,
+        )
+        self.assertIn(
+            "redeem",
+            [row["type"] for row in summary["transactions"]],
+        )
+
+    def test_redemption_belongs_to_the_ordering_customer(self):
+        owner_phone = "9812345698"
+        self.create_and_close(owner_phone)
+        owner_token = self.token_for(owner_phone)
+        redemption = self.client.post(
+            "/api/v1/restaurant/customers/me/loyalty/redemptions",
+            json={"points": 100},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        ).json()
+
+        other_phone = "9812345699"
+        stolen = self.client.post(
+            "/api/v1/restaurant/orders/",
+            json=order_payload(
+                other_phone,
+                loyalty_redemption_token=redemption["token"],
+            ),
+        )
+        self.assertEqual(stolen.status_code, 422)
+        self.assertIn("another customer", stolen.json()["detail"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()

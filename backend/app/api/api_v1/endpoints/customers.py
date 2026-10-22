@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
 from app.models.domain import Customer, CustomerAddress
-from app.services.loyalty_service import loyalty_summary
+from app.services.loyalty_service import (
+    RedemptionError,
+    create_redemption,
+    loyalty_summary,
+)
 
 router = APIRouter()
 
@@ -30,6 +34,10 @@ class CustomerAddressUpdate(BaseModel):
     address_line: Optional[str] = Field(default=None, min_length=6, max_length=500)
     zone_id: Optional[int] = None
     is_default: Optional[bool] = None
+
+
+class LoyaltyRedemptionRequest(BaseModel):
+    points: int = Field(ge=0, le=100000)
 
 
 def current_customer(
@@ -94,6 +102,27 @@ def my_loyalty(
     db: Session = Depends(get_db),
 ):
     return loyalty_summary(db, customer)
+
+
+@router.post("/me/loyalty/redemptions")
+def create_my_loyalty_redemption(
+    payload: LoyaltyRedemptionRequest,
+    customer: Customer = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    try:
+        redemption = create_redemption(db, customer, payload.points)
+    except RedemptionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "token": redemption.token,
+        "points": redemption.points,
+        "discount_amount": redemption.discount_amount,
+        "expires_at": redemption.expires_at.isoformat()
+        if redemption.expires_at
+        else None,
+        "status": redemption.status,
+    }
 
 
 @router.get("/me/addresses")

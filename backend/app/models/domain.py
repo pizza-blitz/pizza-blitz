@@ -177,6 +177,20 @@ class LoyaltyTransaction(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     customer = relationship("Customer")
 
+
+class LoyaltyRedemption(Base):
+    __tablename__ = "loyalty_redemptions"
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=False)
+    token = Column(String(40), unique=True, index=True, nullable=False)
+    points = Column(Integer, nullable=False)
+    discount_amount = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, default="reserved")
+    order_id = Column(Integer, nullable=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    customer = relationship("Customer")
+
 class AdminCredential(Base):
     __tablename__ = "admin_credentials"
     id = Column(Integer, primary_key=True, index=True)

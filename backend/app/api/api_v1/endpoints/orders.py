@@ -60,9 +60,12 @@ from app.services.order_notification_service import (
     serialize_notification,
 )
 from app.services.loyalty_service import (
+    RedemptionError,
     ReferralError,
     apply_referral,
     award_order_points,
+    use_redemption,
+    validate_redemption,
     validate_referral_code,
 )
 from app.services.scheduling_service import (
@@ -198,6 +201,7 @@ class OrderCreate(BaseModel):
     tip_amount: float = Field(default=0.0, ge=0, le=2000)
     coupon_code: Optional[str] = None
     referral_code: Optional[str] = None
+    loyalty_redemption_token: Optional[str] = None
     payment_method: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_zone_id: Optional[int] = None
@@ -2089,6 +2093,15 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         except ReferralError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    loyalty_redemption = None
+    if order.loyalty_redemption_token:
+        try:
+            loyalty_redemption = validate_redemption(
+                db, order.loyalty_redemption_token, order.customer_phone or ""
+            )
+        except RedemptionError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     if order.table_number:
         table = db.query(DiningTable).filter(
             DiningTable.table_number == order.table_number
@@ -2107,11 +2120,20 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         order.coupon_code,
         subtotal,
     )
-    discount = (
+    base_discount = (
         coupon_discount
         if applied_promo
         else round(min(max(order.discount_amount or 0, 0), subtotal), 2)
     )
+    loyalty_discount = 0.0
+    if loyalty_redemption is not None:
+        loyalty_discount = round(float(loyalty_redemption.discount_amount or 0), 2)
+        if loyalty_discount > max(subtotal - base_discount, 0):
+            raise HTTPException(
+                status_code=422,
+                detail="Add more items before redeeming this points reward.",
+            )
+    discount = round(min(base_discount + loyalty_discount, subtotal), 2)
     taxable_subtotal = max(subtotal - discount, 0)
     tax = round(taxable_subtotal * 0.05, 2)
     delivery_fee = 0.0
@@ -2203,6 +2225,20 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
                 db, new_customer, referral_account, row
             )
 
+    loyalty_points_redeemed = 0
+    if loyalty_redemption is not None and order.customer_phone:
+        redeeming_customer = (
+            db.query(Customer)
+            .filter(Customer.phone == (order.customer_phone or "").strip())
+            .first()
+        )
+        if redeeming_customer is not None:
+            try:
+                use_redemption(db, loyalty_redemption, redeeming_customer, row)
+                loyalty_points_redeemed = int(loyalty_redemption.points)
+            except RedemptionError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     if order.table_number:
         table.status = "occupied"
         table.current_order_id = row.id
@@ -2222,6 +2258,8 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         "payment_status": row.payment_status,
         "coupon_code": applied_promo.code if applied_promo else None,
         "referral_applied": referral_applied,
+        "loyalty_discount": loyalty_discount,
+        "loyalty_points_redeemed": loyalty_points_redeemed,
         "scheduled_for": to_business_iso(scheduled_for),
         "scheduled_label": scheduled_label(scheduled_for),
     }

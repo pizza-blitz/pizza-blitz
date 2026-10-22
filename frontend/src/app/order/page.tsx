@@ -20,6 +20,7 @@ import {
   Search,
   SlidersHorizontal,
   ShoppingBag,
+  Sparkles,
   User,
   X,
 } from "lucide-react";
@@ -288,6 +289,16 @@ export default function PublicOrderPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [loyaltySummary, setLoyaltySummary] = useState<{
+    points_balance: number;
+    tier: string;
+  } | null>(null);
+  const [loyaltyRedemption, setLoyaltyRedemption] = useState<{
+    token: string;
+    points: number;
+    discount_amount: number;
+  } | null>(null);
+  const [isRedeemingPoints, setIsRedeemingPoints] = useState(false);
   const [optInMarketing, setOptInMarketing] = useState(true);
   const [address, setAddress] = useState("");
   const [savedAddresses, setSavedAddresses] = useState<
@@ -336,6 +347,54 @@ export default function PublicOrderPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    fetch("/api/customer-loyalty", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((data) => {
+        if (data && typeof data.points_balance === "number") {
+          setLoyaltySummary({
+            points_balance: data.points_balance,
+            tier: data.tier || "Slice Club",
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const redeemPoints = async (points: number) => {
+    setIsRedeemingPoints(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/customer-loyalty/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Points could not be redeemed.");
+      setLoyaltyRedemption({
+        token: data.token,
+        points: data.points,
+        discount_amount: data.discount_amount,
+      });
+      setLoyaltySummary((current) =>
+        current
+          ? { ...current, points_balance: Math.max(current.points_balance - points, 0) }
+          : current
+      );
+      setMessage(
+        `${points} points redeemed for Rs ${Number(data.discount_amount).toFixed(0)} off this order.`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Points could not be redeemed.");
+    } finally {
+      setIsRedeemingPoints(false);
+    }
+  };
 
   useEffect(() => {
     if (!scheduleEnabled || !scheduleDate) return;
@@ -689,9 +748,18 @@ export default function PublicOrderPage() {
     Number(deliveryQuote?.charge_breakdown?.minimum_gap || 0),
     0
   );
-  const total = coupon
-    ? roundMoney(coupon.total + deliveryFee + tipAmount)
-    : roundMoney(taxableSubtotal + tax + deliveryFee + tipAmount);
+  const loyaltyDiscount = loyaltyRedemption
+    ? roundMoney(loyaltyRedemption.discount_amount)
+    : 0;
+  const loyaltyTaxable = Math.max(taxableSubtotal - loyaltyDiscount, 0);
+  const effectiveTax =
+    loyaltyDiscount > 0 ? roundMoney(loyaltyTaxable * 0.05) : tax;
+  const total =
+    loyaltyDiscount > 0
+      ? roundMoney(loyaltyTaxable + effectiveTax + deliveryFee + tipAmount)
+      : coupon
+        ? roundMoney(coupon.total + deliveryFee + tipAmount)
+        : roundMoney(taxableSubtotal + tax + deliveryFee + tipAmount);
   const selectedDeliveryZone = deliveryZones.find(
     (zone) => zone.id === selectedDeliveryZoneId
   );
@@ -1049,6 +1117,7 @@ export default function PublicOrderPage() {
         tip_amount: tipAmount,
         coupon_code: coupon ? coupon.promotion.code || couponCode : null,
         referral_code: referralCode.trim() || null,
+        loyalty_redemption_token: loyaltyRedemption?.token || null,
         delivery_address: address,
         delivery_zone_id: selectedDeliveryZoneId,
         scheduled_for: scheduling ? scheduledSlot : null,
@@ -1137,6 +1206,8 @@ export default function PublicOrderPage() {
       setConfirmedSchedule(scheduleText);
       setTipPercent("0");
       setCustomTip("");
+      setLoyaltyRedemption(null);
+      setLoyaltySummary(null);
       setMessage(
         scheduleText
           ? `Order #${orderId} ${scheduleText.toLowerCase()}. Continue to online payment.`
@@ -1156,6 +1227,8 @@ export default function PublicOrderPage() {
       setConfirmedSchedule(scheduleText);
       setTipPercent("0");
       setCustomTip("");
+      setLoyaltyRedemption(null);
+      setLoyaltySummary(null);
       setMessage(
         scheduleText
           ? `Order #${orderId} ${scheduleText.toLowerCase()}.`
@@ -2087,14 +2160,66 @@ export default function PublicOrderPage() {
               </p>
             </div>
 
+            {loyaltySummary &&
+              loyaltySummary.points_balance >= 100 &&
+              cart.length > 0 && (
+              <div
+                data-testid="loyalty-redeem-panel"
+                className="mb-5 rounded-md border border-orange-200 bg-orange-50 p-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="flex items-center gap-2 text-sm font-black text-orange-900">
+                    <Sparkles className="h-4 w-4 text-orange-600" /> Slice Club reward
+                  </p>
+                  <span className="text-xs font-black text-orange-800">
+                    {loyaltySummary.points_balance} pts
+                  </span>
+                </div>
+                {loyaltyRedemption ? (
+                  <p
+                    data-testid="loyalty-redemption-applied"
+                    className="mt-2 rounded-md bg-white px-3 py-2 text-sm font-bold text-orange-900"
+                  >
+                    {loyaltyRedemption.points} points applied · Rs{" "}
+                    {Number(loyaltyRedemption.discount_amount).toFixed(0)} off
+                  </p>
+                ) : (
+                  <>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[100, 200, 500]
+                        .filter((points) => loyaltySummary.points_balance >= points)
+                        .slice(0, 3)
+                        .map((points) => (
+                          <button
+                            key={points}
+                            type="button"
+                            onClick={() => void redeemPoints(points)}
+                            disabled={isRedeemingPoints}
+                            className="rounded-md border border-orange-300 bg-white px-3 py-2 text-xs font-black text-orange-800 hover:border-orange-500 disabled:opacity-50"
+                          >
+                            {points} pts · Rs {points / 10}
+                          </button>
+                        ))}
+                    </div>
+                    <p className="mt-2 text-[11px] font-semibold text-orange-800/80">
+                      10 points = Rs 1. Redeem at least 100 points on this order.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="mb-5 space-y-2 border-y border-slate-200 py-4 text-sm">
               <PriceRow label="Subtotal" value={subtotal} />
               <PriceRow label="Discount" value={discount} />
-              <PriceRow label="Tax" value={tax} />
+              <PriceRow label="Tax" value={effectiveTax} />
               {orderType === "delivery" && (
                 <PriceRow label="Delivery" value={deliveryFee} />
               )}
               {tipAmount > 0 && <PriceRow label="Tip" value={tipAmount} />}
+              {loyaltyDiscount > 0 && subtotal > 0 && (
+                <PriceRow label="Points reward" value={-loyaltyDiscount} />
+              )}
               <div className="flex justify-between text-lg font-black">
                 <span>Total</span>
                 <span>Rs {total}</span>
@@ -2134,7 +2259,7 @@ export default function PublicOrderPage() {
                   aria-label="Referral code"
                   value={referralCode}
                   onChange={(event) => setReferralCode(event.target.value.toUpperCase())}
-                  placeholder="Referral code (optional, first order)"
+                  placeholder="Referral code (optional)"
                   className="w-full uppercase outline-none"
                 />
               </FieldIcon>

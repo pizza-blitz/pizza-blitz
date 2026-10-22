@@ -6,17 +6,22 @@ is idempotent per order and transaction type.
 """
 
 import secrets
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.models.domain import (
     Customer,
     LoyaltyAccount,
+    LoyaltyRedemption,
     LoyaltyTransaction,
     RestaurantOrder,
 )
 
 REFERRAL_BONUS_POINTS = 100
+MIN_REDEEM_POINTS = 100
+POINTS_PER_RUPEE = 10
+REDEMPTION_TTL_MINUTES = 15
 TIERS = [
     (0, "Slice Starter"),
     (300, "Regular"),
@@ -27,6 +32,10 @@ TIERS = [
 
 class ReferralError(ValueError):
     """The referral code cannot be used for this order."""
+
+
+class RedemptionError(ValueError):
+    """Points cannot be redeemed for this request or order."""
 
 
 def _generate_code(db: Session) -> str:
@@ -168,6 +177,87 @@ def award_order_points(db: Session, order: RestaurantOrder) -> int:
     )
     db.commit()
     return points
+
+
+def _digits(value: str | None) -> str:
+    return "".join(character for character in str(value or "") if character.isdigit())
+
+
+def create_redemption(
+    db: Session, customer: Customer, points: int
+) -> LoyaltyRedemption:
+    requested = int(points or 0)
+    if requested < MIN_REDEEM_POINTS:
+        raise RedemptionError(
+            f"Redeem at least {MIN_REDEEM_POINTS} points."
+        )
+    if requested % POINTS_PER_RUPEE != 0:
+        raise RedemptionError(
+            f"Points must be a multiple of {POINTS_PER_RUPEE}."
+        )
+    account = get_or_create_account(db, customer)
+    if int(account.points_balance or 0) < requested:
+        raise RedemptionError("You do not have enough points for that reward.")
+
+    redemption = LoyaltyRedemption(
+        customer_id=customer.id,
+        token="LR" + secrets.token_hex(10).upper(),
+        points=requested,
+        discount_amount=round(requested / POINTS_PER_RUPEE, 2),
+        status="reserved",
+        expires_at=datetime.utcnow() + timedelta(minutes=REDEMPTION_TTL_MINUTES),
+    )
+    db.add(redemption)
+    db.commit()
+    db.refresh(redemption)
+    return redemption
+
+
+def validate_redemption(
+    db: Session, token: str, phone: str
+) -> LoyaltyRedemption:
+    redemption = (
+        db.query(LoyaltyRedemption)
+        .filter(LoyaltyRedemption.token == (token or "").strip())
+        .first()
+    )
+    if redemption is None or redemption.status != "reserved":
+        raise RedemptionError("That points reward is not available.")
+    if redemption.expires_at < datetime.utcnow():
+        raise RedemptionError("That points reward expired. Redeem points again.")
+    customer = (
+        db.query(Customer).filter(Customer.id == redemption.customer_id).first()
+    )
+    if customer is None or _digits(customer.phone) != _digits(phone):
+        raise RedemptionError("That points reward belongs to another customer.")
+    return redemption
+
+
+def use_redemption(
+    db: Session,
+    redemption: LoyaltyRedemption,
+    customer: Customer,
+    order: RestaurantOrder,
+) -> float:
+    if redemption.status != "reserved":
+        raise RedemptionError("That points reward was already used.")
+    account = get_or_create_account(db, customer)
+    if int(account.points_balance or 0) < int(redemption.points):
+        raise RedemptionError("You no longer have enough points for this reward.")
+
+    account.points_balance -= int(redemption.points)
+    redemption.status = "used"
+    redemption.order_id = order.id
+    db.add(
+        LoyaltyTransaction(
+            customer_id=customer.id,
+            points=-int(redemption.points),
+            transaction_type="redeem",
+            order_id=order.id,
+            note=f"Redeemed {redemption.points} points for order #{order.id}",
+        )
+    )
+    return round(float(redemption.discount_amount or 0), 2)
 
 
 def loyalty_summary(db: Session, customer: Customer) -> dict:

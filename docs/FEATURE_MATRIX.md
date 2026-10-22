@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **227 API endpoints**, **38 routes/pages** (29 portal,
-1 KDS, 8 public), **130 browser proof scripts**, **114 backend tests**, **44
+Numbers in this snapshot: **228 API endpoints**, **38 routes/pages** (29 portal,
+1 KDS, 8 public), **131 browser proof scripts**, **116 backend tests**, **45
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -142,7 +142,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Segments | Segment report, retention view, segment campaigns | Built | RFM automation, lifecycle journeys | Automation partial |
 | Import/export | CSV import validation, export | Built | Same | — |
 | Order history | Customer history, tracking, receipts | Built | Same | — |
-| Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, account-page card and transactions | Built | Points, tiers, rewards, referrals | Points redemption at checkout missing |
+| Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, points redemption at checkout (10 points = ₹1, 100-point minimum), account card and transactions | Built | Points, tiers, rewards, referrals | Redemption is checkout-only; no gift catalog |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
 | Feedback / NPS / reviews | — | Missing | Post-order feedback, review routing | Must build |
 | Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id; saved addresses scoped by customer token | Built | OTP login, saved sessions | Saved payment methods missing |
@@ -305,6 +305,12 @@ The account page shows points, tier progress, referral code, referral count and
 recent activity; checkout accepts a referral code. Covered by four backend tests
 and `verify:loyalty`.
 
+W4 measured results (redemption): redeemed points create a 15-minute reserved
+reward token, which checkout validates against the ordering customer, applies as
+a pre-tax discount and marks used; points are debited with a `redeem` ledger row
+and the token cannot be reused. Reusing, sharing or over-spending a token is
+rejected. Covered by two backend tests and `verify:loyalty-redemption`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -350,7 +356,8 @@ and `verify:loyalty`.
 
 11. ~~**Loyalty points/tiers and referrals**~~ — done in W4: points earned on
     completed orders, tiers, referral codes with a 100-point two-sided bonus,
-    idempotent ledger, and an account-page loyalty card. Redemption remains.
+    idempotent ledger, account-page card and checkout redemption
+    (10 points = ₹1, minimum 100 points, 15-minute reserved reward).
 12. ~~**Customer OTP login + saved addresses**~~ — done in W4: six-digit hashed
     codes with expiry/attempt limits, plus customer-scoped saved addresses
     (default, edit, delete, max 10) reused at checkout.
@@ -380,7 +387,7 @@ and `verify:loyalty`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals (done); rider app/GPS, custom reports, 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption (done); rider app/GPS, custom reports, 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

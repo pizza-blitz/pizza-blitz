@@ -336,7 +336,7 @@ def request_customer_login_otp(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    enforce_rate_limit(request, "customer-otp", 5)
+    enforce_rate_limit(request, "customer-otp", 10)
     try:
         return request_customer_otp(db, payload.phone)
     except OtpError as exc:
