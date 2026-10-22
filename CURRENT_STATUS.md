@@ -1,6 +1,6 @@
 # Pizza Blitz Current Status
 
-Last Updated: 2026-10-21
+Last Updated: 2026-10-22
 
 ## Source Of Truth
 
@@ -14,7 +14,7 @@ The standalone copy excludes generated dependency and build folders
 
 ## What Exists
 
-- Backend: FastAPI app with 207 endpoints across auth, sales, stats, menu,
+- Backend: FastAPI app with 208 endpoints across auth, sales, stats, menu,
   inventory, expenses, orders/POS, invoices, delivery, promotions, social,
   ads, customers, shifts, vendors, purchase orders, recipes, waste, imports,
   OCR, insurance-style readiness probes, and production ops.
@@ -27,7 +27,30 @@ The standalone copy excludes generated dependency and build folders
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
-## Verified State (2026-10-21)
+## Enterprise Completion Program
+
+The full feature inventory, enterprise benchmark, gap register, and wave plan
+live in [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md). Access IDs and roles
+are in [docs/ACCESS.md](docs/ACCESS.md).
+
+Wave 1 is complete:
+
+- Public landing page rebuilt with live menu and offer data, kitchen standards,
+  delivery areas, FAQ, Restaurant/FAQ JSON-LD, Open Graph metadata, and a
+  responsive mobile/desktop layout.
+- Portal navigation rebuilt: grouped, searchable, collapsible desktop sidebar
+  with active states and role badge; mobile drawer plus a five-tab bottom bar;
+  desktop top bar with the current section.
+- Master access verified: `admin` / `admin123` (admin portal) and
+  `staff` / `staff123` (counter portal) locally; production setup documented.
+- Stopped leaking menu `cost_price` through the public storefront payload.
+- Added `verify:landing` and `verify:portal-shell` browser proofs, both wired
+  into `verify:audit`.
+
+Wave 2 is next: store profile settings, store hours/order pause, scheduled
+orders, tips, and dense-page mobile polish.
+
+## Verified State (2026-10-22)
 
 - `python -W error::FutureWarning -m unittest discover -s tests -v`: 62 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.

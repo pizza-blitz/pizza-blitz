@@ -62,10 +62,18 @@ def public_promotions(db: Session, limit: int = 8) -> list[dict]:
     ][:limit]
 
 
+def public_menu(db: Session) -> list[dict]:
+    """Menu for the public storefront: never expose internal cost data."""
+    return [
+        {key: value for key, value in item.items() if key != "cost_price"}
+        for item in customized_menu_payload(db)
+    ]
+
+
 @router.get("/bootstrap")
 def storefront_bootstrap(db: Session = Depends(get_db)):
     return {
-        "menu": customized_menu_payload(db),
+        "menu": public_menu(db),
         "checkout_readiness": checkout_readiness_payload(),
         "payment_checkout": public_payment_checkout_status(),
         "active_promotions": public_promotions(db),

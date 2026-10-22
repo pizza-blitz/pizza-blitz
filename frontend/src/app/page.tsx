@@ -1,189 +1,895 @@
+import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import {
   ArrowRight,
+  BadgeCheck,
+  ChefHat,
   Clock,
+  CreditCard,
+  Flame,
+  Leaf,
   MapPin,
   Phone,
   ShieldCheck,
   ShoppingBag,
+  Sparkles,
   Star,
+  Truck,
   Utensils,
 } from "lucide-react";
 
+import { getServerApiUrl } from "@/lib/server-api";
+import { hasStoreContact, storeMapHref, storeProfile } from "@/lib/store-profile";
+
+export const revalidate = 60;
+
 const heroImage =
   "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1800&q=85";
+const storyImage =
+  "https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=1200&q=80";
 
-const menuHighlights = [
+const categoryImages: Record<string, string> = {
+  Pizza:
+    "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=900&q=80",
+  Sides:
+    "https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?auto=format&fit=crop&w=900&q=80",
+  Burgers:
+    "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=900&q=80",
+  Sandwiches:
+    "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=900&q=80",
+  Beverages:
+    "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?auto=format&fit=crop&w=900&q=80",
+  Desserts:
+    "https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=900&q=80",
+};
+
+const fallbackHighlights: StorefrontMenuItem[] = [
+  { id: 1, name: "Margherita Pizza (R)", category: "Pizza", selling_price: 199, is_available: true },
+  { id: 2, name: "Farmhouse Pizza (R)", category: "Pizza", selling_price: 249, is_available: true },
+  { id: 3, name: "Garlic Bread", category: "Sides", selling_price: 119, is_available: true },
+  { id: 4, name: "Cheese Burst Burger", category: "Burgers", selling_price: 149, is_available: true },
+  { id: 5, name: "Cold Coffee", category: "Beverages", selling_price: 99, is_available: true },
+  { id: 6, name: "Brownie", category: "Desserts", selling_price: 79, is_available: true },
+];
+
+type StorefrontMenuItem = {
+  id: number;
+  name: string;
+  category: string;
+  selling_price: number;
+  is_available: boolean;
+};
+
+type StorefrontPromotion = {
+  code?: string | null;
+  name?: string;
+  description?: string | null;
+  end_date?: string;
+};
+
+type StorefrontZone = {
+  name?: string;
+  eta_min_minutes?: number;
+  eta_max_minutes?: number;
+  minimum_order_amount?: number;
+};
+
+type StorefrontPayload = {
+  menu: StorefrontMenuItem[];
+  active_promotions: StorefrontPromotion[];
+  delivery_zones: StorefrontZone[];
+  checkout_readiness?: { accepting_orders?: boolean };
+};
+
+const emptyStorefront: StorefrontPayload = {
+  menu: [],
+  active_promotions: [],
+  delivery_zones: [],
+  checkout_readiness: { accepting_orders: true },
+};
+
+const siteUrl =
+  process.env.PIZZA_BLITZ_SITE_URL ||
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  "http://127.0.0.1:3011";
+
+export const metadata: Metadata = {
+  title: "Pizza Blitz — Hot pizza, pickup and delivery",
+  description:
+    "Order pizza, sides, burgers, desserts and drinks from Pizza Blitz. Customise every item, apply offers, choose pickup or delivery, and follow your order live.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "Pizza Blitz — Hot pizza, pickup and delivery",
+    description:
+      "Made-to-order pizza with live tracking, clear pricing, and pickup or delivery.",
+    type: "website",
+    url: siteUrl,
+    images: [{ url: heroImage, width: 1800, height: 1200, alt: "Fresh pizza at Pizza Blitz" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pizza Blitz — Hot pizza, pickup and delivery",
+    description: "Made-to-order pizza with live tracking, pickup and delivery.",
+    images: [heroImage],
+  },
+};
+
+async function loadStorefront(): Promise<StorefrontPayload> {
+  try {
+    const response = await fetch(
+      getServerApiUrl("/api/v1/restaurant/storefront/bootstrap"),
+      { next: { revalidate: 60 } }
+    );
+    if (!response.ok) return emptyStorefront;
+    const payload = (await response.json()) as Partial<StorefrontPayload>;
+    return {
+      menu: Array.isArray(payload.menu) ? payload.menu : [],
+      active_promotions: Array.isArray(payload.active_promotions)
+        ? payload.active_promotions
+        : [],
+      delivery_zones: Array.isArray(payload.delivery_zones) ? payload.delivery_zones : [],
+      checkout_readiness: payload.checkout_readiness || { accepting_orders: true },
+    };
+  } catch {
+    return emptyStorefront;
+  }
+}
+
+function highlightItems(menu: StorefrontMenuItem[]): StorefrontMenuItem[] {
+  const available = menu.filter((item) => item.is_available);
+  if (!available.length) return fallbackHighlights;
+  const preferred = ["Pizza", "Sides", "Burgers", "Beverages", "Desserts", "Sandwiches"];
+  const ordered = [...available].sort((left, right) => {
+    const leftIndex = preferred.indexOf(left.category);
+    const rightIndex = preferred.indexOf(right.category);
+    return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+  });
+  return ordered.slice(0, 6);
+}
+
+function formatPrice(value: number) {
+  return `${storeProfile.currency} ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
+}
+
+function itemImage(item: StorefrontMenuItem) {
+  return categoryImages[item.category] || categoryImages.Pizza;
+}
+
+const faqs = [
   {
-    name: "Margherita Pizza",
-    detail: "Classic cheese, tomato sauce, crisp crust",
-    price: "from Rs 199",
-    image:
-      "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=900&q=80",
+    question: "How long does pickup or delivery take?",
+    answer:
+      "Pickup is usually 20–25 minutes and delivery 35–45 minutes, depending on the kitchen queue and your zone. The exact window is shown at checkout and confirmed when your order is accepted.",
   },
   {
-    name: "French Fries",
-    detail: "Crispy sides for pickup or delivery",
-    price: "from Rs 89",
-    image:
-      "https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?auto=format&fit=crop&w=900&q=80",
+    question: "How do I follow my order?",
+    answer:
+      "Every order gets a tracking link. Open Track Order, enter the order id and the phone number used for the order, and you will see the live kitchen and handoff status.",
   },
   {
-    name: "Cold Coffee",
-    detail: "Chilled beverage with quick counter handoff",
-    price: "from Rs 99",
-    image:
-      "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?auto=format&fit=crop&w=900&q=80",
+    question: "Can I customise a pizza?",
+    answer:
+      "Yes. Choose a size, crust, toppings, dips, and combos on the product card. Prices update instantly and the kitchen receives the exact configuration.",
+  },
+  {
+    question: "How do coupons work?",
+    answer:
+      "Apply a coupon in the cart or checkout. The discount is validated on the server against the current offer window, so the price you see is the price you pay.",
+  },
+  {
+    question: "What payment methods are available?",
+    answer:
+      "Cash on pickup or delivery, and prepaid online payments when the gateway is enabled. Payments are processed by the configured provider; the store never stores card data.",
+  },
+  {
+    question: "I have an allergy. What should I do?",
+    answer:
+      "Add the allergy to the order notes and speak to the store before ordering. Our kitchen handles wheat, dairy, and shared equipment, so we confirm ingredients case by case.",
   },
 ];
 
-const serviceModes = [
-  { label: "Pickup", value: "20-25 min", icon: ShoppingBag },
-  { label: "Delivery", value: "35-45 min", icon: MapPin },
-  { label: "Order Tracking", value: "Live status", icon: Clock },
+const promises = [
+  {
+    title: "Made after you order",
+    detail: "Nothing sits under a lamp. Your pizza starts when the kitchen accepts the ticket.",
+    icon: ChefHat,
+  },
+  {
+    title: "Clear, final pricing",
+    detail: "Taxes, delivery fees, and coupon discounts are calculated server-side before payment.",
+    icon: BadgeCheck,
+  },
+  {
+    title: "Track it live",
+    detail: "See the kitchen, packing, and handoff stages without calling the store.",
+    icon: Clock,
+  },
+  {
+    title: "Payment choices",
+    detail: "Pay cash at the counter or door, or prepay through a secure gateway when enabled.",
+    icon: CreditCard,
+  },
 ];
 
-export default function PublicHomePage() {
+const standards = [
+  {
+    title: "Dough, handled with care",
+    detail:
+      "Small batches, consistent portioning, and a rested dough give the crust its structure. Every pizza is stretched to order.",
+    icon: Flame,
+  },
+  {
+    title: "Ingredients we can name",
+    detail:
+      "Cheese, sauce, vegetables, and toppings are stocked from traceable suppliers, with vendor price history kept in the kitchen system.",
+    icon: Leaf,
+  },
+  {
+    title: "Food safety first",
+    detail:
+      "Stock is logged, waste is recorded, and prep is planned from real sales data. Temperature and hygiene checks stay on the daily close checklist.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Packaging that travels",
+    detail:
+      "Vented boxes and sealed sides keep the crust crisp and the dips contained on the way to your door.",
+    icon: Truck,
+  },
+];
+
+export default async function PublicHomePage() {
+  const storefront = await loadStorefront();
+  const highlights = highlightItems(storefront.menu);
+  const promotions = storefront.active_promotions.slice(0, 3);
+  const zones = storefront.delivery_zones.slice(0, 6);
+  const acceptingOrders = storefront.checkout_readiness?.accepting_orders !== false;
+  const contactHref = storeMapHref();
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    name: storeProfile.name,
+    description:
+      "Pizza Blitz is a neighbourhood pizza kitchen serving made-to-order pizza, sides, burgers, desserts, and drinks for pickup and delivery.",
+    servesCuisine: "Pizza",
+    priceRange: "₹₹",
+    url: siteUrl,
+    hasMenu: `${siteUrl}/order`,
+    acceptsReservations: false,
+    ...(storeProfile.phone ? { telephone: storeProfile.phone } : {}),
+    ...(storeProfile.address
+      ? {
+          address: {
+            "@type": "PostalAddress",
+            streetAddress: storeProfile.address,
+          },
+        }
+      : {}),
+    ...(storeProfile.hours ? { openingHours: storeProfile.hours } : {}),
+  };
+  const faqLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((faq) => ({
+      "@type": "Question",
+      name: faq.question,
+      acceptedAnswer: { "@type": "Answer", text: faq.answer },
+    })),
+  };
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-950">
-      <section
-        className="relative min-h-[88vh] overflow-hidden bg-slate-950 text-white"
-        style={{
-          backgroundImage: `linear-gradient(90deg, rgba(2,6,23,0.88), rgba(2,6,23,0.42), rgba(2,6,23,0.12)), url(${heroImage})`,
-          backgroundPosition: "center",
-          backgroundSize: "cover",
-        }}
-      >
-        <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-5 py-5">
-          <Link href="/" className="text-xl font-black tracking-wide">
-            Pizza Blitz
-          </Link>
-          <nav className="flex items-center gap-2">
-            <Link
-              href="/account"
-              className="rounded-md border border-white/40 px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-slate-950"
-            >
-              My Orders
+    <main className="min-h-screen bg-[#faf6ef] text-[#17130f]">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+      />
+
+      {/* Hero */}
+      <section className="relative isolate overflow-hidden bg-[#17130f] text-white">
+        <Image
+          src={heroImage}
+          alt="Freshly baked pizza with melted cheese and basil"
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover opacity-70"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#17130f] via-[#17130f]/85 to-[#17130f]/35" />
+
+        <header className="relative z-10 border-b border-white/10">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4 md:px-8">
+            <Link href="/" className="flex items-center gap-2">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-red-600 text-lg font-black">
+                PB
+              </span>
+              <span className="text-lg font-black tracking-tight sm:text-xl">Pizza Blitz</span>
             </Link>
-            <Link
-              href="/login"
-              className="rounded-md border border-white/20 px-4 py-2 text-sm font-bold text-white/85 hover:bg-white hover:text-slate-950"
-            >
-              Admin
-            </Link>
-          </nav>
+            <nav aria-label="Primary" className="hidden items-center gap-6 text-sm font-bold text-white/80 md:flex">
+              <a href="#menu" className="hover:text-white">Menu</a>
+              <a href="#offers" className="hover:text-white">Offers</a>
+              <a href="#standards" className="hover:text-white">Our kitchen</a>
+              <a href="#faq" className="hover:text-white">FAQ</a>
+            </nav>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/track"
+                className="hidden rounded-lg border border-white/30 px-4 py-2 text-sm font-bold text-white hover:bg-white hover:text-[#17130f] sm:inline-flex"
+              >
+                Track order
+              </Link>
+              <Link
+                href="/order"
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-500"
+              >
+                Order now <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          </div>
         </header>
 
-        <div className="relative z-10 mx-auto flex min-h-[calc(88vh-84px)] max-w-7xl items-center px-5 pb-24 pt-10">
-          <div className="max-w-2xl">
-            <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur">
-              <Star className="h-4 w-4 text-yellow-300" />
-              Fresh pizza, pickup, delivery
+        <div className="relative z-10 mx-auto grid max-w-7xl gap-12 px-5 pb-16 pt-14 md:px-8 md:pb-24 md:pt-20 lg:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <p className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em]">
+              <Sparkles className="h-4 w-4 text-amber-300" />
+              Fresh dough · fired to order
             </p>
-            <h1 className="text-5xl font-black leading-tight md:text-7xl">
-              Pizza Blitz
+            <h1 className="mt-6 max-w-2xl text-4xl font-black leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
+              Pizza that shows up <span className="text-amber-300">in a Blitz.</span>
             </h1>
-            <p className="mt-5 max-w-xl text-lg font-medium leading-8 text-white/85">
-              Hot pizzas, sides, drinks, coupons, flexible checkout, and live order tracking from one place.
+            <p className="mt-6 max-w-xl text-base font-medium leading-7 text-white/80 sm:text-lg">
+              Hand-stretched pizza, loaded sides, thick shakes, and desserts — with server-verified
+              pricing, coupons that actually apply, and live tracking from oven to doorstep.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/order"
-                className="inline-flex items-center gap-2 rounded-md bg-red-700 px-6 py-4 text-sm font-black text-white hover:bg-red-800"
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-6 py-4 text-sm font-black uppercase tracking-wide text-white hover:bg-red-500"
               >
-                Order Online <ArrowRight className="h-4 w-4" />
+                <ShoppingBag className="h-5 w-5" /> Start your order
               </Link>
               <Link
-                href="/track"
-                className="inline-flex items-center gap-2 rounded-md border border-white/50 px-6 py-4 text-sm font-black text-white hover:bg-white hover:text-slate-950"
+                href="/menu"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-4 text-sm font-black uppercase tracking-wide text-white hover:bg-white hover:text-[#17130f]"
               >
-                Track Order
+                View the menu
               </Link>
             </div>
+            <div className="mt-8 grid max-w-xl grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              {[
+                { icon: Clock, label: "Pickup", value: "20–25 min" },
+                { icon: Truck, label: "Delivery", value: "35–45 min" },
+                { icon: MapPin, label: "Tracking", value: "Live" },
+                { icon: ShieldCheck, label: "Payments", value: "Secure" },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <Icon className="h-4 w-4 text-amber-300" />
+                    <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-white/50">
+                      {item.label}
+                    </p>
+                    <p className="text-sm font-black">{item.value}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
 
-        <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-white/15 bg-slate-950/72 backdrop-blur">
-          <div className="mx-auto grid max-w-7xl grid-cols-1 gap-3 px-5 py-4 md:grid-cols-3">
-            {serviceModes.map((mode) => {
-              const Icon = mode.icon;
-              return (
-                <div key={mode.label} className="flex items-center gap-3 text-white">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white/12">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase text-white/55">{mode.label}</p>
-                    <p className="font-black">{mode.value}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <aside className="self-end rounded-2xl border border-white/15 bg-[#17130f]/80 p-6 backdrop-blur lg:justify-self-end">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
+              Tonight&apos;s status
+            </p>
+            <p className="mt-3 flex items-center gap-2 text-2xl font-black">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${acceptingOrders ? "bg-emerald-400" : "bg-amber-400"}`}
+              />
+              {acceptingOrders ? "Taking orders" : "Ordering paused"}
+            </p>
+            <p className="mt-2 text-sm font-medium leading-6 text-white/70">
+              {acceptingOrders
+                ? "The kitchen is online. Customise any item and choose pickup or delivery at checkout."
+                : "The store has paused online ordering for now. Please check back shortly."}
+            </p>
+            <div className="mt-5 space-y-2 border-t border-white/10 pt-4 text-sm">
+              <p className="flex items-center justify-between text-white/70">
+                <span>Coupons</span>
+                <span className="font-black text-white">Applied in cart</span>
+              </p>
+              <p className="flex items-center justify-between text-white/70">
+                <span>Order tracking</span>
+                <span className="font-black text-white">Order id + phone</span>
+              </p>
+              <p className="flex items-center justify-between text-white/70">
+                <span>Payment</span>
+                <span className="font-black text-white">Cash or prepaid</span>
+              </p>
+            </div>
+          </aside>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-5 py-12">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      {/* Menu highlights */}
+      <section id="menu" className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-black uppercase tracking-widest text-red-700">Popular picks</p>
-            <h2 className="mt-2 text-3xl font-black">Fast-moving Pizza Blitz favorites</h2>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">The menu</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+              Fan favourites, made to order
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[#5a4f45]">
+              Prices below come straight from the live menu. Sizes, crusts, toppings, dips, and
+              combos are customisable on every product card.
+            </p>
           </div>
           <Link
             href="/order"
-            className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-800 hover:border-red-700 hover:text-red-700"
+            className="inline-flex items-center gap-2 rounded-xl border border-[#17130f]/15 bg-white px-5 py-3 text-sm font-black text-[#17130f] hover:border-red-600 hover:text-red-700"
           >
-            View Full Menu <ArrowRight className="h-4 w-4" />
+            Full menu <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-          {menuHighlights.map((item) => (
-            <article key={item.name} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-              <img src={item.image} alt={item.name} className="h-56 w-full object-cover" />
+        <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {highlights.map((item) => (
+            <article
+              key={`${item.id}-${item.name}`}
+              className="group overflow-hidden rounded-2xl border border-[#17130f]/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="relative h-48 w-full overflow-hidden">
+                <Image
+                  src={itemImage(item)}
+                  alt={item.name}
+                  fill
+                  sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                  className="object-cover transition duration-500 group-hover:scale-105"
+                />
+                <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#17130f]">
+                  {item.category}
+                </span>
+              </div>
               <div className="p-5">
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <h3 className="text-xl font-black">{item.name}</h3>
-                  <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">
-                    {item.price}
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-lg font-black tracking-tight">{item.name}</h3>
+                  <span className="shrink-0 rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">
+                    {formatPrice(item.selling_price)}
                   </span>
                 </div>
-                <p className="text-sm font-medium leading-6 text-slate-600">{item.detail}</p>
+                <p className="mt-2 text-sm font-medium leading-6 text-[#5a4f45]">
+                  {item.category === "Pizza"
+                    ? "Choose your size, crust, and toppings. Baked after you order."
+                    : "Add it to your order and customise the details at checkout."}
+                </p>
+                <Link
+                  href="/order"
+                  className="mt-4 inline-flex items-center gap-1 text-sm font-black text-red-700 hover:text-red-800"
+                >
+                  Customise &amp; add <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="border-y border-slate-200 bg-white">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-5 py-10 md:grid-cols-3">
-          <Info icon={Utensils} label="Catalog" value="Pizza, sides, beverages, desserts" />
-          <Info icon={ShieldCheck} label="Checkout" value="Coupon support and payment choices" />
-          <Info icon={Phone} label="Customer Care" value="Saved contact details for order history" />
+      {/* How it works + offers */}
+      <section className="border-y border-[#17130f]/10 bg-white">
+        <div className="mx-auto grid max-w-7xl gap-12 px-5 py-16 md:px-8 md:py-20 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">How it works</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+              Three steps, no phone calls
+            </h2>
+            <ol className="mt-8 space-y-5">
+              {[
+                {
+                  title: "Build your order",
+                  detail: "Pick items, customise sizes and toppings, and add sides or drinks.",
+                  icon: Utensils,
+                },
+                {
+                  title: "Choose pickup or delivery",
+                  detail: "Enter your phone and address. Delivery zones, fees, and ETAs are checked instantly.",
+                  icon: Truck,
+                },
+                {
+                  title: "Pay and track",
+                  detail: "Pay cash or prepay, then follow the live kitchen and handoff status.",
+                  icon: Clock,
+                },
+              ].map((step, index) => {
+                const Icon = step.icon;
+                return (
+                  <li key={step.title} className="flex gap-4">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#17130f] text-white">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8a7a6a]">
+                        Step {index + 1}
+                      </p>
+                      <h3 className="mt-1 text-lg font-black">{step.title}</h3>
+                      <p className="mt-1 text-sm font-medium leading-6 text-[#5a4f45]">{step.detail}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          <div id="offers" className="rounded-2xl bg-[#17130f] p-6 text-white sm:p-8">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-amber-300">Live offers</p>
+                <h2 className="mt-2 text-2xl font-black">Coupons you can use right now</h2>
+              </div>
+              <Star className="h-8 w-8 text-amber-300" />
+            </div>
+            <div className="mt-6 space-y-3">
+              {promotions.length ? (
+                promotions.map((promotion) => (
+                  <div
+                    key={promotion.code || promotion.name}
+                    className="rounded-xl border border-white/10 bg-white/5 p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-lg font-black tracking-wide text-amber-300">
+                        {promotion.code || promotion.name}
+                      </p>
+                      {promotion.end_date ? (
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                          Ends {new Date(promotion.end_date).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-white/80">
+                      {promotion.description || promotion.name}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/20 p-5 text-sm font-semibold text-white/70">
+                  No public coupon is running this minute. Apply a code at checkout — every offer is
+                  validated server-side against the live window.
+                </div>
+              )}
+            </div>
+            <Link
+              href="/order"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-black text-[#17130f] hover:bg-amber-200"
+            >
+              Apply a coupon at checkout <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </section>
-    </main>
-  );
-}
 
-function Info({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-4">
-      <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-950 text-white">
-        <Icon className="h-5 w-5" />
-      </div>
-      <div>
-        <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
-        <p className="mt-1 font-bold text-slate-900">{value}</p>
-      </div>
-    </div>
+      {/* Kitchen standards / food detail */}
+      <section id="standards" className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
+        <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+          <div className="relative h-72 overflow-hidden rounded-2xl sm:h-96 lg:h-[460px]">
+            <Image
+              src={storyImage}
+              alt="Pizza kitchen at work"
+              fill
+              sizes="(min-width: 1024px) 45vw, 100vw"
+              className="object-cover"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17130f]/90 to-transparent p-6 text-white">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300">The kitchen</p>
+              <p className="mt-1 text-xl font-black">Small batches. Real ingredients. No shortcuts.</p>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">Food, explained</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+              What good pizza service actually requires
+            </h2>
+            <p className="mt-3 max-w-xl text-sm font-medium leading-7 text-[#5a4f45]">
+              A restaurant is a supply chain, a kitchen, and a delivery network running at the same
+              time. These are the standards we hold ourselves to — from dough handling to the box
+              that reaches your door.
+            </p>
+            <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              {standards.map((standard) => {
+                const Icon = standard.icon;
+                return (
+                  <article key={standard.title} className="rounded-xl border border-[#17130f]/10 bg-white p-5">
+                    <Icon className="h-5 w-5 text-red-700" />
+                    <h3 className="mt-3 text-base font-black">{standard.title}</h3>
+                    <p className="mt-1 text-sm font-medium leading-6 text-[#5a4f45]">
+                      {standard.detail}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+            <p className="mt-5 text-xs font-semibold leading-5 text-[#8a7a6a]">
+              Allergens: our kitchen handles wheat, dairy, soy, and nuts on shared equipment. Add a
+              note to your order and the team will confirm ingredients before preparation.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Pizza craft + food-safety detail */}
+      <section className="border-y border-[#17130f]/10 bg-[#f1e9dc]">
+        <div className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
+          <div className="grid gap-12 lg:grid-cols-[0.85fr_1.15fr]">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">
+                Pizza, decoded
+              </p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
+                A short guide to what makes a pizza kitchen work
+              </h2>
+              <p className="mt-3 text-sm font-medium leading-7 text-[#5a4f45]">
+                Good pizza is a chain of small decisions: how the dough rests, how hot the deck is,
+                how the cheese melts, and how the box travels. These are the fundamentals
+                professional kitchens obsess over.
+              </p>
+              <ul className="mt-7 space-y-3">
+                {[
+                  "Daily temperature logs for cold storage, proofing, and cooked items.",
+                  "First-in-first-out rotation and expiry checks on every delivery.",
+                  "Allergen cross-contact controls, separate tools, and clear order notes.",
+                  "Delivery time limits so food leaves the kitchen inside its safe window.",
+                  "Portion scales and waste logs for consistent slices and honest margins.",
+                ].map((item) => (
+                  <li key={item} className="flex gap-3 text-sm font-semibold leading-6 text-[#3f362e]">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-red-700" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-6 text-xs font-semibold leading-5 text-[#8a7a6a]">
+                These checks are part of our daily prep, close, and inventory routines — not
+                marketing lines. Ask the team if you want the detail behind any of them.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[
+                {
+                  title: "Dough needs time",
+                  detail:
+                    "Fermentation builds flavour and a lighter texture. A slow, temperature-controlled rise is why a good crust tastes of more than flour.",
+                  icon: Clock,
+                },
+                {
+                  title: "Heat does the rest",
+                  detail:
+                    "A hot deck oven gives oven spring and deep browning in minutes. Too cool, and the crust dries out before it colours.",
+                  icon: Flame,
+                },
+                {
+                  title: "Cheese is structure",
+                  detail:
+                    "Low-moisture mozzarella melts without flooding the base; blends balance stretch, richness, and browning.",
+                  icon: Utensils,
+                },
+                {
+                  title: "The box matters",
+                  detail:
+                    "Vented board releases steam so the crust stays crisp, while sealed sides keep dips and toppings where they belong.",
+                  icon: Truck,
+                },
+              ].map((card) => {
+                const Icon = card.icon;
+                return (
+                  <article key={card.title} className="rounded-2xl border border-[#17130f]/10 bg-white p-5">
+                    <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#17130f] text-amber-300">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <h3 className="mt-4 text-base font-black">{card.title}</h3>
+                    <p className="mt-2 text-sm font-medium leading-6 text-[#5a4f45]">
+                      {card.detail}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Promises + delivery areas */}
+      <section className="border-y border-[#17130f]/10 bg-white">
+        <div className="mx-auto max-w-7xl px-5 py-16 md:px-8 md:py-20">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {promises.map((promise) => {
+              const Icon = promise.icon;
+              return (
+                <article key={promise.title} className="rounded-xl border border-[#17130f]/10 bg-[#faf6ef] p-5">
+                  <Icon className="h-5 w-5 text-red-700" />
+                  <h3 className="mt-3 text-base font-black">{promise.title}</h3>
+                  <p className="mt-1 text-sm font-medium leading-6 text-[#5a4f45]">
+                    {promise.detail}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="mt-12 grid gap-8 lg:grid-cols-2">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">Delivery</p>
+              <h2 className="mt-2 text-2xl font-black sm:text-3xl">Where we deliver</h2>
+              <p className="mt-2 text-sm font-medium leading-6 text-[#5a4f45]">
+                Delivery availability, fees, and ETAs are confirmed against your address at checkout.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {zones.length ? (
+                  zones.map((zone) => (
+                    <span
+                      key={zone.name}
+                      className="rounded-full border border-[#17130f]/10 bg-white px-3 py-2 text-xs font-bold text-[#17130f]"
+                    >
+                      {zone.name}
+                      {zone.eta_max_minutes ? ` · ${zone.eta_min_minutes ?? ""}–${zone.eta_max_minutes} min` : ""}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm font-semibold text-[#5a4f45]">
+                    Enter your address at checkout to see availability.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">Visit or contact</p>
+              <h2 className="mt-2 text-2xl font-black sm:text-3xl">Store details</h2>
+              {hasStoreContact() ? (
+                <ul className="mt-5 space-y-3 text-sm font-semibold text-[#5a4f45]">
+                  {storeProfile.address ? (
+                    <li className="flex items-start gap-3">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                      <span>{storeProfile.address}</span>
+                    </li>
+                  ) : null}
+                  {storeProfile.hours ? (
+                    <li className="flex items-start gap-3">
+                      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                      <span>{storeProfile.hours}</span>
+                    </li>
+                  ) : null}
+                  {storeProfile.phone ? (
+                    <li className="flex items-start gap-3">
+                      <Phone className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                      <a href={`tel:${storeProfile.phone}`} className="hover:text-red-700">
+                        {storeProfile.phone}
+                      </a>
+                    </li>
+                  ) : null}
+                </ul>
+              ) : (
+                <p className="mt-5 text-sm font-medium leading-6 text-[#5a4f45]">
+                  Order online for pickup or delivery. Store address, hours, and phone are published
+                  here as soon as they are configured in the admin settings.
+                </p>
+              )}
+              {contactHref ? (
+                <a
+                  href={contactHref}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-black text-red-700 hover:text-red-800"
+                >
+                  Open in maps <ArrowRight className="h-4 w-4" />
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="mx-auto max-w-4xl px-5 py-16 md:py-20">
+        <div className="text-center">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">Questions</p>
+          <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Before you order</h2>
+        </div>
+        <div className="mt-8 divide-y divide-[#17130f]/10 rounded-2xl border border-[#17130f]/10 bg-white">
+          {faqs.map((faq) => (
+            <details key={faq.question} className="group px-5 py-4 [&_summary::-webkit-details-marker]:hidden">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left text-base font-black">
+                {faq.question}
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#faf6ef] text-lg leading-none text-[#17130f] transition group-open:rotate-45">
+                  +
+                </span>
+              </summary>
+              <p className="mt-3 text-sm font-medium leading-7 text-[#5a4f45]">{faq.answer}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="bg-red-700 text-white">
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-5 py-12 md:flex-row md:items-center md:px-8">
+          <div>
+            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">Hungry yet?</h2>
+            <p className="mt-2 max-w-xl text-sm font-semibold text-white/85">
+              Build your order in under two minutes. Pickup, delivery, coupons, and live tracking are
+              built in.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/order"
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-6 py-4 text-sm font-black text-red-700 hover:bg-amber-100"
+            >
+              Order online <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/track"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/40 px-6 py-4 text-sm font-black text-white hover:bg-white/10"
+            >
+              Track an order
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-[#17130f] text-white">
+        <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 md:grid-cols-4 md:px-8">
+          <div className="md:col-span-2">
+            <p className="text-xl font-black">{storeProfile.name}</p>
+            <p className="mt-2 max-w-md text-sm font-medium leading-6 text-white/65">
+              {storeProfile.tagline} Order pizza, sides, burgers, desserts, and drinks for pickup or
+              delivery.
+            </p>
+            {storeProfile.instagramUrl ? (
+              <a
+                href={storeProfile.instagramUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex text-sm font-bold text-amber-300 hover:text-amber-200"
+              >
+                Follow on Instagram
+              </a>
+            ) : null}
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/50">Order</p>
+            <ul className="mt-4 space-y-2 text-sm font-semibold text-white/80">
+              <li><Link href="/order" className="hover:text-white">Menu &amp; checkout</Link></li>
+              <li><Link href="/track" className="hover:text-white">Track an order</Link></li>
+              <li><Link href="/account" className="hover:text-white">My orders</Link></li>
+              <li><Link href="/account/login" className="hover:text-white">Customer sign in</Link></li>
+            </ul>
+          </div>
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-white/50">Business</p>
+            <ul className="mt-4 space-y-2 text-sm font-semibold text-white/80">
+              <li><Link href="/login" className="hover:text-white">Admin &amp; staff login</Link></li>
+              <li><Link href="/order" className="hover:text-white">Bulk orders</Link></li>
+              {storeProfile.supportEmail ? (
+                <li>
+                  <a href={`mailto:${storeProfile.supportEmail}`} className="hover:text-white">
+                    {storeProfile.supportEmail}
+                  </a>
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        </div>
+        <div className="border-t border-white/10">
+          <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-5 text-xs font-semibold text-white/50 sm:flex-row sm:items-center sm:justify-between md:px-8">
+            <p>© {new Date().getFullYear()} {storeProfile.name}. All rights reserved.</p>
+            <p>Prices include applicable taxes shown at checkout. Allergen information on request.</p>
+          </div>
+        </div>
+      </footer>
+    </main>
   );
 }

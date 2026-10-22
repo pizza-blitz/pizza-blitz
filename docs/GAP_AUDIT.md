@@ -55,6 +55,9 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 24 | Proof scripts | Two browser proofs defaulted to the deployed `pizza-blitz.vercel.app` URL instead of the local app, so a local run silently reached the public internet and timed out (one of them failed during this pass). | Running `verify-reporting-action-board.cjs` locally. | Both default to `http://127.0.0.1:3011` now and keep `E2E_BASE_URL` as the override for deployed runs. The script passes locally. |
 | 25 | Frontend types | 18 pages carried 86 explicit-`any` annotations at their API boundaries, which hid response-shape mistakes from the compiler. | ESLint `no-explicit-any` warnings. | Added typed payload interfaces and removed every shortcut: dashboard, daily, CEO, break-even, AI insights, inventory, sales, purchase-orders, operations, ops, recipes, and the reports page (all 86 sites retired). Reports got explicit models for comparison cards and daily/weekday rows, owner comparison, campaign performance with nested outreach/redemption/ad blocks, customer segments, order-channel mixes, forecast, target pacing, and break-even. `no-explicit-any` now reports zero findings. |
 | 26 | Abuse protection | Sensitive public endpoints (customer-login proof, order creation, payment verification, admin/staff/customer login) had no throttle, so phone+order-id enumeration or credential brute force was only bounded by network speed. | Endpoint inventory and the earlier idor review. | Added a per-instance sliding-window limiter (`app/core/rate_limit.py`) wired into those endpoints, enabled by default and configurable with `RATE_LIMIT_ENABLED`. Covered by five tests (limit, bucket isolation, proxy header, disable switch, endpoint wiring). Docs note that horizontal deployments should add a shared Redis limiter or edge WAF rule. |
+| 27 | Data privacy | The public storefront bootstrap returned each menu item's `cost_price`, exposing internal margins to anonymous callers. | Reading the storefront payload while rebuilding the landing page. | `public_menu()` now strips `cost_price`; a regression test asserts it is absent from the public payload while the admin menu endpoint keeps it. |
+| 28 | UX | Mobile portal navigation was a 26-item horizontal scroll strip, and the desktop sidebar was a flat list with no grouping, active state, search, or collapse. | 390px/1440px screenshot audit. | Rebuilt the portal shell: grouped/searchable sidebar with active state and collapse, mobile drawer, 5-tab bottom navigation, desktop topbar, role badge, and hydration markers for deterministic proofs. New `verify:portal-shell` proof. |
+| 29 | Marketing / SEO | The public home page was a shallow hero (676 characters) with generic metadata, no structured data, and no brand story, food detail, offers, or FAQ. | Screenshot audit and source read. | Rebuilt the landing page with live menu/offers/delivery data, food-quality detail, FAQ, Restaurant + FAQPage JSON-LD, Open Graph/Twitter metadata, responsive layout, and configuration-driven store contact. New `verify:landing` proof. |
 
 ## Still open
 
@@ -77,8 +80,9 @@ These are real gaps, but they cannot be closed from inside the repository.
 - `npm run typecheck`: pass.
 - `npm run build`: pass, with lint and type checking enabled.
 - `npm run test:e2e`: pass.
-- `npm run verify:audit` (preflight, surface, inventory, live): pass end to end.
-  The deployment-only proof is now the separate `npm run verify:deployment`.
+- `npm run verify:audit` (preflight, surface, inventory, live): pass end to end,
+  including the new landing-page and portal-shell proofs. The deployment-only
+  proof is now the separate `npm run verify:deployment`.
 - Audit surface, inventory, action feedback, role gates, restaurant ready
   audit, and roadmap proofs: pass.
 - The 11 order/customer proof scripts touched by the auth hardening: pass.

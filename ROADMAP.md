@@ -118,4 +118,25 @@ probe, runbook).
 - [x] Block SSRF in the Google Sheets importer.
 - [x] Fail closed on default production secrets and complete deploy env wiring.
 - [x] Record the full gap audit and verification guide in `docs/`.
-- [ ] Replace remaining explicit `any` response types with per-endpoint models.
+- [x] Replace remaining explicit `any` response types with per-endpoint models.
+
+## Phase 9 - Enterprise Feature Completion
+
+Benchmark, feature inventory, and wave plan: [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
+Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
+
+### Wave 1 (done)
+
+- [x] Rebuild the public landing page: live menu/offers/zones, food-quality detail, FAQ, JSON-LD, OG metadata, responsive.
+- [x] Replace the flat portal navigation with grouped, searchable, collapsible desktop navigation and a mobile drawer + bottom bar.
+- [x] Verify and document master admin, staff, and customer access.
+- [x] Stop exposing menu cost prices on the public storefront.
+- [x] Add `verify:landing` and `verify:portal-shell` proofs to the audit suite.
+
+### Wave 2 (next)
+
+- [ ] Store profile settings (name, address, phone, hours, socials) editable in admin and rendered on the landing page.
+- [ ] Store hours + online ordering pause/capacity controls.
+- [ ] Scheduled pickup/delivery orders with slot capacity.
+- [ ] Tips at checkout and POS, with reporting.
+- [ ] Dense-page tap targets and table-to-card mobile layouts.

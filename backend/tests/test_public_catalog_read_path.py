@@ -34,6 +34,8 @@ class PublicCatalogReadPathTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(len(payload["menu"]), 10)
+        # Internal cost data must never reach the public storefront.
+        self.assertTrue(all("cost_price" not in item for item in payload["menu"]))
         self.assertIn("accepting_orders", payload["checkout_readiness"])
         self.assertIn("cash_available", payload["payment_checkout"])
         self.assertIn("prepaid_available", payload["payment_checkout"])

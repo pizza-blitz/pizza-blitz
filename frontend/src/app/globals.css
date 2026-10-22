@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #f9fafb; /* gray-50 */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: #f9fafb; /* gray-50 */
+    @apply antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid #ea580c;
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: #fde68a;
+    color: #17130f;
+  }
 }

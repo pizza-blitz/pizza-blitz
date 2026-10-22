@@ -88,7 +88,10 @@ Include browser smoke when both local servers are already running:
 
 Every gate, what it proves, and the production-only proofs are documented in
 [docs/VERIFICATION.md](docs/VERIFICATION.md). Known gaps and their status are in
-[docs/GAP_AUDIT.md](docs/GAP_AUDIT.md).
+[docs/GAP_AUDIT.md](docs/GAP_AUDIT.md). The full feature inventory, enterprise
+benchmark, and build plan live in [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md),
+and login IDs, roles, and production credential setup are in
+[docs/ACCESS.md](docs/ACCESS.md).
 
 ## Production Notes
 
