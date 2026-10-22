@@ -633,3 +633,23 @@ class StoreProfile(Base):
     pause_message = Column(String(255), nullable=True)
     prep_time_minutes = Column(Integer, default=25)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SavedReport(Base):
+    __tablename__ = "saved_reports"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False)
+    metrics = Column(JSON, default=list)
+    dimensions = Column(JSON, default=list)
+    range_days = Column(Integer, nullable=False, default=30)
+    filters = Column(JSON, default=dict)
+    schedule = Column(String(20), nullable=False, default="none")
+    recipients = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="active")
+    created_by = Column(String(120), nullable=True)
+    last_run_at = Column(DateTime, nullable=True)
+    last_delivery_status = Column(String(30), nullable=True)
+    last_delivery_error = Column(String(500), nullable=True)
+    next_run_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

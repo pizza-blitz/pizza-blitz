@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 39 frontend routes, the 132 browser proof scripts in
+- Listed all 39 frontend routes, the 133 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -72,6 +72,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 41 | Retention | Customer history had tier labels but no points, rewards, or referrals; there was no reason for a guest to return beyond the order itself. | W4 loyalty gap. | Added `loyalty_accounts` and `loyalty_transactions` (migration), points on completed orders (1/₹, idempotent per order), tiers, referral codes with a 100-point two-sided first-order bonus, a customer loyalty endpoint, account-page card and checkout referral field. Four backend tests and a browser proof. Redemption followed in item 42. |
 | 42 | Retention | Loyalty points could only accumulate; there was no way to spend them, so the programme had no redemption value. | W4 redemption gap. | Added `loyalty_redemptions` (migration), a customer redemption endpoint that reserves 100+ points for 15 minutes at 10 points = ₹1, checkout validation scoped to the ordering customer, pre-tax discount application, single-use enforcement and a `redeem` ledger row. The loyalty card links to checkout and the order page shows a redemption panel/totals line. Two backend tests and a browser proof. |
 | 43 | Delivery | Dispatch had no rider-facing surface: riders could not start deliveries, share GPS, or capture proof, and customers could not see rider status. | W4 rider gap. | Added rider token/GPS/proof columns (migration), a tokenized `/rider/{token}` mobile page, admin Rider link endpoint/button, start-delivery GPS sharing, photo/signature/OTP proof required before delivered, failed reasons, and rider status/location/proof on customer tracking. Two backend tests and a browser proof. |
+| 44 | Reporting | Reports were curated pages only; there was no way to choose metrics/dimensions, save a view, download a custom CSV, or schedule email delivery. | W4 reporting gap. | Added `saved_reports` (migration), a custom report endpoint over non-cancelled orders with business-day ranges and filters, saved-view CRUD, run/CSV/send endpoints, a report-builder UI with table/totals and saved cards, and a scheduler job that emails due reports through the provider layer while recording delivery status. Four backend tests and a browser proof. |
 
 ## Still open
 
@@ -86,7 +87,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 118 tests, all pass (in a clean venv built from
+- Backend unit suite: 122 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

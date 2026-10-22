@@ -71,6 +71,21 @@ def campaign_schedule_job():
         session.close()
 
 
+def saved_reports_job():
+    from app.db.session import SessionLocal
+    from app.services.report_builder_service import deliver_due_saved_reports
+
+    session = SessionLocal()
+    try:
+        delivered = deliver_due_saved_reports(session)
+        if delivered:
+            logger.info("Delivered scheduled reports: %s", delivered)
+    except Exception:
+        logger.exception("Scheduled report delivery job failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -85,6 +100,13 @@ scheduler.add_job(
     "interval",
     minutes=10,
     id="campaign_schedule_activation",
+    replace_existing=True,
+)
+scheduler.add_job(
+    saved_reports_job,
+    "interval",
+    minutes=5,
+    id="saved_report_delivery",
     replace_existing=True,
 )
 

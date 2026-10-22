@@ -154,6 +154,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Loyalty and referrals.
 - [x] Loyalty points redemption at checkout.
 - [x] Rider app with GPS and proof of delivery.
-- [ ] Custom report builder and scheduled reports.
+- [x] Custom report builder and scheduled reports.
+- [ ] 2FA and granular permissions.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

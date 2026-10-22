@@ -2195,6 +2195,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
             notes = append_order_note(notes, f"ETA: {delivery_eta}")
 
     row = RestaurantOrder(
+        date=business_today(),
         order_type=order.order_type,
         table_number=order.table_number,
         customer_name=order.customer_name,

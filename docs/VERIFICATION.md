@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 118 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 122 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -254,6 +254,21 @@ includes rider name, status, last coordinates/proof flag. The rider page is a
 mobile-first screen at `/rider/[token]`; admin order cards have a Rider link
 button. Covered by `backend/tests/test_rider.py` and
 `frontend/e2e/verify-rider.cjs`.
+
+## Custom and scheduled reports
+
+`POST /reports/custom` accepts a business-day date range, metrics (revenue,
+orders, average order value, tax, discount, tips, refunds), dimensions (day,
+order type, payment method, status) and equality filters, and returns rows,
+columns and totals for non-cancelled orders. Saved reports (`/reports/saved`)
+store the definition plus a rolling day range, schedule (daily/weekly/monthly)
+and recipients; they support run, CSV export, send-now and delete, and record
+`last_run_at`/delivery status. A scheduler job checks every five minutes and
+emails due reports through `send_campaign_message`, marking them sent, skipped
+(provider not configured) or failed. The reports page embeds the builder with a
+responsive table, totals and saved-report cards. Covered by
+`backend/tests/test_report_builder.py` and
+`frontend/e2e/verify-report-builder.cjs`.
 
 ## Health endpoints
 

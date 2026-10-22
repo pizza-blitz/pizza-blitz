@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **233 API endpoints**, **39 routes/pages** (29 portal,
-1 KDS, 9 public), **132 browser proof scripts**, **118 backend tests**, **45
+Numbers in this snapshot: **241 API endpoints**, **39 routes/pages** (29 portal,
+1 KDS, 9 public), **133 browser proof scripts**, **122 backend tests**, **46
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -169,8 +169,8 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Customer analytics | Segments, retention, value leaders | Built | Cohort curves, LTV | LTV/cohorts partial |
 | Marketing analytics | Campaign ROI, conversion, budget pacing | Built | Multi-touch attribution | Later |
 | Breakeven | Fixed costs, daily target, gap | Built | Scenario modelling | Partial |
-| Exports | CSV for sales/customers/campaigns | Built | Scheduled reports, email delivery | Scheduling missing |
-| Custom reports | Curated pages only | Missing | Report builder, saved views | Later |
+| Exports | CSV for sales/customers/campaigns; saved-report CSV download; scheduled email delivery via the provider layer | Built | Scheduled reports, email delivery | Provider credentials required for delivery |
+| Custom reports | Report builder for revenue/orders/AOV/tax/discount/tips/refunds grouped by day/order type/payment/status; saved views with schedule, recipients, run/export/send | Built | Report builder, saved views | Joins/cohorts and embedded charts missing |
 | Multi-store consolidation | — | Missing | Group/franchise reporting | Later |
 
 ## 11. Payments and finance
@@ -318,6 +318,13 @@ transitions update the assignment and send customer notifications; tracking show
 rider status, last location link and proof captured. Admin order cards expose a
 Rider link button. Covered by two backend tests and `verify:rider`.
 
+W4 measured results (reports): the report builder computes metric totals from
+non-cancelled orders over business-day ranges, groups by day/order type/payment/
+status, supports filters, and exposes totals alongside rows. Saved views store
+metrics/dimensions/range/schedule/recipients; the scheduler emails due reports
+through Resend when configured and records sent/skipped/failed delivery state.
+Covered by four backend tests and `verify:report-builder`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -373,7 +380,10 @@ Rider link button. Covered by two backend tests and `verify:rider`.
     tokenized mobile rider page for dispatch, live GPS sharing, photo/signature/
     OTP proof capture and delivered/failed handling; tracking shows rider status
     and location link.
-15. Custom report builder + scheduled email reports.
+15. ~~**Custom report builder + scheduled email reports**~~ — done in W4: an
+    ad-hoc builder (metrics × dimensions, date range, filters), saved views with
+    range/schedule/recipients, run/CSV/send actions, and a scheduler that emails
+    due reports through the provider layer.
 16. 2FA/SSO and granular permissions.
 17. Allergens/nutrition and channel-specific menus/pricing.
 18. Labour vs sales dashboard and shift scheduling.
@@ -397,8 +407,8 @@ Rider link button. Covered by two backend tests and `verify:rider`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof (done); custom reports, 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account + rider proofs |
-| W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports (done); 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account + rider + reports proofs |
+| W5 | 2FA, hardware, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 
 Each wave ships with backend tests, a browser proof, responsive screenshots, and
