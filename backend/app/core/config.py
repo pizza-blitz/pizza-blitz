@@ -75,6 +75,8 @@ class Settings(BaseSettings):
         os.getenv("ORDER_NOTIFICATIONS_ENABLED", "false").strip().lower() == "true"
     )
     ORDER_NOTIFICATION_CHANNEL: str = os.getenv("ORDER_NOTIFICATION_CHANNEL", "sms")
+    CUSTOMER_OTP_CHANNEL: str = os.getenv("CUSTOMER_OTP_CHANNEL", "console")
+    CUSTOMER_OTP_TTL_SECONDS: int = int(os.getenv("CUSTOMER_OTP_TTL_SECONDS", "300"))
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
     CASHFREE_WEBHOOK_SECRET: str | None = os.getenv("CASHFREE_WEBHOOK_SECRET")

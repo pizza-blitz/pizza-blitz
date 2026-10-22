@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 102 backend tests, 127 browser proof scripts, a backend Ruff
+- Automation: 106 backend tests, 128 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -94,12 +94,21 @@ Wave 3 (in progress):
   uploaded images on the landing page. Files are served from `/media` through a
   Next rewrite; `MEDIA_ROOT` selects the storage directory.
 - New `verify:menu-media` browser proof and four backend tests; W3 is complete.
-- Next: W4 (loyalty/referrals, OTP customer auth, saved addresses, rider app,
-  custom reports, 2FA/granular permissions, multi-store, aggregators, accounting).
+
+Wave 4 (in progress):
+
+- Customer OTP login: six-digit hashed codes with five-minute expiry, attempt
+  limits and rate limits; delivered via SMS/WhatsApp/console. Phone-only
+  `/auth/customer/login` now returns 401 and requires a matching recent order.
+- Account login page has "One-time code" and "Order details" tabs; the Next
+  session route sets the customer cookie after backend OTP verification.
+- New `verify:customer-otp` browser proof and four backend tests.
+- Next: saved addresses, loyalty/referrals, rider app, custom reports,
+  2FA/permissions, multi-store, aggregators, accounting.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 102 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 106 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

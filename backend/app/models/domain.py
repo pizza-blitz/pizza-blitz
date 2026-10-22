@@ -449,6 +449,18 @@ class OrderNotification(Base):
     sent_at = Column(DateTime, nullable=True)
     order = relationship("RestaurantOrder", back_populates="notifications")
 
+
+class CustomerOtp(Base):
+    __tablename__ = "customer_otps"
+    id = Column(Integer, primary_key=True, index=True)
+    phone = Column(String(30), index=True, nullable=False)
+    code_hash = Column(String(128), nullable=False)
+    channel = Column(String(20), nullable=False, default="sms")
+    attempts = Column(Integer, nullable=False, default=0)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
 class PaymentEventAudit(Base):
     __tablename__ = "payment_event_audits"
     id = Column(Integer, primary_key=True, index=True)

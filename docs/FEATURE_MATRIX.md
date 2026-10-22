@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **220 API endpoints**, **38 routes/pages** (29 portal,
-1 KDS, 8 public), **127 browser proof scripts**, **102 backend tests**, **40
+Numbers in this snapshot: **222 API endpoints**, **38 routes/pages** (29 portal,
+1 KDS, 8 public), **128 browser proof scripts**, **106 backend tests**, **41
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -44,7 +44,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons and offers | Validate/apply server-side, promotion engine | Built | Public offers page, auto-apply best offer | Offers surface on landing page missing |
 | Pickup / delivery | Delivery quote by zone, fees, minimums, ETAs | Built | Address autocomplete + geocoding | Keyword zones only |
 | Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No live rider map |
-| Customer account | Phone + recent order login, order history, profile/consent | Built | Password/OTP, saved addresses, saved payments | No OTP/password, weak proof of identity |
+| Customer account | OTP login (or phone + recent order), order history, profile/consent | Built | Password/OTP, saved addresses, saved payments | Saved addresses/payments missing |
 | Scheduled orders | 15-minute slots up to 14 days ahead, capacity-checked, validated against opening hours, stored on the order and shown in tracking/POS/kitchen/receipt | Built | Order for later time/date, slot capacity | Slot capacity is fixed at 6; no per-day holiday calendar |
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
 | Tips | Preset/custom tip at checkout and POS, persisted on the order, included in totals/receipts, tips summary API | Built | Preset/custom tip, tip reporting | Tip pooling and payout missing |
@@ -145,7 +145,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Loyalty | — | Missing | Points, tiers, rewards, referrals | Must build |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
 | Feedback / NPS / reviews | — | Missing | Post-order feedback, review routing | Must build |
-| Customer auth | Phone + recent order id | Partial | OTP login, saved sessions | OTP must build |
+| Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id | Built | OTP login, saved sessions | Saved addresses missing |
 
 ## 9. Marketing, communications, social, ads
 
@@ -203,7 +203,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Authentication | Admin/staff/customer sessions, HMAC cookies, rate limits | Built | 2FA, SSO, OTP | 2FA/SSO missing |
+| Authentication | Admin/staff/customer sessions, HMAC cookies, rate limits, customer OTP | Built | 2FA, SSO, OTP | 2FA/SSO missing |
 | Roles | admin / staff / customer | Built | Granular permission sets | Partial |
 | Audit | Operational audit events, payment events | Built | Full audit log search/export | Partial |
 | Backups | Run tracking, logical proof, restore rehearsal | Built | Automated schedule + offsite | Partial |
@@ -283,6 +283,14 @@ rewrite so the frontend can render them. Admin thumbnails, customer catalog and
 landing previews use the uploaded image when present and fall back to curated
 imagery otherwise. Covered by four backend tests and `verify:menu-media`.
 
+W4 measured results (customer OTP): customer sign-in now requires either a
+six-digit OTP or phone + matching recent order. Codes are hashed, expire in five
+minutes, allow five attempts, are rate limited, and are never returned in
+production. Phone-only `/auth/customer/login` now returns 401. The account login
+page has OTP and order-detail tabs, and the Next session route mints the customer
+cookie after backend verification. Covered by four backend tests and
+`verify:customer-otp`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -327,7 +335,9 @@ imagery otherwise. Covered by four backend tests and `verify:menu-media`.
 ### P1 — enterprise depth
 
 11. Loyalty points/tiers and referrals.
-12. Customer OTP login + saved addresses.
+12. ~~**Customer OTP login**~~ — done in W4: six-digit hashed codes, expiry,
+    attempt limits, rate limits, SMS/WhatsApp/console delivery, and OTP/order
+    tabs on the login page. Saved addresses remain next.
 13. Split tender / partial payments; gift cards and store credit.
 14. Rider app/PWA with GPS and proof of delivery.
 15. Custom report builder + scheduled email reports.
@@ -354,7 +364,7 @@ imagery otherwise. Covered by four backend tests and `verify:menu-media`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (next) | Loyalty/referrals, OTP customer auth, saved addresses, rider app/GPS, custom reports, 2FA/granular permissions, multi-store, aggregators, accounting | Public + account proofs |
+| W4 (in progress) | Customer OTP login (done); saved addresses, loyalty/referrals, rider app/GPS, custom reports, 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

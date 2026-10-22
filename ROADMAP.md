@@ -147,10 +147,11 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Dedicated KDS device view with timers, bump/recall and sound.
 - [x] Order status notifications (confirmation, ready, out for delivery, delivered).
 - [x] Menu media library (upload, alt text, responsive images).
-### Wave 4 (next)
+### Wave 4 (in progress)
 
+- [x] Customer OTP authentication.
+- [ ] Saved addresses.
 - [ ] Loyalty and referrals.
-- [ ] OTP customer authentication and saved addresses.
 - [ ] Rider app with GPS and proof of delivery.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

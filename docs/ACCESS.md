@@ -9,7 +9,7 @@ Start the backend on `8010` and the frontend on `3011`, then open
 |---|---|---|---|---|
 | Master admin | `admin` | `admin123` | `/dashboard` | Every portal page: dashboard, POS, kitchen, menu, inventory, purchase orders, customers, marketing, reports, finance, ops, store profile, settings |
 | Counter staff | `staff` | `staff123` | `/orders` | Quick Counter, POS (Orders), Kitchen Ops, receipts and kitchen tickets |
-| Customer | phone number + a recent order ID | none (proof-based) | `/account` | Own order history, profile and consent |
+| Customer | phone number + one-time code (or a recent order ID) | none (OTP/proof-based) | `/account` | Own order history, profile and consent |
 
 These are the **development defaults** from `backend/app/core/config.py` and
 `frontend/src/app/api/admin-session/route.ts`. They work because
@@ -17,9 +17,17 @@ These are the **development defaults** from `backend/app/core/config.py` and
 
 ### Customer login
 
-Customers sign in at `/account/login` with the phone number used on an order and
-that order's ID. The backend verifies the pair before issuing a customer session;
-there is intentionally no shared customer password.
+Customers sign in at `/account/login` with either:
+
+- a **one-time code** sent to their phone (6 digits, 5-minute expiry, 5 attempts),
+  or
+- the **phone number + a recent order ID** from their receipt.
+
+The backend verifies the code or the order proof before the Next session route
+issues the customer cookie. Phone-only login is rejected. In local development
+the OTP channel defaults to `console`, so the code appears on screen as a
+"Development code"; set `CUSTOMER_OTP_CHANNEL=sms` or `whatsapp` and configure
+the provider for real delivery.
 
 ## Production credentials (required)
 

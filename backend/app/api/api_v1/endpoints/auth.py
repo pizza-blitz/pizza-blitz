@@ -7,8 +7,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_session, get_db, require_roles
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
-from app.models.domain import Customer
+from app.models.domain import Customer, RestaurantOrder
 from app.services.operational_audit_service import record_operational_audit_event
+from app.services.customer_otp_service import (
+    OtpError,
+    normalize_phone,
+    request_customer_otp,
+    verify_customer_otp,
+)
 from app.services.auth_service import (
     create_access_token,
     has_managed_admin_credentials,
@@ -55,6 +61,16 @@ class CustomerLoginRequest(BaseModel):
     phone: str
     name: str | None = None
     email: EmailStr | None = None
+    order_id: int | None = None
+
+
+class CustomerOtpRequest(BaseModel):
+    phone: str
+
+
+class CustomerOtpVerify(BaseModel):
+    phone: str
+    code: str
 
 
 @router.post("/admin/login")
@@ -314,19 +330,78 @@ def verify_staff_for_portal(payload: StaffLoginRequest, request: Request, db: Se
     )
 
 
+@router.post("/customer/otp/request")
+def request_customer_login_otp(
+    payload: CustomerOtpRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(request, "customer-otp", 5)
+    try:
+        return request_customer_otp(db, payload.phone)
+    except OtpError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/customer/otp/verify")
+def verify_customer_login_otp(
+    payload: CustomerOtpVerify,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(request, "customer-otp-verify", 10)
+    try:
+        customer = verify_customer_otp(db, payload.phone, payload.code)
+    except OtpError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
+        ) from exc
+
+    return create_access_token(
+        subject=f"customer:{customer.id}",
+        role="customer",
+        display_name=customer.name or "Pizza Guest",
+        phone=customer.phone,
+        email=customer.email,
+        expires_minutes=settings.CUSTOMER_TOKEN_EXPIRE_MINUTES,
+    )
+
+
 @router.post("/customer/login")
 def customer_login(payload: CustomerLoginRequest, request: Request, db: Session = Depends(get_db)):
     enforce_rate_limit(request, "auth-login", 30)
-    phone = payload.phone.strip()
-    if not phone:
-        raise HTTPException(status_code=422, detail="Phone number is required.")
+    try:
+        phone = normalize_phone(payload.phone)
+    except OtpError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not payload.order_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sign in with a one-time verification code or a recent order ID.",
+        )
+
+    order = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.id == payload.order_id)
+        .first()
+    )
+    order_phone = ""
+    if order is not None:
+        try:
+            order_phone = normalize_phone(order.customer_phone)
+        except OtpError:
+            order_phone = ""
+    if order is None or order_phone != phone:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Phone number and order ID do not match.",
+        )
 
     customer = db.query(Customer).filter(Customer.phone == phone).first()
     if customer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No customer profile found for this phone number.",
-        )
+        customer = Customer(phone=phone, total_orders=0, total_spend=0.0)
+        db.add(customer)
 
     if payload.name and payload.name.strip():
         customer.name = payload.name.strip()

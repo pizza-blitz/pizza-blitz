@@ -41,6 +41,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
   const phone = String(payload.phone || "").trim();
+  const otp = String(payload.otp || payload.code || "").trim();
   const proofOrderId = Number(
     String(payload.order_id || payload.orderId || payload.last_order_id || "").trim()
   );
@@ -50,9 +51,61 @@ export async function POST(request: Request) {
       { status: 422 }
     );
   }
+
+  if (otp) {
+    const verifyResponse = await fetch(
+      getServerApiUrl("/api/v1/auth/customer/otp/verify"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, code: otp }),
+        cache: "no-store",
+      }
+    );
+    const verified = await verifyResponse.json().catch(() => ({}));
+    if (!verifyResponse.ok) {
+      return NextResponse.json(
+        { detail: verified.detail || "That verification code is not valid." },
+        { status: verifyResponse.status }
+      );
+    }
+
+    const verifiedPhone = String(verified.phone || phone);
+    const maxAge = maxAgeForRole("customer");
+    const token = await createSessionToken(
+      {
+        role: "customer",
+        subject: `customer:${verifiedPhone}`,
+        displayName: verified.display_name || "Pizza Guest",
+        phone: verifiedPhone,
+        email: verified.email || null,
+      },
+      maxAge
+    );
+    const response = NextResponse.json({
+      ok: true,
+      role: "customer",
+      customer: {
+        phone: verifiedPhone,
+        name: verified.display_name || "Pizza Guest",
+        email: verified.email || null,
+      },
+    });
+    response.cookies.set({
+      name: CUSTOMER_COOKIE,
+      value: token,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge,
+    });
+    return response;
+  }
+
   if (!Number.isInteger(proofOrderId) || proofOrderId <= 0) {
     return NextResponse.json(
-      { detail: "Recent order ID is required to open customer order history." },
+      { detail: "Enter the verification code or a recent order ID." },
       { status: 422 }
     );
   }
