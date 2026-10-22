@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **208 API endpoints**, **37 routes/pages** (29 portal,
-8 public), **120 browser proof scripts**, **70 backend tests**, **38 database
+8 public), **121 browser proof scripts**, **77 backend tests**, **38 database
 tables**, **19 integration points**.
 
 ## Benchmark set
@@ -45,7 +45,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Pickup / delivery | Delivery quote by zone, fees, minimums, ETAs | Built | Address autocomplete + geocoding | Keyword zones only |
 | Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No push/SMS/WhatsApp status events |
 | Customer account | Phone + recent order login, order history, profile/consent | Built | Password/OTP, saved addresses, saved payments | No OTP/password, weak proof of identity |
-| Scheduled orders | — | Missing | Order for later time/date, slot capacity | Must build |
+| Scheduled orders | 15-minute slots up to 14 days ahead, capacity-checked, validated against opening hours, stored on the order and shown in tracking/POS/kitchen/receipt | Built | Order for later time/date, slot capacity | Slot capacity is fixed at 6; no per-day holiday calendar |
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
 | Tips | — | Missing | Preset/custom tip at checkout, tip reporting | Must build |
 | Order notifications | — | Missing | Confirmation, ready, out-for-delivery, delivered via WhatsApp/SMS/email | Must build |
@@ -242,8 +242,11 @@ W2 measured results: the store profile and opening hours are now database-backed
 and editable at `/settings/store`; the public profile, landing page metadata,
 JSON-LD, checkout readiness, and order creation all read the same source.
 Pausing online ordering returns HTTP 503 on order creation and shows an
-"Ordering paused" banner at `/order`. Covered by 8 backend tests and a new
-browser proof (`verify:store-profile`).
+"Ordering paused" banner at `/order`. Scheduled orders use 15-minute slots up to
+14 days ahead, enforce opening hours and a six-order slot capacity, and show the
+scheduled time in checkout, tracking, POS cards, kitchen cards, tickets and
+receipts. Covered by 17 backend tests and two new browser proofs
+(`verify:store-profile`, `verify:scheduled-orders`).
 
 ---
 
@@ -260,7 +263,9 @@ browser proof (`verify:store-profile`).
 4. ~~**Store hours + online ordering controls**~~ — done in W2: weekly hours
    (including overnight windows), pause toggle with customer message, prep time,
    public status, and checkout/order enforcement.
-5. **Scheduled orders** — pickup/delivery time slots with capacity checks.
+5. ~~**Scheduled orders**~~ — done in W2: 15-minute pickup/delivery slots up to
+   14 days ahead, capacity-checked and validated against opening hours, with the
+   time surfaced in checkout, tracking, POS, kitchen cards, tickets and receipts.
 6. **Tips** — checkout + POS capture, reporting, payout view.
 7. **Refunds and voids** — full/partial refund, reason, audit trail, gateway call.
 8. **Dedicated KDS** — full-screen station view, item bump/recall, timers, sound.
@@ -299,7 +304,7 @@ browser proof (`verify:store-profile`).
 | Wave | Contents | Exit criteria |
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
-| W2 (in progress) | Store profile + weekly hours/order pause + prep time (done); scheduled orders, tips, dense-page tap targets (next) | Backend tests + proof scripts for each |
+| W2 (in progress) | Store profile + weekly hours/order pause + prep time (done); scheduled orders with slot capacity (done); tips and dense-page tap targets (next) | Backend tests + proof scripts for each |
 | W3 | Refunds/voids, KDS device view, notifications | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |

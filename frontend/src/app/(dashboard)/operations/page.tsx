@@ -67,6 +67,8 @@ type Order = {
     next_action?: string | null;
   } | null;
   eta_window?: string | null;
+  scheduled_for?: string | null;
+  scheduled_label?: string | null;
   address_validation?: AddressValidation | null;
   requires_address_review?: boolean;
   delivery_next_action?: string | null;
@@ -598,6 +600,8 @@ type DeliveryQueueOrder = {
   delivery_fee?: number | string | null;
   assignment?: NonNullable<Order["delivery_assignment"]> | null;
   eta_window?: string | null;
+  scheduled_for?: string | null;
+  scheduled_label?: string | null;
   address_validation?: AddressValidation | null;
   requires_address_review?: boolean;
   next_action?: string;
@@ -1024,6 +1028,8 @@ export default function OperationsPage() {
           delivery_fee: Number(queueOrder.delivery_fee ?? order.delivery_fee ?? 0),
           delivery_assignment: queueOrder.assignment ?? order.delivery_assignment,
           eta_window: queueOrder.eta_window ?? order.eta_window,
+          scheduled_for: order.scheduled_for,
+          scheduled_label: order.scheduled_label,
           address_validation: queueOrder.address_validation ?? null,
           requires_address_review: Boolean(queueOrder.requires_address_review),
           delivery_next_action: queueOrder.next_action,
@@ -1043,6 +1049,8 @@ export default function OperationsPage() {
           delivery_fee: Number(queueOrder.delivery_fee || 0),
           delivery_assignment: queueOrder.assignment ?? null,
           eta_window: queueOrder.eta_window ?? null,
+          scheduled_for: null,
+          scheduled_label: null,
           address_validation: queueOrder.address_validation ?? null,
           requires_address_review: Boolean(queueOrder.requires_address_review),
           delivery_next_action: queueOrder.next_action,
@@ -2902,6 +2910,12 @@ export default function OperationsPage() {
                       <TimerReset className="h-3.5 w-3.5" />
                       {ageLabel(order.created_at)}
                     </span>
+                    {order.scheduled_label && (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-black text-amber-800">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        Due {order.scheduled_label}
+                      </span>
+                    )}
                     {order.eta_window && (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500">
                         <Clock3 className="h-3.5 w-3.5" />

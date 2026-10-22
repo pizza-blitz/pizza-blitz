@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -146,6 +147,20 @@ type StorefrontBootstrap = {
   delivery_zones: DeliveryZone[];
 };
 
+type ScheduledSlot = {
+  value: string;
+  label: string;
+  available: boolean;
+  remaining: number;
+};
+
+function localDateValue(offsetDays = 0) {
+  const target = new Date();
+  target.setDate(target.getDate() + offsetDays);
+  const month = String(target.getMonth() + 1).padStart(2, "0");
+  const day = String(target.getDate()).padStart(2, "0");
+  return `${target.getFullYear()}-${month}-${day}`;
+}
 type PublicPaymentCheckout = {
   cash_available: boolean;
   prepaid_available: boolean;
@@ -285,7 +300,52 @@ export default function PublicOrderPage() {
   const [isStartingGatewayPayment, setIsStartingGatewayPayment] = useState(false);
   const [isQuotingDelivery, setIsQuotingDelivery] = useState(false);
   const [isCheckoutVisible, setIsCheckoutVisible] = useState(false);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(localDateValue(1));
+  const [scheduledSlots, setScheduledSlots] = useState<ScheduledSlot[]>([]);
+  const [scheduledSlot, setScheduledSlot] = useState("");
+  const [scheduledLabel, setScheduledLabel] = useState("");
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [confirmedSchedule, setConfirmedSchedule] = useState<string | null>(null);
   const checkoutRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!scheduleEnabled || !scheduleDate) return;
+    let active = true;
+    const loadSlots = async () => {
+      setIsLoadingSlots(true);
+      try {
+        const response = await fetch(
+          getApiUrl(
+            `/api/v1/restaurant/orders/scheduled-slots?date=${encodeURIComponent(scheduleDate)}`
+          )
+        );
+        const data = await response.json();
+        if (!active) return;
+        if (!response.ok) throw new Error(data.detail || "Could not load scheduled times.");
+        setScheduledSlots(Array.isArray(data.slots) ? data.slots : []);
+        setScheduledSlot((current) =>
+          data.slots?.some(
+            (slot: ScheduledSlot) => slot.value === current && slot.available
+          )
+            ? current
+            : ""
+        );
+      } catch (error) {
+        if (!active) return;
+        setScheduledSlots([]);
+        setMessage(
+          error instanceof Error ? error.message : "Could not load scheduled times."
+        );
+      } finally {
+        if (active) setIsLoadingSlots(false);
+      }
+    };
+    void loadSlots();
+    return () => {
+      active = false;
+    };
+  }, [scheduleEnabled, scheduleDate]);
 
   useEffect(() => {
     const linkedCoupon = new URLSearchParams(window.location.search).get("coupon");
@@ -613,7 +673,10 @@ export default function PublicOrderPage() {
       !isQuotingDelivery);
   const paymentReady = paymentMethod === "cash" || paymentMethod === "prepaid";
   const canSubmitOrder =
-    Boolean(checkoutReadiness?.accepting_orders) &&
+    (Boolean(checkoutReadiness?.accepting_orders) ||
+      (scheduleEnabled &&
+        Boolean(scheduledSlot) &&
+        checkoutReadiness?.store_status?.state !== "paused")) &&
     Boolean(cart.length) &&
     contactReady &&
     fulfillmentReady &&
@@ -891,8 +954,20 @@ export default function PublicOrderPage() {
 
   const placeOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!checkoutReadiness?.accepting_orders) {
+    const scheduling = scheduleEnabled && Boolean(scheduledSlot);
+    if (
+      !checkoutReadiness?.accepting_orders &&
+      !scheduling
+    ) {
       setMessage(checkoutReadiness?.message || "Online ordering is temporarily unavailable.");
+      return;
+    }
+    if (checkoutReadiness?.store_status?.state === "paused" && scheduling) {
+      setMessage(checkoutReadiness?.message || "Online ordering is paused right now.");
+      return;
+    }
+    if (scheduleEnabled && !scheduledSlot) {
+      setMessage("Choose a scheduled date and time.");
       return;
     }
     if (!cart.length) {
@@ -923,6 +998,7 @@ export default function PublicOrderPage() {
     }
 
     setIsSubmitting(true);
+    setConfirmedSchedule(null);
     const response = await fetch(ORDER_API, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -937,6 +1013,7 @@ export default function PublicOrderPage() {
         coupon_code: coupon ? coupon.promotion.code || couponCode : null,
         delivery_address: address,
         delivery_zone_id: selectedDeliveryZoneId,
+        scheduled_for: scheduling ? scheduledSlot : null,
         notes: [
           `Customer website order`,
           `Fulfillment: ${orderType}`,
@@ -1018,10 +1095,14 @@ export default function PublicOrderPage() {
         sessionStatus: paymentSession.status,
         message: paymentSession.message,
       });
+      const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
+      setConfirmedSchedule(scheduleText);
       setMessage(
-        paymentSession.provider === "manual"
-          ? `Order #${orderId} created. Payment is pending until the store team verifies it.`
-          : `Order #${orderId} created. Continue to online payment.`
+        scheduleText
+          ? `Order #${orderId} ${scheduleText.toLowerCase()}. Continue to online payment.`
+          : paymentSession.provider === "manual"
+            ? `Order #${orderId} created. Payment is pending until the store team verifies it.`
+            : `Order #${orderId} created. Continue to online payment.`
       );
     } else {
       const orderId = createdOrderId;
@@ -1031,7 +1112,13 @@ export default function PublicOrderPage() {
       setCouponCode("");
       setQueuedCouponCode("");
       setPendingPayment(null);
-      setMessage(`Order #${orderId} placed. Estimated ${eta}.`);
+      const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
+      setConfirmedSchedule(scheduleText);
+      setMessage(
+        scheduleText
+          ? `Order #${orderId} ${scheduleText.toLowerCase()}.`
+          : `Order #${orderId} placed. Estimated ${eta}.`
+      );
     }
   };
 
@@ -1525,6 +1612,14 @@ export default function PublicOrderPage() {
                     View receipt
                   </Link>
                 </div>
+                {confirmedSchedule && (
+                  <p
+                    data-testid="order-scheduled-confirmation"
+                    className="mt-3 flex items-center gap-2 rounded-md border border-green-200 bg-white px-3 py-2 text-xs font-black text-green-900"
+                  >
+                    <CalendarClock className="h-4 w-4" /> {confirmedSchedule}
+                  </p>
+                )}
               </div>
             )}
 
@@ -1703,6 +1798,87 @@ export default function PublicOrderPage() {
                   Fee and ETA are checked from address and zone before order.
                 </p>
               </div>
+            </div>
+
+            <div
+              data-testid="customer-schedule-order"
+              className="mb-5 rounded-md border border-slate-200 p-4"
+            >
+              <label className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-sm font-black text-slate-900">
+                  <CalendarClock className="h-4 w-4 text-red-700" /> Schedule for later
+                </span>
+                <input
+                  type="checkbox"
+                  aria-label="Schedule for later"
+                  checked={scheduleEnabled}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    setScheduleEnabled(enabled);
+                    setMessage("");
+                    if (!enabled) {
+                      setScheduledSlot("");
+                      setScheduledLabel("");
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+              </label>
+              {scheduleEnabled && (
+                <div className="mt-3 space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Date
+                      <input
+                        aria-label="Scheduled date"
+                        type="date"
+                        min={localDateValue(0)}
+                        max={localDateValue(14)}
+                        value={scheduleDate}
+                        onChange={(event) => {
+                          setScheduleDate(event.target.value);
+                          setScheduledSlot("");
+                          setScheduledLabel("");
+                        }}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-600"
+                      />
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      Time
+                      <select
+                        aria-label="Scheduled time"
+                        value={scheduledSlot}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          const slot = scheduledSlots.find((entry) => entry.value === value);
+                          setScheduledSlot(value);
+                          setScheduledLabel(slot?.label || "");
+                          setMessage("");
+                        }}
+                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-600"
+                      >
+                        <option value="">
+                          {isLoadingSlots
+                            ? "Loading times..."
+                            : scheduledSlots.length
+                              ? "Choose a time"
+                              : "No slots available"}
+                        </option>
+                        {scheduledSlots.map((slot) => (
+                          <option key={slot.value} value={slot.value} disabled={!slot.available}>
+                            {slot.label}
+                            {slot.available ? "" : " (full)"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500">
+                    Times are shown in the store timezone. You can book ahead even while the
+                    kitchen is closed; the store confirms the order when it reopens.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div data-testid="customer-cart-summary" className="mb-5 space-y-3">
@@ -1959,9 +2135,11 @@ export default function PublicOrderPage() {
                 <CreditCard className="h-5 w-5" />
                 {isSubmitting
                   ? "Placing Order"
-                  : checkoutReadiness?.accepting_orders
-                    ? "Place Order"
-                    : "Ordering Activating"}
+                  : scheduleEnabled && scheduledSlot
+                    ? "Schedule Order"
+                    : checkoutReadiness?.accepting_orders
+                      ? "Place Order"
+                      : "Ordering Activating"}
               </button>
             </div>
           </form>

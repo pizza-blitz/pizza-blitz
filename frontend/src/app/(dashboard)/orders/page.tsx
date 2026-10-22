@@ -3,6 +3,7 @@
 import { type ComponentType, useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  CalendarClock,
   CheckCircle2,
   Clock,
   CreditCard,
@@ -148,6 +149,8 @@ type Order = {
     delivered_at?: string | null;
   } | null;
   eta_window?: string | null;
+  scheduled_for?: string | null;
+  scheduled_label?: string | null;
   payment_due?: boolean;
   table_number?: string | null;
   customer_name?: string | null;
@@ -1818,7 +1821,7 @@ export default function OrdersPage() {
                         <Globe2 className="h-3 w-3" /> Online
                       </span>
                     )}
-                    {order.eta_window && (
+                    {order.eta_window && !order.scheduled_label && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1 text-xs font-bold text-gray-400">
                         <Clock className="h-3 w-3" /> {order.eta_window}
                       </span>
@@ -1826,6 +1829,14 @@ export default function OrdersPage() {
                     {order.delivery_assignment?.assigned_to && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-3 py-1 text-xs font-black text-green-300">
                         <Truck className="h-3 w-3" /> {order.delivery_assignment.assigned_to}
+                      </span>
+                    )}
+                    {order.scheduled_label && (
+                      <span
+                        data-testid={`counter-order-scheduled-${order.id}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300"
+                      >
+                        <CalendarClock className="h-3 w-3" /> Scheduled · {order.scheduled_label}
                       </span>
                     )}
                     {order.payment_due && (

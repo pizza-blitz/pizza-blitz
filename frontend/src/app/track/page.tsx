@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  CalendarClock,
   Check,
   Clock,
   CreditCard,
@@ -64,6 +65,8 @@ type TrackedOrder = {
   payment_confirmed_at?: string | null;
   status: string;
   eta_window: string;
+  scheduled_for?: string | null;
+  scheduled_label?: string | null;
   next_action: string;
   tracking_steps: TrackingStep[];
   created_at?: string | null;
@@ -284,6 +287,14 @@ export default function TrackOrderPage() {
                   {placedAt && (
                     <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
                       <Clock className="h-4 w-4" /> {placedAt}
+                    </p>
+                  )}
+                  {order.scheduled_label && (
+                    <p
+                      data-testid="track-scheduled-time"
+                      className="mt-2 inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-black text-amber-900"
+                    >
+                      <CalendarClock className="h-4 w-4" /> Scheduled for {order.scheduled_label}
                     </p>
                   )}
                 </div>

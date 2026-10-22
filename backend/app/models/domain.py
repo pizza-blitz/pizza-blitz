@@ -401,6 +401,7 @@ class RestaurantOrder(Base):
     payment_confirmed_at = Column(DateTime, nullable=True)
     status = Column(String(20), default="open")
     notes = Column(String, nullable=True)
+    scheduled_for = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     closed_at = Column(DateTime, nullable=True)
     delivery_assignment = relationship("DeliveryAssignment", back_populates="order", uselist=False)

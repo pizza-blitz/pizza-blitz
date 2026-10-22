@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import date, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
@@ -43,6 +43,17 @@ from app.services.operational_audit_service import (
     serialize_operational_audit_event,
 )
 from app.services.store_profile_service import get_store_profile, store_status
+from app.services.scheduling_service import (
+    DAYS_AHEAD,
+    LEAD_MINUTES,
+    SLOT_CAPACITY,
+    SLOT_MINUTES,
+    assert_slot_available,
+    parse_scheduled_for,
+    scheduled_label,
+    slots_for_date,
+    to_business_iso,
+)
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -167,6 +178,7 @@ class OrderCreate(BaseModel):
     delivery_address: Optional[str] = None
     delivery_zone_id: Optional[int] = None
     notes: Optional[str] = None
+    scheduled_for: Optional[datetime] = None
 
 
 class PaymentConfirmation(BaseModel):
@@ -303,6 +315,8 @@ def serialize_order(order: RestaurantOrder) -> dict:
         ),
         "status": order.status,
         "notes": order.notes,
+        "scheduled_for": to_business_iso(order.scheduled_for),
+        "scheduled_label": scheduled_label(order.scheduled_for),
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "closed_at": order.closed_at.isoformat() if order.closed_at else None,
     }
@@ -344,6 +358,10 @@ def order_eta_window(order: RestaurantOrder) -> str:
         return "Cancelled"
     if order.status == "closed":
         return "Completed"
+    if order.scheduled_for and order.status == "open":
+        label = scheduled_label(order.scheduled_for)
+        if label:
+            return f"Scheduled · {label}"
     assignment_status = (
         (order.delivery_assignment.status or "").lower()
         if order.delivery_assignment
@@ -1795,12 +1813,41 @@ def checkout_readiness(db: Session = Depends(get_db)):
     return checkout_readiness_payload(db)
 
 
+@router.get("/scheduled-slots")
+def scheduled_slots(
+    target_date: str = Query(alias="date"),
+    db: Session = Depends(get_db),
+):
+    try:
+        parsed_date = date.fromisoformat(target_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Use a YYYY-MM-DD date.") from exc
+    profile = get_store_profile(db)
+    try:
+        slots = slots_for_date(db, profile, parsed_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "date": parsed_date.isoformat(),
+        "timezone": settings.RESTAURANT_TIMEZONE,
+        "slot_minutes": SLOT_MINUTES,
+        "lead_minutes": LEAD_MINUTES,
+        "days_ahead": DAYS_AHEAD,
+        "capacity": SLOT_CAPACITY,
+        "slots": slots,
+    }
+
+
 @router.post("/")
 def create_order(order: OrderCreate, request: Request, db: Session = Depends(get_db)):
     enforce_rate_limit(request, "order-create", 120)
     checkout_readiness = checkout_readiness_payload(db)
     if not checkout_readiness["accepting_orders"]:
-        raise HTTPException(status_code=503, detail=checkout_readiness["message"])
+        store_state = checkout_readiness.get("store_status") or {}
+        # A closed store can still accept orders for later, but a paused store
+        # blocks both immediate and scheduled ordering.
+        if order.scheduled_for is None or store_state.get("state") == "paused":
+            raise HTTPException(status_code=503, detail=checkout_readiness["message"])
 
     valid_items = normalize_order_items(db, order.items)
     if not valid_items:
@@ -1808,6 +1855,19 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
 
     if order.order_type == "dine-in" and not order.table_number:
         raise HTTPException(status_code=422, detail="Dine-in orders require a table number.")
+
+    scheduled_for = None
+    if order.scheduled_for is not None:
+        if (order.order_type or "").lower() == "dine-in":
+            raise HTTPException(
+                status_code=422, detail="Dine-in orders cannot be scheduled for later."
+            )
+        try:
+            scheduled_for = parse_scheduled_for(order.scheduled_for, get_store_profile(db))
+            if scheduled_for is not None:
+                assert_slot_available(db, scheduled_for)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if order.table_number:
         table = db.query(DiningTable).filter(
@@ -1887,6 +1947,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         payment_method=payment_method,
         payment_status=payment_status,
         notes=notes,
+        scheduled_for=scheduled_for,
     )
     db.add(row)
     db.flush()
@@ -1923,6 +1984,8 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         "status": row.status,
         "payment_status": row.payment_status,
         "coupon_code": applied_promo.code if applied_promo else None,
+        "scheduled_for": to_business_iso(scheduled_for),
+        "scheduled_label": scheduled_label(scheduled_for),
     }
 
 

@@ -137,6 +137,6 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 
 - [x] Store profile settings (name, address, phone, hours, socials) editable in admin and rendered on the landing page.
 - [x] Store hours + online ordering pause/capacity controls.
-- [ ] Scheduled pickup/delivery orders with slot capacity.
+- [x] Scheduled pickup/delivery orders with slot capacity.
 - [ ] Tips at checkout and POS, with reporting.
 - [ ] Dense-page tap targets and table-to-card mobile layouts.

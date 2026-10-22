@@ -40,6 +40,8 @@ type KitchenTicketOrder = {
   delivery_address?: string | null;
   delivery_zone?: string | null;
   eta_window?: string | null;
+  scheduled_for?: string | null;
+  scheduled_label?: string | null;
   status: string;
   payment_method?: string | null;
   notes?: string | null;
@@ -354,6 +356,9 @@ export default function KitchenTicketPage() {
               <TicketInfo label="Phone" value={order.customer_phone || "Not provided"} />
               <TicketInfo label="Payment" value={titleCase(order.payment_method)} />
               <TicketInfo label="ETA" value={order.eta_window || "Standard"} />
+              {order.scheduled_label ? (
+                <TicketInfo label="Scheduled For" value={order.scheduled_label} />
+              ) : null}
             </section>
 
             {order.delivery_address && (

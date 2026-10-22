@@ -45,6 +45,8 @@ type Order = {
   payment_reference?: string | null;
   status: string;
   notes?: string | null;
+  scheduled_for?: string | null;
+  scheduled_label?: string | null;
   created_at?: string | null;
   closed_at?: string | null;
 };
@@ -251,6 +253,9 @@ export default function ReceiptPage() {
               <ReceiptInfo label="Order" value={`#${order.id}`} />
               <ReceiptInfo label="Date" value={formatDate(order.created_at) || order.date || ""} />
               <ReceiptInfo label="Fulfillment" value={titleCase(order.order_type)} />
+              {order.scheduled_label ? (
+                <ReceiptInfo label="Scheduled For" value={order.scheduled_label} />
+              ) : null}
               <ReceiptInfo label="Table" value={order.table_number || "Counter"} />
               <ReceiptInfo label="Customer" value={order.customer_name || "Walk-in Customer"} />
               <ReceiptInfo label="Phone" value={order.customer_phone || "Not provided"} />

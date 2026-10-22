@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 70 backend tests, 120 browser proof scripts, a backend Ruff
+- Automation: 77 backend tests, 121 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -59,11 +59,16 @@ Wave 2 (in progress):
   same profile. Paused or closed stores return HTTP 503 and show a customer
   banner instead of accepting orders.
 - New `verify:store-profile` browser proof and eight backend tests.
-- Still next in W2: scheduled orders, tips, and dense-page mobile polish.
+- Scheduled pickup/delivery orders: 15-minute slots up to 14 days ahead,
+  capacity-checked, validated against opening hours, and shown in checkout,
+  tracking, POS, kitchen cards, tickets and receipts. Closed stores still accept
+  future orders; paused stores do not.
+- New `verify:scheduled-orders` browser proof and seven backend tests.
+- Still next in W2: tips and dense-page mobile polish.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 70 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 77 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

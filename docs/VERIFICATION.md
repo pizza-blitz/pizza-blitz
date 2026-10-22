@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 70 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 77 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -124,6 +124,17 @@ windows; `null` hours mean "24/7 until configured", while an empty map means
 the resulting state, and order creation returns HTTP 503 while paused/closed.
 Covered by `backend/tests/test_store_profile.py` and
 `frontend/e2e/verify-store-profile.cjs`.
+
+## Scheduled orders
+
+`GET /api/v1/restaurant/orders/scheduled-slots?date=YYYY-MM-DD` returns
+15-minute slots for the next 14 days, capacity-checked at six orders per slot.
+`POST /api/v1/restaurant/orders/` accepts `scheduled_for` with an ISO timestamp;
+the backend converts it to the restaurant timezone, validates the slot, opening
+hours and lead time, then stores naive UTC in `orders.scheduled_for`. Scheduled
+orders are allowed while the store is closed but not while online ordering is
+paused. Covered by `backend/tests/test_scheduled_orders.py` and
+`frontend/e2e/verify-scheduled-orders.cjs`.
 
 ## Health endpoints
 
