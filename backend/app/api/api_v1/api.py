@@ -13,7 +13,7 @@ api_router.include_router(daily.router, prefix="/restaurant/sales", tags=["sales
 api_router.include_router(menu.router, prefix="/restaurant/menu", tags=["menu"])
 api_router.include_router(expenses.router, prefix="/restaurant/expenses", tags=["expenses"])
 api_router.include_router(insights.router, prefix="/restaurant/insights", tags=["insights"], dependencies=admin_only)
-api_router.include_router(reports.router, prefix="/restaurant/reports", tags=["reports"], dependencies=admin_only)
+api_router.include_router(reports.router, prefix="/restaurant/reports", tags=["reports"])
 api_router.include_router(purchase_orders.router, prefix="/restaurant/purchase-orders", tags=["purchase-orders"], dependencies=admin_only)
 api_router.include_router(import_data.router, prefix="/restaurant/import", tags=["import"], dependencies=admin_only)
 api_router.include_router(ocr.router, prefix="/restaurant/ocr", tags=["ocr"], dependencies=admin_only)

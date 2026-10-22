@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **241 API endpoints**, **39 routes/pages** (29 portal,
-1 KDS, 9 public), **133 browser proof scripts**, **122 backend tests**, **46
+Numbers in this snapshot: **248 API endpoints**, **40 routes/pages** (30 portal,
+1 KDS, 9 public), **134 browser proof scripts**, **124 backend tests**, **48
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -196,15 +196,15 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Leave | Request + approve/reject | Built | Accruals, calendar | Partial |
 | Attendance | Attendance command | Built | Biometric/PIN clock, geofence | Partial |
 | Payroll preview | Hours × rate preview | Built | Full payroll, tips, statutory | Partial |
-| Staff credentials | Managed staff login | Built | Granular permissions | Permissions partial |
+| Staff credentials | Managed staff login plus granular staff permission toggles (orders, kitchen, delivery, refunds, reports, settings, staff) | Built | Granular permissions | Per-user permission sets missing (role-level only) |
 | Labour vs sales | — | Missing | Labour cost % dashboard | Later |
 
 ## 13. Admin, platform, security, integrations
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Authentication | Admin/staff/customer sessions, HMAC cookies, rate limits, customer OTP | Built | 2FA, SSO, OTP | 2FA/SSO missing |
-| Roles | admin / staff / customer | Built | Granular permission sets | Partial |
+| Authentication | Admin/staff/customer sessions, HMAC cookies, rate limits, customer OTP, TOTP 2FA with recovery codes | Built | 2FA, SSO, OTP | SSO missing |
+| Roles | admin / staff / customer, enforced granular permission sets for staff | Built | Granular permission sets | Per-user overrides missing |
 | Audit | Operational audit events, payment events | Built | Full audit log search/export | Partial |
 | Backups | Run tracking, logical proof, restore rehearsal | Built | Automated schedule + offsite | Partial |
 | Readiness | Production ops, launch candidate, acceptance | Built | Uptime/alerting/monitoring | Monitoring missing |
@@ -325,6 +325,14 @@ metrics/dimensions/range/schedule/recipients; the scheduler emails due reports
 through Resend when configured and records sent/skipped/failed delivery state.
 Covered by four backend tests and `verify:report-builder`.
 
+W4 measured results (security): admins can enable TOTP 2FA, receive eight
+one-time recovery codes, and are challenged for a six-digit code after their
+password in both the portal and API login. Recovery codes are hashed, consumed
+once, and challenge tokens are rejected as session tokens. Staff permissions are
+stored as role overrides and enforced on reports and refunds; admins always pass
+and can revoke/grant from `/settings/security`. Covered by two backend tests and
+`verify:security`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -384,7 +392,9 @@ Covered by four backend tests and `verify:report-builder`.
     ad-hoc builder (metrics × dimensions, date range, filters), saved views with
     range/schedule/recipients, run/CSV/send actions, and a scheduler that emails
     due reports through the provider layer.
-16. 2FA/SSO and granular permissions.
+16. ~~**2FA/SSO and granular permissions**~~ — done in W4: TOTP 2FA with
+    recovery codes, a two-step login challenge (portal and API), and granular
+    staff permissions enforced on reports and refunds. SSO remains.
 17. Allergens/nutrition and channel-specific menus/pricing.
 18. Labour vs sales dashboard and shift scheduling.
 19. Security headers/CSP and error monitoring.
@@ -407,8 +417,8 @@ Covered by four backend tests and `verify:report-builder`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports (done); 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account + rider + reports proofs |
-| W5 | 2FA, hardware, deployment-ready checklist | Deployment checklist |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions (done); multi-store, aggregators, accounting (next) | Public + account + rider + reports + security proofs |
+| W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 
 Each wave ships with backend tests, a browser proof, responsive screenshots, and

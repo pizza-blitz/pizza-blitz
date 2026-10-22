@@ -2,6 +2,7 @@ from typing import Callable, Generator
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.services.auth_service import (
@@ -9,6 +10,7 @@ from app.services.auth_service import (
     decode_access_token,
     decode_portal_session_token,
 )
+from app.services.permission_service import permission_enabled
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -99,6 +101,23 @@ def require_roles(*roles: str) -> Callable:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This account does not have access to that resource.",
+            )
+        return session
+
+    return _dependency
+
+
+def require_permission(permission: str) -> Callable:
+    """Allow admins and staff whose role permission is enabled."""
+
+    def _dependency(
+        session: dict = Depends(require_roles("admin", "staff")),
+        db: Session = Depends(get_db),
+    ) -> dict:
+        if not permission_enabled(db, session["role"], permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This account lacks the {permission} permission.",
             )
         return session
 

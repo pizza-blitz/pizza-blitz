@@ -1,4 +1,4 @@
-﻿from datetime import date
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_permission
 from app.models.domain import DailySales, SavedReport
 from app.services.report_builder_service import (
     ReportValidationError,
@@ -91,7 +91,9 @@ def get_reports_data(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     db: Session = Depends(get_db),
+    session: dict = Depends(require_permission("reports.view")),
 ):
+    del session
     query = db.query(DailySales)
     if start_date:
         query = query.filter(DailySales.date >= start_date)
@@ -127,7 +129,7 @@ def get_reports_data(
 def run_custom_report(
     payload: CustomReportRequest,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     try:
@@ -146,7 +148,7 @@ def run_custom_report(
 @router.get("/saved")
 def list_saved_reports(
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     saved = (
@@ -161,7 +163,7 @@ def list_saved_reports(
 def create_saved_report(
     payload: SavedReportCreate,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     try:
         validate_config(payload.metrics, payload.dimensions)
@@ -193,7 +195,7 @@ def update_saved_report(
     report_id: int,
     payload: SavedReportUpdate,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     saved = db.query(SavedReport).filter(SavedReport.id == report_id).first()
@@ -238,7 +240,7 @@ def update_saved_report(
 def delete_saved_report(
     report_id: int,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     saved = db.query(SavedReport).filter(SavedReport.id == report_id).first()
@@ -253,7 +255,7 @@ def delete_saved_report(
 def run_saved(
     report_id: int,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     saved = db.query(SavedReport).filter(SavedReport.id == report_id).first()
@@ -270,7 +272,7 @@ def run_saved(
 def deliver_saved(
     report_id: int,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     saved = db.query(SavedReport).filter(SavedReport.id == report_id).first()
@@ -292,7 +294,7 @@ def deliver_saved(
 def export_saved(
     report_id: int,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("reports.view")),
 ):
     del session
     saved = db.query(SavedReport).filter(SavedReport.id == report_id).first()
@@ -308,4 +310,5 @@ def export_saved(
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
     )
+
 

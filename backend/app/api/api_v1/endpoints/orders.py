@@ -14,6 +14,7 @@ from app.api.deps import (
     customer_subject_phone,
     get_db,
     get_optional_session,
+    require_permission,
     require_roles,
     session_from_request,
 )
@@ -1905,7 +1906,7 @@ def create_refund(
     payload: RefundCreateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_permission("refunds.manage")),
 ):
     enforce_rate_limit(request, "refund-create", 30)
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
@@ -1980,7 +1981,7 @@ def list_order_notifications(
 def list_order_refunds(
     order_id: int,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin", "staff")),
+    session: dict = Depends(require_permission("refunds.manage")),
 ):
     del session
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()

@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 122 backend tests, 133 browser proof scripts, a backend Ruff
+- Automation: 124 backend tests, 134 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -123,11 +123,16 @@ Wave 4 (in progress):
   CSV export, daily/weekly/monthly schedules with recipients, email delivery
   through the provider layer, and a 5-minute scheduler for due reports.
 - New `verify:report-builder` browser proof and four backend tests.
-- Next: 2FA/granular permissions, multi-store, aggregators, accounting.
+- Security: TOTP 2FA with hashed one-time recovery codes and a two-step login
+  challenge in the portal and API; granular staff permissions enforced on
+  reports and refunds; `/settings/security` for setup, recovery codes and
+  toggles.
+- New `verify:security` browser proof and two backend tests.
+- Next: multi-store/franchise, aggregators, accounting.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 122 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 124 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

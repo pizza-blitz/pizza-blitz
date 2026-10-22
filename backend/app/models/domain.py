@@ -653,3 +653,27 @@ class SavedReport(Base):
     next_run_at = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TwoFactorCredential(Base):
+    __tablename__ = "two_factor_credentials"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(120), unique=True, index=True, nullable=False)
+    secret = Column(String(64), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=False)
+    recovery_codes = Column(JSON, default=list)
+    confirmed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role", "permission", name="uq_role_permissions_role_permission"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String(30), nullable=False, index=True)
+    permission = Column(String(60), nullable=False, index=True)
+    enabled = Column(Boolean, nullable=False, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

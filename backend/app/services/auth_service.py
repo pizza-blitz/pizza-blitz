@@ -306,6 +306,7 @@ def create_access_token(
     phone: Optional[str] = None,
     email: Optional[str] = None,
     expires_minutes: Optional[int] = None,
+    purpose: Optional[str] = None,
 ) -> dict:
     minutes = expires_minutes or settings.AUTH_TOKEN_EXPIRE_MINUTES
     expires_at = _expires_at(minutes)
@@ -318,6 +319,8 @@ def create_access_token(
         "exp": expires_at,
         "iat": datetime.utcnow(),
     }
+    if purpose:
+        payload["purpose"] = purpose
     token = jwt.encode(payload, settings.AUTH_SECRET_KEY, algorithm=TOKEN_ALGORITHM)
     return {
         "access_token": token,
@@ -331,7 +334,9 @@ def create_access_token(
     }
 
 
-def decode_access_token(token: str) -> dict:
+def decode_access_token(
+    token: str, *, allow_two_factor_challenge: bool = False
+) -> dict:
     try:
         payload = jwt.decode(
             token,
@@ -345,12 +350,16 @@ def decode_access_token(token: str) -> dict:
     subject = payload.get("sub")
     if role not in SESSION_ROLES or not subject:
         raise AuthError("Authentication token is missing required role information.")
+    purpose = payload.get("purpose")
+    if purpose == "2fa" and not allow_two_factor_challenge:
+        raise AuthError("Two-factor verification is required.")
     return {
         "subject": subject,
         "role": role,
         "display_name": payload.get("name"),
         "phone": payload.get("phone"),
         "email": payload.get("email"),
+        "purpose": purpose,
     }
 
 

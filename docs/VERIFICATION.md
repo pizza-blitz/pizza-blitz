@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 122 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 124 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -269,6 +269,23 @@ emails due reports through `send_campaign_message`, marking them sent, skipped
 responsive table, totals and saved-report cards. Covered by
 `backend/tests/test_report_builder.py` and
 `frontend/e2e/verify-report-builder.cjs`.
+
+## Two-factor authentication and staff permissions
+
+`POST /auth/admin/login`, `/auth/staff/login`, and the portal-verify endpoints
+return a five-minute `challenge_token` instead of a session when the account has
+2FA enabled. `POST /auth/2fa/verify` accepts that challenge plus a TOTP code or
+one-time recovery code and issues a normal token; challenge tokens carry
+`purpose=2fa` and are rejected as bearer sessions. Setup/confirm/disable live
+under `/auth/2fa/*` and the portal UI is `/settings/security`, which also shows
+the eight hashed recovery codes once.
+
+`role_permissions` stores staff overrides for orders, kitchen, delivery,
+refunds, reports, settings and staff management. `require_permission` allows
+admins and enabled staff; reports and refund endpoints use it with
+least-privilege defaults. Admins manage toggles at `/settings/security` via
+`GET/PUT /auth/permissions`. Covered by `backend/tests/test_security.py` and
+`frontend/e2e/verify-security.cjs`.
 
 ## Health endpoints
 

@@ -1325,6 +1325,12 @@ export default function Settings() {
           <p className="text-gray-500 mt-1">Configure portal preferences, data sources, and security.</p>
         </div>
         <Link
+          href="/settings/security"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-orange-300 hover:text-orange-700"
+        >
+          <LockKeyhole className="h-4 w-4" /> Security & access
+        </Link>
+        <Link
           href="/settings/store"
           className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-orange-300 hover:text-orange-700"
         >

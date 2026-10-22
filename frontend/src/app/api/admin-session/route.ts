@@ -61,6 +61,18 @@ async function verifyManagedStaffCredentials(id: string, password: string) {
         detail: data.detail || "Invalid staff credentials.",
       };
     }
+    if (data.two_factor_required) {
+      return {
+        ok: true,
+        status: response.status,
+        twoFactorRequired: true,
+        challengeToken: data.challenge_token,
+        role: "staff",
+        staffId: data.subject?.replace("staff:", "") || id,
+        displayName: data.display_name || "Counter Staff",
+        source: "managed",
+      };
+    }
     return {
       ok: true,
       status: response.status,
@@ -93,6 +105,18 @@ async function verifyManagedAdminCredentials(id: string, password: string) {
         detail: data.detail || "Invalid admin credentials.",
       };
     }
+    if (data.two_factor_required) {
+      return {
+        ok: true,
+        status: response.status,
+        twoFactorRequired: true,
+        challengeToken: data.challenge_token,
+        role: "admin",
+        adminId: data.subject?.replace("admin:", "") || id,
+        displayName: data.display_name || "Restaurant Admin",
+        source: "managed",
+      };
+    }
     return {
       ok: true,
       status: response.status,
@@ -111,6 +135,66 @@ async function verifyManagedAdminCredentials(id: string, password: string) {
 
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
+  const challengeToken = String(payload.challenge_token || "");
+  const challengeCode = String(payload.code || "").trim();
+  if (challengeToken && challengeCode) {
+    const verifyResponse = await fetch(
+      getServerApiUrl("/api/v1/auth/2fa/verify"),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge_token: challengeToken,
+          code: challengeCode,
+        }),
+        cache: "no-store",
+      }
+    );
+    const verified = await verifyResponse.json().catch(() => ({}));
+    if (!verifyResponse.ok) {
+      return NextResponse.json(
+        { detail: verified.detail || "That verification code is not valid." },
+        { status: verifyResponse.status }
+      );
+    }
+    const role: PortalLoginRole = verified.role === "staff" ? "staff" : "admin";
+    const maxAge = maxAgeForRole(role);
+    const token = await createSessionToken(
+      {
+        role,
+        subject: verified.subject,
+        displayName: verified.display_name,
+      },
+      maxAge
+    );
+    const response = NextResponse.json({
+      ok: true,
+      role,
+      displayName: verified.display_name,
+      twoFactorVerified: true,
+      startPath: verified.start_path || (role === "staff" ? "/orders" : "/dashboard"),
+    });
+    response.cookies.set({
+      name: role === "staff" ? STAFF_COOKIE : ADMIN_COOKIE,
+      value: token,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge,
+    });
+    response.cookies.set({
+      name: role === "staff" ? ADMIN_COOKIE : STAFF_COOKIE,
+      value: "",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0,
+    });
+    return response;
+  }
+
   const requestedRole: PortalLoginRole = payload.role === "staff" ? "staff" : "admin";
   const requestedCredentials = credentialsForRole(requestedRole);
   const adminCredentials = credentialsForRole("admin");
@@ -126,15 +210,32 @@ export async function POST(request: Request) {
   const isRequestedRoleLogin =
     credentialsMatch(id, password, requestedCredentials) &&
     (requestedCredentials.isConfigured || allowUnconfiguredCredentials);
-  const managedAdminLogin = !isEnvironmentAdminLogin
-    ? await verifyManagedAdminCredentials(id, password)
+  const managedAdminLogin = await verifyManagedAdminCredentials(id, password);
+  const adminChallenge = managedAdminLogin?.twoFactorRequired
+    ? managedAdminLogin
     : null;
-  const verifiedManagedAdmin = managedAdminLogin?.ok ? managedAdminLogin : null;
+  const verifiedManagedAdmin =
+    managedAdminLogin?.ok && !managedAdminLogin.twoFactorRequired
+      ? managedAdminLogin
+      : null;
   const isAdminMasterLogin = isEnvironmentAdminLogin || Boolean(verifiedManagedAdmin);
   const managedStaffLogin =
-    requestedRole === "staff" && !isAdminMasterLogin && !isRequestedRoleLogin
+    requestedRole === "staff" && !isAdminMasterLogin
       ? await verifyManagedStaffCredentials(id, password)
       : null;
+  const staffChallenge = managedStaffLogin?.twoFactorRequired
+    ? managedStaffLogin
+    : null;
+
+  if (adminChallenge || staffChallenge) {
+    const challenge = adminChallenge || staffChallenge!;
+    return NextResponse.json({
+      two_factor_required: true,
+      challenge_token: challenge.challengeToken,
+      role: challenge.role,
+      display_name: challenge.displayName,
+    });
+  }
 
   if (
     isCloudRuntime() &&
