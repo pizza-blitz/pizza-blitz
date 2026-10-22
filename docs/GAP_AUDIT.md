@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 38 frontend routes, the 126 browser proof scripts in
+- Listed all 38 frontend routes, the 127 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -66,6 +66,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 35 | Financial controls | Cancelling a paid order only set `refund_due`; there was no way to record a full or partial refund, no ledger, and no refund visibility for staff or customers. | W3 gap review and payment lifecycle read. | Added `order_refunds` + `orders.refunded_amount` (migration), admin-only refund API with validation and audit events, POS refund dialog/badge, receipt/tracking refund lines, refund list and period summary, and a dedicated browser proof. Gateway-initiated refund calls remain an integration step; refunds are recorded with provider reference rather than faked. |
 | 36 | Kitchen operations | The kitchen had station and queue views inside the portal but no dedicated full-screen KDS with per-ticket timers, bump/recall and new-order alerts. | W3 KDS gap from the feature matrix. | Added `GET /orders/kds` and a staff `/kds` board: Incoming/Preparing/Ready columns, station filters, live timers with overdue highlighting, per-station bump/recall, order start/ready/recall, new-order chime, fullscreen and 8-second refresh. Four backend tests and a browser proof. |
 | 37 | Customer communication | Status changes were invisible to customers unless they revisited tracking; there were no transactional SMS/WhatsApp/email updates and no delivery events. | W3 notifications gap. | Added `order_notifications` with a unique order+event key, a notification service reusing the campaign provider layer, hooks on status/station/cancel/close/delivery events, `GET /orders/{id}/notifications`, and sent updates on the tracking page. Disabled providers or missing phones record `skipped` without breaking order updates. Six backend tests, a browser proof, and a `console` channel for development. |
+| 38 | Menu content | Menu items had no image field or upload path; the public menu relied entirely on remote curated photography, so the owner could not publish their real dishes. | W3 media gap. | Added `menu_items.image_url`/`image_alt` (migration), admin upload/delete endpoints with magic-byte + 5 MB validation, `/media` static serving (Next rewrite), alt text, thumbnails in admin/customer UI, and landing-page support with curated fallback. Four backend tests and a browser proof. |
 
 ## Still open
 
@@ -80,7 +81,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 98 tests, all pass (in a clean venv built from
+- Backend unit suite: 102 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

@@ -32,6 +32,8 @@ class MenuItem(Base):
     selling_price = Column(Float, nullable=False)
     cost_price = Column(Float, nullable=False)
     is_available = Column(Boolean, default=True)
+    image_url = Column(String(500), nullable=True)
+    image_alt = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class MenuCustomizationGroup(Base):

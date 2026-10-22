@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **218 API endpoints**, **38 routes/pages** (29 portal,
-1 KDS, 8 public), **126 browser proof scripts**, **98 backend tests**, **40
+Numbers in this snapshot: **220 API endpoints**, **38 routes/pages** (29 portal,
+1 KDS, 8 public), **127 browser proof scripts**, **102 backend tests**, **40
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -37,8 +37,8 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Store profile is admin-editable; menu imagery still remote |
-| Menu browsing | `/order` catalog with categories/search | Built | Fast filtered catalog, sold-out states, images | Media library missing |
+| Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Uploaded item images supported; brand hero assets still remote |
+| Menu browsing | `/order` catalog with categories/search and item images (uploaded or curated fallback) | Built | Fast filtered catalog, sold-out states, images | Channel-specific menus missing |
 | Product customization | Sizes, crusts, toppings, add-ons, combos with server-side pricing | Built | Same | — |
 | Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice, tips, scheduling | Built | Guest + saved checkout, tips, scheduling | Saved-cart recovery missing |
 | Coupons and offers | Validate/apply server-side, promotion engine | Built | Public offers page, auto-apply best offer | Offers surface on landing page missing |
@@ -103,11 +103,11 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Item CRUD | Create/update/delete, availability | Built | Same + media + channels | Media/channels missing |
+| Item CRUD | Create/update/delete, availability, image upload/removal, alt text | Built | Same + media + channels | Channel pricing missing |
 | Modifier groups | Groups, options, min/max, pricing | Built | Same | — |
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
-| Menu media | — | Missing | Images, alt text, thumbnails | Must build |
+| Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | — | Missing | Different price for delivery/aggregator | Later |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
@@ -231,7 +231,7 @@ no page-level horizontal overflow, but concrete issues:
 | Public landing page was shallow (676 characters of above-the-fold text) | **Resolved in W1** — 4.5k characters, live menu/offers, FAQ, JSON-LD | — |
 | Public site and portal use different visual languages | Landing rebuilt around charcoal/cream/red; portal keeps orange accents intentionally | Low (design tokens W2) |
 | Page metadata is generic ("Pizza Blitz Portal") | **Resolved in W1** — template metadata, OG/Twitter, Restaurant + FAQ JSON-LD | — |
-| No brand media assets in the repo (all imagery is remote Unsplash) | `frontend/public` only has `.gitkeep` | Medium: media library (W2) |
+| No brand media assets in the repo (all imagery is remote Unsplash) | Item images can now be uploaded; hero/brand assets remain remote | Low: brand asset pack |
 
 W1 measured results at 390×844 and 1440×900: landing text 676 → 4,500+
 characters, zero page-level overflow on every audited page, zero browser
@@ -277,6 +277,12 @@ lists sent updates. A `console` channel records sent messages without a provider
 for development. Covered by six backend tests and
 `verify:order-notifications`.
 
+W3 measured results (menu media): menu items carry validated image uploads +
+alt text, stored under `MEDIA_ROOT/menu` and served from `/media`, with a Next
+rewrite so the frontend can render them. Admin thumbnails, customer catalog and
+landing previews use the uploaded image when present and fall back to curated
+imagery otherwise. Covered by four backend tests and `verify:menu-media`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -311,7 +317,9 @@ for development. Covered by six backend tests and
    SMS/WhatsApp/email through the existing provider layer, gated by
    `ORDER_NOTIFICATIONS_ENABLED`, recorded per order (sent/skipped/failed) and
    shown on the customer tracking page.
-10. **Menu media** — item images uploaded/stored, alt text, responsive rendering.
+10. ~~**Menu media**~~ — done in W3: admins upload JPEG/PNG/WebP images
+    (validated by magic bytes, ≤5 MB), set alt text, replace/remove them, and the
+    images render in the admin menu, customer catalog and landing page.
 11. ~~**Store profile settings**~~ — done in W2: name, tagline, phone, email,
     address, map, Instagram, hours and ordering controls are editable in
     `/settings/store` and feed the landing page, metadata, JSON-LD and checkout.
@@ -345,8 +353,8 @@ for development. Covered by six backend tests and
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
-| W3 (in progress) | Refunds/voids with ledger + audit (done); full-screen KDS (done); order notifications (done); menu media (next) | Payment + kitchen proofs |
-| W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
+| W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
+| W4 (next) | Loyalty/referrals, OTP customer auth, saved addresses, rider app/GPS, custom reports, 2FA/granular permissions, multi-store, aggregators, accounting | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

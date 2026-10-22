@@ -385,6 +385,8 @@ def customized_menu_payload(db: Session) -> list[dict]:
             "selling_price": item.selling_price,
             "cost_price": item.cost_price,
             "is_available": item.is_available,
+            "image_url": item.image_url,
+            "image_alt": item.image_alt,
             "customization_groups": groups_for_menu_item(groups, item),
         }
         for item in items

@@ -60,6 +60,8 @@ type StorefrontMenuItem = {
   category: string;
   selling_price: number;
   is_available: boolean;
+  image_url?: string | null;
+  image_alt?: string | null;
 };
 
 type StorefrontPromotion = {
@@ -555,13 +557,21 @@ export default async function PublicHomePage() {
               className="group overflow-hidden rounded-2xl border border-[#17130f]/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
               <div className="relative h-48 w-full overflow-hidden">
-                <Image
-                  src={itemImage(item)}
-                  alt={item.name}
-                  fill
-                  sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                  className="object-cover transition duration-500 group-hover:scale-105"
-                />
+                {item.image_url ? (
+                  <img
+                    src={item.image_url}
+                    alt={item.image_alt || item.name}
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  />
+                ) : (
+                  <Image
+                    src={itemImage(item)}
+                    alt={item.name}
+                    fill
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover transition duration-500 group-hover:scale-105"
+                  />
+                )}
                 <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#17130f]">
                   {item.category}
                 </span>

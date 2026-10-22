@@ -30,6 +30,7 @@ env_vars.yaml
 *.log
 backups/
 backend/backups/
+backend/media/
 
 # OS/editor noise
 .DS_Store

@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 98 backend tests, 126 browser proof scripts, a backend Ruff
+- Automation: 102 backend tests, 127 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -89,11 +89,17 @@ Wave 3 (in progress):
   provider, gated by `ORDER_NOTIFICATIONS_ENABLED`, recorded per order with
   sent/skipped/failed status, and listed on customer tracking.
 - New `verify:order-notifications` browser proof and six backend tests.
-- Next: menu media library.
+- Menu media: admin uploads (JPEG/PNG/WebP, ≤5 MB, magic-byte validated), alt
+  text, replace/remove, thumbnails in the admin menu and customer catalog, and
+  uploaded images on the landing page. Files are served from `/media` through a
+  Next rewrite; `MEDIA_ROOT` selects the storage directory.
+- New `verify:menu-media` browser proof and four backend tests; W3 is complete.
+- Next: W4 (loyalty/referrals, OTP customer auth, saved addresses, rider app,
+  custom reports, 2FA/granular permissions, multi-store, aggregators, accounting).
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 98 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 102 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

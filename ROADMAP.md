@@ -141,10 +141,16 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Tips at checkout and POS, with reporting.
 - [x] Dense-page tap targets and table-to-card mobile layouts.
 
-### Wave 3 (in progress)
+### Wave 3 (done)
 
 - [x] Refunds and voids with reason, audit trail and gateway handling.
 - [x] Dedicated KDS device view with timers, bump/recall and sound.
 - [x] Order status notifications (confirmation, ready, out for delivery, delivered).
-- [ ] Menu media library (upload, alt text, responsive images).
-- [ ] Store profile hours editing from mobile: remaining settings density.
+- [x] Menu media library (upload, alt text, responsive images).
+### Wave 4 (next)
+
+- [ ] Loyalty and referrals.
+- [ ] OTP customer authentication and saved addresses.
+- [ ] Rider app with GPS and proof of delivery.
+- [ ] Custom report builder and scheduled exports.
+- [ ] 2FA, SSO and granular permissions.

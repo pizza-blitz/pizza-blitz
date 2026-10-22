@@ -2,12 +2,13 @@ from collections import Counter
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
 from app.models.domain import InventoryItem, MenuCustomizationGroup, MenuItem, Recipe, RestaurantOrder
+from app.services.media_service import delete_menu_image, save_menu_image
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
     customized_menu_payload,
@@ -86,6 +87,8 @@ class MenuItemSchema(BaseModel):
     selling_price: float
     cost_price: float
     is_available: bool = True
+    image_url: Optional[str] = None
+    image_alt: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -384,6 +387,8 @@ def update_or_create_menu(
         db_item.selling_price = item.selling_price
         db_item.cost_price = item.cost_price
         db_item.is_available = item.is_available
+        if item.image_alt is not None:
+            db_item.image_alt = item.image_alt.strip()[:255] or None
     else:
         db_item = MenuItem(
             name=item.name,
@@ -391,11 +396,59 @@ def update_or_create_menu(
             selling_price=item.selling_price,
             cost_price=item.cost_price,
             is_available=item.is_available,
+            image_alt=(item.image_alt or "").strip()[:255] or None,
         )
         db.add(db_item)
 
     db.commit()
     db.refresh(db_item)
+    return db_item
+
+
+@router.post("/menu/{item_id}/image", response_model=MenuItemSchema)
+async def upload_menu_item_image(
+    item_id: int,
+    file: UploadFile = File(...),
+    alt: Optional[str] = Form(default=None),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    data = await file.read()
+    try:
+        image_url = save_menu_image(item_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    previous_url = db_item.image_url
+    db_item.image_url = image_url
+    db_item.image_alt = (alt or db_item.image_alt or db_item.name).strip()[:255] or db_item.name
+    db.commit()
+    db.refresh(db_item)
+    delete_menu_image(previous_url)
+    return db_item
+
+
+@router.delete("/menu/{item_id}/image", response_model=MenuItemSchema)
+def remove_menu_item_image(
+    item_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    previous_url = db_item.image_url
+    db_item.image_url = None
+    db_item.image_alt = None
+    db.commit()
+    db.refresh(db_item)
+    delete_menu_image(previous_url)
     return db_item
 
 

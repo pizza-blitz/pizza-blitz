@@ -3,6 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from app.core.config import settings, validate_production_settings
 from app.core.rate_limit import reset_rate_limits
@@ -13,6 +14,7 @@ from app.models import domain  # noqa: F401 - registers the complete SQLAlchemy 
 from app.models.domain import DiningTable, ExpenseCategory, MenuItem, Vendor
 from app.services.delivery_service import seed_default_delivery_zones
 from app.services.menu_customization_service import seed_default_customizations
+from app.services.media_service import media_root
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
@@ -173,6 +175,9 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+media_root().mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(media_root())), name="media")
 
 @app.get("/health")
 def health_check():

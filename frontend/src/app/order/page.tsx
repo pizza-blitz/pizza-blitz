@@ -38,6 +38,8 @@ type MenuItem = {
   selling_price: number;
   cost_price: number;
   is_available: boolean;
+  image_url?: string | null;
+  image_alt?: string | null;
   customization_groups?: CustomizationGroup[];
 };
 
@@ -1466,8 +1468,8 @@ export default function PublicOrderPage() {
                 >
                   <div className="grid grid-cols-12">
                     <img
-                      src={categoryImages[item.category] || fallbackImage}
-                      alt={item.name}
+                      src={item.image_url || categoryImages[item.category] || fallbackImage}
+                      alt={item.image_alt || item.name}
                       className="col-span-4 h-full min-h-36 object-cover"
                     />
                     <div className="col-span-8 p-4">

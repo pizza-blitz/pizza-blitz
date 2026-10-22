@@ -5,12 +5,14 @@ import {
   BarChart3,
   CheckCircle,
   Edit2,
+  ImagePlus,
   ListChecks,
   Plus,
   RefreshCw,
   Save,
   Search,
   Trash2,
+  Upload,
   X,
   XCircle,
 } from "lucide-react";
@@ -46,6 +48,8 @@ type MenuItem = {
   selling_price: number;
   cost_price: number;
   is_available: boolean;
+  image_url?: string | null;
+  image_alt?: string | null;
   customization_groups?: CustomizationGroup[];
 };
 
@@ -135,6 +139,11 @@ export default function MenuManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<MenuItem>(emptyForm);
   const [message, setMessage] = useState("");
+  const [imageItem, setImageItem] = useState<MenuItem | null>(null);
+  const [imageAlt, setImageAlt] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [imageBusy, setImageBusy] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -215,6 +224,66 @@ export default function MenuManagement() {
     }
     setMessage(`Deleted ${item.name}.`);
     await fetchMenu();
+  };
+
+  const openImageModal = (item: MenuItem) => {
+    setImageItem(item);
+    setImageAlt(item.image_alt || item.name);
+    setImageFile(null);
+    setImagePreview(item.image_url || "");
+    setMessage("");
+  };
+
+  const uploadImage = async () => {
+    if (!imageItem?.id) return;
+    if (!imageFile) {
+      setMessage("Choose an image first.");
+      return;
+    }
+    setImageBusy(true);
+    try {
+      const body = new FormData();
+      body.append("file", imageFile);
+      body.append("alt", imageAlt);
+      const response = await fetch(`${MENU_API}/${imageItem.id}/image`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Image could not be uploaded.");
+      setImageItem(data);
+      setImagePreview(data.image_url || "");
+      setImageFile(null);
+      setMessage(`Image updated for ${data.name}.`);
+      await fetchMenu();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Image could not be uploaded.");
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const removeImage = async () => {
+    if (!imageItem?.id) return;
+    setImageBusy(true);
+    try {
+      const response = await fetch(`${MENU_API}/${imageItem.id}/image`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Image could not be removed.");
+      setImageItem(data);
+      setImagePreview("");
+      setImageFile(null);
+      setMessage(`Image removed from ${data.name}.`);
+      await fetchMenu();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Image could not be removed.");
+    } finally {
+      setImageBusy(false);
+    }
   };
 
   const topProfitItems = profitability?.items.slice(0, 5) || [];
@@ -300,7 +369,22 @@ export default function MenuManagement() {
                 <tbody className="divide-y divide-white/5">
                   {filteredItems.map((item) => (
                     <tr key={item.id || item.name} className="hover:bg-white/[0.03]">
-                      <td className="px-4 py-4 font-black">{item.name}</td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          {item.image_url ? (
+                            <img
+                              src={item.image_url}
+                              alt={item.image_alt || item.name}
+                              className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-white/5 text-gray-600">
+                              <ImagePlus className="h-4 w-4" />
+                            </span>
+                          )}
+                          <span className="font-black">{item.name}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-4">
                         <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-gray-300">
                           {item.category}
@@ -345,6 +429,14 @@ export default function MenuManagement() {
                       <td className="px-4 py-4">
                         <div className="flex justify-end gap-2">
                           <button
+                            onClick={() => openImageModal(item)}
+                            data-testid={`menu-image-button-${item.id}`}
+                            className="rounded-lg bg-white/5 p-2 text-orange-300 hover:bg-orange-500/20"
+                            title="Image"
+                          >
+                            <ImagePlus className="h-4 w-4" />
+                          </button>
+                          <button
                             onClick={() => openEditItem(item)}
                             className="rounded-lg bg-white/5 p-2 text-blue-300 hover:bg-blue-500/20"
                             title="Edit"
@@ -373,9 +465,22 @@ export default function MenuManagement() {
                   className="rounded-xl border border-white/10 bg-black/25 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-black leading-tight">{item.name}</p>
-                      <p className="mt-1 text-xs font-bold text-gray-400">{item.category}</p>
+                    <div className="flex min-w-0 items-center gap-3">
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.image_alt || item.name}
+                          className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-white/5 text-gray-600">
+                          <ImagePlus className="h-5 w-5" />
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-black leading-tight">{item.name}</p>
+                        <p className="mt-1 text-xs font-bold text-gray-400">{item.category}</p>
+                      </div>
                     </div>
                     {item.is_available ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-black uppercase text-green-300">
@@ -421,6 +526,15 @@ export default function MenuManagement() {
                     )}
                   </div>
                   <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openImageModal(item)}
+                      data-testid={`menu-image-button-mobile-${item.id}`}
+                      aria-label={`Manage image for ${item.name}`}
+                      className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-orange-300 hover:bg-orange-500/20"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => openEditItem(item)}
@@ -672,6 +786,98 @@ export default function MenuManagement() {
               <Save className="h-4 w-4" /> Save Menu Item
             </button>
           </form>
+        </div>
+      )}
+
+      {imageItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div
+            data-testid="menu-image-modal"
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1a1c] p-6 text-white"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-300">
+                  Menu image
+                </p>
+                <h2 className="mt-1 text-xl font-black">{imageItem.name}</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Close image dialog"
+                onClick={() => setImageItem(null)}
+                className="grid h-10 w-10 place-items-center rounded-xl text-gray-400 hover:bg-white/5"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+              {imagePreview ? (
+                <img
+                  src={imagePreview}
+                  alt={imageAlt || imageItem.name}
+                  className="h-48 w-full object-cover"
+                />
+              ) : (
+                <div className="grid h-48 place-items-center text-xs font-bold uppercase tracking-widest text-gray-600">
+                  No image yet
+                </div>
+              )}
+            </div>
+
+            <label className="mt-4 block text-[10px] font-black uppercase tracking-widest text-gray-400">
+              Image file
+              <input
+                data-testid="menu-image-file"
+                aria-label="Menu image file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] || null;
+                  setImageFile(file);
+                  if (file) setImagePreview(URL.createObjectURL(file));
+                }}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-xs font-semibold text-gray-300 file:mr-3 file:rounded-md file:border-0 file:bg-orange-500 file:px-3 file:py-1.5 file:text-xs file:font-black file:text-black"
+              />
+            </label>
+
+            <label className="mt-3 block text-[10px] font-black uppercase tracking-widest text-gray-400">
+              Alt text
+              <input
+                data-testid="menu-image-alt"
+                aria-label="Menu image alt text"
+                value={imageAlt}
+                onChange={(event) => setImageAlt(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-semibold text-white outline-none focus:border-orange-400"
+              />
+            </label>
+
+            <p className="mt-2 text-[10px] font-semibold text-gray-500">
+              JPEG, PNG or WebP, up to 5 MB. The public menu uses this image with its alt text.
+            </p>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                data-testid="menu-image-remove"
+                onClick={removeImage}
+                disabled={imageBusy || !imageItem.image_url}
+                className="rounded-lg border border-white/10 py-2.5 text-xs font-black uppercase tracking-widest text-red-300 hover:bg-red-500/10 disabled:opacity-40"
+              >
+                Remove
+              </button>
+              <button
+                type="button"
+                data-testid="menu-image-upload"
+                onClick={uploadImage}
+                disabled={imageBusy || !imageFile}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-orange-500 py-2.5 text-xs font-black uppercase tracking-widest text-black hover:bg-orange-400 disabled:opacity-40"
+              >
+                <Upload className="h-4 w-4" /> {imageBusy ? "Saving" : "Upload"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
