@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **208 API endpoints**, **37 routes/pages** (29 portal,
-8 public), **122 browser proof scripts**, **83 backend tests**, **38 database
+8 public), **123 browser proof scripts**, **83 backend tests**, **38 database
 tables**, **19 integration points**.
 
 ## Benchmark set
@@ -225,8 +225,8 @@ no page-level horizontal overflow, but concrete issues:
 |---|---|---|
 | Mobile portal navigation is a horizontally scrolling strip of 26 links | **Resolved in W1** — replaced with a 5-item bottom bar + grouped drawer | — |
 | Desktop sidebar is a flat 26-item list with no active state or grouping | **Resolved in W1** — grouped, searchable, collapsible sidebar with active state and role badge | — |
-| Tap targets under 40px are common on dense pages | settings 49/110, menu 21/50, reports 14/46, operations 13/59 | Medium: accessibility (W2) |
-| Data tables rely on horizontal scrolling on mobile | reports 6 wide tables, menu 1, inventory 1 | Medium (W2) |
+| Tap targets under 40px are common on dense pages | **Improved in W2** — settings 49 → 42, menu 21 → 0, reports 14 → 7, operations 12 → 10 (390px audit); icon-only controls now get a 40px mobile hit area | Low: remaining settings density (W3) |
+| Data tables rely on horizontal scrolling on mobile | **Resolved in W2** — reports (6), menu (1) and inventory (1) render mobile card lists instead; 0 wide tables across the audit | — |
 | Public landing page was shallow (676 characters of above-the-fold text) | **Resolved in W1** — 4.5k characters, live menu/offers, FAQ, JSON-LD | — |
 | Public site and portal use different visual languages | Landing rebuilt around charcoal/cream/red; portal keeps orange accents intentionally | Low (design tokens W2) |
 | Page metadata is generic ("Pizza Blitz Portal") | **Resolved in W1** — template metadata, OG/Twitter, Restaurant + FAQ JSON-LD | — |
@@ -247,9 +247,12 @@ Pausing online ordering returns HTTP 503 on order creation and shows an
 scheduled time in checkout, tracking, POS cards, kitchen cards, tickets and
 receipts. Tips can be set as presets or a custom amount at customer checkout and
 POS, are stored on the order, included in totals and receipts, and summarised by
-`/orders/tips-summary` and the POS “Tips Today” tile. Covered by 23 backend tests
-and three new browser proofs (`verify:store-profile`,
-`verify:scheduled-orders`, `verify:order-tips`).
+`/orders/tips-summary` and the POS “Tips Today” tile. On mobile, the dense
+reports/menu/inventory tables are replaced by card lists (zero wide tables at
+390px), menu action targets are 40px, and icon-only controls get a 40px hit
+area. Covered by 23 backend tests and four new browser proofs
+(`verify:store-profile`, `verify:scheduled-orders`, `verify:order-tips`,
+`verify:responsive-tables`).
 
 ---
 
@@ -310,7 +313,7 @@ and three new browser proofs (`verify:store-profile`,
 | Wave | Contents | Exit criteria |
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
-| W2 (in progress) | Store profile + weekly hours/order pause + prep time (done); scheduled orders with slot capacity (done); tips at checkout/POS with reporting (done); dense-page tap targets (next) | Backend tests + proof scripts for each |
+| W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 | Refunds/voids, KDS device view, notifications | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |

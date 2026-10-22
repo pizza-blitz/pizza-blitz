@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 34 frontend routes, the 122 browser proof scripts in
+- Listed all 34 frontend routes, the 123 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -62,6 +62,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 31 | Content / configuration | Store name, contact details, hours, and Instagram lived only in environment variables, so the landing page could not be updated by the owner after deploy. | W1 landing-page build. | Store identity/contact/socials are now editable at `/settings/store`; the landing page uses them for the header, store details, footer, Open Graph metadata, and Restaurant JSON-LD. The settings page is linked from Settings and the portal navigation. |
 | 32 | Ordering | Customers could only order for immediate fulfilment; there was no way to book a pickup or delivery time, and the kitchen had no visibility of future orders. | Enterprise benchmark and order-flow review. | Added scheduled orders: a migrated `orders.scheduled_for` column, a validated 15-minute slot engine (14-day window, lead time, opening-hours check, six-order slot capacity), a public slots endpoint, checkout date/time picker, and scheduled labels in tracking, POS cards, kitchen cards, tickets and receipts. Covered by seven backend tests and a browser proof. |
 | 33 | Payments / workforce | There was no way to leave a tip, so service revenue and staff gratuity could not be captured or reported. | Enterprise benchmark (POS/checkout) and the tip rows in the feature matrix. | Added a non-null `orders.tip_amount`, preset/custom tips at customer checkout and POS, tip-inclusive totals, receipt and tracking lines, a POS "Tips Today" tile, and an admin `tips-summary` endpoint. Covered by six backend tests and a browser proof. Tip pooling/payout remains future work. |
+| 34 | Responsive UX | Reports (6), menu (1) and inventory (1) relied on wide horizontally scrolling tables at 390px, and dense rows had sub-40px tap targets. | 390px UI audit (`wideTables`, `smallTargets`). | Replaced those tables with mobile card lists (tables remain at md+), rebuilt the inventory header for small screens, enlarged menu row actions to 40px, and added a 40px hit area for icon-only controls. Audit now reports **0 wide tables** on every page; menu small targets fell 21 → 0, reports 14 → 7, settings 49 → 42. New `verify:responsive-tables` proof. |
 
 ## Still open
 

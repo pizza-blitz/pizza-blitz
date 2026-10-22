@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.

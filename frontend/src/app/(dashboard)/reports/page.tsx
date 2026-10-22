@@ -1208,7 +1208,22 @@ export default function Reports() {
                   })}
                 </div>
 
-                <div className="mt-5 overflow-x-auto rounded-lg border border-gray-200">
+                <div className="space-y-2 md:hidden">
+                  {data.comparison.daily_comparison.slice(-7).map((row) => (
+                    <MobileReportCard
+                      key={`mobile-day-${row.date}`}
+                      title={row.label}
+                      subtitle={row.weekday}
+                      fields={[
+                        { label: "Current", value: `Rs ${Number(row.current_sale || 0).toLocaleString()}` },
+                        { label: "Previous", value: `Rs ${Number(row.previous_sale || 0).toLocaleString()}` },
+                        { label: "Last year", value: `Rs ${Number(row.last_year_sale || 0).toLocaleString()}` },
+                        { label: "Profit", value: `Rs ${Number(row.current_profit || 0).toLocaleString()}` },
+                      ]}
+                    />
+                  ))}
+                </div>
+                <div className="mt-5 hidden overflow-x-auto rounded-lg border border-gray-200 md:block">
                   <table className="w-full min-w-[720px] text-left">
                     <thead className="bg-gray-950 text-white">
                       <tr>
@@ -1609,7 +1624,32 @@ export default function Reports() {
                     />
                   </div>
 
-                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                  <div className="space-y-2 md:hidden">
+                    {customerSegmentRows.map((row) => (
+                      <MobileReportCard
+                        key={`mobile-segment-${row.segment}`}
+                        title={row.label}
+                        subtitle={`${row.customer_count} customers | ${row.order_count} orders`}
+                        fields={[
+                          { label: "Spend", value: formatMoney(row.total_spend) },
+                          { label: "Reach", value: row.reachable_count },
+                          { label: "Ready", value: `${Number(row.readiness_percent || 0).toFixed(1)}%` },
+                          { label: "Channel", value: row.recommended_channel },
+                        ]}
+                        action={
+                          <button
+                            type="button"
+                            onClick={() => launchSegmentCampaign(row)}
+                            disabled={launchingSegmentCampaign !== null || !segmentCampaignAudiences.has(row.segment)}
+                            className="h-10 shrink-0 rounded-md bg-gray-100 px-3 text-[10px] font-black uppercase tracking-widest text-gray-700 hover:bg-orange-100 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            {launchingSegmentCampaign === row.segment ? "Launching" : segmentCampaignAudiences.has(row.segment) ? "Launch" : "Clean"}
+                          </button>
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white md:block">
                     <table className="w-full min-w-[760px] text-left">
                       <thead className="bg-gray-950 text-white">
                         <tr>
@@ -1782,7 +1822,29 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                    <div className="space-y-2 md:hidden">
+                      {marketingDecisionRows.map((row) => (
+                        <MobileReportCard
+                          key={`mobile-decision-${row.promotion_detail.id}`}
+                          title={row.promotion_detail.name}
+                          subtitle={`${row.readyReach} ready | ${row.outreach.needs_attention_count || 0} cleanup`}
+                          fields={[
+                            { label: "Net", value: formatMoney(row.netValue) },
+                            { label: "Conversion", value: `${row.conversionRate.toFixed(1)}%` },
+                          ]}
+                          action={
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMarketingCampaignId(row.promotion_detail.id ?? null)}
+                              className="h-10 shrink-0 rounded-md bg-gray-100 px-3 text-[10px] font-black uppercase tracking-widest text-gray-700 hover:bg-orange-100 hover:text-orange-700"
+                            >
+                              {row.action}
+                            </button>
+                          }
+                        />
+                      ))}
+                    </div>
+                    <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white md:block">
                       <table className="w-full min-w-[520px] text-left">
                         <thead className="bg-gray-950 text-white">
                           <tr>
@@ -1898,7 +1960,24 @@ export default function Reports() {
                 </div>
               )}
 
-              <div className="mt-5 overflow-x-auto rounded-lg border border-gray-200">
+              <div className="space-y-2 md:hidden">
+                {marketingRows.map((row) => (
+                  <MobileReportCard
+                    key={`mobile-marketing-${row.promotion_detail.id}`}
+                    title={row.promotion_detail.name}
+                    subtitle={`${row.promotion_detail.code || "No code"} | ${row.campaign_window.phase}`}
+                    fields={[
+                      { label: "Revenue", value: formatMoney(row.redemptions.revenue) },
+                      { label: "Orders", value: row.redemptions.count },
+                      { label: "Discount", value: formatMoney(row.redemptions.discount) },
+                      { label: "Avg order", value: formatMoney(row.redemptions.average_order_value) },
+                      { label: "Social", value: row.social.post_count },
+                      { label: "Ad budget", value: formatMoney(row.ads.planned_budget) },
+                    ]}
+                  />
+                ))}
+              </div>
+              <div className="mt-5 hidden overflow-x-auto rounded-lg border border-gray-200 md:block">
                 <table className="w-full min-w-[860px] text-left">
                   <thead className="bg-gray-950 text-white">
                     <tr>
@@ -2007,7 +2086,22 @@ export default function Reports() {
                     </span>
                   </div>
                 </div>
-                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <div className="space-y-2 md:hidden">
+                  {varianceRows.map((row) => (
+                    <MobileReportCard
+                      key={`mobile-variance-${row.date}`}
+                      title={row.label}
+                      subtitle={row.weekday}
+                      fields={[
+                        { label: "Current", value: `Rs ${Number(row.current_sale || 0).toLocaleString()}` },
+                        { label: "Vs previous", value: formatPercent(Number(row.previousChange || 0)) },
+                        { label: "Vs last year", value: formatPercent(Number(row.yoyChange || 0)) },
+                        { label: "Profit", value: `Rs ${Number(row.current_profit || 0).toLocaleString()}` },
+                      ]}
+                    />
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto rounded-lg border border-gray-200 md:block">
                   <table className="w-full min-w-[760px] text-left">
                     <thead className="bg-gray-950 text-white">
                       <tr>
@@ -2142,7 +2236,22 @@ export default function Reports() {
               </h3>
               <p className="text-xs font-black uppercase tracking-widest opacity-60">Year-over-Year Performance Map</p>
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-2 md:hidden">
+              {(data?.trends || []).map((trend) => (
+                <MobileReportCard
+                  key={`mobile-trend-${trend.month}`}
+                  title={trend.month}
+                  subtitle="Fiscal month"
+                  fields={[
+                    { label: "Gross sales", value: `Rs ${Number(trend.total_sale || 0).toLocaleString()}` },
+                    { label: "Expenses", value: `Rs ${Number(trend.total_expense || 0).toLocaleString()}` },
+                    { label: "Net profit", value: `Rs ${Number(trend.profit || 0).toLocaleString()}` },
+                    { label: "Margin", value: `${trend.margin_percent}%` },
+                  ]}
+                />
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-left">
                 <thead>
                   <tr className="bg-gray-50/50">
@@ -2178,6 +2287,47 @@ export default function Reports() {
         </>
       )}
     </div>
+  );
+}
+
+function MobileReportCard({
+  title,
+  subtitle,
+  fields,
+  action,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  fields: { label: string; value: React.ReactNode }[];
+  action?: React.ReactNode;
+}) {
+  return (
+    <article
+      data-testid="mobile-report-card"
+      className="rounded-lg border border-gray-200 bg-white p-4"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-black text-gray-950">{title}</p>
+          {subtitle ? (
+            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
+        {action}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {fields.map((field) => (
+          <div key={`${String(title)}-${field.label}`} className="rounded-md bg-gray-50 px-2.5 py-2">
+            <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+              {field.label}
+            </p>
+            <div className="mt-0.5 text-sm font-black text-gray-900">{field.value}</div>
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }
 

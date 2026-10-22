@@ -133,10 +133,18 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Stop exposing menu cost prices on the public storefront.
 - [x] Add `verify:landing` and `verify:portal-shell` proofs to the audit suite.
 
-### Wave 2 (in progress)
+### Wave 2 (done)
 
 - [x] Store profile settings (name, address, phone, hours, socials) editable in admin and rendered on the landing page.
 - [x] Store hours + online ordering pause/capacity controls.
 - [x] Scheduled pickup/delivery orders with slot capacity.
 - [x] Tips at checkout and POS, with reporting.
-- [ ] Dense-page tap targets and table-to-card mobile layouts.
+- [x] Dense-page tap targets and table-to-card mobile layouts.
+
+### Wave 3 (next)
+
+- [ ] Refunds and voids with reason, audit trail and gateway handling.
+- [ ] Dedicated KDS device view with timers, bump/recall and sound.
+- [ ] Order status notifications (confirmation, ready, out for delivery, delivered).
+- [ ] Menu media library (upload, alt text, responsive images).
+- [ ] Store profile hours editing from mobile: remaining settings density.

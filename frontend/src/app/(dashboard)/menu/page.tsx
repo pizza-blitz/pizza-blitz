@@ -284,7 +284,7 @@ export default function MenuManagement() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[980px] text-left">
                 <thead>
                   <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-gray-500">
@@ -364,6 +364,87 @@ export default function MenuManagement() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div data-testid="mobile-menu-list" className="space-y-3 md:hidden">
+              {filteredItems.map((item) => (
+                <article
+                  key={`mobile-${item.id || item.name}`}
+                  className="rounded-xl border border-white/10 bg-black/25 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-black leading-tight">{item.name}</p>
+                      <p className="mt-1 text-xs font-bold text-gray-400">{item.category}</p>
+                    </div>
+                    {item.is_available ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-black uppercase text-green-300">
+                        <CheckCircle className="h-3 w-3" /> Available
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-[10px] font-black uppercase text-red-300">
+                        <XCircle className="h-3 w-3" /> Out
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-lg bg-white/5 px-3 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        Selling
+                      </p>
+                      <p className="mt-0.5 font-black text-orange-300">
+                        Rs {Number(item.selling_price || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-white/5 px-3 py-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                        Cost
+                      </p>
+                      <p className="mt-0.5 font-black text-gray-300">
+                        Rs {Number(item.cost_price || 0).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(item.customization_groups || []).slice(0, 3).map((group) => (
+                      <span
+                        key={`mobile-${item.id}-${group.id}`}
+                        className="rounded-full border border-orange-400/20 bg-orange-400/10 px-2.5 py-1 text-[10px] font-black text-orange-200"
+                      >
+                        {group.name}
+                      </span>
+                    ))}
+                    {!(item.customization_groups || []).length && (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold text-gray-500">
+                        Fixed item
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditItem(item)}
+                      aria-label={`Edit ${item.name}`}
+                      className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-blue-300 hover:bg-blue-500/20"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteItem(item)}
+                      aria-label={`Delete ${item.name}`}
+                      className="grid h-10 w-10 place-items-center rounded-lg bg-white/5 text-red-300 hover:bg-red-500/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {!filteredItems.length && (
+                <p className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm font-bold text-gray-500">
+                  No menu items match this search.
+                </p>
+              )}
             </div>
           </div>
         </div>

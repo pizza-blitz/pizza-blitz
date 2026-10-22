@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 83 backend tests, 122 browser proof scripts, a backend Ruff
+- Automation: 83 backend tests, 123 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -68,7 +68,10 @@ Wave 2 (in progress):
   the order, included in totals and receipts, with a tips summary endpoint and a
   "Tips Today" POS tile.
 - New `verify:order-tips` browser proof and six backend tests.
-- Still next in W2: dense-page mobile polish.
+- Mobile polish: reports, menu and inventory now render card lists instead of
+  horizontally scrolling tables at 390px (0 wide tables), menu action targets
+  are 40px, and icon-only controls get a 40px mobile hit area.
+- New `verify:responsive-tables` browser proof; W2 is complete.
 
 ## Verified State (2026-10-22)
 

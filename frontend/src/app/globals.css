@@ -22,4 +22,13 @@
     background-color: #fde68a;
     color: #17130f;
   }
+
+  /* Icon-only controls get a comfortable mobile hit area. */
+  @media (max-width: 767px) {
+    button[aria-label],
+    a[aria-label] {
+      min-width: 40px;
+      min-height: 40px;
+    }
+  }
 }
