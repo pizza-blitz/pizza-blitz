@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 import SavedAddresses from "@/components/account/SavedAddresses";
+import LoyaltyCard from "@/components/account/LoyaltyCard";
 
 const HISTORY_API = getApiUrl("/api/v1/restaurant/orders/customer-history");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
@@ -342,6 +343,10 @@ export default function CustomerAccountPage() {
             {message}
           </div>
         )}
+
+        <div className="mb-6">
+          <LoyaltyCard />
+        </div>
 
         <div className="mb-6">
           <SavedAddresses />

@@ -142,6 +142,41 @@ class CustomerAddress(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     customer = relationship("Customer", back_populates="addresses")
 
+
+class LoyaltyAccount(Base):
+    __tablename__ = "loyalty_accounts"
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(
+        Integer, ForeignKey("customers.id"), unique=True, index=True, nullable=False
+    )
+    points_balance = Column(Integer, nullable=False, default=0)
+    lifetime_points = Column(Integer, nullable=False, default=0)
+    referral_code = Column(String(20), unique=True, index=True, nullable=False)
+    referred_by_customer_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    customer = relationship("Customer")
+
+
+class LoyaltyTransaction(Base):
+    __tablename__ = "loyalty_transactions"
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_id",
+            "order_id",
+            "transaction_type",
+            name="uq_loyalty_transactions_customer_order_type",
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=False)
+    points = Column(Integer, nullable=False)
+    transaction_type = Column(String(30), nullable=False)
+    order_id = Column(Integer, nullable=True)
+    note = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    customer = relationship("Customer")
+
 class AdminCredential(Base):
     __tablename__ = "admin_credentials"
     id = Column(Integer, primary_key=True, index=True)

@@ -10,6 +10,7 @@ import {
   Clock,
   Coins,
   CreditCard,
+  Gift,
   MapPin,
   Mail,
   Minus,
@@ -286,6 +287,7 @@ export default function PublicOrderPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [optInMarketing, setOptInMarketing] = useState(true);
   const [address, setAddress] = useState("");
   const [savedAddresses, setSavedAddresses] = useState<
@@ -1046,6 +1048,7 @@ export default function PublicOrderPage() {
         discount_amount: discount,
         tip_amount: tipAmount,
         coupon_code: coupon ? coupon.promotion.code || couponCode : null,
+        referral_code: referralCode.trim() || null,
         delivery_address: address,
         delivery_zone_id: selectedDeliveryZoneId,
         scheduled_for: scheduling ? scheduledSlot : null,
@@ -2124,6 +2127,15 @@ export default function PublicOrderPage() {
                   placeholder="Email for receipts and offers"
                   type="email"
                   className="w-full outline-none"
+                />
+              </FieldIcon>
+              <FieldIcon icon={Gift}>
+                <input
+                  aria-label="Referral code"
+                  value={referralCode}
+                  onChange={(event) => setReferralCode(event.target.value.toUpperCase())}
+                  placeholder="Referral code (optional, first order)"
+                  className="w-full uppercase outline-none"
                 />
               </FieldIcon>
               <label className="flex items-start gap-3 rounded-md border border-slate-300 px-3 py-3 text-sm font-semibold text-slate-700">

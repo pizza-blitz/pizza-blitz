@@ -151,7 +151,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 
 - [x] Customer OTP authentication.
 - [x] Saved addresses.
-- [ ] Loyalty and referrals.
+- [x] Loyalty and referrals.
 - [ ] Rider app with GPS and proof of delivery.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

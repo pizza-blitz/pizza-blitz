@@ -59,6 +59,12 @@ from app.services.order_notification_service import (
     sent_notifications_for_order,
     serialize_notification,
 )
+from app.services.loyalty_service import (
+    ReferralError,
+    apply_referral,
+    award_order_points,
+    validate_referral_code,
+)
 from app.services.scheduling_service import (
     DAYS_AHEAD,
     LEAD_MINUTES,
@@ -191,6 +197,7 @@ class OrderCreate(BaseModel):
     discount_amount: float = 0.0
     tip_amount: float = Field(default=0.0, ge=0, le=2000)
     coupon_code: Optional[str] = None
+    referral_code: Optional[str] = None
     payment_method: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_zone_id: Optional[int] = None
@@ -2063,6 +2070,25 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    referral_account = None
+    if order.referral_code:
+        phone = (order.customer_phone or "").strip()
+        if not phone:
+            raise HTTPException(
+                status_code=422,
+                detail="Add a phone number before using a referral code.",
+            )
+        existing_customer = db.query(Customer).filter(Customer.phone == phone).first()
+        if existing_customer is not None and int(existing_customer.total_orders or 0) > 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Referral codes can only be used on a first order.",
+            )
+        try:
+            referral_account = validate_referral_code(db, order.referral_code, phone)
+        except ReferralError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     if order.table_number:
         table = db.query(DiningTable).filter(
             DiningTable.table_number == order.table_number
@@ -2163,6 +2189,19 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         customer_email=order.customer_email,
         opt_in_marketing=order.opt_in_marketing,
     )
+    db.flush()
+
+    referral_applied = False
+    if referral_account is not None and order.customer_phone:
+        new_customer = (
+            db.query(Customer)
+            .filter(Customer.phone == (order.customer_phone or "").strip())
+            .first()
+        )
+        if new_customer is not None:
+            referral_applied = apply_referral(
+                db, new_customer, referral_account, row
+            )
 
     if order.table_number:
         table.status = "occupied"
@@ -2182,6 +2221,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         "status": row.status,
         "payment_status": row.payment_status,
         "coupon_code": applied_promo.code if applied_promo else None,
+        "referral_applied": referral_applied,
         "scheduled_for": to_business_iso(scheduled_for),
         "scheduled_label": scheduled_label(scheduled_for),
     }
@@ -2352,6 +2392,7 @@ def close_order(
 
     db.commit()
     if notify_completed:
+        award_order_points(db, order)
         notify_order_event(db, order, "completed")
     record_operational_audit_event(
         db,

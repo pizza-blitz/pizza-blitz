@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 110 backend tests, 129 browser proof scripts, a backend Ruff
+- Automation: 114 backend tests, 130 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -107,12 +107,16 @@ Wave 4 (in progress):
   customer-token scoping, account-page management, and checkout chips that fill
   the delivery address.
 - New `verify:saved-addresses` browser proof and four backend tests.
-- Next: loyalty/referrals, rider app, custom reports, 2FA/permissions,
-  multi-store, aggregators, accounting.
+- Loyalty: 1 point per ₹1 on completed orders (idempotent ledger), tiers,
+  referral codes with a 100-point two-sided bonus, account-page loyalty card
+  with points/tier/progress/referrals/activity, and a checkout referral field.
+- New `verify:loyalty` browser proof and four backend tests.
+- Next: rider app, custom reports, 2FA/permissions, multi-store, aggregators,
+  accounting, loyalty redemption.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 110 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 114 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

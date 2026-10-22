@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 38 frontend routes, the 129 browser proof scripts in
+- Listed all 38 frontend routes, the 130 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -69,6 +69,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 38 | Menu content | Menu items had no image field or upload path; the public menu relied entirely on remote curated photography, so the owner could not publish their real dishes. | W3 media gap. | Added `menu_items.image_url`/`image_alt` (migration), admin upload/delete endpoints with magic-byte + 5 MB validation, `/media` static serving (Next rewrite), alt text, thumbnails in admin/customer UI, and landing-page support with curated fallback. Four backend tests and a browser proof. |
 | 39 | Customer security | `/api/v1/auth/customer/login` issued a full customer token from a phone number alone, so anyone who knew a customer's phone could read their order history. | W4 customer-auth review. | Added OTP login (`customer_otps`, hashed six-digit codes, five-minute expiry, five attempts, request/verify rate limits, SMS/WhatsApp/console delivery) and required phone + matching recent order for the legacy proof path. Phone-only login now returns 401. The login page offers OTP and order-detail tabs; four backend tests and a browser proof cover the flow. |
 | 40 | Customer convenience | Customers had to retype delivery addresses every order; the account page only showed the last delivery profile and checkout had no saved-address reuse. | W4 saved-address gap. | Added `customer_addresses` (migration), customer-token-scoped list/create/update/delete with default handling, a 10-address cap, account-page management, checkout chips, and a backend customer token carried by the Next session route. Four backend tests and a browser proof. |
+| 41 | Retention | Customer history had tier labels but no points, rewards, or referrals; there was no reason for a guest to return beyond the order itself. | W4 loyalty gap. | Added `loyalty_accounts` and `loyalty_transactions` (migration), points on completed orders (1/₹, idempotent per order), tiers, referral codes with a 100-point two-sided first-order bonus, a customer loyalty endpoint, account-page card and checkout referral field. Four backend tests and a browser proof. Redemption remains. |
 
 ## Still open
 
@@ -83,7 +84,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 110 tests, all pass (in a clean venv built from
+- Backend unit suite: 114 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

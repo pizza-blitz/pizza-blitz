@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
 from app.models.domain import Customer, CustomerAddress
+from app.services.loyalty_service import loyalty_summary
 
 router = APIRouter()
 
@@ -85,6 +86,14 @@ def _owned_address(db: Session, customer: Customer, address_id: int) -> Customer
     if address is None:
         raise HTTPException(status_code=404, detail="Address not found.")
     return address
+
+
+@router.get("/me/loyalty")
+def my_loyalty(
+    customer: Customer = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    return loyalty_summary(db, customer)
 
 
 @router.get("/me/addresses")

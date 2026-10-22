@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 110 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 114 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -221,6 +221,18 @@ customer token in an httpOnly `pb_customer_api_token` cookie and the
 manages addresses and checkout shows chips that fill the delivery address.
 Covered by `backend/tests/test_customer_addresses.py` and
 `frontend/e2e/verify-saved-addresses.cjs`.
+
+## Loyalty and referrals
+
+`GET /api/v1/restaurant/customers/me/loyalty` returns points, lifetime points,
+tier progress, referral code/count and recent transactions for the authenticated
+customer. Closing an order awards one point per rupee in an idempotent
+`loyalty_transactions` row; repeated closes do not double-award. A first order
+with another customer's `referral_code` credits 100 points to both sides and
+records `referred_by_customer_id`; invalid codes, self-referrals and returning
+customers are rejected with 422. The account page renders a loyalty card and
+checkout has an optional referral field. Covered by
+`backend/tests/test_loyalty.py` and `frontend/e2e/verify-loyalty.cjs`.
 
 ## Health endpoints
 
