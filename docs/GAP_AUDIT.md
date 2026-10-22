@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 34 frontend routes, the 139 browser proof scripts in
+- Listed all 34 frontend routes, the 120 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -58,6 +58,8 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 27 | Data privacy | The public storefront bootstrap returned each menu item's `cost_price`, exposing internal margins to anonymous callers. | Reading the storefront payload while rebuilding the landing page. | `public_menu()` now strips `cost_price`; a regression test asserts it is absent from the public payload while the admin menu endpoint keeps it. |
 | 28 | UX | Mobile portal navigation was a 26-item horizontal scroll strip, and the desktop sidebar was a flat list with no grouping, active state, search, or collapse. | 390px/1440px screenshot audit. | Rebuilt the portal shell: grouped/searchable sidebar with active state and collapse, mobile drawer, 5-tab bottom navigation, desktop topbar, role badge, and hydration markers for deterministic proofs. New `verify:portal-shell` proof. |
 | 29 | Marketing / SEO | The public home page was a shallow hero (676 characters) with generic metadata, no structured data, and no brand story, food detail, offers, or FAQ. | Screenshot audit and source read. | Rebuilt the landing page with live menu/offers/delivery data, food-quality detail, FAQ, Restaurant + FAQPage JSON-LD, Open Graph/Twitter metadata, responsive layout, and configuration-driven store contact. New `verify:landing` proof. |
+| 30 | Operations | Opening hours, online-ordering pause, and prep time had no admin control or public status. The checkout either accepted orders or showed a preview-mode message; a closed kitchen could not stop orders. | Feature-matrix gap review and order-flow read. | Added a single-row `store_profile` table + migration, a validated opening-hours service (per-day, overnight windows), pause/prep controls, public storefront profile/status endpoints, and enforcement in checkout readiness and order creation. New `verify:store-profile` proof and eight backend tests. |
+| 31 | Content / configuration | Store name, contact details, hours, and Instagram lived only in environment variables, so the landing page could not be updated by the owner after deploy. | W1 landing-page build. | Store identity/contact/socials are now editable at `/settings/store`; the landing page uses them for the header, store details, footer, Open Graph metadata, and Restaurant JSON-LD. The settings page is linked from Settings and the portal navigation. |
 
 ## Still open
 
@@ -72,7 +74,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 62 tests, all pass (in a clean venv built from
+- Backend unit suite: 70 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
@@ -86,7 +88,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 - Audit surface, inventory, action feedback, role gates, restaurant ready
   audit, and roadmap proofs: pass.
 - The 11 order/customer proof scripts touched by the auth hardening: pass.
-- `alembic upgrade head` on an empty database: 37 tables, and `alembic check`
+- `alembic upgrade head` on an empty database: 38 tables, and `alembic check`
   reports no drift.
 - GitHub Actions workflow parses and covers both apps.
 - Production credential behavior: default `admin/admin123` is rejected by a

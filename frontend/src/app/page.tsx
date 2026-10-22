@@ -9,6 +9,7 @@ import {
   CreditCard,
   Flame,
   Leaf,
+  Mail,
   MapPin,
   Phone,
   ShieldCheck,
@@ -20,7 +21,7 @@ import {
 } from "lucide-react";
 
 import { getServerApiUrl } from "@/lib/server-api";
-import { hasStoreContact, storeMapHref, storeProfile } from "@/lib/store-profile";
+import { storeMapHref, storeProfile } from "@/lib/store-profile";
 
 export const revalidate = 60;
 
@@ -75,11 +76,34 @@ type StorefrontZone = {
   minimum_order_amount?: number;
 };
 
+type StoreOpeningWindow = { open: string; close: string };
+
+type StoreProfilePublic = {
+  name?: string;
+  tagline?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address_line?: string | null;
+  map_url?: string | null;
+  instagram_url?: string | null;
+  opening_hours?: Record<string, StoreOpeningWindow | null> | null;
+  prep_time_minutes?: number;
+  status?: {
+    state?: "open" | "closed" | "paused";
+    is_open?: boolean;
+    accepting_orders?: boolean;
+    message?: string;
+    next_opening?: string | null;
+    timezone?: string;
+  };
+};
+
 type StorefrontPayload = {
   menu: StorefrontMenuItem[];
   active_promotions: StorefrontPromotion[];
   delivery_zones: StorefrontZone[];
   checkout_readiness?: { accepting_orders?: boolean };
+  store_profile?: StoreProfilePublic;
 };
 
 const emptyStorefront: StorefrontPayload = {
@@ -94,26 +118,85 @@ const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ||
   "http://127.0.0.1:3011";
 
-export const metadata: Metadata = {
-  title: "Pizza Blitz — Hot pizza, pickup and delivery",
-  description:
-    "Order pizza, sides, burgers, desserts and drinks from Pizza Blitz. Customise every item, apply offers, choose pickup or delivery, and follow your order live.",
-  alternates: { canonical: "/" },
-  openGraph: {
-    title: "Pizza Blitz — Hot pizza, pickup and delivery",
-    description:
-      "Made-to-order pizza with live tracking, clear pricing, and pickup or delivery.",
-    type: "website",
-    url: siteUrl,
-    images: [{ url: heroImage, width: 1800, height: 1200, alt: "Fresh pizza at Pizza Blitz" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Pizza Blitz — Hot pizza, pickup and delivery",
-    description: "Made-to-order pizza with live tracking, pickup and delivery.",
-    images: [heroImage],
-  },
-};
+const DAY_ORDER = [
+  ["mon", "Mon", "Monday"],
+  ["tue", "Tue", "Tuesday"],
+  ["wed", "Wed", "Wednesday"],
+  ["thu", "Thu", "Thursday"],
+  ["fri", "Fri", "Friday"],
+  ["sat", "Sat", "Saturday"],
+  ["sun", "Sun", "Sunday"],
+] as const;
+
+function formatOpeningHours(
+  hours?: Record<string, StoreOpeningWindow | null> | null
+): string {
+  if (hours === null || hours === undefined) return "Open 24/7";
+  const entries = DAY_ORDER.filter(([key]) => hours[key]);
+  if (!entries.length) return "Closed every day";
+  const windows = entries.map(([key]) => hours[key] as StoreOpeningWindow);
+  const uniform =
+    entries.length === 7 &&
+    windows.every(
+      (window) => window.open === windows[0].open && window.close === windows[0].close
+    );
+  if (uniform) return `Every day ${windows[0].open}–${windows[0].close}`;
+  return entries
+    .map(([key, short]) => `${short} ${hours[key]?.open}–${hours[key]?.close}`)
+    .join(" · ");
+}
+
+function openingHoursSpecification(
+  hours?: Record<string, StoreOpeningWindow | null> | null
+) {
+  if (!hours) return undefined;
+  const specification = DAY_ORDER.filter(([key]) => hours[key]).map(([key, , full]) => ({
+    "@type": "OpeningHoursSpecification" as const,
+    dayOfWeek: full,
+    opens: hours[key]?.open,
+    closes: hours[key]?.close,
+  }));
+  return specification.length ? specification : undefined;
+}
+
+async function loadPublicProfile(): Promise<StoreProfilePublic | null> {
+  try {
+    const response = await fetch(getServerApiUrl("/api/v1/restaurant/storefront/profile"), {
+      next: { revalidate: 60 },
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { profile?: StoreProfilePublic };
+    return payload.profile || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const profile = await loadPublicProfile();
+  const name = profile?.name || storeProfile.name;
+  const tagline = profile?.tagline || "Hot pizza, pickup and delivery";
+  const description = `Order pizza, sides, burgers, desserts and drinks from ${name}. Customise every item, apply offers, choose pickup or delivery, and follow your order live.`;
+  return {
+    title: { absolute: `${name} — ${tagline}` },
+    description,
+    alternates: { canonical: "/" },
+    openGraph: {
+      title: `${name} — ${tagline}`,
+      description,
+      type: "website",
+      url: siteUrl,
+      siteName: name,
+      images: [{ url: heroImage, width: 1800, height: 1200, alt: `Fresh pizza at ${name}` }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${name} — ${tagline}`,
+      description,
+      images: [heroImage],
+    },
+  };
+}
 
 async function loadStorefront(): Promise<StorefrontPayload> {
   try {
@@ -130,6 +213,7 @@ async function loadStorefront(): Promise<StorefrontPayload> {
         : [],
       delivery_zones: Array.isArray(payload.delivery_zones) ? payload.delivery_zones : [],
       checkout_readiness: payload.checkout_readiness || { accepting_orders: true },
+      store_profile: payload.store_profile,
     };
   } catch {
     return emptyStorefront;
@@ -245,28 +329,56 @@ export default async function PublicHomePage() {
   const promotions = storefront.active_promotions.slice(0, 3);
   const zones = storefront.delivery_zones.slice(0, 6);
   const acceptingOrders = storefront.checkout_readiness?.accepting_orders !== false;
-  const contactHref = storeMapHref();
+  const profile = storefront.store_profile;
+  const storeName = profile?.name || storeProfile.name;
+  const storeTagline = profile?.tagline || storeProfile.tagline;
+  const storePhone = profile?.phone || storeProfile.phone;
+  const storeEmail = profile?.email || storeProfile.supportEmail;
+  const storeAddress = profile?.address_line || storeProfile.address;
+  const storeInstagram = profile?.instagram_url || storeProfile.instagramUrl;
+  const storeHoursText = formatOpeningHours(profile?.opening_hours);
+  const orderingState = profile?.status?.state || (acceptingOrders ? "open" : "closed");
+  const statusLabel =
+    orderingState === "open"
+      ? "Taking orders"
+      : orderingState === "paused"
+        ? "Ordering paused"
+        : "Closed now";
+  const statusMessage =
+    profile?.status?.message ||
+    (acceptingOrders
+      ? "The kitchen is online. Customise any item and choose pickup or delivery at checkout."
+      : "The store has paused online ordering for now. Please check back shortly.");
+  const hasContact = Boolean(storePhone || storeAddress || storeEmail);
+  const contactHref =
+    profile?.map_url ||
+    (storeAddress
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          `${storeName} ${storeAddress}`
+        )}`
+      : storeMapHref());
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Restaurant",
-    name: storeProfile.name,
-    description:
-      "Pizza Blitz is a neighbourhood pizza kitchen serving made-to-order pizza, sides, burgers, desserts, and drinks for pickup and delivery.",
+    name: storeName,
+    description: `${storeName} is a neighbourhood pizza kitchen serving made-to-order pizza, sides, burgers, desserts, and drinks for pickup and delivery.`,
     servesCuisine: "Pizza",
     priceRange: "₹₹",
     url: siteUrl,
     hasMenu: `${siteUrl}/order`,
     acceptsReservations: false,
-    ...(storeProfile.phone ? { telephone: storeProfile.phone } : {}),
-    ...(storeProfile.address
+    ...(storePhone ? { telephone: storePhone } : {}),
+    ...(storeAddress
       ? {
           address: {
             "@type": "PostalAddress",
-            streetAddress: storeProfile.address,
+            streetAddress: storeAddress,
           },
         }
       : {}),
-    ...(storeProfile.hours ? { openingHours: storeProfile.hours } : {}),
+    ...(openingHoursSpecification(profile?.opening_hours)
+      ? { openingHoursSpecification: openingHoursSpecification(profile?.opening_hours) }
+      : {}),
   };
   const faqLd = {
     "@context": "https://schema.org",
@@ -307,7 +419,7 @@ export default async function PublicHomePage() {
               <span className="grid h-9 w-9 place-items-center rounded-xl bg-red-600 text-lg font-black">
                 PB
               </span>
-              <span className="text-lg font-black tracking-tight sm:text-xl">Pizza Blitz</span>
+              <span className="text-lg font-black tracking-tight sm:text-xl">{storeName}</span>
             </Link>
             <nav aria-label="Primary" className="hidden items-center gap-6 text-sm font-bold text-white/80 md:flex">
               <a href="#menu" className="hover:text-white">Menu</a>
@@ -386,15 +498,17 @@ export default async function PublicHomePage() {
             </p>
             <p className="mt-3 flex items-center gap-2 text-2xl font-black">
               <span
-                className={`h-2.5 w-2.5 rounded-full ${acceptingOrders ? "bg-emerald-400" : "bg-amber-400"}`}
+                className={`h-2.5 w-2.5 rounded-full ${
+                  orderingState === "open"
+                    ? "bg-emerald-400"
+                    : orderingState === "paused"
+                      ? "bg-amber-400"
+                      : "bg-rose-400"
+                }`}
               />
-              {acceptingOrders ? "Taking orders" : "Ordering paused"}
+              {statusLabel}
             </p>
-            <p className="mt-2 text-sm font-medium leading-6 text-white/70">
-              {acceptingOrders
-                ? "The kitchen is online. Customise any item and choose pickup or delivery at checkout."
-                : "The store has paused online ordering for now. Please check back shortly."}
-            </p>
+            <p className="mt-2 text-sm font-medium leading-6 text-white/70">{statusMessage}</p>
             <div className="mt-5 space-y-2 border-t border-white/10 pt-4 text-sm">
               <p className="flex items-center justify-between text-white/70">
                 <span>Coupons</span>
@@ -747,35 +861,40 @@ export default async function PublicHomePage() {
             <div>
               <p className="text-xs font-black uppercase tracking-[0.22em] text-red-700">Visit or contact</p>
               <h2 className="mt-2 text-2xl font-black sm:text-3xl">Store details</h2>
-              {hasStoreContact() ? (
-                <ul className="mt-5 space-y-3 text-sm font-semibold text-[#5a4f45]">
-                  {storeProfile.address ? (
-                    <li className="flex items-start gap-3">
-                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
-                      <span>{storeProfile.address}</span>
-                    </li>
-                  ) : null}
-                  {storeProfile.hours ? (
-                    <li className="flex items-start gap-3">
-                      <Clock className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
-                      <span>{storeProfile.hours}</span>
-                    </li>
-                  ) : null}
-                  {storeProfile.phone ? (
-                    <li className="flex items-start gap-3">
-                      <Phone className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
-                      <a href={`tel:${storeProfile.phone}`} className="hover:text-red-700">
-                        {storeProfile.phone}
-                      </a>
-                    </li>
-                  ) : null}
-                </ul>
-              ) : (
-                <p className="mt-5 text-sm font-medium leading-6 text-[#5a4f45]">
-                  Order online for pickup or delivery. Store address, hours, and phone are published
-                  here as soon as they are configured in the admin settings.
+              <ul className="mt-5 space-y-3 text-sm font-semibold text-[#5a4f45]">
+                {storeAddress ? (
+                  <li className="flex items-start gap-3">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                    <span>{storeAddress}</span>
+                  </li>
+                ) : null}
+                <li className="flex items-start gap-3">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                  <span>{storeHoursText}</span>
+                </li>
+                {storePhone ? (
+                  <li className="flex items-start gap-3">
+                    <Phone className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                    <a href={`tel:${storePhone}`} className="hover:text-red-700">
+                      {storePhone}
+                    </a>
+                  </li>
+                ) : null}
+                {storeEmail ? (
+                  <li className="flex items-start gap-3">
+                    <Mail className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                    <a href={`mailto:${storeEmail}`} className="hover:text-red-700">
+                      {storeEmail}
+                    </a>
+                  </li>
+                ) : null}
+              </ul>
+              {!hasContact ? (
+                <p className="mt-3 text-xs font-semibold leading-5 text-[#8a7a6a]">
+                  Address and phone are published from the admin store profile as soon as they are
+                  saved.
                 </p>
-              )}
+              ) : null}
               {contactHref ? (
                 <a
                   href={contactHref}
@@ -843,14 +962,13 @@ export default async function PublicHomePage() {
       <footer className="bg-[#17130f] text-white">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 md:grid-cols-4 md:px-8">
           <div className="md:col-span-2">
-            <p className="text-xl font-black">{storeProfile.name}</p>
+            <p className="text-xl font-black">{storeName}</p>
             <p className="mt-2 max-w-md text-sm font-medium leading-6 text-white/65">
-              {storeProfile.tagline} Order pizza, sides, burgers, desserts, and drinks for pickup or
-              delivery.
+              {storeTagline} Order pizza, sides, burgers, desserts, and drinks for pickup or delivery.
             </p>
-            {storeProfile.instagramUrl ? (
+            {storeInstagram ? (
               <a
-                href={storeProfile.instagramUrl}
+                href={storeInstagram}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-4 inline-flex text-sm font-bold text-amber-300 hover:text-amber-200"
@@ -873,10 +991,10 @@ export default async function PublicHomePage() {
             <ul className="mt-4 space-y-2 text-sm font-semibold text-white/80">
               <li><Link href="/login" className="hover:text-white">Admin &amp; staff login</Link></li>
               <li><Link href="/order" className="hover:text-white">Bulk orders</Link></li>
-              {storeProfile.supportEmail ? (
+              {storeEmail ? (
                 <li>
-                  <a href={`mailto:${storeProfile.supportEmail}`} className="hover:text-white">
-                    {storeProfile.supportEmail}
+                  <a href={`mailto:${storeEmail}`} className="hover:text-white">
+                    {storeEmail}
                   </a>
                 </li>
               ) : null}
@@ -885,7 +1003,7 @@ export default async function PublicHomePage() {
         </div>
         <div className="border-t border-white/10">
           <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-5 text-xs font-semibold text-white/50 sm:flex-row sm:items-center sm:justify-between md:px-8">
-            <p>© {new Date().getFullYear()} {storeProfile.name}. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} {storeName}. All rights reserved.</p>
             <p>Prices include applicable taxes shown at checkout. Allergen information on request.</p>
           </div>
         </div>

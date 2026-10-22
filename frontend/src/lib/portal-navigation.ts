@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   Sparkles,
+  Store,
   Target,
   Trash2,
   Truck,
@@ -102,6 +103,7 @@ export const portalNavGroups: PortalNavGroup[] = [
     items: [
       { name: "Production Ops", href: "/ops", icon: ShieldCheck, description: "Readiness, backups and launch checks", allowedRoles: adminOnly },
       { name: "AI Insights", href: "/ai-insights", icon: Sparkles, description: "Gemini summary and directives", allowedRoles: adminOnly },
+      { name: "Store Profile", href: "/settings/store", icon: Store, description: "Identity, hours and online ordering", allowedRoles: adminOnly },
       { name: "Settings", href: "/settings", icon: Settings, description: "Store, payments, staff and imports", allowedRoles: adminOnly },
     ],
   },

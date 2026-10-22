@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 62 backend tests, 139 browser proof scripts, a backend Ruff
+- Automation: 70 backend tests, 120 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -47,12 +47,23 @@ Wave 1 is complete:
 - Added `verify:landing` and `verify:portal-shell` browser proofs, both wired
   into `verify:audit`.
 
-Wave 2 is next: store profile settings, store hours/order pause, scheduled
-orders, tips, and dense-page mobile polish.
+Wave 2 (in progress):
+
+- Added a database-backed store profile with name, tagline, phone, email,
+  address, map link, Instagram, weekly opening hours (overnight supported),
+  online-ordering pause/message, and prep time.
+- Built the admin editor at `/settings/store`, linked from Settings and the
+  portal navigation.
+- Public storefront profile/status endpoints, landing page contact/hours/status,
+  dynamic metadata/JSON-LD, checkout readiness, and order creation all read the
+  same profile. Paused or closed stores return HTTP 503 and show a customer
+  banner instead of accepting orders.
+- New `verify:store-profile` browser proof and eight backend tests.
+- Still next in W2: scheduled orders, tips, and dense-page mobile polish.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 62 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 70 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the
@@ -90,7 +101,7 @@ orders, tips, and dense-page mobile polish.
 - Customer order history and order detail endpoints now require a verified
   session or a phone+order ownership proof instead of trusting a phone number
   or a sequential order id.
-- The Alembic chain now builds the complete schema: all 37 model tables from a
+- The Alembic chain now builds the complete schema: all 38 model tables from a
   fresh database, with `alembic check` reporting no drift.
 - Backend runtime dependencies were reduced from 206 unbounded packages to the
   14 the code actually uses, with bounded versions.

@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **208 API endpoints**, **37 routes/pages** (29 portal,
-8 public), **139 browser proof scripts**, **62 backend tests**, **37 database
+8 public), **120 browser proof scripts**, **70 backend tests**, **38 database
 tables**, **19 integration points**.
 
 ## Benchmark set
@@ -37,7 +37,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Store profile is env-driven; editable store profile is W2 |
+| Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Store profile is admin-editable; menu imagery still remote |
 | Menu browsing | `/order` catalog with categories/search | Built | Fast filtered catalog, sold-out states, images | Media library missing |
 | Product customization | Sizes, crusts, toppings, add-ons, combos with server-side pricing | Built | Same | — |
 | Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice | Built | Guest + saved checkout, tips, scheduling | Tips and scheduling missing |
@@ -46,7 +46,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No push/SMS/WhatsApp status events |
 | Customer account | Phone + recent order login, order history, profile/consent | Built | Password/OTP, saved addresses, saved payments | No OTP/password, weak proof of identity |
 | Scheduled orders | — | Missing | Order for later time/date, slot capacity | Must build |
-| Store hours / order pause | — | Missing | Open/closed by hours, pause online orders, capacity | Must build |
+| Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
 | Tips | — | Missing | Preset/custom tip at checkout, tip reporting | Must build |
 | Order notifications | — | Missing | Confirmation, ready, out-for-delivery, delivered via WhatsApp/SMS/email | Must build |
 | Allergens / nutrition | — | Missing | Allergen flags, vegetarian/vegan, nutrition per item | Must build (menu metadata) |
@@ -238,6 +238,13 @@ errors, mobile nav reduced from 26 scrolling links to 4 quick tabs + drawer,
 and the full local audit suite (now including landing and portal-shell proofs)
 passes.
 
+W2 measured results: the store profile and opening hours are now database-backed
+and editable at `/settings/store`; the public profile, landing page metadata,
+JSON-LD, checkout readiness, and order creation all read the same source.
+Pausing online ordering returns HTTP 503 on order creation and shows an
+"Ordering paused" banner at `/order`. Covered by 8 backend tests and a new
+browser proof (`verify:store-profile`).
+
 ---
 
 ## Enterprise gap register (build order)
@@ -250,8 +257,9 @@ passes.
    collapse, mobile drawer + bottom bar, role badge.
 3. ~~**Master access**~~ — verified and documented in `docs/ACCESS.md`
    (`admin` / `admin123` locally; production requires configured secrets).
-4. **Store hours + online ordering controls** — open/closed, pause orders, prep
-   capacity; shop status visible to customers.
+4. ~~**Store hours + online ordering controls**~~ — done in W2: weekly hours
+   (including overnight windows), pause toggle with customer message, prep time,
+   public status, and checkout/order enforcement.
 5. **Scheduled orders** — pickup/delivery time slots with capacity checks.
 6. **Tips** — checkout + POS capture, reporting, payout view.
 7. **Refunds and voids** — full/partial refund, reason, audit trail, gateway call.
@@ -259,8 +267,9 @@ passes.
 9. **Order notifications** — WhatsApp/SMS status events (confirmation, ready,
    out for delivery, delivered), respecting the existing provider gates.
 10. **Menu media** — item images uploaded/stored, alt text, responsive rendering.
-11. **Store profile settings** — name, phone, address, hours, socials editable in
-    the admin UI and rendered on the landing page (replacing env-only config).
+11. ~~**Store profile settings**~~ — done in W2: name, tagline, phone, email,
+    address, map, Instagram, hours and ordering controls are editable in
+    `/settings/store` and feed the landing page, metadata, JSON-LD and checkout.
 
 ### P1 — enterprise depth
 
@@ -290,7 +299,7 @@ passes.
 | Wave | Contents | Exit criteria |
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
-| W2 | Store profile + hours/order pause, scheduled orders, tips, dense-page tap targets | Backend tests + proof scripts for each |
+| W2 (in progress) | Store profile + weekly hours/order pause + prep time (done); scheduled orders, tips, dense-page tap targets (next) | Backend tests + proof scripts for each |
 | W3 | Refunds/voids, KDS device view, notifications | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |

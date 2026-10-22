@@ -42,6 +42,7 @@ from app.services.operational_audit_service import (
     record_operational_audit_event,
     serialize_operational_audit_event,
 )
+from app.services.store_profile_service import get_store_profile, store_status
 from app.services.payment_gateway import (
     PaymentWebhookError,
     create_payment_session,
@@ -96,7 +97,7 @@ PAYMENT_GATEWAY_RUNBOOK = {
 }
 
 
-def checkout_readiness_payload() -> dict:
+def checkout_readiness_payload(db: Session | None = None) -> dict:
     environment = (os.getenv("VERCEL_ENV") or settings.ENVIRONMENT or "development").strip().lower()
     is_cloud_runtime = (
         environment not in {"development", "local", "test"}
@@ -105,22 +106,41 @@ def checkout_readiness_payload() -> dict:
     database_uri = (settings.SQLALCHEMY_DATABASE_URI or "").strip().lower()
     uses_ephemeral_database = database_uri.startswith("sqlite")
     accepting_orders = not (is_cloud_runtime and uses_ephemeral_database)
-    return {
+    message = (
+        "Online ordering is active."
+        if accepting_orders
+        else "Online ordering is being activated. Browse the menu now and place your order shortly."
+    )
+    detail = (
+        "Order capture is connected to a persistent database."
+        if accepting_orders
+        else "The storefront is in preview mode until the managed production database is connected."
+    )
+
+    store_state = None
+    if db is not None:
+        store = get_store_profile(db)
+        store_state = store_status(store)
+        if not store_state["accepting_orders"]:
+            accepting_orders = False
+            message = store_state["message"]
+            detail = (
+                "The store paused online ordering from the admin portal."
+                if store_state["state"] == "paused"
+                else "The kitchen is outside its configured online ordering hours."
+            )
+
+    payload = {
         "status": "accepting_orders" if accepting_orders else "storefront_preview",
         "accepting_orders": accepting_orders,
         "environment": environment,
         "database_ready": not uses_ephemeral_database or not is_cloud_runtime,
-        "message": (
-            "Online ordering is active."
-            if accepting_orders
-            else "Online ordering is being activated. Browse the menu now and place your order shortly."
-        ),
-        "detail": (
-            "Order capture is connected to a persistent database."
-            if accepting_orders
-            else "The storefront is in preview mode until the managed production database is connected."
-        ),
+        "message": message,
+        "detail": detail,
     }
+    if store_state is not None:
+        payload["store_status"] = store_state
+    return payload
 
 
 class OrderItem(BaseModel):
@@ -1771,14 +1791,14 @@ def get_tables(
 
 
 @router.get("/checkout-readiness")
-def checkout_readiness():
-    return checkout_readiness_payload()
+def checkout_readiness(db: Session = Depends(get_db)):
+    return checkout_readiness_payload(db)
 
 
 @router.post("/")
 def create_order(order: OrderCreate, request: Request, db: Session = Depends(get_db)):
     enforce_rate_limit(request, "order-create", 120)
-    checkout_readiness = checkout_readiness_payload()
+    checkout_readiness = checkout_readiness_payload(db)
     if not checkout_readiness["accepting_orders"]:
         raise HTTPException(status_code=503, detail=checkout_readiness["message"])
 

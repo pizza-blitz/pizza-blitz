@@ -128,6 +128,14 @@ type CheckoutReadiness = {
   accepting_orders: boolean;
   message: string;
   detail: string;
+  store_status?: {
+    state?: "open" | "closed" | "paused";
+    is_open?: boolean;
+    accepting_orders?: boolean;
+    message?: string;
+    next_opening?: string | null;
+    timezone?: string;
+  };
 };
 
 type StorefrontBootstrap = {
@@ -1566,9 +1574,20 @@ export default function PublicOrderPage() {
                 data-testid="storefront-preview-notice"
                 className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-950"
               >
-                <p className="text-sm font-black">Storefront preview</p>
+                <p className="text-sm font-black">
+                  {checkoutReadiness.store_status?.state === "paused"
+                    ? "Ordering paused"
+                    : checkoutReadiness.store_status?.state === "closed"
+                      ? "Closed right now"
+                      : "Storefront preview"}
+                </p>
                 <p className="mt-1 text-sm font-semibold">{checkoutReadiness.message}</p>
                 <p className="mt-1 text-xs font-semibold text-amber-800">{checkoutReadiness.detail}</p>
+                {checkoutReadiness.store_status?.next_opening ? (
+                  <p className="mt-1 text-xs font-bold uppercase tracking-widest text-amber-800">
+                    Next opening: {checkoutReadiness.store_status.next_opening}
+                  </p>
+                ) : null}
               </div>
             )}
 

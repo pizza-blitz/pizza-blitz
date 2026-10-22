@@ -10,6 +10,11 @@ from app.models.domain import DeliveryZone, Promotion
 from app.services.delivery_service import seed_default_delivery_zones, serialize_delivery_zone
 from app.services.menu_customization_service import customized_menu_payload
 from app.services.payment_gateway import public_payment_checkout_status
+from app.services.store_profile_service import (
+    get_store_profile,
+    serialize_public_profile,
+    store_status,
+)
 
 
 router = APIRouter()
@@ -70,12 +75,23 @@ def public_menu(db: Session) -> list[dict]:
     ]
 
 
+@router.get("/profile")
+def storefront_profile(db: Session = Depends(get_db)):
+    profile = get_store_profile(db)
+    return {
+        "profile": serialize_public_profile(profile),
+        "status": store_status(profile),
+    }
+
+
 @router.get("/bootstrap")
 def storefront_bootstrap(db: Session = Depends(get_db)):
+    profile = get_store_profile(db)
     return {
         "menu": public_menu(db),
-        "checkout_readiness": checkout_readiness_payload(),
+        "checkout_readiness": checkout_readiness_payload(db),
         "payment_checkout": public_payment_checkout_status(),
         "active_promotions": public_promotions(db),
         "delivery_zones": public_delivery_zones(db),
+        "store_profile": serialize_public_profile(profile),
     }

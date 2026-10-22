@@ -1,6 +1,7 @@
 "use client";
 export const dynamic = "force-dynamic";
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
   CheckCircle2,
   ClipboardCheck,
@@ -15,6 +16,7 @@ import {
   Route,
   Save,
   Shield,
+  Store,
   Trash2,
   Truck,
   UserCheck,
@@ -1317,9 +1319,17 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-6xl animate-in fade-in duration-300">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-500 mt-1">Configure portal preferences, data sources, and security.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+          <p className="text-gray-500 mt-1">Configure portal preferences, data sources, and security.</p>
+        </div>
+        <Link
+          href="/settings/store"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-orange-300 hover:text-orange-700"
+        >
+          <Store className="h-4 w-4" /> Store profile
+        </Link>
       </div>
 
       {/* Access Control */}

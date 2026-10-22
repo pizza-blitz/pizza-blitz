@@ -482,3 +482,24 @@ class Recipe(Base):
     menu_item = Column(String(255), unique=True, index=True, nullable=False)
     ingredients = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StoreProfile(Base):
+    """Single-row store identity, opening hours, and online-ordering controls."""
+
+    __tablename__ = "store_profile"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False, default="Pizza Blitz")
+    tagline = Column(String(255), nullable=True)
+    phone = Column(String(40), nullable=True)
+    email = Column(String(120), nullable=True)
+    address_line = Column(String(255), nullable=True)
+    map_url = Column(String(500), nullable=True)
+    instagram_url = Column(String(255), nullable=True)
+    # {"mon": {"open": "11:00", "close": "23:00"}, ...}; null means 24/7,
+    # an empty map means closed every day.
+    opening_hours = Column(JSON, nullable=True)
+    online_ordering_paused = Column(Boolean, default=False)
+    pause_message = Column(String(255), nullable=True)
+    prep_time_minutes = Column(Integer, default=25)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

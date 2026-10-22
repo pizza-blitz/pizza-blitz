@@ -27,6 +27,11 @@ from app.services.ops_service import (
     run_live_deployment_probe,
     run_sqlite_restore_rehearsal,
 )
+from app.services.store_profile_service import (
+    get_store_profile,
+    normalize_opening_hours,
+    serialize_admin_profile,
+)
 
 router = APIRouter()
 
@@ -618,3 +623,78 @@ def run_restore_rehearsal(
         },
     )
     return result
+
+
+class StoreProfileUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    tagline: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=120)
+    address_line: str | None = Field(default=None, max_length=255)
+    map_url: str | None = Field(default=None, max_length=500)
+    instagram_url: str | None = Field(default=None, max_length=255)
+    opening_hours: dict[str, dict[str, str] | None] | None = Field(default=None)
+    online_ordering_paused: bool = False
+    pause_message: str | None = Field(default=None, max_length=255)
+    prep_time_minutes: int = Field(default=25, ge=0, le=240)
+
+
+def _clean_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+@router.get("/store-profile")
+def get_store_profile_settings(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    del session
+    return serialize_admin_profile(get_store_profile(db))
+
+
+@router.put("/store-profile")
+def update_store_profile_settings(
+    payload: StoreProfileUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    try:
+        opening_hours = normalize_opening_hours(payload.opening_hours)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    profile = get_store_profile(db)
+    profile.name = payload.name.strip()
+    profile.tagline = _clean_optional(payload.tagline)
+    profile.phone = _clean_optional(payload.phone)
+    profile.email = _clean_optional(payload.email)
+    profile.address_line = _clean_optional(payload.address_line)
+    profile.map_url = _clean_optional(payload.map_url)
+    profile.instagram_url = _clean_optional(payload.instagram_url)
+    profile.opening_hours = opening_hours
+    profile.online_ordering_paused = payload.online_ordering_paused
+    profile.pause_message = _clean_optional(payload.pause_message)
+    profile.prep_time_minutes = payload.prep_time_minutes
+    db.commit()
+    db.refresh(profile)
+
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="settings",
+        action="store_profile_update",
+        resource_type="store_profile",
+        resource_id=profile.id,
+        detail="Store profile, opening hours, or online ordering controls updated.",
+        metadata={
+            "online_ordering_paused": profile.online_ordering_paused,
+            "opening_days": sorted((profile.opening_hours or {}).keys()),
+            "prep_time_minutes": profile.prep_time_minutes,
+        },
+    )
+    return serialize_admin_profile(profile)

@@ -133,10 +133,10 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Stop exposing menu cost prices on the public storefront.
 - [x] Add `verify:landing` and `verify:portal-shell` proofs to the audit suite.
 
-### Wave 2 (next)
+### Wave 2 (in progress)
 
-- [ ] Store profile settings (name, address, phone, hours, socials) editable in admin and rendered on the landing page.
-- [ ] Store hours + online ordering pause/capacity controls.
+- [x] Store profile settings (name, address, phone, hours, socials) editable in admin and rendered on the landing page.
+- [x] Store hours + online ordering pause/capacity controls.
 - [ ] Scheduled pickup/delivery orders with slot capacity.
 - [ ] Tips at checkout and POS, with reporting.
 - [ ] Dense-page tap targets and table-to-card mobile layouts.
