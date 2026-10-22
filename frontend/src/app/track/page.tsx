@@ -58,6 +58,7 @@ type TrackedOrder = {
     }[];
   }[];
   total_amount: number;
+  tip_amount?: number;
   payment_status: string;
   payment_method?: string | null;
   payment_provider?: string | null;
@@ -478,6 +479,12 @@ export default function TrackOrderPage() {
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <Detail label="Total" value={`Rs ${Number(order.total_amount || 0).toLocaleString()}`} />
+                {Number(order.tip_amount || 0) > 0 && (
+                  <Detail
+                    label="Tip"
+                    value={`Rs ${Number(order.tip_amount || 0).toLocaleString()}`}
+                  />
+                )}
                 <Detail label="Status" value={order.status} />
                 <Detail label="Payment" value={order.payment_method || "Pending"} />
                 <Detail label="Paid" value={order.payment_status} />

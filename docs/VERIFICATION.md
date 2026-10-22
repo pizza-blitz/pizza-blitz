@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 77 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 83 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -135,6 +135,15 @@ hours and lead time, then stores naive UTC in `orders.scheduled_for`. Scheduled
 orders are allowed while the store is closed but not while online ordering is
 paused. Covered by `backend/tests/test_scheduled_orders.py` and
 `frontend/e2e/verify-scheduled-orders.cjs`.
+
+## Tips
+
+`orders.tip_amount` is non-negative (0–2000) and included in totals, receipts,
+tracking and the POS card. Customer checkout offers 0/5/10/15% presets plus a
+custom amount; POS has Rs 0/20/50/100 presets plus a custom field. The
+admin/staff `GET /api/v1/restaurant/orders/tips-summary?days=30` endpoint returns
+total/today/average/penetration. Covered by `backend/tests/test_order_tips.py`
+and `frontend/e2e/verify-order-tips.cjs`.
 
 ## Health endpoints
 

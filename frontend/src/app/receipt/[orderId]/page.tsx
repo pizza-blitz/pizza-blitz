@@ -37,6 +37,7 @@ type Order = {
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
+  tip_amount?: number;
   delivery_fee?: number;
   total_amount: number;
   payment_status: string;
@@ -306,6 +307,9 @@ export default function ReceiptPage() {
               <TotalRow label={couponNote ? `Discount (${couponNote})` : "Discount"} value={money(order.discount_amount)} />
               <TotalRow label="CGST 2.5%" value={money(cgst)} />
               <TotalRow label="SGST 2.5%" value={money(sgst)} />
+              {!!order.tip_amount && (
+                <TotalRow label="Tip" value={money(order.tip_amount)} />
+              )}
               {!!order.delivery_fee && (
                 <TotalRow label="Delivery" value={money(order.delivery_fee)} />
               )}

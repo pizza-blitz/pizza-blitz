@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **208 API endpoints**, **37 routes/pages** (29 portal,
-8 public), **121 browser proof scripts**, **77 backend tests**, **38 database
+8 public), **122 browser proof scripts**, **83 backend tests**, **38 database
 tables**, **19 integration points**.
 
 ## Benchmark set
@@ -40,14 +40,14 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Store profile is admin-editable; menu imagery still remote |
 | Menu browsing | `/order` catalog with categories/search | Built | Fast filtered catalog, sold-out states, images | Media library missing |
 | Product customization | Sizes, crusts, toppings, add-ons, combos with server-side pricing | Built | Same | — |
-| Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice | Built | Guest + saved checkout, tips, scheduling | Tips and scheduling missing |
+| Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice, tips, scheduling | Built | Guest + saved checkout, tips, scheduling | Saved-cart recovery missing |
 | Coupons and offers | Validate/apply server-side, promotion engine | Built | Public offers page, auto-apply best offer | Offers surface on landing page missing |
 | Pickup / delivery | Delivery quote by zone, fees, minimums, ETAs | Built | Address autocomplete + geocoding | Keyword zones only |
 | Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No push/SMS/WhatsApp status events |
 | Customer account | Phone + recent order login, order history, profile/consent | Built | Password/OTP, saved addresses, saved payments | No OTP/password, weak proof of identity |
 | Scheduled orders | 15-minute slots up to 14 days ahead, capacity-checked, validated against opening hours, stored on the order and shown in tracking/POS/kitchen/receipt | Built | Order for later time/date, slot capacity | Slot capacity is fixed at 6; no per-day holiday calendar |
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
-| Tips | — | Missing | Preset/custom tip at checkout, tip reporting | Must build |
+| Tips | Preset/custom tip at checkout and POS, persisted on the order, included in totals/receipts, tips summary API | Built | Preset/custom tip, tip reporting | Tip pooling and payout missing |
 | Order notifications | — | Missing | Confirmation, ready, out-for-delivery, delivered via WhatsApp/SMS/email | Must build |
 | Allergens / nutrition | — | Missing | Allergen flags, vegetarian/vegan, nutrition per item | Must build (menu metadata) |
 | PWA / installable | — | Missing | Installable app, offline menu, push | Later |
@@ -69,7 +69,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Cash drawer | Drawer command, close, variance | Built | Cash drops, shift handover | Partial |
 | Receipts | Receipt page + print-ready kitchen ticket | Partial | Thermal printer, reprints, email receipt | Hardware integration missing |
 | Refunds | — | Missing | Full/partial refund with provider and ledger | Must build |
-| Tips | — | Missing | Tip entry, tip pool, payout report | Must build |
+| Tips | Captured on orders; summary endpoint (total/today/average); shown on the POS header | Partial | Tip entry, tip pool, payout report | Pooling/payout missing |
 | Gift cards / store credit | — | Missing | Issue/redeem/balance | Later |
 | Customer display | — | Missing | Second screen / pole display | Out of scope |
 | Offline mode | — | Missing | Local queue + sync | Later |
@@ -183,7 +183,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Cash management | Drawer open/close, variance, daily close | Built | Cash drops, handover | Partial |
 | Expenses | Categories, add, audit command | Built | Approval workflow depth | Partial |
 | Refunds / voids | Cancel only | Missing | Refund with reason/audit/provider call | Must build |
-| Tips | — | Missing | Tip capture and payout | Must build |
+| Tips | Captured per order, included in totals, receipts and the tips summary | Partial | Tip pool, payout report | Payout missing |
 | Tax | 5% split CGST/SGST in invoice | Partial | Configurable tax rules, GST reports | Must improve |
 | Gift cards | — | Missing | Issue/redeem | Later |
 
@@ -245,8 +245,11 @@ Pausing online ordering returns HTTP 503 on order creation and shows an
 "Ordering paused" banner at `/order`. Scheduled orders use 15-minute slots up to
 14 days ahead, enforce opening hours and a six-order slot capacity, and show the
 scheduled time in checkout, tracking, POS cards, kitchen cards, tickets and
-receipts. Covered by 17 backend tests and two new browser proofs
-(`verify:store-profile`, `verify:scheduled-orders`).
+receipts. Tips can be set as presets or a custom amount at customer checkout and
+POS, are stored on the order, included in totals and receipts, and summarised by
+`/orders/tips-summary` and the POS “Tips Today” tile. Covered by 23 backend tests
+and three new browser proofs (`verify:store-profile`,
+`verify:scheduled-orders`, `verify:order-tips`).
 
 ---
 
@@ -266,7 +269,10 @@ receipts. Covered by 17 backend tests and two new browser proofs
 5. ~~**Scheduled orders**~~ — done in W2: 15-minute pickup/delivery slots up to
    14 days ahead, capacity-checked and validated against opening hours, with the
    time surfaced in checkout, tracking, POS, kitchen cards, tickets and receipts.
-6. **Tips** — checkout + POS capture, reporting, payout view.
+6. ~~**Tips**~~ — done in W2: preset/custom tips at customer checkout and
+   POS, persisted on the order, included in totals and receipts, with a tips
+   summary endpoint and a “Tips Today” POS tile. Tip pooling/payout remains
+   future work.
 7. **Refunds and voids** — full/partial refund, reason, audit trail, gateway call.
 8. **Dedicated KDS** — full-screen station view, item bump/recall, timers, sound.
 9. **Order notifications** — WhatsApp/SMS status events (confirmation, ready,
@@ -304,7 +310,7 @@ receipts. Covered by 17 backend tests and two new browser proofs
 | Wave | Contents | Exit criteria |
 |---|---|---|
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
-| W2 (in progress) | Store profile + weekly hours/order pause + prep time (done); scheduled orders with slot capacity (done); tips and dense-page tap targets (next) | Backend tests + proof scripts for each |
+| W2 (in progress) | Store profile + weekly hours/order pause + prep time (done); scheduled orders with slot capacity (done); tips at checkout/POS with reporting (done); dense-page tap targets (next) | Backend tests + proof scripts for each |
 | W3 | Refunds/voids, KDS device view, notifications | Payment + kitchen proofs |
 | W4 | Menu media, loyalty, OTP, saved addresses | Public + account proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |

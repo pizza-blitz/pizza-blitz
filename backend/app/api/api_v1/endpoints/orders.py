@@ -1,7 +1,7 @@
 import hashlib
 import os
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -173,6 +173,7 @@ class OrderCreate(BaseModel):
     opt_in_marketing: Optional[bool] = None
     items: List[OrderItem] = Field(default_factory=list)
     discount_amount: float = 0.0
+    tip_amount: float = Field(default=0.0, ge=0, le=2000)
     coupon_code: Optional[str] = None
     payment_method: Optional[str] = None
     delivery_address: Optional[str] = None
@@ -296,6 +297,7 @@ def serialize_order(order: RestaurantOrder) -> dict:
         "subtotal": order.subtotal,
         "discount_amount": order.discount_amount,
         "tax_amount": order.tax_amount,
+        "tip_amount": order.tip_amount or 0,
         "total_amount": order.total_amount,
         "payment_status": order.payment_status,
         "payment_method": order.payment_method,
@@ -1813,6 +1815,41 @@ def checkout_readiness(db: Session = Depends(get_db)):
     return checkout_readiness_payload(db)
 
 
+@router.get("/tips-summary")
+def tips_summary(
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    start_date = business_today() - timedelta(days=days - 1)
+    orders = (
+        db.query(RestaurantOrder)
+        .filter(
+            RestaurantOrder.date >= start_date,
+            RestaurantOrder.status != "cancelled",
+        )
+        .all()
+    )
+    today = business_today()
+    tips_total = round(sum(float(order.tip_amount or 0) for order in orders), 2)
+    tips_today = round(
+        sum(float(order.tip_amount or 0) for order in orders if order.date == today), 2
+    )
+    tipped_orders = [order for order in orders if float(order.tip_amount or 0) > 0]
+    return {
+        "days": days,
+        "tips_total": tips_total,
+        "tips_today": tips_today,
+        "tipped_orders": len(tipped_orders),
+        "orders": len(orders),
+        "average_tip": round(tips_total / len(tipped_orders), 2) if tipped_orders else 0,
+        "tipped_order_percent": (
+            round((len(tipped_orders) / len(orders)) * 100, 2) if orders else 0
+        ),
+    }
+
+
 @router.get("/scheduled-slots")
 def scheduled_slots(
     target_date: str = Query(alias="date"),
@@ -1917,6 +1954,8 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         delivery_eta = quote.get("eta_window")
         delivery_address = quote["address"]
     total = round(taxable_subtotal + tax + delivery_fee, 2)
+    tip = round(float(order.tip_amount or 0), 2)
+    total = round(total + tip, 2)
     items = valid_items
     payment_method = (order.payment_method or "cash").lower()
     payment_status = "awaiting_payment" if payment_method == "prepaid" else "pending"
@@ -1943,6 +1982,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         subtotal=subtotal,
         discount_amount=discount,
         tax_amount=tax,
+        tip_amount=tip,
         total_amount=total,
         payment_method=payment_method,
         payment_status=payment_status,
@@ -1978,6 +2018,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         "subtotal": subtotal,
         "discount": discount,
         "tax": tax,
+        "tip_amount": tip,
         "delivery_fee": delivery_fee,
         "delivery_zone": delivery_zone_name,
         "total": total,

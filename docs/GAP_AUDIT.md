@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 34 frontend routes, the 121 browser proof scripts in
+- Listed all 34 frontend routes, the 122 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -61,6 +61,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 30 | Operations | Opening hours, online-ordering pause, and prep time had no admin control or public status. The checkout either accepted orders or showed a preview-mode message; a closed kitchen could not stop orders. | Feature-matrix gap review and order-flow read. | Added a single-row `store_profile` table + migration, a validated opening-hours service (per-day, overnight windows), pause/prep controls, public storefront profile/status endpoints, and enforcement in checkout readiness and order creation. New `verify:store-profile` proof and eight backend tests. |
 | 31 | Content / configuration | Store name, contact details, hours, and Instagram lived only in environment variables, so the landing page could not be updated by the owner after deploy. | W1 landing-page build. | Store identity/contact/socials are now editable at `/settings/store`; the landing page uses them for the header, store details, footer, Open Graph metadata, and Restaurant JSON-LD. The settings page is linked from Settings and the portal navigation. |
 | 32 | Ordering | Customers could only order for immediate fulfilment; there was no way to book a pickup or delivery time, and the kitchen had no visibility of future orders. | Enterprise benchmark and order-flow review. | Added scheduled orders: a migrated `orders.scheduled_for` column, a validated 15-minute slot engine (14-day window, lead time, opening-hours check, six-order slot capacity), a public slots endpoint, checkout date/time picker, and scheduled labels in tracking, POS cards, kitchen cards, tickets and receipts. Covered by seven backend tests and a browser proof. |
+| 33 | Payments / workforce | There was no way to leave a tip, so service revenue and staff gratuity could not be captured or reported. | Enterprise benchmark (POS/checkout) and the tip rows in the feature matrix. | Added a non-null `orders.tip_amount`, preset/custom tips at customer checkout and POS, tip-inclusive totals, receipt and tracking lines, a POS "Tips Today" tile, and an admin `tips-summary` endpoint. Covered by six backend tests and a browser proof. Tip pooling/payout remains future work. |
 
 ## Still open
 
@@ -75,7 +76,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 77 tests, all pass (in a clean venv built from
+- Backend unit suite: 83 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

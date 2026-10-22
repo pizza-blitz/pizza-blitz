@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 77 backend tests, 121 browser proof scripts, a backend Ruff
+- Automation: 83 backend tests, 122 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -64,11 +64,15 @@ Wave 2 (in progress):
   tracking, POS, kitchen cards, tickets and receipts. Closed stores still accept
   future orders; paused stores do not.
 - New `verify:scheduled-orders` browser proof and seven backend tests.
-- Still next in W2: tips and dense-page mobile polish.
+- Tips at customer checkout (presets and custom amount) and POS, persisted on
+  the order, included in totals and receipts, with a tips summary endpoint and a
+  "Tips Today" POS tile.
+- New `verify:order-tips` browser proof and six backend tests.
+- Still next in W2: dense-page mobile polish.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 77 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 83 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

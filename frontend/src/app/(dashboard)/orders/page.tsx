@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock,
+  Coins,
   CreditCard,
   FileText,
   Globe2,
@@ -168,6 +169,7 @@ type Order = {
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
+  tip_amount?: number;
   total_amount: number;
   payment_status: string;
   payment_method?: string | null;
@@ -186,6 +188,7 @@ const emptyCustomer = {
   customer_phone: "",
   payment_method: "cash",
   discount_amount: 0,
+  tip_amount: 0,
   delivery_address: "",
   notes: "",
 };
@@ -404,6 +407,7 @@ export default function OrdersPage() {
     0
   );
   const discount = Math.max(Number(formData.discount_amount || 0), 0);
+  const tip = Math.min(Math.max(Number(formData.tip_amount || 0), 0), 2000);
   const taxableSubtotal = Math.max(subtotal - discount, 0);
   const tax = taxableSubtotal * 0.05;
   const isDeliveryOrder = !selectedTable && orderMode === "delivery";
@@ -411,7 +415,7 @@ export default function OrdersPage() {
     isDeliveryOrder && deliveryQuote?.is_deliverable
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
-  const total = taxableSubtotal + tax + deliveryFee;
+  const total = taxableSubtotal + tax + deliveryFee + tip;
   const roundedTotal = Math.round(total);
   const cashTenderedAmount =
     typeof cashTendered === "number" ? cashTendered : Number(cashTendered || 0);
@@ -528,6 +532,9 @@ export default function OrdersPage() {
       needsPaymentProof(order)
   ).length;
   const voidedTodayCount = orders.filter((order) => order.status === "cancelled").length;
+  const tipsToday = orders
+    .filter((order) => order.status !== "cancelled")
+    .reduce((sum, order) => sum + Number(order.tip_amount || 0), 0);
   const closedTotal = orders
     .filter((order) => order.status === "closed")
     .reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
@@ -837,6 +844,7 @@ export default function OrdersPage() {
         customer_phone: formData.customer_phone || null,
         payment_method: formData.payment_method,
         discount_amount: discount,
+        tip_amount: tip,
         delivery_address: isDeliveryOrder ? formData.delivery_address : null,
         delivery_zone_id: isDeliveryOrder ? selectedDeliveryZoneId : null,
         notes: notes || null,
@@ -1387,6 +1395,20 @@ export default function OrdersPage() {
               Voided today, excluded from sales.
             </p>
           </div>
+          <div
+            data-testid="counter-tips-today"
+            className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-4"
+          >
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-200/80">
+              Tips Today
+            </p>
+            <p className="mt-2 text-2xl font-black text-emerald-100">
+              Rs {Math.round(tipsToday).toLocaleString()}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-emerald-200/70">
+              Captured at the counter and online.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -1837,6 +1859,14 @@ export default function OrdersPage() {
                         className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-black text-amber-300"
                       >
                         <CalendarClock className="h-3 w-3" /> Scheduled · {order.scheduled_label}
+                      </span>
+                    )}
+                    {Number(order.tip_amount || 0) > 0 && (
+                      <span
+                        data-testid={`counter-order-tip-${order.id}`}
+                        className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300"
+                      >
+                        <Coins className="h-3 w-3" /> Tip Rs {Math.round(Number(order.tip_amount))}
                       </span>
                     )}
                     {order.payment_due && (
@@ -2447,8 +2477,7 @@ export default function OrdersPage() {
                   <div
                     data-testid="counter-cash-tender-panel"
                     className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-3"
-                  >
-                    <div className="mb-2 flex items-center justify-between gap-3">
+                  >                    <div className="mb-2 flex items-center justify-between gap-3">
                       <p className="text-[11px] font-black uppercase tracking-widest text-emerald-200/80">
                         Cash Tender
                       </p>
@@ -2491,10 +2520,59 @@ export default function OrdersPage() {
                   </div>
                 )}
 
+                <div className="mb-4 rounded-xl border border-white/10 bg-black/25 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-black uppercase tracking-widest text-gray-400">
+                      Tip
+                    </p>
+                    <span className="text-xs font-black text-emerald-200">
+                      Rs {Math.round(tip).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {[0, 20, 50, 100].map((value) => (
+                      <button
+                        key={`tip-${value}`}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, tip_amount: value })}
+                        className={`rounded-lg border px-2 py-2 text-xs font-black ${
+                          Math.round(tip) === value
+                            ? "border-emerald-300 bg-emerald-500 text-white"
+                            : "border-white/10 bg-black/25 text-emerald-100 hover:border-emerald-300"
+                        }`}
+                      >
+                        {value === 0 ? "No tip" : `Rs ${value}`}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    data-testid="counter-tip-amount"
+                    type="number"
+                    min="0"
+                    max="2000"
+                    value={formData.tip_amount || ""}
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        tip_amount:
+                          event.target.value === "" ? 0 : Math.max(Number(event.target.value) || 0, 0),
+                      })
+                    }
+                    placeholder="Custom tip"
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-black text-white outline-none placeholder:text-gray-500 focus:border-emerald-300"
+                  />
+                </div>
+
             <div className="mt-6 rounded-xl bg-black/30 border border-white/10 p-4 space-y-2 text-sm">
               <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>Rs {Math.round(subtotal).toLocaleString()}</span></div>
               <div className="flex justify-between text-gray-400"><span>Discount</span><span>Rs {Math.round(discount).toLocaleString()}</span></div>
               <div className="flex justify-between text-gray-400"><span>GST 5%</span><span>Rs {Math.round(tax).toLocaleString()}</span></div>
+              {tip > 0 && (
+                <div className="flex justify-between text-emerald-200">
+                  <span>Tip</span>
+                  <span>Rs {Math.round(tip).toLocaleString()}</span>
+                </div>
+              )}
               {isDeliveryOrder && (
                 <div className="flex justify-between text-orange-200">
                   <span>Delivery Fee</span>

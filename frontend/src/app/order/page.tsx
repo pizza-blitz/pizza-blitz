@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Coins,
   CreditCard,
   MapPin,
   Mail,
@@ -307,6 +308,8 @@ export default function PublicOrderPage() {
   const [scheduledLabel, setScheduledLabel] = useState("");
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [confirmedSchedule, setConfirmedSchedule] = useState<string | null>(null);
+  const [tipPercent, setTipPercent] = useState<"0" | "5" | "10" | "15" | "custom">("0");
+  const [customTip, setCustomTip] = useState("");
   const checkoutRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -649,13 +652,21 @@ export default function PublicOrderPage() {
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
   const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const tipAmount =
+    tipPercent === "custom"
+      ? (() => {
+          const value = Number.parseFloat(customTip);
+          if (!Number.isFinite(value) || value <= 0) return 0;
+          return roundMoney(Math.min(value, 2000));
+        })()
+      : roundMoney((subtotal * Number(tipPercent)) / 100);
   const deliveryMinimumGap = Math.max(
     Number(deliveryQuote?.charge_breakdown?.minimum_gap || 0),
     0
   );
   const total = coupon
-    ? roundMoney(coupon.total + deliveryFee)
-    : roundMoney(taxableSubtotal + tax + deliveryFee);
+    ? roundMoney(coupon.total + deliveryFee + tipAmount)
+    : roundMoney(taxableSubtotal + tax + deliveryFee + tipAmount);
   const selectedDeliveryZone = deliveryZones.find(
     (zone) => zone.id === selectedDeliveryZoneId
   );
@@ -1010,6 +1021,7 @@ export default function PublicOrderPage() {
         opt_in_marketing: optInMarketing,
         payment_method: paymentMethod,
         discount_amount: discount,
+        tip_amount: tipAmount,
         coupon_code: coupon ? coupon.promotion.code || couponCode : null,
         delivery_address: address,
         delivery_zone_id: selectedDeliveryZoneId,
@@ -1097,6 +1109,8 @@ export default function PublicOrderPage() {
       });
       const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
       setConfirmedSchedule(scheduleText);
+      setTipPercent("0");
+      setCustomTip("");
       setMessage(
         scheduleText
           ? `Order #${orderId} ${scheduleText.toLowerCase()}. Continue to online payment.`
@@ -1114,6 +1128,8 @@ export default function PublicOrderPage() {
       setPendingPayment(null);
       const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
       setConfirmedSchedule(scheduleText);
+      setTipPercent("0");
+      setCustomTip("");
       setMessage(
         scheduleText
           ? `Order #${orderId} ${scheduleText.toLowerCase()}.`
@@ -1983,6 +1999,68 @@ export default function PublicOrderPage() {
               </div>
             )}
 
+            <div data-testid="customer-tip" className="mb-5 rounded-md border border-slate-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-sm font-black text-slate-900">
+                  <Coins className="h-4 w-4 text-red-700" /> Tip the kitchen
+                </p>
+                <span data-testid="customer-tip-amount" className="text-sm font-black text-slate-900">
+                  Rs {tipAmount}
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {(["0", "5", "10", "15"] as const).map((percent) => (
+                  <button
+                    key={percent}
+                    type="button"
+                    onClick={() => {
+                      setTipPercent(percent);
+                      setCustomTip("");
+                    }}
+                    className={`rounded-md border px-2 py-2 text-xs font-black ${
+                      tipPercent === percent
+                        ? "border-red-700 bg-red-700 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-red-300"
+                    }`}
+                  >
+                    {percent === "0" ? "No tip" : `${percent}%`}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTipPercent("custom")}
+                  className={`rounded-md border px-3 py-2 text-xs font-black ${
+                    tipPercent === "custom"
+                      ? "border-red-700 bg-red-50 text-red-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-red-300"
+                  }`}
+                >
+                  Custom tip
+                </button>
+                {tipPercent === "custom" && (
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                    Amount (Rs)
+                    <input
+                      aria-label="Custom tip amount"
+                      type="number"
+                      min={0}
+                      max={2000}
+                      step={1}
+                      value={customTip}
+                      onChange={(event) => setCustomTip(event.target.value)}
+                      className="w-24 rounded-md border border-slate-300 px-2 py-2 text-sm font-bold text-slate-900 outline-none focus:border-red-600"
+                    />
+                  </label>
+                )}
+              </div>
+              <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                Optional. The tip is recorded on the order and shown on the receipt for the store
+                team.
+              </p>
+            </div>
+
             <div className="mb-5 space-y-2 border-y border-slate-200 py-4 text-sm">
               <PriceRow label="Subtotal" value={subtotal} />
               <PriceRow label="Discount" value={discount} />
@@ -1990,6 +2068,7 @@ export default function PublicOrderPage() {
               {orderType === "delivery" && (
                 <PriceRow label="Delivery" value={deliveryFee} />
               )}
+              {tipAmount > 0 && <PriceRow label="Tip" value={tipAmount} />}
               <div className="flex justify-between text-lg font-black">
                 <span>Total</span>
                 <span>Rs {total}</span>

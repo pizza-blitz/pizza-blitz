@@ -390,6 +390,7 @@ class RestaurantOrder(Base):
     subtotal = Column(Float, default=0.0)
     discount_amount = Column(Float, default=0.0)
     tax_amount = Column(Float, default=0.0)
+    tip_amount = Column(Float, nullable=False, default=0.0, server_default="0")
     total_amount = Column(Float, default=0.0)
     payment_status = Column(String(20), default="pending")
     payment_method = Column(String(50), nullable=True)
