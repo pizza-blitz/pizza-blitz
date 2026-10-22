@@ -288,6 +288,9 @@ export default function PublicOrderPage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [optInMarketing, setOptInMarketing] = useState(true);
   const [address, setAddress] = useState("");
+  const [savedAddresses, setSavedAddresses] = useState<
+    { id: number; label: string; address_line: string; is_default: boolean }[]
+  >([]);
   const [reorderDeliveryZoneName, setReorderDeliveryZoneName] = useState("");
   const [couponCode, setCouponCode] = useState("");
   const [queuedCouponCode, setQueuedCouponCode] = useState("");
@@ -313,6 +316,24 @@ export default function PublicOrderPage() {
   const [tipPercent, setTipPercent] = useState<"0" | "5" | "10" | "15" | "custom">("0");
   const [customTip, setCustomTip] = useState("");
   const checkoutRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/customer-addresses", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json();
+      })
+      .then((data) => {
+        if (active && Array.isArray(data)) setSavedAddresses(data);
+      })
+      .catch(() => {
+        // Guests simply do not see saved addresses.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!scheduleEnabled || !scheduleDate) return;
@@ -2118,12 +2139,40 @@ export default function PublicOrderPage() {
                 <>
                   <FieldIcon icon={MapPin}>
                     <input
+                      aria-label="Delivery address"
                       value={address}
                       onChange={(event) => setAddress(event.target.value)}
                       placeholder="Delivery address"
                       className="w-full outline-none"
                     />
                   </FieldIcon>
+                  {savedAddresses.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {savedAddresses.map((saved) => {
+                        const activeAddress = address === saved.address_line;
+                        return (
+                          <button
+                            key={saved.id}
+                            type="button"
+                            data-testid={`saved-address-chip-${saved.id}`}
+                            onClick={() => {
+                              setAddress(saved.address_line);
+                              setMessage("");
+                            }}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-black ${
+                              activeAddress
+                                ? "border-red-600 bg-red-50 text-red-700"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-red-300"
+                            }`}
+                          >
+                            <MapPin className="h-3 w-3" />
+                            {saved.label}
+                            {saved.is_default ? " · default" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   <select
                     value={selectedDeliveryZoneId || ""}
                     onChange={(event) =>

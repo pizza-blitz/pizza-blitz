@@ -12,9 +12,170 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
-from app.models.domain import Customer
+from app.models.domain import Customer, CustomerAddress
 
 router = APIRouter()
+
+
+class CustomerAddressCreate(BaseModel):
+    label: str = Field(default="Home", min_length=1, max_length=60)
+    address_line: str = Field(min_length=6, max_length=500)
+    zone_id: Optional[int] = None
+    is_default: bool = False
+
+
+class CustomerAddressUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    address_line: Optional[str] = Field(default=None, min_length=6, max_length=500)
+    zone_id: Optional[int] = None
+    is_default: Optional[bool] = None
+
+
+def current_customer(
+    session: dict = Depends(require_roles("customer")),
+    db: Session = Depends(get_db),
+) -> Customer:
+    subject = str(session.get("subject") or "")
+    customer_id: int | None = None
+    if subject.startswith("customer:"):
+        try:
+            customer_id = int(subject.split(":", 1)[1])
+        except ValueError:
+            customer_id = None
+    customer = (
+        db.query(Customer).filter(Customer.id == customer_id).first()
+        if customer_id is not None
+        else None
+    )
+    if customer is None:
+        phone = str(session.get("phone") or "").strip()
+        customer = db.query(Customer).filter(Customer.phone == phone).first() if phone else None
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer profile not found.")
+    return customer
+
+
+def _serialize_address(address: CustomerAddress) -> dict:
+    return {
+        "id": address.id,
+        "label": address.label,
+        "address_line": address.address_line,
+        "zone_id": address.zone_id,
+        "is_default": bool(address.is_default),
+        "created_at": address.created_at.isoformat() if address.created_at else None,
+    }
+
+
+def _clear_defaults(db: Session, customer_id: int) -> None:
+    db.query(CustomerAddress).filter(
+        CustomerAddress.customer_id == customer_id,
+        CustomerAddress.is_default.is_(True),
+    ).update({CustomerAddress.is_default: False})
+
+
+def _owned_address(db: Session, customer: Customer, address_id: int) -> CustomerAddress:
+    address = (
+        db.query(CustomerAddress)
+        .filter(
+            CustomerAddress.id == address_id,
+            CustomerAddress.customer_id == customer.id,
+        )
+        .first()
+    )
+    if address is None:
+        raise HTTPException(status_code=404, detail="Address not found.")
+    return address
+
+
+@router.get("/me/addresses")
+def list_my_addresses(
+    customer: Customer = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    addresses = (
+        db.query(CustomerAddress)
+        .filter(CustomerAddress.customer_id == customer.id)
+        .order_by(CustomerAddress.is_default.desc(), CustomerAddress.created_at.desc())
+        .all()
+    )
+    return [_serialize_address(address) for address in addresses]
+
+
+@router.post("/me/addresses")
+def create_my_address(
+    payload: CustomerAddressCreate,
+    customer: Customer = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    count = (
+        db.query(CustomerAddress)
+        .filter(CustomerAddress.customer_id == customer.id)
+        .count()
+    )
+    if count >= 10:
+        raise HTTPException(status_code=422, detail="You can save up to 10 addresses.")
+
+    make_default = payload.is_default or count == 0
+    if make_default:
+        _clear_defaults(db, customer.id)
+    address = CustomerAddress(
+        customer_id=customer.id,
+        label=payload.label.strip(),
+        address_line=payload.address_line.strip(),
+        zone_id=payload.zone_id,
+        is_default=make_default,
+    )
+    db.add(address)
+    db.commit()
+    db.refresh(address)
+    return _serialize_address(address)
+
+
+@router.patch("/me/addresses/{address_id}")
+def update_my_address(
+    address_id: int,
+    payload: CustomerAddressUpdate,
+    customer: Customer = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    address = _owned_address(db, customer, address_id)
+    if payload.label is not None:
+        address.label = payload.label.strip()
+    if payload.address_line is not None:
+        address.address_line = payload.address_line.strip()
+    if payload.zone_id is not None:
+        address.zone_id = payload.zone_id
+    if payload.is_default is True:
+        _clear_defaults(db, customer.id)
+        address.is_default = True
+    elif payload.is_default is False and address.is_default:
+        address.is_default = False
+    db.commit()
+    db.refresh(address)
+    return _serialize_address(address)
+
+
+@router.delete("/me/addresses/{address_id}")
+def delete_my_address(
+    address_id: int,
+    customer: Customer = Depends(current_customer),
+    db: Session = Depends(get_db),
+):
+    address = _owned_address(db, customer, address_id)
+    was_default = bool(address.is_default)
+    db.delete(address)
+    db.commit()
+    if was_default:
+        replacement = (
+            db.query(CustomerAddress)
+            .filter(CustomerAddress.customer_id == customer.id)
+            .order_by(CustomerAddress.created_at.desc())
+            .first()
+        )
+        if replacement is not None:
+            replacement.is_default = True
+            db.commit()
+    return {"status": "deleted", "id": address_id}
 
 VALID_CUSTOMER_SEGMENTS = {
     "all",

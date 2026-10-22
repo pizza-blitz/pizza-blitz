@@ -7,6 +7,8 @@ import {
 } from "@/lib/session";
 import { getServerApiUrl } from "@/lib/server-api";
 
+const CUSTOMER_API_COOKIE = "pb_customer_api_token";
+
 function clearCustomerSession(status = 401) {
   const response = NextResponse.json(
     { detail: "Customer session is required." },
@@ -21,7 +23,33 @@ function clearCustomerSession(status = 401) {
     path: "/",
     maxAge: 0,
   });
+  response.cookies.set({
+    name: CUSTOMER_API_COOKIE,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
   return response;
+}
+
+function setApiTokenCookie(
+  response: NextResponse,
+  apiToken: string | undefined,
+  maxAge: number
+) {
+  if (!apiToken) return;
+  response.cookies.set({
+    name: CUSTOMER_API_COOKIE,
+    value: apiToken,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge,
+  });
 }
 
 export async function GET(request: Request) {
@@ -100,6 +128,7 @@ export async function POST(request: Request) {
       path: "/",
       maxAge,
     });
+    setApiTokenCookie(response, verified.access_token, maxAge);
     return response;
   }
 
@@ -148,6 +177,19 @@ export async function POST(request: Request) {
     },
     maxAge
   );
+  let apiToken = "";
+  try {
+    const apiLogin = await fetch(getServerApiUrl("/api/v1/auth/customer/login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, order_id: proofOrderId }),
+      cache: "no-store",
+    });
+    const apiSession = await apiLogin.json().catch(() => ({}));
+    if (apiLogin.ok) apiToken = String(apiSession.access_token || "");
+  } catch {
+    apiToken = "";
+  }
   const response = NextResponse.json({
     ok: true,
     role: "customer",
@@ -162,5 +204,6 @@ export async function POST(request: Request) {
     path: "/",
     maxAge,
   });
+  setApiTokenCookie(response, apiToken, maxAge);
   return response;
 }

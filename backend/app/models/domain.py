@@ -125,6 +125,22 @@ class Customer(Base):
     first_seen_at = Column(DateTime, default=datetime.utcnow)
     last_order_at = Column(DateTime, nullable=True)
     notes = Column(String, nullable=True)
+    addresses = relationship(
+        "CustomerAddress", back_populates="customer", cascade="all, delete-orphan"
+    )
+
+
+class CustomerAddress(Base):
+    __tablename__ = "customer_addresses"
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True, nullable=False)
+    label = Column(String(60), nullable=False, default="Home")
+    address_line = Column(String(500), nullable=False)
+    zone_id = Column(Integer, nullable=True)
+    is_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    customer = relationship("Customer", back_populates="addresses")
 
 class AdminCredential(Base):
     __tablename__ = "admin_credentials"

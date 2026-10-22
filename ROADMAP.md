@@ -150,7 +150,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 ### Wave 4 (in progress)
 
 - [x] Customer OTP authentication.
-- [ ] Saved addresses.
+- [x] Saved addresses.
 - [ ] Loyalty and referrals.
 - [ ] Rider app with GPS and proof of delivery.
 - [ ] Custom report builder and scheduled exports.
