@@ -1086,6 +1086,20 @@ export default function OrdersPage() {
     }
   };
 
+  const openRiderLink = async (order: Order) => {
+    const response = await fetch(
+      getApiUrl(`/api/v1/restaurant/delivery/orders/${order.id}/rider-link`),
+      { credentials: "include" }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.detail || "Rider link is unavailable for this order.");
+      return;
+    }
+    window.open(`${window.location.origin}${data.rider_path}`, "_blank", "noopener,noreferrer");
+    setMessage(`Rider link opened for order #${order.id}.`);
+  };
+
   const generateInvoice = async (order: Order) => {
     const params = new URLSearchParams();
     if (order.customer_name) params.set("customer_name", order.customer_name);
@@ -1974,6 +1988,15 @@ export default function OrdersPage() {
                     >
                       <FileText className="h-4 w-4" /> Invoice
                     </button>
+                    {(order.fulfillment_type || order.order_type) === "delivery" && (
+                      <button
+                        data-testid={`counter-rider-link-${order.id}`}
+                        onClick={() => openRiderLink(order)}
+                        className="col-span-2 flex items-center justify-center gap-2 rounded-lg bg-sky-500/15 py-2 text-xs font-bold text-sky-200 hover:bg-sky-500/25"
+                      >
+                        <Truck className="h-4 w-4" /> Rider link
+                      </button>
+                    )}
                     <button
                       data-testid={`counter-close-${order.id}`}
                       onClick={() => closeOrder(order)}

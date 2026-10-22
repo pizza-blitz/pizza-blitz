@@ -76,6 +76,14 @@ type TrackedOrder = {
     provider?: string | null;
     created_at?: string | null;
   }[];
+  rider?: {
+    assigned_to?: string | null;
+    status: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    location_updated_at?: string | null;
+    proof_captured?: boolean;
+  } | null;
   next_action: string;
   tracking_steps: TrackingStep[];
   created_at?: string | null;
@@ -371,6 +379,47 @@ export default function TrackOrderPage() {
                       </li>
                     ))}
                   </ul>
+                </section>
+              )}
+
+              {order.rider && (
+                <section
+                  data-testid="track-rider"
+                  className="mt-5 rounded-lg border border-slate-200 bg-white p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
+                        <Truck className="h-4 w-4 text-red-700" /> Delivery partner
+                      </p>
+                      <p className="mt-1 text-lg font-black">
+                        {order.rider.assigned_to || "Rider assigned"}
+                      </p>
+                      <p className="text-sm font-semibold text-slate-500">
+                        {order.rider.status.replace(/_/g, " ")}
+                        {order.rider.proof_captured ? " · proof captured" : ""}
+                      </p>
+                    </div>
+                    {order.rider.latitude != null && order.rider.longitude != null && (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${order.rider.latitude},${order.rider.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white"
+                      >
+                        <MapPin className="h-4 w-4" /> Live location
+                      </a>
+                    )}
+                  </div>
+                  {order.rider.location_updated_at && (
+                    <p className="mt-2 text-xs font-semibold text-slate-400">
+                      Last location update:{" "}
+                      {new Date(`${order.rider.location_updated_at}Z`).toLocaleTimeString(
+                        "en-IN",
+                        { hour: "2-digit", minute: "2-digit" }
+                      )}
+                    </p>
+                  )}
                 </section>
               )}
 

@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 from typing import List, Optional
 
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
+from app.core.config import settings
 from app.models.domain import DeliveryAssignment, DeliveryZone, RestaurantOrder
 from app.services.delivery_service import (
     delivery_address_validation,
@@ -53,6 +55,22 @@ class DeliveryAssignmentUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class RiderLocationUpdate(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+
+
+class RiderProofCreate(BaseModel):
+    proof_type: str = Field(pattern="^(photo|signature|otp)$")
+    reference: str = Field(min_length=3, max_length=500)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class RiderStatusUpdate(BaseModel):
+    status: str
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
 def ensure_delivery_zones(db: Session) -> None:
     seed_default_delivery_zones(db)
     db.commit()
@@ -98,6 +116,25 @@ def serialize_delivery_assignment(assignment: DeliveryAssignment) -> dict:
         ),
         "delivered_at": assignment.delivered_at.isoformat() if assignment.delivered_at else None,
         "updated_at": assignment.updated_at.isoformat() if assignment.updated_at else None,
+        "rider_phone": assignment.rider_phone,
+        "has_rider_token": bool(assignment.rider_token),
+        "location": (
+            {
+                "lat": assignment.current_lat,
+                "lng": assignment.current_lng,
+                "updated_at": assignment.location_updated_at.isoformat()
+                if assignment.location_updated_at
+                else None,
+            }
+            if assignment.current_lat is not None and assignment.current_lng is not None
+            else None
+        ),
+        "proof_type": assignment.proof_type,
+        "proof_captured_at": (
+            assignment.proof_captured_at.isoformat()
+            if assignment.proof_captured_at
+            else None
+        ),
         "next_action": next_action,
     }
 
@@ -850,3 +887,219 @@ def update_delivery_assignment(
         "assignment": serialize_delivery_assignment(assignment),
         "order_status": order.status,
     }
+
+
+def _rider_assignment(db: Session, token: str) -> DeliveryAssignment:
+    assignment = (
+        db.query(DeliveryAssignment)
+        .filter(DeliveryAssignment.rider_token == (token or "").strip())
+        .first()
+    )
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Rider link is not valid.")
+    return assignment
+
+
+def _rider_payload(assignment: DeliveryAssignment) -> dict:
+    order = assignment.order
+    items = [
+        {
+            "name": item.get("name"),
+            "quantity": item.get("quantity"),
+            "selected_options": item.get("selected_options") or [],
+        }
+        for item in (order.items or [])
+        if isinstance(item, dict)
+    ]
+    proof_captured = assignment.proof_captured_at is not None
+    allowed_actions: list[str] = []
+    if assignment.status == "assigned":
+        allowed_actions.append("out_for_delivery")
+    if assignment.status == "out_for_delivery":
+        allowed_actions.append("failed")
+        if proof_captured:
+            allowed_actions.append("delivered")
+    return {
+        "assignment_id": assignment.id,
+        "status": assignment.status,
+        "assigned_to": assignment.assigned_to,
+        "rider_phone": assignment.rider_phone,
+        "order": {
+            "id": order.id,
+            "status": order.status,
+            "total_amount": order.total_amount,
+            "payment_method": order.payment_method,
+            "payment_status": order.payment_status,
+            "customer_name": order.customer_name,
+            "customer_phone": order.customer_phone,
+            "delivery_address": note_value(order.notes, "Address"),
+            "delivery_zone": note_value(order.notes, "Delivery Zone"),
+            "items": items,
+        },
+        "location": (
+            {
+                "lat": assignment.current_lat,
+                "lng": assignment.current_lng,
+                "updated_at": assignment.location_updated_at.isoformat()
+                if assignment.location_updated_at
+                else None,
+            }
+            if assignment.current_lat is not None and assignment.current_lng is not None
+            else None
+        ),
+        "proof": (
+            {
+                "type": assignment.proof_type,
+                "reference": assignment.proof_reference,
+                "notes": assignment.proof_notes,
+                "captured_at": assignment.proof_captured_at.isoformat()
+                if assignment.proof_captured_at
+                else None,
+            }
+            if proof_captured
+            else None
+        ),
+        "timestamps": {
+            "assigned_at": assignment.assigned_at.isoformat()
+            if assignment.assigned_at
+            else None,
+            "out_for_delivery_at": assignment.out_for_delivery_at.isoformat()
+            if assignment.out_for_delivery_at
+            else None,
+            "delivered_at": assignment.delivered_at.isoformat()
+            if assignment.delivered_at
+            else None,
+        },
+        "allowed_actions": allowed_actions,
+    }
+
+
+@router.get("/orders/{order_id}/rider-link")
+def get_rider_link(
+    order_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    del session
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    assignment = order.delivery_assignment
+    if assignment is None:
+        raise HTTPException(status_code=404, detail="Delivery assignment not found.")
+    if not assignment.rider_token:
+        assignment.rider_token = "RDR" + secrets.token_urlsafe(24)
+    db.commit()
+    db.refresh(assignment)
+    base = (settings.PIZZA_BLITZ_PUBLIC_URL or "").rstrip("/")
+    return {
+        "order_id": order.id,
+        "rider_token": assignment.rider_token,
+        "rider_path": f"/rider/{assignment.rider_token}",
+        "rider_url": f"{base}/rider/{assignment.rider_token}",
+        "assigned_to": assignment.assigned_to,
+        "status": assignment.status,
+    }
+
+
+@router.get("/rider/{token}")
+def get_rider_view(token: str, db: Session = Depends(get_db)):
+    return _rider_payload(_rider_assignment(db, token))
+
+
+@router.post("/rider/{token}/location")
+def update_rider_location(
+    token: str,
+    payload: RiderLocationUpdate,
+    db: Session = Depends(get_db),
+):
+    assignment = _rider_assignment(db, token)
+    assignment.current_lat = payload.lat
+    assignment.current_lng = payload.lng
+    assignment.location_updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(assignment)
+    return _rider_payload(assignment)
+
+
+@router.post("/rider/{token}/proof")
+def capture_rider_proof(
+    token: str,
+    payload: RiderProofCreate,
+    db: Session = Depends(get_db),
+):
+    assignment = _rider_assignment(db, token)
+    if assignment.status not in {"assigned", "out_for_delivery"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Proof can only be captured before or during delivery.",
+        )
+    assignment.proof_type = payload.proof_type
+    assignment.proof_reference = payload.reference.strip()
+    assignment.proof_notes = (payload.notes or "").strip() or None
+    assignment.proof_captured_at = datetime.utcnow()
+    db.commit()
+    db.refresh(assignment)
+    return _rider_payload(assignment)
+
+
+@router.patch("/rider/{token}/status")
+def update_rider_status(
+    token: str,
+    payload: RiderStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    assignment = _rider_assignment(db, token)
+    order = assignment.order
+    status = (payload.status or "").strip().lower()
+    now = datetime.utcnow()
+
+    if status == "out_for_delivery":
+        if assignment.status not in {"assigned", "out_for_delivery"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Assign the rider before starting the delivery.",
+            )
+        assignment.status = "out_for_delivery"
+        if assignment.out_for_delivery_at is None:
+            assignment.out_for_delivery_at = now
+        if order.status == "open":
+            order.status = "ready"
+    elif status == "delivered":
+        if assignment.status != "out_for_delivery":
+            raise HTTPException(
+                status_code=409,
+                detail="Start the delivery before marking it delivered.",
+            )
+        if assignment.proof_captured_at is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Capture proof of delivery before marking it delivered.",
+            )
+        assignment.status = "delivered"
+        if assignment.delivered_at is None:
+            assignment.delivered_at = now
+    elif status == "failed":
+        if assignment.status not in {"assigned", "out_for_delivery"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Only active deliveries can be marked failed.",
+            )
+        if not (payload.notes or "").strip():
+            raise HTTPException(
+                status_code=422, detail="Add a reason for the failed delivery."
+            )
+        assignment.status = "failed"
+        assignment.notes = payload.notes.strip()
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Status must be out_for_delivery, delivered, or failed.",
+        )
+
+    assignment.updated_at = now
+    db.commit()
+    db.refresh(assignment)
+    if status in {"out_for_delivery", "delivered"}:
+        notify_order_event(db, order, status)
+    return _rider_payload(assignment)

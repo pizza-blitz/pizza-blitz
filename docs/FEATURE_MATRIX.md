@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **228 API endpoints**, **38 routes/pages** (29 portal,
-1 KDS, 8 public), **131 browser proof scripts**, **116 backend tests**, **45
+Numbers in this snapshot: **233 API endpoints**, **39 routes/pages** (29 portal,
+1 KDS, 9 public), **132 browser proof scripts**, **118 backend tests**, **45
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -43,7 +43,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice, tips, scheduling | Built | Guest + saved checkout, tips, scheduling | Saved-cart recovery missing |
 | Coupons and offers | Validate/apply server-side, promotion engine | Built | Public offers page, auto-apply best offer | Offers surface on landing page missing |
 | Pickup / delivery | Delivery quote by zone, fees, minimums, ETAs | Built | Address autocomplete + geocoding | Keyword zones only |
-| Order tracking | Phone + order-id tracking with status steps | Built | Live status + notifications + map | No live rider map |
+| Order tracking | Phone + order-id tracking with status steps, rider status/last GPS link and proof-captured flag | Built | Live status + notifications + embedded map | Map is link-out only |
 | Customer account | OTP login (or phone + recent order), order history, profile/consent, saved addresses, loyalty points and referral code | Built | Password/OTP, saved addresses, loyalty | Saved payments missing |
 | Scheduled orders | 15-minute slots up to 14 days ahead, capacity-checked, validated against opening hours, stored on the order and shown in tracking/POS/kitchen/receipt | Built | Order for later time/date, slot capacity | Slot capacity is fixed at 6; no per-day holiday calendar |
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
@@ -93,9 +93,9 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
 | Zones and fees | Zones, fees, minimums, ETAs, keyword validation | Built | Polygon/geocoded zones | Geocoding later |
-| Dispatch | Assignment, rider, status queue, mission control | Built | Rider app, live map, auto-assign | Rider app/map missing |
+| Dispatch | Assignment, rider, status queue, mission control, tokenized rider app with status/GPS/proof | Built | Rider app, live map, auto-assign | Auto-assign/batching missing |
 | Delivery economics | Fee, cost, margin view, retry queue proofs | Built | Cost per delivery, batching | Batching missing |
-| Proof of delivery | — | Missing | Photo/signature/OTP at door | Must build |
+| Proof of delivery | Rider-captured photo/signature/OTP reference with notes, required before delivered, shown on tracking | Built | Photo/signature/OTP at door | Photo is a reference string; file upload not wired |
 | Third-party delivery | — | Missing | DoorDash/Uber/Swiggy/Zomato integration | Later |
 | Route optimisation | — | Missing | Multi-drop routing | Later |
 
@@ -311,6 +311,13 @@ a pre-tax discount and marks used; points are debited with a `redeem` ledger row
 and the token cannot be reused. Reusing, sharing or over-spending a token is
 rejected. Covered by two backend tests and `verify:loyalty-redemption`.
 
+W4 measured results (rider): `/rider/{token}` is a bearer-token mobile page for
+assigned riders. It starts delivery, shares GPS coordinates with freshness, and
+captures photo/signature/OTP proof before allowing delivered. Delivered/failed
+transitions update the assignment and send customer notifications; tracking shows
+rider status, last location link and proof captured. Admin order cards expose a
+Rider link button. Covered by two backend tests and `verify:rider`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -362,7 +369,10 @@ rejected. Covered by two backend tests and `verify:loyalty-redemption`.
     codes with expiry/attempt limits, plus customer-scoped saved addresses
     (default, edit, delete, max 10) reused at checkout.
 13. Split tender / partial payments; gift cards and store credit.
-14. Rider app/PWA with GPS and proof of delivery.
+14. ~~**Rider app/PWA with GPS and proof of delivery**~~ — done in W4: a
+    tokenized mobile rider page for dispatch, live GPS sharing, photo/signature/
+    OTP proof capture and delivered/failed handling; tracking shows rider status
+    and location link.
 15. Custom report builder + scheduled email reports.
 16. 2FA/SSO and granular permissions.
 17. Allergens/nutrition and channel-specific menus/pricing.
@@ -387,7 +397,7 @@ rejected. Covered by two backend tests and `verify:loyalty-redemption`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption (done); rider app/GPS, custom reports, 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof (done); custom reports, 2FA/granular permissions, multi-store, aggregators, accounting (next) | Public + account + rider proofs |
 | W5 | Rider PWA, reports builder, 2FA, hardware | Deployment-ready checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

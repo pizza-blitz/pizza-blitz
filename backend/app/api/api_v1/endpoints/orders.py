@@ -543,6 +543,22 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
             "tracking_steps": order_tracking_steps(order),
             "next_action": next_action,
             "notifications": sent_notifications_for_order(order),
+            "rider": (
+                {
+                    "assigned_to": assignment.assigned_to,
+                    "status": assignment.status,
+                    "latitude": assignment.current_lat,
+                    "longitude": assignment.current_lng,
+                    "location_updated_at": (
+                        assignment.location_updated_at.isoformat()
+                        if assignment.location_updated_at
+                        else None
+                    ),
+                    "proof_captured": assignment.proof_captured_at is not None,
+                }
+                if assignment is not None
+                else None
+            ),
         }
     )
     return payload
