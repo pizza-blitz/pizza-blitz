@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **278 API endpoints**, **48 routes/pages** (37 portal,
-1 KDS, 10 public), **144 browser proof scripts**, **152 backend tests**, **57
-database tables**, **19 integration points**.
+Numbers in this snapshot: **278 API endpoints**, **49 routes/pages** (38 portal,
+1 KDS, 10 public), **142 browser proof scripts** plus portal smoke, **152 backend
+tests**, **57 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -198,7 +198,6 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Attendance | Attendance command | Built | Biometric/PIN clock, geofence | Partial |
 | Payroll preview | Hours × rate preview | Built | Full payroll, tips, statutory | Partial |
 | Staff credentials | Managed staff login plus granular staff permission toggles (orders, kitchen, delivery, refunds, reports, settings, staff) | Built | Granular permissions | Per-user permission sets missing (role-level only) |
-| Labour vs sales | — | Missing | Labour cost % dashboard | Later |
 
 ## 13. Admin, platform, security, integrations
 
@@ -212,9 +211,9 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Health probes | `/health`, `/ready` (DB) | Built | Same | — |
 | Rate limiting | Per-instance sliding window | Built | Shared/edge limiter | Documented upgrade |
 | Config | Env-based, timezone, secrets guard | Built | Feature flags, per-store settings | Partial |
-| Multi-store / franchise | — | Missing | Tenant hierarchy, per-store config | Later |
-| API keys / webhooks | — | Missing | Public API + outbound webhooks | Later |
-| Observability | Logs only | Missing | Error tracking, metrics, traces | Later |
+| Multi-store / franchise | Store registry, per-store profile/hours, store-scoped orders/stock, consolidated reporting and POS hardware | Built | Tenant hierarchy, per-store config | Per-store menus/overrides missing |
+| API keys / webhooks | Aggregator HMAC tokens, signed inbound order webhooks, signed outbound status/menu webhooks | Built | Public API + outbound webhooks | General public API keys missing |
+| Observability | Request IDs, structured exception/error logs, client error monitor, health probes | Partial | Error tracking, metrics, traces | External APM/Sentry and metrics missing |
 | Security headers | CSP, HSTS, nosniff, frame-deny, referrer and permissions policies on Next and API; request IDs and structured error logs | Built | CSP, HSTS, frame options | Nonce-based strict CSP missing |
 | Error monitoring | Backend request IDs/exception logs, client error boundary reporting, admin monitor on Production Ops | Built | Error tracking integration | External provider (Sentry) missing |
 | Localisation | INR, English only | Partial | Per-store currency/locale | Later |
