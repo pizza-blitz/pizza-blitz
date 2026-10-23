@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 129 backend tests, 136 browser proof scripts, a backend Ruff
+- Automation: 132 backend tests, 137 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -135,11 +135,15 @@ Wave 4 (in progress):
 - Accounting/GST: summary with CGST/SGST, tips/refunds, payment and store mix,
   plus a Tally/Zoho-ready order CSV at `/accounting`.
 - New `verify:accounting` browser proof and two backend tests.
-- Next: aggregator integrations.
+- Aggregators: token-scoped inbound webhooks for Swiggy, Zomato, Uber Eats and
+  DoorDash with idempotent external order IDs, store mapping, pause/rotate and
+  `/settings/integrations`.
+- New `verify:aggregators` browser proof and three backend tests.
+- Next: allergens/nutrition, labour scheduling, hardware, CSP/error monitoring.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 129 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 132 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

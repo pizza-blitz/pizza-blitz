@@ -315,6 +315,7 @@ def serialize_order(order: RestaurantOrder) -> dict:
     return {
         "id": order.id,
         "date": order.date.isoformat() if order.date else None,
+        "store_id": order.store_id,
         "order_type": order.order_type,
         "source": metadata["source"],
         "fulfillment_type": metadata["fulfillment_type"],

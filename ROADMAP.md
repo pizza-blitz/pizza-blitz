@@ -158,6 +158,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] 2FA and granular permissions.
 - [x] Multi-store/franchise hierarchy.
 - [x] Accounting/GST exports.
-- [ ] Aggregator integrations.
+- [x] Aggregator integrations (inbound webhooks).
+- [ ] Allergens/nutrition and channel-specific pricing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

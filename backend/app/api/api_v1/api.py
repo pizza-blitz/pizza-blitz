@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.api.deps import require_roles
-from app.api.api_v1.endpoints import auth, sync, inventory, stats, daily, menu, expenses, insights, reports, purchase_orders, import_data, ocr, shifts, orders, vendors, promotions, recipes, customers, delivery, social, ads, ops, storefront, stores, accounting
+from app.api.api_v1.endpoints import auth, sync, inventory, stats, daily, menu, expenses, insights, reports, purchase_orders, import_data, ocr, shifts, orders, vendors, promotions, recipes, customers, delivery, social, ads, ops, storefront, stores, accounting, aggregators
 
 api_router = APIRouter()
 admin_only = [Depends(require_roles("admin"))]
@@ -30,3 +30,8 @@ api_router.include_router(ops.router, prefix="/restaurant/ops", tags=["ops"])
 api_router.include_router(storefront.router, prefix="/restaurant/storefront", tags=["storefront"])
 api_router.include_router(stores.router, prefix="/restaurant/stores", tags=["stores"])
 api_router.include_router(accounting.router, prefix="/restaurant/accounting", tags=["accounting"])
+api_router.include_router(
+    aggregators.router,
+    prefix="/restaurant/integrations/aggregators",
+    tags=["aggregators"],
+)

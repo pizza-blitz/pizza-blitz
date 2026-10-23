@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **254 API endpoints**, **42 routes/pages** (32 portal,
-1 KDS, 9 public), **136 browser proof scripts**, **129 backend tests**, **49
+Numbers in this snapshot: **260 API endpoints**, **43 routes/pages** (33 portal,
+1 KDS, 9 public), **137 browser proof scripts**, **132 backend tests**, **51
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -96,7 +96,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Dispatch | Assignment, rider, status queue, mission control, tokenized rider app with status/GPS/proof | Built | Rider app, live map, auto-assign | Auto-assign/batching missing |
 | Delivery economics | Fee, cost, margin view, retry queue proofs | Built | Cost per delivery, batching | Batching missing |
 | Proof of delivery | Rider-captured photo/signature/OTP reference with notes, required before delivered, shown on tracking | Built | Photo/signature/OTP at door | Photo is a reference string; file upload not wired |
-| Third-party delivery | — | Missing | DoorDash/Uber/Swiggy/Zomato integration | Later |
+| Third-party delivery | Token-scoped inbound webhooks for Swiggy, Zomato, Uber Eats and DoorDash; idempotent by external order id; order/store/customer mapping | Built | DoorDash/Uber/Swiggy/Zomato integration | Menu/status sync outbound missing |
 | Route optimisation | — | Missing | Multi-drop routing | Later |
 
 ## 5. Menu and product management
@@ -346,6 +346,12 @@ with business date, store, payment, subtotal, discount, CGST/SGST, tip, refund
 and net for import into Tally/Zoho/QuickBooks. Covered by two backend tests and
 `verify:accounting`.
 
+W4 measured results (aggregators): admins connect Swiggy, Zomato, Uber Eats or
+DoorDash per store and receive a token-scoped webhook URL. Inbound orders become
+delivery orders with mapped items, customer, address, payment state and store;
+replaying `external_order_id` returns the original order, and token rotation or
+pausing blocks intake. Covered by three backend tests and `verify:aggregators`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -415,7 +421,9 @@ and net for import into Tally/Zoho/QuickBooks. Covered by two backend tests and
 
 ### P2 — scale and ecosystem
 
-21. Aggregator integrations (DoorDash/Uber/Swiggy/Zomato).
+21. ~~**Aggregator integrations (DoorDash/Uber/Swiggy/Zomato)**~~ — partially
+    done in W4: token-scoped inbound order webhooks, idempotency, store mapping
+    and admin connection UI. Outbound menu/status sync remains.
 22. ~~**Multi-store/franchise hierarchy and consolidated reporting**~~ — done in
     W4: store registry with pause/activate, orders tagged by store, and a
     consolidated business-day report with group totals and best store. Shared
@@ -435,7 +443,7 @@ and net for import into Tally/Zoho/QuickBooks. Covered by two backend tests and
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST (done); aggregators (next) | Public + account + rider + reports + security + franchise + accounting proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake (done); allergens/nutrition, labour scheduling, hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator proofs |
 | W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

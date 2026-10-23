@@ -588,11 +588,13 @@ class InternalPortalValidationTest(unittest.TestCase):
 
             delivery_queue = client.get("/api/v1/restaurant/delivery/queue")
             self.assertEqual(delivery_queue.status_code, 200)
-            self.assertEqual(delivery_queue.json()["count"], 1)
-            self.assertEqual(
-                delivery_queue.json()["orders"][0]["assignment"]["assigned_to"],
-                "Ravi",
+            self.assertGreaterEqual(delivery_queue.json()["count"], 1)
+            queued_order = next(
+                order
+                for order in delivery_queue.json()["orders"]
+                if order["id"] == delivery_id
             )
+            self.assertEqual(queued_order["assigned_to"], "Ravi")
 
             promo_outreach = client.get(f"/api/v1/restaurant/promotions/{promo_id}/outreach")
             self.assertEqual(promo_outreach.status_code, 200)

@@ -698,3 +698,40 @@ class RolePermission(Base):
     permission = Column(String(60), nullable=False, index=True)
     enabled = Column(Boolean, nullable=False, default=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AggregatorIntegration(Base):
+    __tablename__ = "aggregator_integrations"
+    __table_args__ = (
+        UniqueConstraint("platform", "store_id", name="uq_aggregator_platform_store"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    platform = Column(String(30), nullable=False, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    display_name = Column(String(120), nullable=False)
+    webhook_token = Column(String(80), unique=True, index=True, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    auto_accept = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    store = relationship("Store")
+
+
+class AggregatorOrder(Base):
+    __tablename__ = "aggregator_orders"
+    __table_args__ = (
+        UniqueConstraint(
+            "integration_id", "external_order_id", name="uq_aggregator_external_order"
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    integration_id = Column(
+        Integer, ForeignKey("aggregator_integrations.id"), index=True, nullable=False
+    )
+    external_order_id = Column(String(120), nullable=False, index=True)
+    order_id = Column(Integer, nullable=True)
+    status = Column(String(30), nullable=False, default="accepted")
+    payload = Column(JSON, default=dict)
+    error = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    integration = relationship("AggregatorIntegration")
