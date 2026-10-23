@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **265 API endpoints**, **44 routes/pages** (34 portal,
-1 KDS, 9 public), **139 browser proof scripts**, **136 backend tests**, **52
+1 KDS, 9 public), **140 browser proof scripts**, **138 backend tests**, **53
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -109,7 +109,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
-| Channel pricing | — | Missing | Different price for delivery/aggregator | Later |
+| Channel pricing | Per-channel price/availability for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | Channel-specific menus (item visibility) missing |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
 | Allergens/nutrition | Per-item allergens, dietary tags, calories and macros shown on the customer menu | Built | Per-item flags and nutrition | With public site |
 
@@ -364,6 +364,12 @@ separated allergens + tag toggles), and the customer menu shows vegetarian/vegan
 gluten-free chips, kcal and “Contains:” allergens. Covered by two backend tests
 and `verify:menu-nutrition`.
 
+W4 measured results (channel pricing): menu items can override price and
+availability per dine-in/takeaway/delivery/aggregator channel. The customer menu
+uses the active channel’s price, hides unavailable channels, reprices the cart
+when switching pickup/delivery, and order creation enforces the same channel
+price/availability. Covered by two backend tests and `verify:channel-pricing`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -426,9 +432,10 @@ and `verify:menu-nutrition`.
 16. ~~**2FA/SSO and granular permissions**~~ — done in W4: TOTP 2FA with
     recovery codes, a two-step login challenge (portal and API), and granular
     staff permissions enforced on reports and refunds. SSO remains.
-17. ~~**Allergens/nutrition**~~ and **channel-specific menus/pricing** — allergens,
-    dietary tags, calories and macros are done in W4 with admin editing and
-    customer-menu badges. Channel-specific pricing remains.
+17. ~~**Allergens/nutrition and channel-specific menus/pricing**~~ — done in W4:
+    allergens, dietary tags, calories/macros, plus per-channel prices and
+    availability that drive the customer menu/cart and order totals. Channel-
+    specific item visibility remains.
 18. ~~**Labour vs sales dashboard and shift scheduling**~~ — done in W4: weekly
     scheduled shifts with hourly rates, confirmation, roster and a labour-cost
     versus sales dashboard. Clock-in/out and statutory rules remain.
@@ -459,7 +466,7 @@ and `verify:menu-nutrition`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition (done); channel pricing, hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing (done); hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel proofs |
 | W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

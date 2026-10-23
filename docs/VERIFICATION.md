@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 136 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, menu allergens/nutrition, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, multi-store consolidation, GST accounting, aggregator intake, shift scheduling/labour, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 138 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, menu allergens/nutrition, channel pricing, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, multi-store consolidation, GST accounting, aggregator intake, shift scheduling/labour, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, menu nutrition, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, multi-store, accounting, aggregators, shift scheduling, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, menu nutrition, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, multi-store, accounting, aggregators, shift scheduling, channel pricing, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -340,6 +340,16 @@ customer menu renders dietary chips, kcal and “Contains:” allergens. The adm
 menu modal edits allergens as a comma list, tag toggles and macros. Covered by
 `backend/tests/test_menu_nutrition.py` and
 `frontend/e2e/verify-menu-nutrition.cjs`.
+
+## Channel-specific pricing
+
+`menu_item_channel_prices` stores optional price/availability overrides for
+`dine-in`, `takeaway`, `delivery` and `aggregator`. The menu save endpoint syncs
+them; both menu APIs return them; the customer menu uses the active channel
+price, hides unavailable channels and reprices the cart when switching
+pickup/delivery; order creation enforces the same channel price and rejects an
+unavailable channel. Covered by `backend/tests/test_channel_pricing.py` and
+`frontend/e2e/verify-channel-pricing.cjs`.
 
 ## Health endpoints
 

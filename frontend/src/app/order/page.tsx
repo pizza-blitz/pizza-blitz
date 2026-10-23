@@ -48,6 +48,11 @@ type MenuItem = {
   protein_g?: number | null;
   carbs_g?: number | null;
   fat_g?: number | null;
+  channel_prices?: {
+    channel: "dine-in" | "takeaway" | "delivery" | "aggregator";
+    price: number;
+    is_available: boolean;
+  }[] | null;
   customization_groups?: CustomizationGroup[];
 };
 
@@ -724,9 +729,49 @@ export default function PublicOrderPage() {
     }
   };
 
+  const pricingChannel = orderType === "delivery" ? "delivery" : "takeaway";
+  const effectiveMenu = useMemo(() => {
+    const rows: MenuItem[] = [];
+    for (const item of menu) {
+      const row = (item.channel_prices || []).find(
+        (entry) => entry.channel === pricingChannel
+      );
+      if (row && !row.is_available) continue;
+      rows.push({
+        ...item,
+        selling_price: row ? row.price : item.selling_price,
+      });
+    }
+    return rows;
+  }, [menu, pricingChannel]);
+
+  useEffect(() => {
+    setCart((current) =>
+      current
+        .map((cartItem) => {
+          const source = menu.find((item) => item.id === cartItem.id);
+          if (!source) return cartItem;
+          const row = (source.channel_prices || []).find(
+            (entry) => entry.channel === pricingChannel
+          );
+          if (row && !row.is_available) return null;
+          const basePrice = row ? row.price : source.selling_price;
+          const customization = roundMoney(
+            cartItem.selling_price - cartItem.base_price
+          );
+          return {
+            ...cartItem,
+            base_price: basePrice,
+            selling_price: roundMoney(basePrice + customization),
+          };
+        })
+        .filter((item): item is CartItem => Boolean(item))
+    );
+  }, [pricingChannel, menu]);
+
   const categories = useMemo(
-    () => ["All", ...Array.from(new Set(menu.map((item) => item.category)))],
-    [menu]
+    () => ["All", ...Array.from(new Set(effectiveMenu.map((item) => item.category)))],
+    [effectiveMenu]
   );
 
   const subtotal = useMemo(
@@ -830,14 +875,14 @@ export default function PublicOrderPage() {
 
   const filteredMenu = useMemo(
     () =>
-      menu.filter((item) => {
+      effectiveMenu.filter((item) => {
         const query = search.toLowerCase();
         const matchesCategory = category === "All" || item.category === category;
         const matchesSearch =
           item.name.toLowerCase().includes(query) || item.category.toLowerCase().includes(query);
         return matchesCategory && matchesSearch;
       }),
-    [menu, search, category]
+    [effectiveMenu, search, category]
   );
   const menuWithCustomizationCount = useMemo(
     () => menu.filter((item) => (item.customization_groups || []).length > 0).length,

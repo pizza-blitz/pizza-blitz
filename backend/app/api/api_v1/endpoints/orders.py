@@ -28,6 +28,7 @@ from app.models.domain import (
     InventoryItem,
     InventoryTransaction,
     Invoice,
+    MenuItemChannelPrice,
     OperationalAuditEvent,
     OrderNotification,
     OrderRefund,
@@ -1800,7 +1801,18 @@ def build_station_command_report(db: Session) -> dict:
     }
 
 
-def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dict]:
+def order_channel(order_type: str | None) -> str:
+    normalized = (order_type or "").lower()
+    if normalized == "delivery":
+        return "delivery"
+    if normalized == "dine-in":
+        return "dine-in"
+    return "takeaway"
+
+
+def normalize_order_items(
+    db: Session, order_items: list[OrderItem], channel: str | None = None
+) -> list[dict]:
     normalized_items = []
     for item in order_items:
         quantity = int(item.quantity or 0)
@@ -1813,10 +1825,28 @@ def normalize_order_items(db: Session, order_items: list[OrderItem]) -> list[dic
             menu_item_id=item.menu_item_id,
         )
         if menu_item:
+            base_price_override = None
+            if channel:
+                channel_price = (
+                    db.query(MenuItemChannelPrice)
+                    .filter(
+                        MenuItemChannelPrice.menu_item_id == menu_item.id,
+                        MenuItemChannelPrice.channel == channel,
+                    )
+                    .first()
+                )
+                if channel_price is not None:
+                    if not channel_price.is_available:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"{menu_item.name} is not available for {channel} orders.",
+                        )
+                    base_price_override = float(channel_price.price or 0)
             priced_item = calculate_customized_item_price(
                 db,
                 menu_item,
                 item.selected_options or [],
+                base_price_override=base_price_override,
             )
             station = kitchen_station_for_item(menu_item.name, menu_item.category)
             normalized_items.append(
@@ -2074,7 +2104,9 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         if order.scheduled_for is None or store_state.get("state") == "paused":
             raise HTTPException(status_code=503, detail=checkout_readiness["message"])
 
-    valid_items = normalize_order_items(db, order.items)
+    valid_items = normalize_order_items(
+        db, order.items, channel=order_channel(order.order_type)
+    )
     if not valid_items:
         raise HTTPException(status_code=422, detail="Order must include at least one item.")
 

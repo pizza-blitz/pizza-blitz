@@ -285,6 +285,7 @@ def calculate_customized_item_price(
     db: Session,
     menu_item: MenuItem,
     selected_options: list[dict] | None = None,
+    base_price_override: float | None = None,
 ) -> dict:
     seed_default_customizations(db)
     db.flush()
@@ -340,7 +341,14 @@ def calculate_customized_item_price(
     if errors:
         raise HTTPException(status_code=422, detail=" ".join(errors))
 
-    base_price = round(float(menu_item.selling_price or 0), 2)
+    base_price = round(
+        float(
+            base_price_override
+            if base_price_override is not None
+            else (menu_item.selling_price or 0)
+        ),
+        2,
+    )
     customization_total = round(
         sum(float(option["price_delta"] or 0) for option in final_selected_options),
         2,
@@ -393,6 +401,14 @@ def customized_menu_payload(db: Session) -> list[dict]:
             "protein_g": item.protein_g,
             "carbs_g": item.carbs_g,
             "fat_g": item.fat_g,
+            "channel_prices": [
+                {
+                    "channel": row.channel,
+                    "price": row.price,
+                    "is_available": bool(row.is_available),
+                }
+                for row in (item.channel_prices or [])
+            ],
             "customization_groups": groups_for_menu_item(groups, item),
         }
         for item in items

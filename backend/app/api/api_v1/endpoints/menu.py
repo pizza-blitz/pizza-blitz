@@ -1,13 +1,20 @@
 from collections import Counter
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
-from app.models.domain import InventoryItem, MenuCustomizationGroup, MenuItem, Recipe, RestaurantOrder
+from app.models.domain import (
+    InventoryItem,
+    MenuCustomizationGroup,
+    MenuItem,
+    MenuItemChannelPrice,
+    Recipe,
+    RestaurantOrder,
+)
 from app.services.media_service import delete_menu_image, save_menu_image
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
@@ -80,6 +87,12 @@ def _top_option_rows(option_counter: Counter[str], limit: int = 8) -> list[dict]
     ]
 
 
+class ChannelPriceSchema(BaseModel):
+    channel: Literal["dine-in", "takeaway", "delivery", "aggregator"]
+    price: float = Field(ge=0, le=100000)
+    is_available: bool = True
+
+
 class MenuItemSchema(BaseModel):
     id: Optional[int] = None
     name: str
@@ -95,6 +108,7 @@ class MenuItemSchema(BaseModel):
     protein_g: Optional[float] = Field(default=None, ge=0, le=500)
     carbs_g: Optional[float] = Field(default=None, ge=0, le=500)
     fat_g: Optional[float] = Field(default=None, ge=0, le=500)
+    channel_prices: Optional[List[ChannelPriceSchema]] = None
 
     class Config:
         from_attributes = True
@@ -427,6 +441,30 @@ def update_or_create_menu(
             fat_g=item.fat_g,
         )
         db.add(db_item)
+        db.flush()
+
+    if item.channel_prices is not None:
+        existing_prices = {
+            row.channel: row for row in (db_item.channel_prices or [])
+        }
+        keep: set[str] = set()
+        for row in item.channel_prices:
+            keep.add(row.channel)
+            current = existing_prices.get(row.channel)
+            if current is None:
+                db_item.channel_prices.append(
+                    MenuItemChannelPrice(
+                        channel=row.channel,
+                        price=round(float(row.price), 2),
+                        is_available=row.is_available,
+                    )
+                )
+            else:
+                current.price = round(float(row.price), 2)
+                current.is_available = row.is_available
+        for channel, current in existing_prices.items():
+            if channel not in keep:
+                db_item.channel_prices.remove(current)
 
     db.commit()
     db.refresh(db_item)

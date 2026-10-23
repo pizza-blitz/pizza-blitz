@@ -41,6 +41,12 @@ type CustomizationGroup = {
   options: CustomizationOption[];
 };
 
+type ChannelPrice = {
+  channel: "dine-in" | "takeaway" | "delivery" | "aggregator";
+  price: number;
+  is_available: boolean;
+};
+
 type MenuItem = {
   id?: number;
   name: string;
@@ -56,6 +62,7 @@ type MenuItem = {
   protein_g?: number | null;
   carbs_g?: number | null;
   fat_g?: number | null;
+  channel_prices?: ChannelPrice[] | null;
   customization_groups?: CustomizationGroup[];
 };
 
@@ -139,6 +146,7 @@ const emptyForm: MenuItem = {
   protein_g: null,
   carbs_g: null,
   fat_g: null,
+  channel_prices: [],
 };
 
 export default function MenuManagement() {
@@ -856,6 +864,95 @@ export default function MenuManagement() {
                       >
                         {tag}
                       </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  Channel prices
+                </p>
+                <div className="space-y-2">
+                  {(
+                    [
+                      { key: "delivery", label: "Delivery" },
+                      { key: "takeaway", label: "Takeaway / pickup" },
+                      { key: "dine-in", label: "Dine-in" },
+                    ] as const
+                  ).map((channel) => {
+                    const row = (formData.channel_prices || []).find(
+                      (entry) => entry.channel === channel.key
+                    );
+                    return (
+                      <div
+                        key={channel.key}
+                        className="flex flex-wrap items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                      >
+                        <label className="flex min-w-32 items-center gap-2 text-xs font-bold text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(row)}
+                            onChange={(event) =>
+                              setFormData({
+                                ...formData,
+                                channel_prices: event.target.checked
+                                  ? [
+                                      ...(formData.channel_prices || []),
+                                      {
+                                        channel: channel.key,
+                                        price: formData.selling_price,
+                                        is_available: true,
+                                      },
+                                    ]
+                                  : (formData.channel_prices || []).filter(
+                                      (entry) => entry.channel !== channel.key
+                                    ),
+                              })
+                            }
+                          />
+                          {channel.label}
+                        </label>
+                        <input
+                          aria-label={`${channel.label} price`}
+                          type="number"
+                          min={0}
+                          disabled={!row}
+                          value={row ? String(row.price) : ""}
+                          onChange={(event) =>
+                            setFormData({
+                              ...formData,
+                              channel_prices: (formData.channel_prices || []).map(
+                                (entry) =>
+                                  entry.channel === channel.key
+                                    ? { ...entry, price: Number(event.target.value) || 0 }
+                                    : entry
+                              ),
+                            })
+                          }
+                          placeholder="Price"
+                          className="w-28 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-sm text-white disabled:opacity-40"
+                        />
+                        {row && (
+                          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                            <input
+                              type="checkbox"
+                              checked={row.is_available}
+                              onChange={(event) =>
+                                setFormData({
+                                  ...formData,
+                                  channel_prices: (formData.channel_prices || []).map(
+                                    (entry) =>
+                                      entry.channel === channel.key
+                                        ? { ...entry, is_available: event.target.checked }
+                                        : entry
+                                  ),
+                                })
+                              }
+                            />
+                            Available
+                          </label>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

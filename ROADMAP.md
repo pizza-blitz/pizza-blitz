@@ -161,6 +161,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Aggregator integrations (inbound webhooks).
 - [x] Labour scheduling and labour-vs-sales dashboard.
 - [x] Allergens/nutrition.
-- [ ] Channel-specific pricing.
+- [x] Channel-specific pricing.
+- [ ] Hardware integrations and CSP/error monitoring.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

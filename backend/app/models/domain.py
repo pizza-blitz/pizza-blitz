@@ -41,6 +41,28 @@ class MenuItem(Base):
     carbs_g = Column(Float, nullable=True)
     fat_g = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    channel_prices = relationship(
+        "MenuItemChannelPrice",
+        back_populates="menu_item",
+        cascade="all, delete-orphan",
+    )
+
+class MenuItemChannelPrice(Base):
+    __tablename__ = "menu_item_channel_prices"
+    __table_args__ = (
+        UniqueConstraint(
+            "menu_item_id", "channel", name="uq_menu_channel_price_item_channel"
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    menu_item_id = Column(
+        Integer, ForeignKey("menu_items.id"), index=True, nullable=False
+    )
+    channel = Column(String(20), nullable=False, index=True)
+    price = Column(Float, nullable=False, default=0.0)
+    is_available = Column(Boolean, nullable=False, default=True)
+    menu_item = relationship("MenuItem", back_populates="channel_prices")
+
 
 class MenuCustomizationGroup(Base):
     __tablename__ = "menu_customization_groups"

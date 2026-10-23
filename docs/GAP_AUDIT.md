@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 44 frontend routes, the 139 browser proof scripts in
+- Listed all 44 frontend routes, the 140 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -78,7 +78,8 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 47 | Accounting | Tax existed only on invoices; there was no GST summary, payment/store reconciliation, or journal CSV for Tally/Zoho/QuickBooks. | W4 accounting gap. | Added `/accounting/summary` (gross, discounts, CGST/SGST, tips, refunds, net, payment mix, store totals) and `/accounting/export` (one row per order with tax split and net). Added the `/accounting` finance page with date range, cards, tables and CSV download. Two backend tests and a browser proof. Direct accounting-API connectors remain. |
 | 48 | Aggregators | Orders from Swiggy/Zomato/Uber Eats/DoorDash could only be keyed in manually; there was no token-scoped intake or idempotency. | W4 aggregator gap. | Added `aggregator_integrations` and `aggregator_orders` (migration), admin connect/list/pause/rotate endpoints, and a public webhook that validates the platform token, maps items/customer/address/store, creates an order and dedupes by `external_order_id`. Added `/settings/integrations` with copyable URL/token and order counts. Three backend tests and a browser proof. Outbound menu/status sync remains. |
 | 49 | Workforce | Shifts were only logged after the fact; there was no forward roster, wage estimate, or labour-cost percentage against sales. | W4 workforce gap. | Added `scheduled_shifts` (migration), CRUD schedule endpoints, and a labour summary (hours, cost, sales, labour %, day/role breakdown). Added `/shifts/schedule` with weekly navigation, add/confirm/delete and dashboard cards. Two backend tests and a browser proof. Clock-in/out and statutory rules remain. |
-| 50 | Menu metadata | Menu items had no allergens, dietary tags or nutrition, so customers could not make allergy or diet decisions from the ordering page. | W4 allergens/nutrition gap. | Added `allergens`, `dietary_tags`, `calories`, `protein_g`, `carbs_g`, `fat_g` to menu items (migration), exposed them in both menu endpoints, and added admin editing plus customer-menu badges and “Contains:” allergen text. Two backend tests and a browser proof. Channel-specific pricing remains. |
+| 50 | Menu metadata | Menu items had no allergens, dietary tags or nutrition, so customers could not make allergy or diet decisions from the ordering page. | W4 allergens/nutrition gap. | Added `allergens`, `dietary_tags`, `calories`, `protein_g`, `carbs_g`, `fat_g` to menu items (migration), exposed them in both menu endpoints, and added admin editing plus customer-menu badges and “Contains:” allergen text. Two backend tests and a browser proof. Channel-specific pricing followed in item 51. |
+| 51 | Channel pricing | Every channel used one menu price, so delivery and aggregator orders could not carry different pricing or availability. | W4 channel-pricing gap. | Added `menu_item_channel_prices` (migration), per-channel price/availability in the menu save API, admin channel overrides, channel-aware customer menu/cart pricing, and order-creation enforcement for dine-in/takeaway/delivery. Two backend tests and a browser proof. Channel-specific item visibility remains. |
 
 ## Still open
 
@@ -93,7 +94,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 136 tests, all pass (in a clean venv built from
+- Backend unit suite: 138 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
