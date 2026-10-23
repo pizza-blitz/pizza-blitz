@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 144 backend tests, 142 browser proof scripts, a backend Ruff
+- Automation: 146 backend tests, 142 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -163,11 +163,14 @@ Wave 4 (in progress):
 - Channel item visibility: per-channel visible flag so an item can be priced but
   hidden from a channel; admin toggles and order enforcement.
 - Existing channel-pricing proof now checks a delivery-hidden item disappears.
+- Aggregator menu sync: signed full-menu push (pricing, channel prices,
+  allergens, nutrition) with menu URL/enable settings and push result.
+- Two backend tests with a local receiver; integrations UI exposes menu sync.
 - Next: deployment checklist, external monitoring.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 144 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 146 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

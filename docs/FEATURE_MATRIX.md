@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **272 API endpoints**, **46 routes/pages** (35 portal,
-1 KDS, 10 public), **142 browser proof scripts**, **144 backend tests**, **56
+Numbers in this snapshot: **273 API endpoints**, **46 routes/pages** (35 portal,
+1 KDS, 10 public), **142 browser proof scripts**, **146 backend tests**, **56
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -96,7 +96,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Dispatch | Assignment, rider, status queue, mission control, tokenized rider app with status/GPS/proof | Built | Rider app, live map, auto-assign | Auto-assign/batching missing |
 | Delivery economics | Fee, cost, margin view, retry queue proofs | Built | Cost per delivery, batching | Batching missing |
 | Proof of delivery | Rider-captured photo/signature/OTP reference with notes, required before delivered, shown on tracking | Built | Photo/signature/OTP at door | Photo is a reference string; file upload not wired |
-| Third-party delivery | Token-scoped inbound webhooks for Swiggy, Zomato, Uber Eats and DoorDash; idempotent by external order id; signed outbound order-status sync with retries/backoff and an event log | Built | DoorDash/Uber/Swiggy/Zomato integration | Menu sync outbound missing |
+| Third-party delivery | Token-scoped inbound webhooks for Swiggy, Zomato, Uber Eats and DoorDash; idempotent by external order id; signed outbound status sync with retries; signed menu sync payload | Built | DoorDash/Uber/Swiggy/Zomato integration | Per-store menus are global |
 | Route optimisation | — | Missing | Multi-drop routing | Later |
 
 ## 5. Menu and product management
@@ -390,6 +390,11 @@ per-order/status events, exponential retry/backoff, delivery logs and a
 one-minute scheduler. Failing endpoints are retried with the error recorded.
 Covered by two backend tests.
 
+W4 measured results (menu sync): an integration can enable a menu-sync URL and
+push the full menu (price, availability, visibility, channel prices, allergens,
+dietary tags and macros) as a signed `menu.sync` payload. Success/failure is
+returned to the operator. Covered by two backend tests with a local receiver.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -470,9 +475,8 @@ Covered by two backend tests.
 ### P2 — scale and ecosystem
 
 21. ~~**Aggregator integrations (DoorDash/Uber/Swiggy/Zomato)**~~ — done in W4:
-    token-scoped inbound order webhooks with idempotency/store mapping, plus
-    signed outbound status sync with retries, backoff and an event log. Outbound
-    menu sync remains.
+    token-scoped inbound webhooks with idempotency/store mapping, signed outbound
+    status sync with retries/backoff/event log, and signed on-demand menu sync.
 22. ~~**Multi-store/franchise hierarchy and consolidated reporting**~~ — done in
     W4: store registry with pause/activate, orders tagged by store, and a
     consolidated business-day report with group totals and best store. Shared

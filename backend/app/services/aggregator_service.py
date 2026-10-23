@@ -51,6 +51,8 @@ def serialize_integration(
         "outbound_url": integration.outbound_url,
         "outbound_secret": integration.outbound_secret if include_token else None,
         "outbound_enabled": bool(integration.outbound_enabled),
+        "menu_sync_url": integration.menu_sync_url,
+        "menu_sync_enabled": bool(integration.menu_sync_enabled),
         "created_at": integration.created_at.isoformat()
         if integration.created_at
         else None,
@@ -311,6 +313,86 @@ def sign_outbound(secret: str, body: bytes) -> str:
 def ensure_outbound_secret(integration: AggregatorIntegration) -> None:
     if not integration.outbound_secret:
         integration.outbound_secret = "AGOUT-" + secrets.token_urlsafe(24)
+
+
+def build_menu_payload(
+    db: Session, integration: AggregatorIntegration
+) -> dict:
+    items = db.query(MenuItem).order_by(MenuItem.name.asc()).all()
+    return {
+        "event": "menu.sync",
+        "platform": integration.platform,
+        "store": {
+            "id": integration.store_id,
+            "name": integration.store.name if integration.store else None,
+            "code": integration.store.code if integration.store else None,
+        },
+        "generated_at": datetime.utcnow().isoformat(),
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "category": item.category,
+                "price": round(float(item.selling_price or 0), 2),
+                "is_available": bool(item.is_available),
+                "allergens": list(item.allergens or []),
+                "dietary_tags": list(item.dietary_tags or []),
+                "calories": item.calories,
+                "protein_g": item.protein_g,
+                "carbs_g": item.carbs_g,
+                "fat_g": item.fat_g,
+                "channel_prices": [
+                    {
+                        "channel": row.channel,
+                        "price": round(float(row.price or 0), 2),
+                        "is_available": bool(row.is_available),
+                        "is_visible": bool(row.is_visible),
+                    }
+                    for row in (item.channel_prices or [])
+                ],
+            }
+            for item in items
+        ],
+    }
+
+
+def push_menu_sync(
+    db: Session, integration: AggregatorIntegration
+) -> dict:
+    if not integration.menu_sync_enabled or not integration.menu_sync_url:
+        raise AggregatorError("Enable menu sync and set a URL first.")
+    ensure_outbound_secret(integration)
+    db.commit()
+    payload = build_menu_payload(db, integration)
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request = Request(
+        integration.menu_sync_url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "PizzaBlitz-Aggregator/1.0",
+            "X-Pizza-Signature": sign_outbound(
+                integration.outbound_secret or "", body
+            ),
+            "X-Pizza-Event": "menu.sync",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=10) as response:  # noqa: S310 - configured URL
+            return {
+                "status": "sent" if 200 <= response.status < 300 else "failed",
+                "http_status": response.status,
+                "item_count": len(payload["items"]),
+                "generated_at": payload["generated_at"],
+            }
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        return {
+            "status": "failed",
+            "item_count": len(payload["items"]),
+            "error": str(exc)[:500],
+            "generated_at": payload["generated_at"],
+        }
 
 
 def queue_status_event(

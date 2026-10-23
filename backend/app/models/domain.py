@@ -759,6 +759,8 @@ class AggregatorIntegration(Base):
     outbound_url = Column(String(500), nullable=True)
     outbound_secret = Column(String(80), nullable=True)
     outbound_enabled = Column(Boolean, nullable=False, default=False)
+    menu_sync_url = Column(String(500), nullable=True)
+    menu_sync_enabled = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     store = relationship("Store")

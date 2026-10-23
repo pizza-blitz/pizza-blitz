@@ -15,6 +15,7 @@ from app.services.aggregator_service import (
     ensure_outbound_secret,
     ingest_order,
     integration_for_token,
+    push_menu_sync,
     recent_aggregator_events,
     recent_aggregator_orders,
     rotate_token,
@@ -36,6 +37,8 @@ class AggregatorIntegrationUpdate(BaseModel):
     auto_accept: Optional[bool] = None
     outbound_url: Optional[str] = Field(default=None, max_length=500)
     outbound_enabled: Optional[bool] = None
+    menu_sync_url: Optional[str] = Field(default=None, max_length=500)
+    menu_sync_enabled: Optional[bool] = None
 
 
 def _integration_or_404(db: Session, integration_id: int) -> AggregatorIntegration:
@@ -171,6 +174,25 @@ def update_aggregator(
         integration.outbound_enabled = payload.outbound_enabled
         if payload.outbound_enabled:
             ensure_outbound_secret(integration)
+    if payload.menu_sync_url is not None:
+        menu_url = payload.menu_sync_url.strip()
+        if menu_url:
+            parsed = urlparse(menu_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Menu sync URL must be a full http(s) URL.",
+                )
+        integration.menu_sync_url = menu_url or None
+    if payload.menu_sync_enabled is not None:
+        if payload.menu_sync_enabled and not integration.menu_sync_url:
+            raise HTTPException(
+                status_code=422,
+                detail="Set a menu sync URL before enabling menu sync.",
+            )
+        integration.menu_sync_enabled = payload.menu_sync_enabled
+        if payload.menu_sync_enabled:
+            ensure_outbound_secret(integration)
     db.commit()
     db.refresh(integration)
     return _with_webhook_url(serialize_integration(integration), request)
@@ -213,3 +235,16 @@ def list_aggregator_events(
         "integration_id": integration.id,
         "events": recent_aggregator_events(db, integration, limit),
     }
+
+
+@router.post("/{integration_id}/menu-sync")
+def sync_aggregator_menu(
+    integration_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    integration = _integration_or_404(db, integration_id)
+    try:
+        return push_menu_sync(db, integration)
+    except AggregatorError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

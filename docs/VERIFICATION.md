@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 144 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, menu allergens/nutrition, channel pricing, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, multi-store consolidation, GST accounting, aggregator intake and outbound status sync, shift scheduling/labour, security headers/client errors, POS hardware, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 146 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, menu nutrition, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, multi-store, accounting, aggregators (intake + outbound settings), shift scheduling, channel pricing, security headers/client errors, POS hardware, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, menu nutrition, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, multi-store, accounting, aggregators (intake + outbound status/menu settings), shift scheduling, channel pricing, security headers/client errors, POS hardware, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -382,6 +382,16 @@ event header), marks sent, or retries with backoff (1/5/15/60/180 minutes, five
 attempts) and records the error. A one-minute scheduler drains the queue; admins
 can list events. Covered by `backend/tests/test_aggregator_outbound.py` using a
 local HTTP receiver.
+
+## Aggregator menu sync
+
+Integrations store a menu-sync URL/enabled flag. `POST
+/restaurant/integrations/aggregators/{id}/menu-sync` builds the full menu (item
+price, availability, allergens, dietary tags, macros and channel
+price/availability/visibility) and POSTs a signed `menu.sync` payload. The result
+(`sent`/`failed`, item count, HTTP status/error) is returned to the operator and
+shown in the integrations UI. Covered by
+`backend/tests/test_aggregator_menu_sync.py`.
 
 ## Health endpoints
 

@@ -139,6 +139,10 @@ async function main() {
       /Outbound status sync/i.test(refreshedText),
       `Outbound section missing: ${refreshedText}`
     );
+    assert(
+      /Outbound menu sync/i.test(refreshedText),
+      `Menu sync section missing: ${refreshedText}`
+    );
     await page.waitForFunction(
       (id) => {
         const element = document.querySelector(`[data-testid="integration-card-${id}"]`);

@@ -31,6 +31,8 @@ type Integration = {
   outbound_url?: string | null;
   outbound_secret?: string | null;
   outbound_enabled?: boolean;
+  menu_sync_url?: string | null;
+  menu_sync_enabled?: boolean;
   orders_count: number;
   last_order_at?: string | null;
 };
@@ -49,6 +51,9 @@ export default function IntegrationsPage() {
   const [hydrated, setHydrated] = useState(false);
   const [revealed, setRevealed] = useState<number[]>([]);
   const [outboundDrafts, setOutboundDrafts] = useState<
+    Record<number, { url: string; enabled: boolean }>
+  >({});
+  const [menuDrafts, setMenuDrafts] = useState<
     Record<number, { url: string; enabled: boolean }>
   >({});
 
@@ -74,6 +79,14 @@ export default function IntegrationsPage() {
           rows.map((row) => [
             row.id,
             { url: row.outbound_url || "", enabled: Boolean(row.outbound_enabled) },
+          ])
+        )
+      );
+      setMenuDrafts(
+        Object.fromEntries(
+          rows.map((row) => [
+            row.id,
+            { url: row.menu_sync_url || "", enabled: Boolean(row.menu_sync_enabled) },
           ])
         )
       );
@@ -162,6 +175,67 @@ export default function IntegrationsPage() {
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Token could not be rotated.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const saveMenuSync = async (integration: Integration) => {
+    const draft = menuDrafts[integration.id] || {
+      url: integration.menu_sync_url || "",
+      enabled: Boolean(integration.menu_sync_enabled),
+    };
+    setBusy(`menu-${integration.id}`);
+    setMessage("");
+    try {
+      const response = await fetch(
+        getApiUrl(`/api/v1/restaurant/integrations/aggregators/${integration.id}`),
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            menu_sync_url: draft.url.trim() || null,
+            menu_sync_enabled: draft.enabled,
+          }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Menu sync could not be saved.");
+      setMessage(
+        data.menu_sync_enabled
+          ? `Menu sync enabled for ${data.platform_label}.`
+          : `Menu sync disabled for ${data.platform_label}.`
+      );
+      await load();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Menu sync could not be saved."
+      );
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const pushMenu = async (integration: Integration) => {
+    setBusy(`menu-${integration.id}`);
+    setMessage("");
+    try {
+      const response = await fetch(
+        getApiUrl(
+          `/api/v1/restaurant/integrations/aggregators/${integration.id}/menu-sync`
+        ),
+        { method: "POST", credentials: "include" }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Menu push failed.");
+      setMessage(
+        data.status === "sent"
+          ? `Menu sent to ${integration.platform_label} (${data.item_count} items).`
+          : `Menu push failed: ${data.error || "partner rejected the payload"}`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Menu push failed.");
     } finally {
       setBusy("");
     }
@@ -503,6 +577,84 @@ export default function IntegrationsPage() {
                     Signing secret: {integration.outbound_secret}
                   </p>
                 )}
+              </div>
+
+              <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50/70 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                  Outbound menu sync
+                  <span
+                    className={`ml-2 rounded-full px-2 py-0.5 ${
+                      integration.menu_sync_enabled
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-gray-200 text-gray-500"
+                    }`}
+                  >
+                    {integration.menu_sync_enabled ? "On" : "Off"}
+                  </span>
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    data-testid={`integration-menu-url-${integration.id}`}
+                    aria-label="Menu sync URL"
+                    value={menuDrafts[integration.id]?.url ?? integration.menu_sync_url ?? ""}
+                    onChange={(event) =>
+                      setMenuDrafts((current) => ({
+                        ...current,
+                        [integration.id]: {
+                          url: event.target.value,
+                          enabled:
+                            current[integration.id]?.enabled ??
+                            Boolean(integration.menu_sync_enabled),
+                        },
+                      }))
+                    }
+                    placeholder="https://partner.example.com/hooks/menu"
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-[11px] font-bold text-gray-700"
+                  />
+                  <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={
+                        menuDrafts[integration.id]?.enabled ??
+                        Boolean(integration.menu_sync_enabled)
+                      }
+                      onChange={(event) =>
+                        setMenuDrafts((current) => ({
+                          ...current,
+                          [integration.id]: {
+                            url:
+                              current[integration.id]?.url ??
+                              integration.menu_sync_url ??
+                              "",
+                            enabled: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    Enabled
+                  </label>
+                  <button
+                    type="button"
+                    data-testid={`integration-menu-save-${integration.id}`}
+                    onClick={() => void saveMenuSync(integration)}
+                    disabled={busy === `menu-${integration.id}`}
+                    className="rounded-lg bg-gray-950 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                  >
+                    Save menu
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`integration-menu-push-${integration.id}`}
+                    onClick={() => void pushMenu(integration)}
+                    disabled={
+                      busy === `menu-${integration.id}` ||
+                      !integration.menu_sync_enabled
+                    }
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-700 disabled:opacity-40"
+                  >
+                    Push menu
+                  </button>
+                </div>
               </div>
             </div>
           ))
