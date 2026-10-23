@@ -14,6 +14,7 @@ import {
   MapPin,
   Plus,
   Plug,
+  Printer,
   RefreshCw,
   Route,
   Save,
@@ -1326,6 +1327,12 @@ export default function Settings() {
           <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
           <p className="text-gray-500 mt-1">Configure portal preferences, data sources, and security.</p>
         </div>
+        <Link
+          href="/settings/hardware"
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-orange-300 hover:text-orange-700"
+        >
+          <Printer className="h-4 w-4" /> POS hardware
+        </Link>
         <Link
           href="/settings/integrations"
           className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-bold text-gray-700 hover:border-orange-300 hover:text-orange-700"

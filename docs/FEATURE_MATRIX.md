@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **267 API endpoints**, **44 routes/pages** (34 portal,
-1 KDS, 9 public), **141 browser proof scripts**, **140 backend tests**, **54
+Numbers in this snapshot: **271 API endpoints**, **46 routes/pages** (35 portal,
+1 KDS, 10 public), **142 browser proof scripts**, **142 backend tests**, **55
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -67,11 +67,11 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Invoicing | Invoice generation, numbering, tax split | Built | GST-compliant fields, e-invoice | Tax configuration partial |
 | Close / cancel | Close order, cancel with reason | Built | Void with approval + stock reversal | Void workflow needs audit |
 | Cash drawer | Drawer command, close, variance | Built | Cash drops, shift handover | Partial |
-| Receipts | Receipt page + print-ready kitchen ticket | Partial | Thermal printer, reprints, email receipt | Hardware integration missing |
+| Receipts | Receipt page + print-ready kitchen ticket; browser print with configurable header/footer/paper width | Built | Thermal printer, reprints, email receipt | Thermal output needs a local ESC/POS bridge |
 | Refunds | Admin-only full/partial refunds with reason, method, reference, ledger and audit event; order tracks refunded/refundable totals | Built | Full/partial refund with provider and ledger | Gateway refund API call not wired |
 | Tips | Captured on orders; summary endpoint (total/today/average); shown on the POS header | Partial | Tip entry, tip pool, payout report | Pooling/payout missing |
 | Gift cards / store credit | — | Missing | Issue/redeem/balance | Later |
-| Customer display | — | Missing | Second screen / pole display | Out of scope |
+| Customer display | Branded full-screen `/customer-display` idle screen, configurable URL per store | Built | Second screen / pole display | Live cart push from POS missing |
 | Offline mode | — | Missing | Local queue + sync | Later |
 
 ## 3. Kitchen (KDS)
@@ -377,6 +377,12 @@ nosniff, frame-deny, referrer and permissions policies. Requests carry an
 report to `/ops/client-errors`, and Production Ops shows recent browser errors.
 Covered by two backend tests and `verify:security-headers`.
 
+W4 measured results (hardware): per-store printer name, 58/80mm paper, auto-print,
+receipt header/footer, drawer pin/URL are configurable. Test print returns
+printable HTML/text, drawer pulse returns the exact ESC/POS bytes, and the
+customer display opens a branded screen. Covered by two backend tests and
+`verify:pos-hardware`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -450,7 +456,10 @@ Covered by two backend tests and `verify:security-headers`.
     nosniff, frame-deny, referrer/permissions policies, request IDs, backend
     exception logging, client error boundaries and an ops monitor. External
     Sentry-style aggregation remains.
-20. Hardware: thermal printer + cash drawer + customer display integration.
+20. ~~**Hardware: thermal printer + cash drawer + customer display**~~ — done in
+    W4: per-store printer/paper/receipt settings, test-print HTML/text, ESC/POS
+    drawer pulse bytes, customer-display URL and a branded display screen.
+    Sending bytes to a physical printer still needs a local bridge.
 
 ### P2 — scale and ecosystem
 
@@ -476,8 +485,8 @@ Covered by two backend tests and `verify:security-headers`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing + CSP/error monitoring (done); hardware (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel + monitoring proofs |
-| W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
+| W4 (done) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing + CSP/error monitoring + POS hardware | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel + monitoring + hardware proofs |
+| W5 (in progress) | Deployment-ready checklist, channel-specific item visibility, outbound aggregator sync, external monitoring | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 
 Each wave ships with backend tests, a browser proof, responsive screenshots, and

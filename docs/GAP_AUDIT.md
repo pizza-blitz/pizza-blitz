@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 44 frontend routes, the 141 browser proof scripts in
+- Listed all 46 frontend routes, the 142 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -81,6 +81,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 50 | Menu metadata | Menu items had no allergens, dietary tags or nutrition, so customers could not make allergy or diet decisions from the ordering page. | W4 allergens/nutrition gap. | Added `allergens`, `dietary_tags`, `calories`, `protein_g`, `carbs_g`, `fat_g` to menu items (migration), exposed them in both menu endpoints, and added admin editing plus customer-menu badges and “Contains:” allergen text. Two backend tests and a browser proof. Channel-specific pricing followed in item 51. |
 | 51 | Channel pricing | Every channel used one menu price, so delivery and aggregator orders could not carry different pricing or availability. | W4 channel-pricing gap. | Added `menu_item_channel_prices` (migration), per-channel price/availability in the menu save API, admin channel overrides, channel-aware customer menu/cart pricing, and order-creation enforcement for dine-in/takeaway/delivery. Two backend tests and a browser proof. Channel-specific item visibility remains. |
 | 52 | Hardening | Next shipped default headers only; there was no CSP/HSTS, request correlation, unhandled-exception logging, or way to see browser errors. | W4 security-hardening gap. | Added Next and API CSP/HSTS/nosniff/frame/referrer/permissions headers, `X-Request-ID` on every response, structured exception/slow-request logs, and a 500 fallback. Added `client_error_reports` (migration), a public report endpoint, admin list, error boundaries and a Production Ops monitor. Two backend tests and a browser proof incl. a CSP-violation check. |
+| 53 | Hardware | There was no way to configure a thermal printer, trigger a cash drawer, or run a customer-facing display. | W4 hardware gap. | Added `pos_hardware_configs` (migration), per-store printer/paper/receipt/drawer/display settings, a printable test-print job, ESC/POS drawer-pulse bytes, `/settings/hardware` and a branded `/customer-display` page. Two backend tests and a browser proof. Physical ESC/POS sending needs a local bridge. |
 
 ## Still open
 
@@ -95,7 +96,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 140 tests, all pass (in a clean venv built from
+- Backend unit suite: 142 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

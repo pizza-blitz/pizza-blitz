@@ -789,3 +789,21 @@ class ClientErrorReport(Base):
     user_agent = Column(String(500), nullable=True)
     request_id = Column(String(64), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class PosHardwareConfig(Base):
+    __tablename__ = "pos_hardware_configs"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), unique=True, index=True, nullable=False
+    )
+    printer_name = Column(String(120), nullable=False, default="Browser print")
+    paper_width_mm = Column(Integer, nullable=False, default=80)
+    auto_print = Column(Boolean, nullable=False, default=False)
+    receipt_header = Column(String(255), nullable=True)
+    receipt_footer = Column(String(255), nullable=True)
+    cash_drawer_enabled = Column(Boolean, nullable=False, default=False)
+    drawer_pin = Column(String(2), nullable=False, default="2")
+    customer_display_url = Column(String(500), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    store = relationship("Store")

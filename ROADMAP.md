@@ -163,6 +163,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Allergens/nutrition.
 - [x] Channel-specific pricing.
 - [x] Security headers and error monitoring.
-- [ ] Hardware integrations.
+- [x] POS hardware integrations.
+- [ ] Deployment-ready checklist and external integrations.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
