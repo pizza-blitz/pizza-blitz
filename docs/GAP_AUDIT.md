@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 43 frontend routes, the 137 browser proof scripts in
+- Listed all 44 frontend routes, the 138 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -77,6 +77,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 46 | Franchise | There was a single implicit store: no location registry, no way to pause one branch, and no consolidated view of revenue across stores. | W4 multi-store gap. | Added a `stores` registry (migration seeds MAIN), `store_id` on orders, admin create/update endpoints with last-active-store protection, a consolidated business-day report with per-store and group revenue/orders/AOV/tips/refunds, and `/settings/stores` for creation, pause/activate and reporting. Three backend tests and a browser proof. |
 | 47 | Accounting | Tax existed only on invoices; there was no GST summary, payment/store reconciliation, or journal CSV for Tally/Zoho/QuickBooks. | W4 accounting gap. | Added `/accounting/summary` (gross, discounts, CGST/SGST, tips, refunds, net, payment mix, store totals) and `/accounting/export` (one row per order with tax split and net). Added the `/accounting` finance page with date range, cards, tables and CSV download. Two backend tests and a browser proof. Direct accounting-API connectors remain. |
 | 48 | Aggregators | Orders from Swiggy/Zomato/Uber Eats/DoorDash could only be keyed in manually; there was no token-scoped intake or idempotency. | W4 aggregator gap. | Added `aggregator_integrations` and `aggregator_orders` (migration), admin connect/list/pause/rotate endpoints, and a public webhook that validates the platform token, maps items/customer/address/store, creates an order and dedupes by `external_order_id`. Added `/settings/integrations` with copyable URL/token and order counts. Three backend tests and a browser proof. Outbound menu/status sync remains. |
+| 49 | Workforce | Shifts were only logged after the fact; there was no forward roster, wage estimate, or labour-cost percentage against sales. | W4 workforce gap. | Added `scheduled_shifts` (migration), CRUD schedule endpoints, and a labour summary (hours, cost, sales, labour %, day/role breakdown). Added `/shifts/schedule` with weekly navigation, add/confirm/delete and dashboard cards. Two backend tests and a browser proof. Clock-in/out and statutory rules remain. |
 
 ## Still open
 
@@ -91,7 +92,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 132 tests, all pass (in a clean venv built from
+- Backend unit suite: 134 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

@@ -381,6 +381,21 @@ class ShiftLog(Base):
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class ScheduledShift(Base):
+    __tablename__ = "scheduled_shifts"
+    id = Column(Integer, primary_key=True, index=True)
+    staff_name = Column(String(120), index=True, nullable=False)
+    role = Column(String(60), nullable=True)
+    date = Column(Date, index=True, nullable=False)
+    start_time = Column(String(10), nullable=False)
+    end_time = Column(String(10), nullable=False)
+    hourly_rate = Column(Float, nullable=False, default=0.0)
+    status = Column(String(20), nullable=False, default="scheduled", index=True)
+    notes = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class StaffLeaveRequest(Base):
     __tablename__ = "staff_leave_requests"
     id = Column(Integer, primary_key=True, index=True)

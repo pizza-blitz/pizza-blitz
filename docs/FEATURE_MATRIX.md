@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **260 API endpoints**, **43 routes/pages** (33 portal,
-1 KDS, 9 public), **137 browser proof scripts**, **132 backend tests**, **51
+Numbers in this snapshot: **265 API endpoints**, **44 routes/pages** (34 portal,
+1 KDS, 9 public), **138 browser proof scripts**, **134 backend tests**, **52
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -192,7 +192,8 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Shift log | Log shifts, performance, by date | Built | Scheduling, clock in/out | Scheduling missing |
+| Shift log | Log shifts, performance, by date, plus a weekly schedule with confirmation and hourly rates | Built | Scheduling, clock in/out | Clock in/out missing |
+| Labour vs sales | Weekly labour cost, hours, sales and labour % with day/role breakdown | Built | Labour cost % dashboard | Overtime/statutory rules missing |
 | Leave | Request + approve/reject | Built | Accruals, calendar | Partial |
 | Attendance | Attendance command | Built | Biometric/PIN clock, geofence | Partial |
 | Payroll preview | Hours × rate preview | Built | Full payroll, tips, statutory | Partial |
@@ -352,6 +353,11 @@ delivery orders with mapped items, customer, address, payment state and store;
 replaying `external_order_id` returns the original order, and token rotation or
 pausing blocks intake. Covered by three backend tests and `verify:aggregators`.
 
+W4 measured results (workforce): admins schedule shifts by staff/role/date/time/
+hourly rate, confirm or delete them, and see weekly hours, wage cost, sales and
+labour percentage with day and role breakdowns at `/shifts/schedule`. Covered by
+two backend tests and `verify:shift-schedule`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -415,7 +421,9 @@ pausing blocks intake. Covered by three backend tests and `verify:aggregators`.
     recovery codes, a two-step login challenge (portal and API), and granular
     staff permissions enforced on reports and refunds. SSO remains.
 17. Allergens/nutrition and channel-specific menus/pricing.
-18. Labour vs sales dashboard and shift scheduling.
+18. ~~**Labour vs sales dashboard and shift scheduling**~~ — done in W4: weekly
+    scheduled shifts with hourly rates, confirmation, roster and a labour-cost
+    versus sales dashboard. Clock-in/out and statutory rules remain.
 19. Security headers/CSP and error monitoring.
 20. Hardware: thermal printer + cash drawer + customer display integration.
 
@@ -443,7 +451,7 @@ pausing blocks intake. Covered by three backend tests and `verify:aggregators`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake (done); allergens/nutrition, labour scheduling, hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling (done); allergens/nutrition, hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce proofs |
 | W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

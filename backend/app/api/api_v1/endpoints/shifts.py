@@ -3,11 +3,18 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
-from app.models.domain import DailySales, ShiftLog, StaffLeaveRequest
+from app.models.domain import (
+    DailySales,
+    RestaurantOrder,
+    ScheduledShift,
+    ShiftLog,
+    StaffLeaveRequest,
+)
 from app.services.operational_audit_service import record_operational_audit_event
 
 router = APIRouter()
@@ -98,6 +105,34 @@ def _shift_hours(shift: ShiftLog) -> float:
     if end < start:
         end += 24 * 60
     return round(max(end - start, 0) / 60, 2)
+
+
+def _scheduled_hours(start_time: str, end_time: str) -> float:
+    start = _parse_minutes(start_time)
+    end = _parse_minutes(end_time)
+    if start is None or end is None:
+        return 0.0
+    if end < start:
+        end += 24 * 60
+    return round(max(end - start, 0) / 60, 2)
+
+
+def _scheduled_dict(shift: ScheduledShift) -> dict:
+    hours = _scheduled_hours(shift.start_time, shift.end_time)
+    return {
+        "id": shift.id,
+        "staff_name": shift.staff_name,
+        "role": shift.role,
+        "date": shift.date.isoformat(),
+        "start_time": shift.start_time,
+        "end_time": shift.end_time,
+        "hours": hours,
+        "hourly_rate": round(float(shift.hourly_rate or 0), 2),
+        "labour_cost": round(hours * float(shift.hourly_rate or 0), 2),
+        "status": shift.status,
+        "notes": shift.notes,
+        "created_at": shift.created_at.isoformat() if shift.created_at else None,
+    }
 
 
 def _role_key(role: Optional[str]) -> str:
@@ -713,4 +748,245 @@ def shifts_by_date(
         "leave": [_leave_dict(leave) for leave in active_leaves],
         "total_sale": float(sales.total_sale) if sales else 0,
         "profit": float(sales.profit) if sales else 0
+    }
+
+
+class ScheduledShiftCreate(BaseModel):
+    staff_name: str
+    role: Optional[str] = None
+    date: date
+    start_time: str
+    end_time: str
+    hourly_rate: float = 0
+    status: Literal["scheduled", "confirmed", "cancelled"] = "scheduled"
+    notes: Optional[str] = None
+
+
+class ScheduledShiftUpdate(BaseModel):
+    staff_name: Optional[str] = None
+    role: Optional[str] = None
+    date: Optional[date] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    hourly_rate: Optional[float] = None
+    status: Optional[Literal["scheduled", "confirmed", "cancelled"]] = None
+    notes: Optional[str] = None
+
+
+def _validate_shift_times(start_time: str, end_time: str) -> None:
+    if _parse_minutes(start_time) is None or _parse_minutes(end_time) is None:
+        raise HTTPException(status_code=422, detail="Use HH:MM for shift times.")
+    if _parse_minutes(start_time) == _parse_minutes(end_time):
+        raise HTTPException(status_code=422, detail="Shift start and end must differ.")
+
+
+def _scheduled_range(
+    db: Session, start_date: date, end_date: date, include_cancelled: bool = False
+) -> list[ScheduledShift]:
+    query = db.query(ScheduledShift).filter(
+        ScheduledShift.date >= start_date,
+        ScheduledShift.date <= end_date,
+    )
+    if not include_cancelled:
+        query = query.filter(ScheduledShift.status != "cancelled")
+    return query.order_by(ScheduledShift.date.asc(), ScheduledShift.start_time.asc()).all()
+
+
+@router.get("/schedule")
+def get_schedule(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    if start_date is None:
+        today = business_today()
+        start_date = today - timedelta(days=today.weekday())
+    if end_date is None:
+        end_date = start_date + timedelta(days=6)
+    if end_date < start_date:
+        raise HTTPException(status_code=422, detail="End date must be on or after start.")
+    shifts = _scheduled_range(db, start_date, end_date, include_cancelled=True)
+    rows = [_scheduled_dict(shift) for shift in shifts]
+    active = [row for row in rows if row["status"] != "cancelled"]
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "shifts": rows,
+        "summary": {
+            "shift_count": len(active),
+            "hours": round(sum(row["hours"] for row in active), 2),
+            "labour_cost": round(sum(row["labour_cost"] for row in active), 2),
+        },
+    }
+
+
+@router.post("/schedule")
+def create_scheduled_shift(
+    payload: ScheduledShiftCreate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    _validate_shift_times(payload.start_time, payload.end_time)
+    if not payload.staff_name.strip():
+        raise HTTPException(status_code=422, detail="Staff name is required.")
+    shift = ScheduledShift(
+        staff_name=payload.staff_name.strip(),
+        role=(payload.role or "").strip() or None,
+        date=payload.date,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        hourly_rate=max(float(payload.hourly_rate or 0), 0),
+        status=payload.status,
+        notes=(payload.notes or "").strip() or None,
+    )
+    db.add(shift)
+    db.commit()
+    db.refresh(shift)
+    return _scheduled_dict(shift)
+
+
+@router.patch("/schedule/{shift_id}")
+def update_scheduled_shift(
+    shift_id: int,
+    payload: ScheduledShiftUpdate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    shift = db.query(ScheduledShift).filter(ScheduledShift.id == shift_id).first()
+    if shift is None:
+        raise HTTPException(status_code=404, detail="Scheduled shift not found.")
+    start_time = payload.start_time if payload.start_time is not None else shift.start_time
+    end_time = payload.end_time if payload.end_time is not None else shift.end_time
+    _validate_shift_times(start_time, end_time)
+    if payload.staff_name is not None:
+        shift.staff_name = payload.staff_name.strip()
+    if payload.role is not None:
+        shift.role = payload.role.strip() or None
+    if payload.date is not None:
+        shift.date = payload.date
+    shift.start_time = start_time
+    shift.end_time = end_time
+    if payload.hourly_rate is not None:
+        shift.hourly_rate = max(float(payload.hourly_rate), 0)
+    if payload.status is not None:
+        shift.status = payload.status
+    if payload.notes is not None:
+        shift.notes = payload.notes.strip() or None
+    db.commit()
+    db.refresh(shift)
+    return _scheduled_dict(shift)
+
+
+@router.delete("/schedule/{shift_id}")
+def delete_scheduled_shift(
+    shift_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    shift = db.query(ScheduledShift).filter(ScheduledShift.id == shift_id).first()
+    if shift is None:
+        raise HTTPException(status_code=404, detail="Scheduled shift not found.")
+    db.delete(shift)
+    db.commit()
+    return {"status": "deleted", "id": shift_id}
+
+
+@router.get("/labour-summary")
+def labour_summary(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    if start_date is None:
+        today = business_today()
+        start_date = today - timedelta(days=today.weekday())
+    if end_date is None:
+        end_date = start_date + timedelta(days=6)
+    if end_date < start_date:
+        raise HTTPException(status_code=422, detail="End date must be on or after start.")
+    shifts = _scheduled_range(db, start_date, end_date)
+    sales_rows = (
+        db.query(RestaurantOrder.date, func.coalesce(func.sum(RestaurantOrder.total_amount), 0.0))
+        .filter(
+            RestaurantOrder.date >= start_date,
+            RestaurantOrder.date <= end_date,
+            RestaurantOrder.status != "cancelled",
+        )
+        .group_by(RestaurantOrder.date)
+        .all()
+    )
+    sales_by_date = {row[0]: round(float(row[1] or 0), 2) for row in sales_rows}
+
+    days: dict[date, dict] = {}
+    for shift in shifts:
+        row = days.setdefault(
+            shift.date,
+            {
+                "date": shift.date.isoformat(),
+                "scheduled_hours": 0.0,
+                "labour_cost": 0.0,
+                "sales": sales_by_date.get(shift.date, 0.0),
+            },
+        )
+        row["scheduled_hours"] = round(
+            row["scheduled_hours"] + _scheduled_hours(shift.start_time, shift.end_time), 2
+        )
+        row["labour_cost"] = round(
+            row["labour_cost"]
+            + _scheduled_hours(shift.start_time, shift.end_time)
+            * float(shift.hourly_rate or 0),
+            2,
+        )
+    for sale_date, sales in sales_by_date.items():
+        if sale_date not in days:
+            days[sale_date] = {
+                "date": sale_date.isoformat(),
+                "scheduled_hours": 0.0,
+                "labour_cost": 0.0,
+                "sales": sales,
+            }
+    day_rows = []
+    for row in sorted(days.values(), key=lambda item: item["date"]):
+        row["labour_percent"] = (
+            round((row["labour_cost"] / row["sales"]) * 100, 1) if row["sales"] else 0.0
+        )
+        day_rows.append(row)
+
+    total_hours = round(sum(row["hours"] for row in [_scheduled_dict(s) for s in shifts]), 2)
+    total_cost = round(
+        sum(
+            _scheduled_hours(shift.start_time, shift.end_time)
+            * float(shift.hourly_rate or 0)
+            for shift in shifts
+        ),
+        2,
+    )
+    total_sales = round(sum(row["sales"] for row in day_rows), 2)
+    roles: dict[str, dict] = {}
+    for shift in shifts:
+        key = _role_key(shift.role)
+        bucket = roles.setdefault(
+            key, {"role": _role_label(key), "hours": 0.0, "labour_cost": 0.0}
+        )
+        hours = _scheduled_hours(shift.start_time, shift.end_time)
+        bucket["hours"] = round(bucket["hours"] + hours, 2)
+        bucket["labour_cost"] = round(
+            bucket["labour_cost"] + hours * float(shift.hourly_rate or 0), 2
+        )
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "totals": {
+            "scheduled_hours": total_hours,
+            "labour_cost": total_cost,
+            "sales": total_sales,
+            "labour_percent": round((total_cost / total_sales) * 100, 1)
+            if total_sales
+            else 0.0,
+            "shift_count": len(shifts),
+        },
+        "days": day_rows,
+        "roles": sorted(roles.values(), key=lambda item: item["role"]),
     }

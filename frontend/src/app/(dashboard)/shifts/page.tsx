@@ -1,8 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
+  CalendarClock,
   CalendarDays,
   CheckCircle2,
   ClipboardList,
@@ -301,6 +303,12 @@ export default function ShiftLogPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/shifts/schedule"
+            className="inline-flex items-center gap-2 rounded-md border border-orange-300/30 bg-orange-400/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-orange-200 hover:bg-orange-400/20"
+          >
+            <CalendarClock className="h-4 w-4" /> Schedule & labour
+          </Link>
           <label className="flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-300">
             <CalendarDays className="h-4 w-4 text-orange-300" />
             <span className="sr-only">Attendance date</span>
