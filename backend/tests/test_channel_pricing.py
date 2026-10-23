@@ -121,6 +121,44 @@ class ChannelPricingTest(unittest.TestCase):
         self.item_ids.append(cleared.json()["id"])
         self.assertEqual(cleared.json()["channel_prices"], [])
 
+        hidden = self.create_item(
+            name="Channel Hidden Pizza",
+            channel_prices=[
+                {
+                    "channel": "delivery",
+                    "price": 349,
+                    "is_available": True,
+                    "is_visible": False,
+                },
+                {
+                    "channel": "takeaway",
+                    "price": 299,
+                    "is_available": True,
+                    "is_visible": True,
+                },
+            ],
+        )
+        self.assertEqual(hidden.status_code, 200, hidden.text)
+        hidden_item = hidden.json()
+        self.item_ids.append(hidden_item["id"])
+        hidden_delivery = next(
+            row
+            for row in hidden_item["channel_prices"]
+            if row["channel"] == "delivery"
+        )
+        self.assertFalse(hidden_delivery["is_visible"])
+        hidden_blocked = self.client.post(
+            "/api/v1/restaurant/orders/",
+            json=order_payload("9812346304", "delivery", hidden_item["name"]),
+        )
+        self.assertEqual(hidden_blocked.status_code, 422)
+        hidden_takeaway = self.client.post(
+            "/api/v1/restaurant/orders/",
+            json=order_payload("9812346305", "takeaway", hidden_item["name"]),
+        )
+        self.assertEqual(hidden_takeaway.status_code, 200, hidden_takeaway.text)
+        self.assertAlmostEqual(hidden_takeaway.json()["subtotal"], 299, places=2)
+
     def test_channel_price_validation(self):
         invalid_channel = self.create_item(
             channel_prices=[

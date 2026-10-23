@@ -55,6 +55,7 @@ async function main() {
   const token = login.data.access_token;
 
   let itemId = null;
+  let hiddenItemId = null;
   const browser = await chromium.launch({ headless: true });
   try {
     const created = await api(token, "/api/v1/restaurant/menu/menu", {
@@ -66,13 +67,30 @@ async function main() {
         cost_price: 110,
         is_available: true,
         channel_prices: [
-          { channel: "takeaway", price: 299, is_available: true },
-          { channel: "delivery", price: 349, is_available: true },
+          { channel: "takeaway", price: 299, is_available: true, is_visible: true },
+          { channel: "delivery", price: 349, is_available: true, is_visible: true },
         ],
       }),
     });
     assert(created.response.ok, `Menu create failed: ${JSON.stringify(created.data)}`);
     itemId = created.data.id;
+
+    const hidden = await api(token, "/api/v1/restaurant/menu/menu", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Channel Hidden Proof Pizza",
+        category: "Pizza",
+        selling_price: 299,
+        cost_price: 110,
+        is_available: true,
+        channel_prices: [
+          { channel: "takeaway", price: 299, is_available: true, is_visible: true },
+          { channel: "delivery", price: 349, is_available: true, is_visible: false },
+        ],
+      }),
+    });
+    assert(hidden.response.ok, `Hidden item create failed: ${JSON.stringify(hidden.data)}`);
+    hiddenItemId = hidden.data.id;
 
     const context = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
     const page = await context.newPage();
@@ -81,6 +99,11 @@ async function main() {
     await card.waitFor({ timeout: 30000 });
     const pickupText = await card.innerText();
     assert(/Rs 299/.test(pickupText), `Pickup card read: ${pickupText}`);
+    const hiddenCard = page.getByTestId(`customer-menu-card-${hiddenItemId}`);
+    assert(
+      (await hiddenCard.count()) === 1,
+      "Hidden-in-delivery item should be visible for pickup."
+    );
 
     await card.getByRole("button", { name: /Add/i }).click();
     await page.waitForFunction(
@@ -109,6 +132,11 @@ async function main() {
       null,
       { timeout: 15000 }
     );
+    await page.waitForFunction(
+      (id) => !document.querySelector(`[data-testid="customer-menu-card-${id}"]`),
+      hiddenItemId,
+      { timeout: 15000 }
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-channel-pricing.png"),
@@ -119,6 +147,11 @@ async function main() {
   } finally {
     if (itemId) {
       await api(token, `/api/v1/restaurant/menu/menu/${itemId}`, {
+        method: "DELETE",
+      }).catch(() => {});
+    }
+    if (hiddenItemId) {
+      await api(token, `/api/v1/restaurant/menu/menu/${hiddenItemId}`, {
         method: "DELETE",
       }).catch(() => {});
     }

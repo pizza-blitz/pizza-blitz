@@ -406,6 +406,7 @@ def customized_menu_payload(db: Session) -> list[dict]:
                     "channel": row.channel,
                     "price": row.price,
                     "is_available": bool(row.is_available),
+                    "is_visible": bool(row.is_visible),
                 }
                 for row in (item.channel_prices or [])
             ],

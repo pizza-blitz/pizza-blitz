@@ -1837,7 +1837,7 @@ def normalize_order_items(
                     .first()
                 )
                 if channel_price is not None:
-                    if not channel_price.is_available:
+                    if not channel_price.is_available or not channel_price.is_visible:
                         raise HTTPException(
                             status_code=422,
                             detail=f"{menu_item.name} is not available for {channel} orders.",

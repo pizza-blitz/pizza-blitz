@@ -61,6 +61,7 @@ class MenuItemChannelPrice(Base):
     channel = Column(String(20), nullable=False, index=True)
     price = Column(Float, nullable=False, default=0.0)
     is_available = Column(Boolean, nullable=False, default=True)
+    is_visible = Column(Boolean, nullable=False, default=True)
     menu_item = relationship("MenuItem", back_populates="channel_prices")
 
 

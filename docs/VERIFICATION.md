@@ -343,12 +343,13 @@ menu modal edits allergens as a comma list, tag toggles and macros. Covered by
 
 ## Channel-specific pricing
 
-`menu_item_channel_prices` stores optional price/availability overrides for
-`dine-in`, `takeaway`, `delivery` and `aggregator`. The menu save endpoint syncs
-them; both menu APIs return them; the customer menu uses the active channel
-price, hides unavailable channels and reprices the cart when switching
-pickup/delivery; order creation enforces the same channel price and rejects an
-unavailable channel. Covered by `backend/tests/test_channel_pricing.py` and
+`menu_item_channel_prices` stores optional price/availability/visibility
+overrides for `dine-in`, `takeaway`, `delivery` and `aggregator`. The menu save
+endpoint syncs them; both menu APIs return them; the customer menu uses the
+active channel price, hides unavailable or hidden channels and reprices the cart
+when switching pickup/delivery; order creation enforces the same channel price
+and rejects an unavailable/hidden channel. Covered by
+`backend/tests/test_channel_pricing.py` and
 `frontend/e2e/verify-channel-pricing.cjs`.
 
 ## Security headers and error monitoring

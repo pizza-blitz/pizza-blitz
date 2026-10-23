@@ -91,6 +91,7 @@ class ChannelPriceSchema(BaseModel):
     channel: Literal["dine-in", "takeaway", "delivery", "aggregator"]
     price: float = Field(ge=0, le=100000)
     is_available: bool = True
+    is_visible: bool = True
 
 
 class MenuItemSchema(BaseModel):
@@ -457,11 +458,13 @@ def update_or_create_menu(
                         channel=row.channel,
                         price=round(float(row.price), 2),
                         is_available=row.is_available,
+                        is_visible=row.is_visible,
                     )
                 )
             else:
                 current.price = round(float(row.price), 2)
                 current.is_available = row.is_available
+                current.is_visible = row.is_visible
         for channel, current in existing_prices.items():
             if channel not in keep:
                 db_item.channel_prices.remove(current)

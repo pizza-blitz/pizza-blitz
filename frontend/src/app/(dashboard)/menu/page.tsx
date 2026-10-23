@@ -45,6 +45,7 @@ type ChannelPrice = {
   channel: "dine-in" | "takeaway" | "delivery" | "aggregator";
   price: number;
   is_available: boolean;
+  is_visible: boolean;
 };
 
 type MenuItem = {
@@ -902,6 +903,7 @@ export default function MenuManagement() {
                                         channel: channel.key,
                                         price: formData.selling_price,
                                         is_available: true,
+                                        is_visible: true,
                                       },
                                     ]
                                   : (formData.channel_prices || []).filter(
@@ -933,24 +935,44 @@ export default function MenuManagement() {
                           className="w-28 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-sm text-white disabled:opacity-40"
                         />
                         {row && (
-                          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                            <input
-                              type="checkbox"
-                              checked={row.is_available}
-                              onChange={(event) =>
-                                setFormData({
-                                  ...formData,
-                                  channel_prices: (formData.channel_prices || []).map(
-                                    (entry) =>
-                                      entry.channel === channel.key
-                                        ? { ...entry, is_available: event.target.checked }
-                                        : entry
-                                  ),
-                                })
-                              }
-                            />
-                            Available
-                          </label>
+                          <>
+                            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                              <input
+                                type="checkbox"
+                                checked={row.is_available}
+                                onChange={(event) =>
+                                  setFormData({
+                                    ...formData,
+                                    channel_prices: (formData.channel_prices || []).map(
+                                      (entry) =>
+                                        entry.channel === channel.key
+                                          ? { ...entry, is_available: event.target.checked }
+                                          : entry
+                                    ),
+                                  })
+                                }
+                              />
+                              Available
+                            </label>
+                            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                              <input
+                                type="checkbox"
+                                checked={row.is_visible}
+                                onChange={(event) =>
+                                  setFormData({
+                                    ...formData,
+                                    channel_prices: (formData.channel_prices || []).map(
+                                      (entry) =>
+                                        entry.channel === channel.key
+                                          ? { ...entry, is_visible: event.target.checked }
+                                          : entry
+                                    ),
+                                  })
+                                }
+                              />
+                              Visible
+                            </label>
+                          </>
                         )}
                       </div>
                     );

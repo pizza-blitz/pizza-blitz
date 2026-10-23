@@ -52,6 +52,7 @@ type MenuItem = {
     channel: "dine-in" | "takeaway" | "delivery" | "aggregator";
     price: number;
     is_available: boolean;
+    is_visible: boolean;
   }[] | null;
   customization_groups?: CustomizationGroup[];
 };
@@ -736,7 +737,7 @@ export default function PublicOrderPage() {
       const row = (item.channel_prices || []).find(
         (entry) => entry.channel === pricingChannel
       );
-      if (row && !row.is_available) continue;
+      if (row && (!row.is_available || !row.is_visible)) continue;
       rows.push({
         ...item,
         selling_price: row ? row.price : item.selling_price,
@@ -754,7 +755,7 @@ export default function PublicOrderPage() {
           const row = (source.channel_prices || []).find(
             (entry) => entry.channel === pricingChannel
           );
-          if (row && !row.is_available) return null;
+          if (row && (!row.is_available || !row.is_visible)) return null;
           const basePrice = row ? row.price : source.selling_price;
           const customization = roundMoney(
             cartItem.selling_price - cartItem.base_price

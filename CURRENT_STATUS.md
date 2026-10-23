@@ -160,7 +160,10 @@ Wave 4 (in progress):
   idempotency, retries/backoff, event log and a one-minute scheduler.
 - Two backend tests (signed delivery, retry/validation); existing aggregator
   proof covers the new outbound settings section.
-- Next: deployment checklist, channel item visibility, external monitoring.
+- Channel item visibility: per-channel visible flag so an item can be priced but
+  hidden from a channel; admin toggles and order enforcement.
+- Existing channel-pricing proof now checks a delivery-hidden item disappears.
+- Next: deployment checklist, external monitoring.
 
 ## Verified State (2026-10-22)
 
