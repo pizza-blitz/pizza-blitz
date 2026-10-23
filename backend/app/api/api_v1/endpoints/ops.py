@@ -763,3 +763,196 @@ def list_client_errors(
             for row in rows
         ],
     }
+
+
+@router.get("/deployment-checklist")
+def deployment_checklist(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    import os
+    from pathlib import Path
+
+    from alembic.config import Config as AlembicConfig
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import text
+
+    from app.core.config import settings
+    from app.db.session import engine
+    from app.services.auth_service import has_managed_admin_credentials
+    from app.services.media_service import media_root
+    from app.services.payment_gateway import payment_provider_status
+
+    checks: list[dict] = []
+
+    def add(key, label, status, detail, action=""):
+        checks.append(
+            {
+                "key": key,
+                "label": label,
+                "status": status,
+                "detail": detail,
+                "action": action,
+            }
+        )
+
+    database_ok = True
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        database_ok = False
+    add(
+        "database",
+        "Database reachable",
+        "ready" if database_ok else "blocked",
+        f"{engine.dialect.name} connection {'OK' if database_ok else 'failed'}.",
+        "" if database_ok else "Check DATABASE_URL and database availability.",
+    )
+
+    current_revision = None
+    try:
+        row = db.execute(text("SELECT version_num FROM alembic_version")).first()
+        current_revision = row[0] if row else None
+    except Exception:
+        current_revision = None
+    backend_root = Path(__file__).resolve().parents[4]
+    head_revision = None
+    try:
+        config = AlembicConfig(str(backend_root / "alembic.ini"))
+        config.set_main_option("script_location", str(backend_root / "alembic"))
+        head_revision = ScriptDirectory.from_config(config).get_current_head()
+    except Exception:
+        head_revision = None
+    if current_revision and head_revision and current_revision == head_revision:
+        add(
+            "migrations",
+            "Migrations at head",
+            "ready",
+            f"Revision {current_revision} matches head.",
+        )
+    elif current_revision:
+        add(
+            "migrations",
+            "Migrations at head",
+            "blocked",
+            f"Database is at {current_revision}, head is {head_revision}.",
+            "Run `alembic upgrade head` before serving traffic.",
+        )
+    else:
+        add(
+            "migrations",
+            "Migrations at head",
+            "warn",
+            "No alembic_version row (development bootstrap or unmanaged schema).",
+            "Use `alembic upgrade head` for managed deployments.",
+        )
+
+    secret = settings.AUTH_SECRET_KEY or ""
+    secret_ready = len(secret) >= 32 and secret not in {
+        "change-me",
+        "secret",
+        "pizza-blitz-dev-secret",
+    }
+    add(
+        "auth_secret",
+        "Auth secret strength",
+        "ready" if secret_ready else "blocked",
+        f"AUTH_SECRET_KEY length {len(secret)}.",
+        "" if secret_ready else "Set a random AUTH_SECRET_KEY of 32+ characters.",
+    )
+
+    admin_ready = has_managed_admin_credentials(db) or bool(
+        settings.PIZZA_BLITZ_ADMIN_ID and settings.PIZZA_BLITZ_ADMIN_PASSWORD
+    )
+    add(
+        "admin_credentials",
+        "Master admin configured",
+        "ready" if admin_ready else "blocked",
+        "Managed or environment admin credential present."
+        if admin_ready
+        else "No admin credential found.",
+        "" if admin_ready else "Set PIZZA_BLITZ_ADMIN_ID/PASSWORD or create a managed admin.",
+    )
+
+    cors_origins = settings.cors_origins
+    if settings.ENVIRONMENT.lower() == "production":
+        cors_ready = bool(cors_origins)
+        add(
+            "cors",
+            "CORS origins locked",
+            "ready" if cors_ready else "blocked",
+            f"{len(cors_origins)} configured origin(s).",
+            "" if cors_ready else "Set CORS_ORIGINS to the deployed frontend origin(s).",
+        )
+    else:
+        add(
+            "cors",
+            "CORS origins locked",
+            "warn",
+            f"Development mode ({len(cors_origins)} configured origin(s)).",
+            "Set CORS_ORIGINS before production launch.",
+        )
+
+    writable = os.access(media_root(), os.W_OK)
+    add(
+        "media",
+        "Media directory writable",
+        "ready" if writable else "blocked",
+        str(media_root()),
+        "" if writable else "Mount a writable MEDIA_ROOT volume.",
+    )
+
+    payment = payment_provider_status()
+    if payment["provider"] == "manual":
+        add(
+            "payments",
+            "Live payment provider",
+            "warn",
+            "Manual payment mode is active.",
+            "Configure Cashfree or Razorpay credentials for online payment.",
+        )
+    elif payment["checkout_configured"]:
+        add(
+            "payments",
+            "Live payment provider",
+            "ready",
+            f"{payment['provider']} checkout configured.",
+        )
+    else:
+        add(
+            "payments",
+            "Live payment provider",
+            "blocked",
+            f"{payment['provider']} checkout is missing credentials.",
+            "Set the provider keys or switch to manual mode.",
+        )
+
+    add(
+        "security_headers",
+        "Security headers enabled",
+        "ready",
+        "CSP, HSTS, nosniff, frame-deny and request IDs are wired.",
+    )
+
+    blocked = sum(1 for check in checks if check["status"] == "blocked")
+    warnings = sum(1 for check in checks if check["status"] == "warn")
+    return {
+        "environment": settings.ENVIRONMENT,
+        "database": engine.dialect.name,
+        "public_url": settings.PIZZA_BLITZ_PUBLIC_URL,
+        "checks": checks,
+        "summary": {
+            "ready": sum(1 for check in checks if check["status"] == "ready"),
+            "warnings": warnings,
+            "blocked": blocked,
+            "status": "blocked" if blocked else ("attention" if warnings else "ready"),
+            "total": len(checks),
+        },
+        "verification_commands": [
+            "cd backend; python -W error::FutureWarning -m unittest discover -s tests",
+            "cd frontend; npm run typecheck",
+            "cd frontend; npm run build",
+            "cd frontend; npm run verify:audit",
+        ],
+    }

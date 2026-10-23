@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 146 backend tests, 142 browser proof scripts, a backend Ruff
+- Automation: 148 backend tests, 143 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -166,11 +166,16 @@ Wave 4 (in progress):
 - Aggregator menu sync: signed full-menu push (pricing, channel prices,
   allergens, nutrition) with menu URL/enable settings and push result.
 - Two backend tests with a local receiver; integrations UI exposes menu sync.
-- Next: deployment checklist, external monitoring.
+- Deployment checklist: DB/migrations/secret/admin/CORS/media/payments/headers
+  with ready/warn/blocked states, remediation and verification commands at
+  `/settings/deployment`.
+- New `verify:deployment-checklist` proof and two backend tests.
+- Fixed a store-profile singleton race that could 500 concurrent first requests.
+- Next: external monitoring, live payment verification, per-store menus.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 146 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 148 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

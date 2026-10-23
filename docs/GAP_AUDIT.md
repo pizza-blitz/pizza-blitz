@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 46 frontend routes, the 142 browser proof scripts in
+- Listed all 47 frontend routes, the 143 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -85,6 +85,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 54 | Aggregator status | Aggregator orders were accepted but their status changes never reached the partner, so platforms could not show preparation/delivery progress. | W4 outbound-sync gap. | Added outbound URL/secret/enabled fields and `aggregator_events` (migration). Order status/close/cancel/delivery transitions queue idempotent HMAC-SHA256-signed events; a one-minute scheduler POSTs them with retries/backoff and records sent/failed state. Added admin event listing and outbound settings in the integrations UI. Two backend tests (local receiver/signature + retry). Outbound menu sync remains. |
 | 55 | Channel menus | Channel pricing/availability existed, but an item could not be hidden from a channel while remaining orderable elsewhere without deleting its price row. | W4 channel-visibility gap. | Added `is_visible` to channel prices (migration), admin Visible toggles, customer-menu filtering, cart removal and order rejection for hidden channels. The channel-pricing proof now checks a delivery-hidden item is visible at pickup and gone at delivery. |
 | 56 | Aggregator menu | Partners received order status but had no way to receive the restaurant menu, so aggregator menus had to be maintained separately. | W4 outbound-menu gap. | Added menu-sync URL/enabled settings and a push endpoint that sends a signed `menu.sync` payload with item price/availability/visibility, channel prices, allergens and nutrition. Integrations UI can save settings and push the menu, reporting success/failure. Two backend tests with a local receiver. Menus remain global rather than per-store. |
+| 57 | Deployment | Launch readiness was spread across several ops endpoints; there was no single checklist with blocked/warn states, remediation and verification commands. | W5 deployment gap. | Added `/ops/deployment-checklist` and `/settings/deployment`: database reachability, Alembic head, auth-secret strength, master admin, CORS, media writability, live payment provider and security headers, with summary counts and copyable commands. Two backend tests and a browser proof. Also fixed a store-profile singleton race under concurrent first requests. External Sentry-style monitoring remains. |
 
 ## Still open
 
@@ -99,7 +100,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 146 tests, all pass (in a clean venv built from
+- Backend unit suite: 148 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

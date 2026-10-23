@@ -167,6 +167,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Outbound aggregator status sync.
 - [x] Channel-specific item visibility.
 - [x] Outbound aggregator menu sync.
-- [ ] Deployment-ready checklist and external monitoring.
+- [x] Deployment-ready checklist.
+- [ ] External monitoring, live payment verification, per-store menus.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

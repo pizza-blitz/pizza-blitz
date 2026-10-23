@@ -7,6 +7,7 @@ which keeps a fresh install (and the test suite) fully orderable.
 """
 
 import re
+import threading
 from datetime import datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +28,7 @@ DAY_LABELS = {
     "sun": "Sunday",
 }
 PROFILE_ID = 1
+_PROFILE_LOCK = threading.Lock()
 _TIME_PATTERN = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 DEFAULT_PROFILE = {
@@ -45,23 +47,39 @@ DEFAULT_PROFILE = {
 
 
 def get_store_profile(db: Session) -> StoreProfile:
-    """Return the singleton profile, creating it on first use."""
+    """Return the singleton profile, creating it once under contention."""
     profile = db.query(StoreProfile).filter(StoreProfile.id == PROFILE_ID).first()
     if profile is not None:
         return profile
 
-    profile = StoreProfile(id=PROFILE_ID, **DEFAULT_PROFILE)
-    db.add(profile)
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        profile = db.query(StoreProfile).filter(StoreProfile.id == PROFILE_ID).first()
+    with _PROFILE_LOCK:
+        profile = (
+            db.query(StoreProfile).filter(StoreProfile.id == PROFILE_ID).first()
+        )
         if profile is not None:
             return profile
-        raise
-    db.refresh(profile)
-    return profile
+        profile = StoreProfile(id=PROFILE_ID, **DEFAULT_PROFILE)
+        db.add(profile)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            profile = (
+                db.query(StoreProfile)
+                .filter(StoreProfile.id == PROFILE_ID)
+                .first()
+            )
+            if profile is not None:
+                return profile
+            raise
+        # Re-query instead of refresh: another worker may have committed the
+        # same singleton while this session was creating it (SQLite dev/test).
+        stored = (
+            db.query(StoreProfile).filter(StoreProfile.id == PROFILE_ID).first()
+        )
+        if stored is None:
+            raise RuntimeError("Store profile could not be loaded after creation.")
+        return stored
 
 
 def _parse_minutes(value: str) -> int:

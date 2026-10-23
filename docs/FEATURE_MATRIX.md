@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **273 API endpoints**, **46 routes/pages** (35 portal,
-1 KDS, 10 public), **142 browser proof scripts**, **146 backend tests**, **56
+Numbers in this snapshot: **274 API endpoints**, **47 routes/pages** (36 portal,
+1 KDS, 10 public), **143 browser proof scripts**, **148 backend tests**, **56
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -208,7 +208,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Roles | admin / staff / customer, enforced granular permission sets for staff | Built | Granular permission sets | Per-user overrides missing |
 | Audit | Operational audit events, payment events | Built | Full audit log search/export | Partial |
 | Backups | Run tracking, logical proof, restore rehearsal | Built | Automated schedule + offsite | Partial |
-| Readiness | Production ops, launch candidate, acceptance | Built | Uptime/alerting/monitoring | Monitoring missing |
+| Readiness | Production ops, launch candidate, acceptance and a deployment checklist (DB, migrations, secret, admin, CORS, media, payments, headers) with commands | Built | Uptime/alerting/monitoring | External Sentry-style monitoring missing |
 | Health probes | `/health`, `/ready` (DB) | Built | Same | — |
 | Rate limiting | Per-instance sliding window | Built | Shared/edge limiter | Documented upgrade |
 | Config | Env-based, timezone, secrets guard | Built | Feature flags, per-store settings | Partial |
@@ -395,6 +395,12 @@ push the full menu (price, availability, visibility, channel prices, allergens,
 dietary tags and macros) as a signed `menu.sync` payload. Success/failure is
 returned to the operator. Covered by two backend tests with a local receiver.
 
+W5 measured results (deployment): `/settings/deployment` checks database
+reachability, Alembic head, auth-secret strength, master-admin configuration,
+CORS origins, media writability, live payment provider and security headers,
+with ready/warn/blocked states, remediation text and copyable verification
+commands. Covered by two backend tests and `verify:deployment-checklist`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -497,7 +503,7 @@ returned to the operator. Covered by two backend tests with a local receiver.
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
 | W4 (done) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing + CSP/error monitoring + POS hardware | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel + monitoring + hardware proofs |
-| W5 (in progress) | Deployment-ready checklist, external monitoring | Deployment checklist |
+| W5 (in progress) | Deployment checklist (done); external monitoring, live payment verification | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 
 Each wave ships with backend tests, a browser proof, responsive screenshots, and
