@@ -164,6 +164,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Channel-specific pricing.
 - [x] Security headers and error monitoring.
 - [x] POS hardware integrations.
-- [ ] Deployment-ready checklist and external integrations.
+- [x] Outbound aggregator status sync.
+- [ ] Deployment-ready checklist and external monitoring.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

@@ -82,6 +82,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 51 | Channel pricing | Every channel used one menu price, so delivery and aggregator orders could not carry different pricing or availability. | W4 channel-pricing gap. | Added `menu_item_channel_prices` (migration), per-channel price/availability in the menu save API, admin channel overrides, channel-aware customer menu/cart pricing, and order-creation enforcement for dine-in/takeaway/delivery. Two backend tests and a browser proof. Channel-specific item visibility remains. |
 | 52 | Hardening | Next shipped default headers only; there was no CSP/HSTS, request correlation, unhandled-exception logging, or way to see browser errors. | W4 security-hardening gap. | Added Next and API CSP/HSTS/nosniff/frame/referrer/permissions headers, `X-Request-ID` on every response, structured exception/slow-request logs, and a 500 fallback. Added `client_error_reports` (migration), a public report endpoint, admin list, error boundaries and a Production Ops monitor. Two backend tests and a browser proof incl. a CSP-violation check. |
 | 53 | Hardware | There was no way to configure a thermal printer, trigger a cash drawer, or run a customer-facing display. | W4 hardware gap. | Added `pos_hardware_configs` (migration), per-store printer/paper/receipt/drawer/display settings, a printable test-print job, ESC/POS drawer-pulse bytes, `/settings/hardware` and a branded `/customer-display` page. Two backend tests and a browser proof. Physical ESC/POS sending needs a local bridge. |
+| 54 | Aggregator status | Aggregator orders were accepted but their status changes never reached the partner, so platforms could not show preparation/delivery progress. | W4 outbound-sync gap. | Added outbound URL/secret/enabled fields and `aggregator_events` (migration). Order status/close/cancel/delivery transitions queue idempotent HMAC-SHA256-signed events; a one-minute scheduler POSTs them with retries/backoff and records sent/failed state. Added admin event listing and outbound settings in the integrations UI. Two backend tests (local receiver/signature + retry). Outbound menu sync remains. |
 
 ## Still open
 
@@ -96,7 +97,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 142 tests, all pass (in a clean venv built from
+- Backend unit suite: 144 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

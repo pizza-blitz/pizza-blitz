@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_roles
 from app.core.config import settings
 from app.models.domain import DeliveryAssignment, DeliveryZone, RestaurantOrder
+from app.services.aggregator_service import queue_status_event
 from app.services.delivery_service import (
     delivery_address_validation,
     delivery_quote,
@@ -867,6 +868,7 @@ def update_delivery_assignment(
     db.refresh(assignment)
     if status in {"out_for_delivery", "delivered"} and status != previous_status:
         notify_order_event(db, order, status)
+        queue_status_event(db, order, status)
     record_operational_audit_event(
         db,
         session=session,
@@ -1102,4 +1104,5 @@ def update_rider_status(
     db.refresh(assignment)
     if status in {"out_for_delivery", "delivered"}:
         notify_order_event(db, order, status)
+    queue_status_event(db, order, status)
     return _rider_payload(assignment)

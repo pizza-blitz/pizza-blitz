@@ -86,6 +86,21 @@ def saved_reports_job():
         session.close()
 
 
+def aggregator_outbound_job():
+    from app.db.session import SessionLocal
+    from app.services.aggregator_service import deliver_aggregator_events
+
+    session = SessionLocal()
+    try:
+        summary = deliver_aggregator_events(session)
+        if summary["processed"]:
+            logger.info("Aggregator outbound summary: %s", summary)
+    except Exception:
+        logger.exception("Aggregator outbound delivery job failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -107,6 +122,13 @@ scheduler.add_job(
     "interval",
     minutes=5,
     id="saved_report_delivery",
+    replace_existing=True,
+)
+scheduler.add_job(
+    aggregator_outbound_job,
+    "interval",
+    minutes=1,
+    id="aggregator_outbound_delivery",
     replace_existing=True,
 )
 

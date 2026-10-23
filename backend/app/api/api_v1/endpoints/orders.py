@@ -38,6 +38,7 @@ from app.models.domain import (
     RestaurantOrder,
     Store,
 )
+from app.services.aggregator_service import queue_status_event
 from app.services.delivery_service import delivery_quote, serialize_delivery_zone
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
@@ -2401,6 +2402,7 @@ def cancel_order(
             "total_amount": round(float(order.total_amount or 0), 2),
         },
     )
+    queue_status_event(db, order, "cancelled")
     return {
         "status": "cancelled",
         "payment_status": order.payment_status,
@@ -2511,6 +2513,7 @@ def close_order(
             "inventory_usage_count": len(inventory_usage),
         },
     )
+    queue_status_event(db, order, "closed")
     return {
         "status": "closed",
         "total_collected": order.total_amount,
@@ -2575,6 +2578,7 @@ def update_order_status(
         detail=f"Order #{order.id} moved to {status}.",
         metadata={"status": status, "source": order_metadata(order).get("source")},
     )
+    queue_status_event(db, order, status)
     return serialize_order(order)
 
 

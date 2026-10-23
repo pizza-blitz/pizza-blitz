@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **271 API endpoints**, **46 routes/pages** (35 portal,
-1 KDS, 10 public), **142 browser proof scripts**, **142 backend tests**, **55
+Numbers in this snapshot: **272 API endpoints**, **46 routes/pages** (35 portal,
+1 KDS, 10 public), **142 browser proof scripts**, **144 backend tests**, **56
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -96,7 +96,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Dispatch | Assignment, rider, status queue, mission control, tokenized rider app with status/GPS/proof | Built | Rider app, live map, auto-assign | Auto-assign/batching missing |
 | Delivery economics | Fee, cost, margin view, retry queue proofs | Built | Cost per delivery, batching | Batching missing |
 | Proof of delivery | Rider-captured photo/signature/OTP reference with notes, required before delivered, shown on tracking | Built | Photo/signature/OTP at door | Photo is a reference string; file upload not wired |
-| Third-party delivery | Token-scoped inbound webhooks for Swiggy, Zomato, Uber Eats and DoorDash; idempotent by external order id; order/store/customer mapping | Built | DoorDash/Uber/Swiggy/Zomato integration | Menu/status sync outbound missing |
+| Third-party delivery | Token-scoped inbound webhooks for Swiggy, Zomato, Uber Eats and DoorDash; idempotent by external order id; signed outbound order-status sync with retries/backoff and an event log | Built | DoorDash/Uber/Swiggy/Zomato integration | Menu sync outbound missing |
 | Route optimisation | — | Missing | Multi-drop routing | Later |
 
 ## 5. Menu and product management
@@ -383,6 +383,12 @@ printable HTML/text, drawer pulse returns the exact ESC/POS bytes, and the
 customer display opens a branded screen. Covered by two backend tests and
 `verify:pos-hardware`.
 
+W4 measured results (outbound sync): aggregator integrations can push order
+status transitions to a partner URL with HMAC-SHA256 signatures, idempotent
+per-order/status events, exponential retry/backoff, delivery logs and a
+one-minute scheduler. Failing endpoints are retried with the error recorded.
+Covered by two backend tests.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -463,9 +469,10 @@ customer display opens a branded screen. Covered by two backend tests and
 
 ### P2 — scale and ecosystem
 
-21. ~~**Aggregator integrations (DoorDash/Uber/Swiggy/Zomato)**~~ — partially
-    done in W4: token-scoped inbound order webhooks, idempotency, store mapping
-    and admin connection UI. Outbound menu/status sync remains.
+21. ~~**Aggregator integrations (DoorDash/Uber/Swiggy/Zomato)**~~ — done in W4:
+    token-scoped inbound order webhooks with idempotency/store mapping, plus
+    signed outbound status sync with retries, backoff and an event log. Outbound
+    menu sync remains.
 22. ~~**Multi-store/franchise hierarchy and consolidated reporting**~~ — done in
     W4: store registry with pause/activate, orders tagged by store, and a
     consolidated business-day report with group totals and best store. Shared
@@ -486,7 +493,7 @@ customer display opens a branded screen. Covered by two backend tests and
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
 | W4 (done) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing + CSP/error monitoring + POS hardware | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel + monitoring + hardware proofs |
-| W5 (in progress) | Deployment-ready checklist, channel-specific item visibility, outbound aggregator sync, external monitoring | Deployment checklist |
+| W5 (in progress) | Deployment-ready checklist, channel-specific item visibility, external monitoring | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 
 Each wave ships with backend tests, a browser proof, responsive screenshots, and

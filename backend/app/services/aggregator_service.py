@@ -1,12 +1,18 @@
 """Aggregator intake: token-scoped webhooks that become restaurant orders."""
 
+import hashlib
+import hmac
+import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from sqlalchemy.orm import Session
 
 from app.core.clock import business_today
 from app.models.domain import (
+    AggregatorEvent,
     AggregatorIntegration,
     AggregatorOrder,
     Customer,
@@ -42,6 +48,9 @@ def serialize_integration(
         "auto_accept": bool(integration.auto_accept),
         "webhook_path": f"/api/v1/restaurant/integrations/aggregators/webhook/{integration.platform}",
         "webhook_token": integration.webhook_token if include_token else None,
+        "outbound_url": integration.outbound_url,
+        "outbound_secret": integration.outbound_secret if include_token else None,
+        "outbound_enabled": bool(integration.outbound_enabled),
         "created_at": integration.created_at.isoformat()
         if integration.created_at
         else None,
@@ -287,6 +296,160 @@ def recent_aggregator_orders(
             "external_order_id": row.external_order_id,
             "order_id": row.order_id,
             "status": row.status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
+
+
+def sign_outbound(secret: str, body: bytes) -> str:
+    return "sha256=" + hmac.new(
+        secret.encode("utf-8"), body, hashlib.sha256
+    ).hexdigest()
+
+
+def ensure_outbound_secret(integration: AggregatorIntegration) -> None:
+    if not integration.outbound_secret:
+        integration.outbound_secret = "AGOUT-" + secrets.token_urlsafe(24)
+
+
+def queue_status_event(
+    db: Session, order: RestaurantOrder, status: str
+) -> AggregatorEvent | None:
+    record = (
+        db.query(AggregatorOrder)
+        .filter(AggregatorOrder.order_id == order.id)
+        .first()
+    )
+    if record is None:
+        return None
+    integration = (
+        db.query(AggregatorIntegration)
+        .filter(AggregatorIntegration.id == record.integration_id)
+        .first()
+    )
+    if integration is None or not integration.outbound_enabled or not integration.outbound_url:
+        return None
+    existing = (
+        db.query(AggregatorEvent)
+        .filter(
+            AggregatorEvent.integration_id == integration.id,
+            AggregatorEvent.order_id == order.id,
+            AggregatorEvent.status == status,
+            AggregatorEvent.event_type == "order.status",
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing
+    ensure_outbound_secret(integration)
+    payload = {
+        "event": "order.status",
+        "external_order_id": record.external_order_id,
+        "order_id": order.id,
+        "status": status,
+        "updated_at": datetime.utcnow().isoformat(),
+        "store_id": order.store_id,
+    }
+    event = AggregatorEvent(
+        integration_id=integration.id,
+        order_id=order.id,
+        external_order_id=record.external_order_id,
+        event_type="order.status",
+        status=status,
+        payload=payload,
+        delivery_status="pending",
+        attempts=0,
+        next_attempt_at=datetime.utcnow(),
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+def deliver_aggregator_events(db: Session, limit: int = 20) -> dict:
+    now = datetime.utcnow()
+    events = (
+        db.query(AggregatorEvent)
+        .filter(
+            AggregatorEvent.delivery_status.in_(["pending", "failed"]),
+            AggregatorEvent.attempts < 5,
+            AggregatorEvent.next_attempt_at <= now,
+        )
+        .order_by(AggregatorEvent.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    sent = 0
+    failed = 0
+    for event in events:
+        integration = event.integration
+        if (
+            integration is None
+            or not integration.outbound_url
+            or not integration.outbound_secret
+        ):
+            event.delivery_status = "failed"
+            event.last_error = "Outbound URL or secret is missing."
+            event.attempts += 1
+            db.commit()
+            failed += 1
+            continue
+        body = json.dumps(event.payload, separators=(",", ":")).encode("utf-8")
+        request = Request(
+            integration.outbound_url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "PizzaBlitz-Aggregator/1.0",
+                "X-Pizza-Signature": sign_outbound(
+                    integration.outbound_secret, body
+                ),
+                "X-Pizza-Event": event.event_type,
+            },
+            method="POST",
+        )
+        event.attempts += 1
+        try:
+            with urlopen(request, timeout=5) as response:  # noqa: S310 - configured URL
+                if 200 <= response.status < 300:
+                    event.delivery_status = "sent"
+                    event.last_error = None
+                    sent += 1
+                else:
+                    raise URLError(f"HTTP {response.status}")
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+            event.delivery_status = "failed"
+            event.last_error = str(exc)[:500]
+            backoff_minutes = [1, 5, 15, 60, 180][min(event.attempts - 1, 4)]
+            event.next_attempt_at = datetime.utcnow() + timedelta(
+                minutes=backoff_minutes
+            )
+            failed += 1
+        db.commit()
+    return {"processed": len(events), "sent": sent, "failed": failed}
+
+
+def recent_aggregator_events(
+    db: Session, integration: AggregatorIntegration, limit: int = 20
+) -> list[dict]:
+    rows = (
+        db.query(AggregatorEvent)
+        .filter(AggregatorEvent.integration_id == integration.id)
+        .order_by(AggregatorEvent.created_at.desc(), AggregatorEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "order_id": row.order_id,
+            "external_order_id": row.external_order_id,
+            "status": row.status,
+            "delivery_status": row.delivery_status,
+            "attempts": row.attempts,
+            "last_error": row.last_error,
             "created_at": row.created_at.isoformat() if row.created_at else None,
         }
         for row in rows

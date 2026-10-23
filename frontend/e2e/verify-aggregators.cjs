@@ -134,6 +134,11 @@ async function main() {
       .waitFor({ timeout: 30000 });
     const refreshedCard = page.getByTestId(`integration-card-${integrationId}`);
     await refreshedCard.waitFor({ timeout: 20000 });
+    const refreshedText = await refreshedCard.innerText();
+    assert(
+      /Outbound status sync/i.test(refreshedText),
+      `Outbound section missing: ${refreshedText}`
+    );
     await page.waitForFunction(
       (id) => {
         const element = document.querySelector(`[data-testid="integration-card-${id}"]`);

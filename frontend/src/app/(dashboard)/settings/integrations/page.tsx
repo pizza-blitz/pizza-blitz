@@ -28,6 +28,9 @@ type Integration = {
   auto_accept: boolean;
   webhook_url: string;
   webhook_token: string;
+  outbound_url?: string | null;
+  outbound_secret?: string | null;
+  outbound_enabled?: boolean;
   orders_count: number;
   last_order_at?: string | null;
 };
@@ -45,6 +48,9 @@ export default function IntegrationsPage() {
   const [copied, setCopied] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [revealed, setRevealed] = useState<number[]>([]);
+  const [outboundDrafts, setOutboundDrafts] = useState<
+    Record<number, { url: string; enabled: boolean }>
+  >({});
 
   const load = useCallback(async () => {
     const [integrationResponse, storeResponse] = await Promise.all([
@@ -61,7 +67,16 @@ export default function IntegrationsPage() {
     const storeData = await storeResponse.json().catch(() => ({}));
     if (integrationResponse.ok) {
       setPlatforms(integrationData.platforms || []);
-      setIntegrations(integrationData.integrations || []);
+      const rows: Integration[] = integrationData.integrations || [];
+      setIntegrations(rows);
+      setOutboundDrafts(
+        Object.fromEntries(
+          rows.map((row) => [
+            row.id,
+            { url: row.outbound_url || "", enabled: Boolean(row.outbound_enabled) },
+          ])
+        )
+      );
     } else {
       setMessage(integrationData.detail || "Integrations could not be loaded.");
     }
@@ -159,6 +174,43 @@ export default function IntegrationsPage() {
       window.setTimeout(() => setCopied(""), 1500);
     } catch {
       setMessage("Clipboard is not available in this browser.");
+    }
+  };
+
+  const saveOutbound = async (integration: Integration) => {
+    const draft = outboundDrafts[integration.id] || {
+      url: integration.outbound_url || "",
+      enabled: Boolean(integration.outbound_enabled),
+    };
+    setBusy(`outbound-${integration.id}`);
+    setMessage("");
+    try {
+      const response = await fetch(
+        getApiUrl(`/api/v1/restaurant/integrations/aggregators/${integration.id}`),
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            outbound_url: draft.url.trim() || null,
+            outbound_enabled: draft.enabled,
+          }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Status sync could not be saved.");
+      setMessage(
+        data.outbound_enabled
+          ? `Status sync enabled for ${data.platform_label}.`
+          : `Status sync disabled for ${data.platform_label}.`
+      );
+      await load();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Status sync could not be saved."
+      );
+    } finally {
+      setBusy("");
     }
   };
 
@@ -379,6 +431,79 @@ export default function IntegrationsPage() {
                 X-Aggregator-Token header. Duplicate external_order_id values return
                 the original order.
               </p>
+
+              <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50/70 p-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                  Outbound status sync
+                  <span
+                    className={`ml-2 rounded-full px-2 py-0.5 ${
+                      integration.outbound_enabled
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-gray-200 text-gray-500"
+                    }`}
+                  >
+                    {integration.outbound_enabled ? "On" : "Off"}
+                  </span>
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    data-testid={`integration-outbound-url-${integration.id}`}
+                    aria-label="Outbound status URL"
+                    value={
+                      outboundDrafts[integration.id]?.url ?? integration.outbound_url ?? ""
+                    }
+                    onChange={(event) =>
+                      setOutboundDrafts((current) => ({
+                        ...current,
+                        [integration.id]: {
+                          url: event.target.value,
+                          enabled:
+                            current[integration.id]?.enabled ??
+                            Boolean(integration.outbound_enabled),
+                        },
+                      }))
+                    }
+                    placeholder="https://partner.example.com/hooks/order-status"
+                    className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-[11px] font-bold text-gray-700"
+                  />
+                  <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={
+                        outboundDrafts[integration.id]?.enabled ??
+                        Boolean(integration.outbound_enabled)
+                      }
+                      onChange={(event) =>
+                        setOutboundDrafts((current) => ({
+                          ...current,
+                          [integration.id]: {
+                            url:
+                              current[integration.id]?.url ??
+                              integration.outbound_url ??
+                              "",
+                            enabled: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                    Enabled
+                  </label>
+                  <button
+                    type="button"
+                    data-testid={`integration-outbound-save-${integration.id}`}
+                    onClick={() => void saveOutbound(integration)}
+                    disabled={busy === `outbound-${integration.id}`}
+                    className="rounded-lg bg-gray-950 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                  >
+                    Save sync
+                  </button>
+                </div>
+                {integration.outbound_secret && (
+                  <p className="mt-2 truncate font-mono text-[10px] font-bold text-gray-400">
+                    Signing secret: {integration.outbound_secret}
+                  </p>
+                )}
+              </div>
             </div>
           ))
         ) : (

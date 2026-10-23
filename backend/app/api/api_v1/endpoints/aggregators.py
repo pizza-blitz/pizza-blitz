@@ -1,4 +1,5 @@
 from typing import Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -11,8 +12,10 @@ from app.services.aggregator_service import (
     AggregatorError,
     PLATFORMS,
     create_integration,
+    ensure_outbound_secret,
     ingest_order,
     integration_for_token,
+    recent_aggregator_events,
     recent_aggregator_orders,
     rotate_token,
     serialize_integration,
@@ -31,6 +34,8 @@ class AggregatorIntegrationUpdate(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=120)
     is_active: Optional[bool] = None
     auto_accept: Optional[bool] = None
+    outbound_url: Optional[str] = Field(default=None, max_length=500)
+    outbound_enabled: Optional[bool] = None
 
 
 def _integration_or_404(db: Session, integration_id: int) -> AggregatorIntegration:
@@ -147,6 +152,25 @@ def update_aggregator(
         integration.is_active = payload.is_active
     if payload.auto_accept is not None:
         integration.auto_accept = payload.auto_accept
+    if payload.outbound_url is not None:
+        url = payload.outbound_url.strip()
+        if url:
+            parsed = urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Outbound URL must be a full http(s) URL.",
+                )
+        integration.outbound_url = url or None
+    if payload.outbound_enabled is not None:
+        if payload.outbound_enabled and not integration.outbound_url:
+            raise HTTPException(
+                status_code=422,
+                detail="Set an outbound URL before enabling status sync.",
+            )
+        integration.outbound_enabled = payload.outbound_enabled
+        if payload.outbound_enabled:
+            ensure_outbound_secret(integration)
     db.commit()
     db.refresh(integration)
     return _with_webhook_url(serialize_integration(integration), request)
@@ -174,4 +198,18 @@ def list_aggregator_orders(
     return {
         "integration_id": integration.id,
         "orders": recent_aggregator_orders(db, integration, limit),
+    }
+
+
+@router.get("/{integration_id}/events")
+def list_aggregator_events(
+    integration_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    integration = _integration_or_404(db, integration_id)
+    return {
+        "integration_id": integration.id,
+        "events": recent_aggregator_events(db, integration, limit),
     }

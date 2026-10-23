@@ -755,9 +755,41 @@ class AggregatorIntegration(Base):
     webhook_token = Column(String(80), unique=True, index=True, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     auto_accept = Column(Boolean, nullable=False, default=True)
+    outbound_url = Column(String(500), nullable=True)
+    outbound_secret = Column(String(80), nullable=True)
+    outbound_enabled = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     store = relationship("Store")
+
+
+class AggregatorEvent(Base):
+    __tablename__ = "aggregator_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "integration_id",
+            "order_id",
+            "status",
+            "event_type",
+            name="uq_aggregator_event_order_status",
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    integration_id = Column(
+        Integer, ForeignKey("aggregator_integrations.id"), index=True, nullable=False
+    )
+    order_id = Column(Integer, index=True, nullable=False)
+    external_order_id = Column(String(120), nullable=True)
+    event_type = Column(String(40), nullable=False, default="order.status")
+    status = Column(String(30), nullable=False)
+    payload = Column(JSON, default=dict)
+    delivery_status = Column(String(20), nullable=False, default="pending", index=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    next_attempt_at = Column(DateTime, nullable=True, index=True)
+    last_error = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    integration = relationship("AggregatorIntegration")
 
 
 class AggregatorOrder(Base):
