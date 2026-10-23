@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **248 API endpoints**, **40 routes/pages** (30 portal,
-1 KDS, 9 public), **134 browser proof scripts**, **124 backend tests**, **48
+Numbers in this snapshot: **254 API endpoints**, **42 routes/pages** (32 portal,
+1 KDS, 9 public), **136 browser proof scripts**, **129 backend tests**, **49
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -171,7 +171,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Breakeven | Fixed costs, daily target, gap | Built | Scenario modelling | Partial |
 | Exports | CSV for sales/customers/campaigns; saved-report CSV download; scheduled email delivery via the provider layer | Built | Scheduled reports, email delivery | Provider credentials required for delivery |
 | Custom reports | Report builder for revenue/orders/AOV/tax/discount/tips/refunds grouped by day/order type/payment/status; saved views with schedule, recipients, run/export/send | Built | Report builder, saved views | Joins/cohorts and embedded charts missing |
-| Multi-store consolidation | — | Missing | Group/franchise reporting | Later |
+| Multi-store consolidation | Store registry, per-store open/pause, order store tagging, consolidated revenue/orders/AOV/tips/refunds by store and group totals | Built | Group/franchise reporting | Menu/pricing per store missing |
 
 ## 11. Payments and finance
 
@@ -185,7 +185,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Expenses | Categories, add, audit command | Built | Approval workflow depth | Partial |
 | Refunds / voids | Void unpaid orders via cancel; refund captured payments with a reason, method, reference, ledger and audit trail | Built | Refund with reason/audit/provider call | Provider-initiated refund call not wired |
 | Tips | Captured per order, included in totals, receipts and the tips summary | Partial | Tip pool, payout report | Payout missing |
-| Tax | 5% split CGST/SGST in invoice | Partial | Configurable tax rules, GST reports | Must improve |
+| Tax | 5% split CGST/SGST, GST-ready accounting summary and order CSV | Built | Configurable tax rules, GST reports | Tax rates are fixed at 5% |
 | Gift cards | — | Missing | Issue/redeem | Later |
 
 ## 12. Workforce
@@ -333,6 +333,19 @@ stored as role overrides and enforced on reports and refunds; admins always pass
 and can revoke/grant from `/settings/security`. Covered by two backend tests and
 `verify:security`.
 
+W4 measured results (franchise): a `stores` registry seeds a MAIN store, admins
+can add locations and pause/activate them (the last active store cannot be
+paused), orders carry `store_id`, and `/settings/stores` shows per-store and
+group revenue/orders/AOV/tips/refunds over a business-day range with a best
+store. Covered by three backend tests and `verify:stores`.
+
+W4 measured results (accounting): `/accounting` shows gross sales, 5% GST split
+into CGST/SGST, tips, refunds, net collected, payment mix and per-store totals
+over a business-day range. The CSV endpoint emits one row per non-cancelled order
+with business date, store, payment, subtotal, discount, CGST/SGST, tip, refund
+and net for import into Tally/Zoho/QuickBooks. Covered by two backend tests and
+`verify:accounting`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -403,9 +416,14 @@ and can revoke/grant from `/settings/security`. Covered by two backend tests and
 ### P2 — scale and ecosystem
 
 21. Aggregator integrations (DoorDash/Uber/Swiggy/Zomato).
-22. Multi-store/franchise hierarchy and consolidated reporting.
+22. ~~**Multi-store/franchise hierarchy and consolidated reporting**~~ — done in
+    W4: store registry with pause/activate, orders tagged by store, and a
+    consolidated business-day report with group totals and best store. Shared
+    menu/pricing per store remains.
 23. Demand forecasting, auto-reorder, batch/expiry inventory.
-24. Accounting integrations (Tally/Zoho/QuickBooks), tax/GST reporting.
+24. ~~**Accounting exports (Tally/Zoho/QuickBooks-ready)**~~ — done in W4:
+    GST summary (CGST/SGST, tips, refunds, payment/store mix) and a one-row-per-
+    order CSV importable as a sales journal. Direct API connectors remain.
 25. Public API keys + outbound webhooks; i18n/multi-currency.
 
 ---
@@ -417,7 +435,7 @@ and can revoke/grant from `/settings/security`. Covered by two backend tests and
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions (done); multi-store, aggregators, accounting (next) | Public + account + rider + reports + security proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST (done); aggregators (next) | Public + account + rider + reports + security + franchise + accounting proofs |
 | W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

@@ -108,6 +108,9 @@ async function main() {
     await page.goto(`${baseURL}/reports`, { waitUntil: "domcontentloaded" });
     const builder = page.getByTestId("report-builder");
     await builder.waitFor({ timeout: 30000 });
+    await page
+      .locator('[data-testid="report-builder"][data-hydrated="true"]')
+      .waitFor({ timeout: 20000 });
 
     await page.getByTestId("report-builder-run").click();
     await page

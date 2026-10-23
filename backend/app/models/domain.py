@@ -445,9 +445,30 @@ class DeliveryZone(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class Store(Base):
+    __tablename__ = "stores"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False)
+    code = Column(String(40), unique=True, index=True, nullable=False)
+    address_line = Column(String(255), nullable=True)
+    phone = Column(String(40), nullable=True)
+    timezone = Column(String(60), nullable=False, default="Asia/Kolkata")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class RestaurantOrder(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer,
+        ForeignKey("stores.id"),
+        index=True,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     date = Column(Date, default=date.today, index=True)
     order_type = Column(String(20), default="dine-in")
     table_number = Column(String(20), nullable=True)

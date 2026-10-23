@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 124 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 129 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, order notifications, menu media, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, multi-store consolidation, GST accounting, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -87,7 +87,7 @@ Then:
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, multi-store, accounting, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
@@ -286,6 +286,28 @@ admins and enabled staff; reports and refund endpoints use it with
 least-privilege defaults. Admins manage toggles at `/settings/security` via
 `GET/PUT /auth/permissions`. Covered by `backend/tests/test_security.py` and
 `frontend/e2e/verify-security.cjs`.
+
+## Multi-store and consolidated reporting
+
+A `stores` registry is seeded with MAIN. `GET/POST/PATCH /restaurant/stores`
+lists stores with 30-day metrics, creates locations and updates/pauses them; the
+last active store cannot be paused. Orders accept `store_id` (default 1 and
+validated active), and `GET /restaurant/stores/consolidated` returns per-store
+and group revenue/orders/AOV/tips/refunds over a business-day range plus the best
+store. The admin UI is `/settings/stores`. Covered by
+`backend/tests/test_stores.py` and `frontend/e2e/verify-stores.cjs`.
+
+## Accounting and GST export
+
+`GET /restaurant/accounting/summary` aggregates non-cancelled orders over a
+business-day range (optionally by store) into gross sales, discounts, 5% GST
+split into CGST/SGST, tips, refunds, net collected, AOV, payment mix and store
+totals. `GET /restaurant/accounting/export` streams a CSV with one row per order
+(business date, store, payment, subtotal, discount, CGST/SGST, tip, refund, net)
+for import into Tally/Zoho/QuickBooks. The `/accounting` page provides the date
+range, cards, payment/store tables and download. Covered by
+`backend/tests/test_accounting.py` and
+`frontend/e2e/verify-accounting.cjs`.
 
 ## Health endpoints
 

@@ -156,6 +156,8 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Rider app with GPS and proof of delivery.
 - [x] Custom report builder and scheduled reports.
 - [x] 2FA and granular permissions.
-- [ ] Multi-store/franchise hierarchy.
+- [x] Multi-store/franchise hierarchy.
+- [x] Accounting/GST exports.
+- [ ] Aggregator integrations.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

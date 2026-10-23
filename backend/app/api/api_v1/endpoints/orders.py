@@ -35,6 +35,7 @@ from app.models.domain import (
     Promotion,
     Recipe,
     RestaurantOrder,
+    Store,
 )
 from app.services.delivery_service import delivery_quote, serialize_delivery_zone
 from app.services.menu_customization_service import (
@@ -192,6 +193,7 @@ class OrderItem(BaseModel):
 
 class OrderCreate(BaseModel):
     order_type: str = "dine-in"
+    store_id: Optional[int] = None
     table_number: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
@@ -2075,6 +2077,15 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
     if not valid_items:
         raise HTTPException(status_code=422, detail="Order must include at least one item.")
 
+    selected_store_id = order.store_id or 1
+    store = db.query(Store).filter(Store.id == selected_store_id).first()
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found.")
+    if not store.is_active:
+        raise HTTPException(
+            status_code=409, detail="That store is not accepting orders."
+        )
+
     if order.order_type == "dine-in" and not order.table_number:
         raise HTTPException(status_code=422, detail="Dine-in orders require a table number.")
 
@@ -2197,6 +2208,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
 
     row = RestaurantOrder(
         date=business_today(),
+        store_id=selected_store_id,
         order_type=order.order_type,
         table_number=order.table_number,
         customer_name=order.customer_name,
@@ -2265,6 +2277,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
     db.commit()
     return {
         "order_id": row.id,
+        "store_id": row.store_id,
         "subtotal": subtotal,
         "discount": discount,
         "tax": tax,

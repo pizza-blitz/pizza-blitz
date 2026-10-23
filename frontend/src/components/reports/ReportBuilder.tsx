@@ -96,6 +96,7 @@ export default function ReportBuilder() {
   const [isRunning, setIsRunning] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const toggle = (
     value: string,
@@ -119,6 +120,7 @@ export default function ReportBuilder() {
   };
 
   useEffect(() => {
+    setHydrated(true);
     void loadSaved();
   }, []);
 
@@ -266,6 +268,7 @@ export default function ReportBuilder() {
   return (
     <section
       data-testid="report-builder"
+      data-hydrated={hydrated ? "true" : "false"}
       className="rounded-[2rem] border border-gray-100 bg-white p-5 shadow-sm sm:p-8"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

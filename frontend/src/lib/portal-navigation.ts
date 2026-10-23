@@ -10,6 +10,7 @@ import {
   FileText,
   Flame,
   LayoutDashboard,
+  Landmark,
   Megaphone,
   MessageCircle,
   MonitorPlay,
@@ -93,6 +94,7 @@ export const portalNavGroups: PortalNavGroup[] = [
   {
     title: "Finance",
     items: [
+      { name: "Accounting & GST", href: "/accounting", icon: Landmark, description: "GST summary and Tally-ready CSV", allowedRoles: adminOnly },
       { name: "Sales History", href: "/sales", icon: DollarSign, description: "Daily ledger and reconciliation", allowedRoles: adminOnly },
       { name: "Daily Entry", href: "/daily", icon: PlusCircle, description: "Log sales, cash and expenses", allowedRoles: adminOnly },
       { name: "Invoices", href: "/invoices", icon: FileText, description: "Paid invoices and receipts", allowedRoles: adminOnly },

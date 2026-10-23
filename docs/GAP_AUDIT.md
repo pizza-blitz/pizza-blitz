@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 40 frontend routes, the 134 browser proof scripts in
+- Listed all 42 frontend routes, the 136 browser proof scripts in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -74,6 +74,8 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 43 | Delivery | Dispatch had no rider-facing surface: riders could not start deliveries, share GPS, or capture proof, and customers could not see rider status. | W4 rider gap. | Added rider token/GPS/proof columns (migration), a tokenized `/rider/{token}` mobile page, admin Rider link endpoint/button, start-delivery GPS sharing, photo/signature/OTP proof required before delivered, failed reasons, and rider status/location/proof on customer tracking. Two backend tests and a browser proof. |
 | 44 | Reporting | Reports were curated pages only; there was no way to choose metrics/dimensions, save a view, download a custom CSV, or schedule email delivery. | W4 reporting gap. | Added `saved_reports` (migration), a custom report endpoint over non-cancelled orders with business-day ranges and filters, saved-view CRUD, run/CSV/send endpoints, a report-builder UI with table/totals and saved cards, and a scheduler job that emails due reports through the provider layer while recording delivery status. Four backend tests and a browser proof. |
 | 45 | Security | Admin/staff login was password-only and roles were all-or-nothing, so a leaked password had full access and staff could not be granted or denied specific capabilities. | W4 security gap. | Added TOTP 2FA (`two_factor_credentials`, hashed one-time recovery codes, challenge tokens purpose-scoped so they cannot be used as sessions), forced a two-step login in the portal and API, and added `/settings/security` for setup/recovery/disable. Added `role_permissions` overrides with a permission catalog, staff toggles, and enforcement on reports and refunds (least-privilege defaults). Two backend tests and a browser proof. |
+| 46 | Franchise | There was a single implicit store: no location registry, no way to pause one branch, and no consolidated view of revenue across stores. | W4 multi-store gap. | Added a `stores` registry (migration seeds MAIN), `store_id` on orders, admin create/update endpoints with last-active-store protection, a consolidated business-day report with per-store and group revenue/orders/AOV/tips/refunds, and `/settings/stores` for creation, pause/activate and reporting. Three backend tests and a browser proof. |
+| 47 | Accounting | Tax existed only on invoices; there was no GST summary, payment/store reconciliation, or journal CSV for Tally/Zoho/QuickBooks. | W4 accounting gap. | Added `/accounting/summary` (gross, discounts, CGST/SGST, tips, refunds, net, payment mix, store totals) and `/accounting/export` (one row per order with tax split and net). Added the `/accounting` finance page with date range, cards, tables and CSV download. Two backend tests and a browser proof. Direct accounting-API connectors remain. |
 
 ## Still open
 
@@ -88,7 +90,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 124 tests, all pass (in a clean venv built from
+- Backend unit suite: 129 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
