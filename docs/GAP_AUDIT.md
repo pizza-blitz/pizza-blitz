@@ -87,6 +87,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 56 | Aggregator menu | Partners received order status but had no way to receive the restaurant menu, so aggregator menus had to be maintained separately. | W4 outbound-menu gap. | Added menu-sync URL/enabled settings and a push endpoint that sends a signed `menu.sync` payload with item price/availability/visibility, channel prices, allergens and nutrition. Integrations UI can save settings and push the menu, reporting success/failure. Two backend tests with a local receiver. Menus remain global rather than per-store. |
 | 57 | Deployment | Launch readiness was spread across several ops endpoints; there was no single checklist with blocked/warn states, remediation and verification commands. | W5 deployment gap. | Added `/ops/deployment-checklist` and `/settings/deployment`: database reachability, Alembic head, auth-secret strength, master admin, CORS, media writability, live payment provider and security headers, with summary counts and copyable commands. Two backend tests and a browser proof. Also fixed a store-profile singleton race under concurrent first requests. External Sentry-style monitoring remains. |
 | 58 | Feedback | There was no post-order rating, NPS or comment capture, so quality issues and promoters were invisible. | W4 feedback gap. | Added `order_feedback` (migration), phone-verified one-time submission after completion, and a summary with NPS, average rating, response rate, distribution, tags and low-rating follow-up. Added the tracking form and `/feedback` admin page with nav entry. Two backend tests and a browser proof. Public review-site routing remains. |
+| 59 | KDS item status | Bumping one line moved every line in that station and there was no per-item recall, so a single late pizza could not be tracked. | W4 item-readiness gap. | Added `PATCH /orders/{id}/items/{line_index}/status` with independent start/bump/recall, timestamp clearing on recall, aggregate order status and per-line audit. The KDS line controls now call it and expose Start/Bump/Recall. Two backend tests; the KDS browser proof exercises a single-line bump. |
 
 ## Still open
 
@@ -101,7 +102,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 150 tests, all pass (in a clean venv built from
+- Backend unit suite: 152 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

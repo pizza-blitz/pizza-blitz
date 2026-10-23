@@ -29,6 +29,7 @@ type KdsOption = {
 
 type KdsLine = {
   line_id: string;
+  line_index: number;
   station_key: string;
   station_label: string;
   name: string;
@@ -167,15 +168,17 @@ export default function KdsPage() {
     return () => window.clearInterval(clockTimer);
   }, []);
 
-  const updateStation = async (
+  const updateLine = async (
     orderId: number,
-    stationKey: string,
-    status: "preparing" | "ready"
+    line: KdsLine,
+    status: "open" | "preparing" | "ready"
   ) => {
-    setBusyKey(`${orderId}-${stationKey}`);
+    setBusyKey(`line-${line.line_id}`);
     try {
       const response = await fetch(
-        getApiUrl(`/api/v1/restaurant/orders/${orderId}/stations/${stationKey}/status`),
+        getApiUrl(
+          `/api/v1/restaurant/orders/${orderId}/items/${line.line_index}/status`
+        ),
         {
           method: "PATCH",
           credentials: "include",
@@ -184,10 +187,10 @@ export default function KdsPage() {
         }
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || "Could not update the station.");
+      if (!response.ok) throw new Error(data.detail || "Could not update the item.");
       await load();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Could not update the station.");
+      setError(actionError instanceof Error ? actionError.message : "Could not update the item.");
     } finally {
       setBusyKey(null);
     }
@@ -454,7 +457,7 @@ export default function KdsPage() {
 
                         <div className="mt-3 space-y-2">
                           {visibleLines.map((line) => {
-                            const lineBusy = busyKey === `${order.id}-${line.station_key}`;
+                            const lineBusy = busyKey === `line-${line.line_id}`;
                             return (
                               <div
                                 key={line.line_id}
@@ -481,25 +484,38 @@ export default function KdsPage() {
                                       {line.station_label} · {line.status}
                                     </p>
                                   </div>
-                                  <button
-                                    type="button"
-                                    data-testid={`kds-bump-${line.line_id}`}
-                                    onClick={() =>
-                                      void updateStation(
-                                        order.id,
-                                        line.station_key,
-                                        line.status === "ready" ? "preparing" : "ready"
-                                      )
-                                    }
-                                    disabled={lineBusy}
-                                    className={`shrink-0 rounded-md px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest ${
-                                      line.status === "ready"
-                                        ? "bg-white/10 text-gray-300 hover:bg-white/20"
-                                        : "bg-emerald-500 text-black hover:bg-emerald-400"
-                                    } disabled:opacity-40`}
-                                  >
-                                    {lineBusy ? "..." : line.status === "ready" ? "Recall" : "Bump"}
-                                  </button>
+                                  <div className="flex shrink-0 flex-col gap-1">
+                                    <button
+                                      type="button"
+                                      data-testid={`kds-bump-${line.line_id}`}
+                                      onClick={() =>
+                                        void updateLine(
+                                          order.id,
+                                          line,
+                                          line.status === "ready" ? "preparing" : "ready"
+                                        )
+                                      }
+                                      disabled={lineBusy}
+                                      className={`rounded-md px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest ${
+                                        line.status === "ready"
+                                          ? "bg-white/10 text-gray-300 hover:bg-white/20"
+                                          : "bg-emerald-500 text-black hover:bg-emerald-400"
+                                      } disabled:opacity-40`}
+                                    >
+                                      {lineBusy ? "..." : line.status === "ready" ? "Recall" : "Bump"}
+                                    </button>
+                                    {line.status === "open" && (
+                                      <button
+                                        type="button"
+                                        data-testid={`kds-start-${line.line_id}`}
+                                        onClick={() => void updateLine(order.id, line, "preparing")}
+                                        disabled={lineBusy}
+                                        className="rounded-md bg-orange-500 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-black hover:bg-orange-400 disabled:opacity-40"
+                                      >
+                                        Start
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             );

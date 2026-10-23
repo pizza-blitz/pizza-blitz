@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 150 backend tests, 144 browser proof scripts, a backend Ruff
+- Automation: 152 backend tests, 144 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -174,11 +174,14 @@ Wave 4 (in progress):
 - Feedback & NPS: one-time post-order rating/NPS/tags/comment on tracking and an
   admin dashboard with NPS, response rate, distribution and low-rating follow-up.
 - New `verify:feedback` proof and two backend tests.
+- Item-level KDS: independent start/bump/recall per line, timestamp clears on
+  recall, aggregate ticket status and per-line audit.
+- Two backend tests; the existing KDS proof now bumps a single line.
 - Next: external monitoring, live payment verification, per-store menus.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 150 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 152 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

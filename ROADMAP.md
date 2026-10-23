@@ -169,6 +169,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Outbound aggregator menu sync.
 - [x] Deployment-ready checklist.
 - [x] Post-order feedback and NPS.
+- [x] Item-level KDS bump/recall.
 - [ ] External monitoring, live payment verification, per-store menus.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

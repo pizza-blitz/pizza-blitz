@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **277 API endpoints**, **48 routes/pages** (37 portal,
-1 KDS, 10 public), **144 browser proof scripts**, **150 backend tests**, **57
+Numbers in this snapshot: **278 API endpoints**, **48 routes/pages** (37 portal,
+1 KDS, 10 public), **144 browser proof scripts**, **152 backend tests**, **57
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -83,7 +83,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Station routing | Item/category → kitchen station, per-station status | Built | Configurable routing + filters | Good |
 | Kitchen ticket | Printable ticket per order | Built | Ticket routing, reprint | Printer routing missing |
 | SLA / priority | Age, priority, next action per line | Built | Timers, overdue alerts, sound | Timers/sound missing |
-| Item-level readiness | Station-level only | Partial | Per-item bump/recall | Must build |
+| Item-level readiness | Per-line start/bump/recall with independent line statuses and aggregate ticket status | Built | Per-item bump/recall | — |
 | Courses / sequencing | — | Missing | Fire/hold courses | Later |
 | Capacity / throttling | — | Missing | Order throttling when kitchen is saturated | With store ops |
 | Kitchen display device mode | Responsive full-screen `/kds` with station filters, chime and fullscreen toggle | Built | Locked full-screen mode | Kiosk/lockdown is browser-level |
@@ -405,6 +405,11 @@ W4 measured results (feedback): completed orders expose a one-time star/NPS/tag/
 comment form on tracking. Admins get NPS, average rating, response rate, rating
 distribution, top tags and low-rating follow-up at `/feedback`. Covered by two
 backend tests and `verify:feedback`.
+
+W4 measured results (item-level KDS): each order line can start, bump or recall
+independently; ticket status is aggregated from all lines and timestamps clear
+on recall. The KDS proof now exercises a single-line bump. Covered by two
+backend tests.
 
 ---
 

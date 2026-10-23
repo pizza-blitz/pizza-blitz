@@ -2582,6 +2582,91 @@ def update_order_status(
     return serialize_order(order)
 
 
+@router.patch("/{order_id}/items/{line_index}/status")
+def update_order_line_status(
+    order_id: int,
+    line_index: int,
+    payload: OrderStatusUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "closed":
+        raise HTTPException(status_code=409, detail="Closed orders cannot be moved.")
+    if order.status == "cancelled":
+        raise HTTPException(status_code=409, detail="Cancelled orders cannot be moved.")
+
+    status = payload.status.strip().lower()
+    allowed_statuses = {"open", "preparing", "ready"}
+    if status not in allowed_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Line status must be one of: {', '.join(sorted(allowed_statuses))}.",
+        )
+
+    items = [dict(item) if isinstance(item, dict) else item for item in (order.items or [])]
+    if line_index < 0 or line_index >= len(items) or not isinstance(items[line_index], dict):
+        raise HTTPException(status_code=404, detail="Order line not found.")
+
+    updated_at = datetime.utcnow().isoformat()
+    line = dict(items[line_index])
+    line["station_status"] = status
+    line["station_status_updated_at"] = updated_at
+    if status == "preparing":
+        line.pop("station_ready_at", None)
+        if not line.get("station_started_at"):
+            line["station_started_at"] = updated_at
+    elif status == "ready":
+        if not line.get("station_started_at"):
+            line["station_started_at"] = updated_at
+        line["station_ready_at"] = updated_at
+    else:
+        line.pop("station_started_at", None)
+        line.pop("station_ready_at", None)
+    items[line_index] = line
+
+    previous_status = order.status
+    order.items = items
+    order.status = aggregate_order_station_status(order, items)
+    flag_modified(order, "items")
+    db.commit()
+    db.refresh(order)
+    if order.status != previous_status:
+        notify_order_status_change(db, order, previous_status)
+    record_operational_audit_event(
+        db,
+        session=session,
+        request=request,
+        event_type="order",
+        action="order_line_status_update",
+        resource_type="restaurant_order",
+        resource_id=order.id,
+        detail=f"Order #{order.id} line {line_index + 1} ({line.get('name', 'item')}) moved to {status}.",
+        metadata={
+            "line_index": line_index,
+            "line_name": line.get("name"),
+            "station_status": status,
+            "previous_order_status": previous_status,
+            "order_status": order.status,
+            "source": order_metadata(order).get("source"),
+        },
+    )
+    queue_status_event(db, order, order.status)
+    return {
+        "order": serialize_order(order),
+        "line": {
+            "line_id": f"{order.id}-{line_index}",
+            "line_index": line_index,
+            "name": line.get("name"),
+            "status": status,
+            "station_status": status,
+        },
+    }
+
+
 @router.patch("/{order_id}/stations/{station_key}/status")
 def update_order_station_status(
     order_id: int,
@@ -3470,6 +3555,7 @@ def build_kds_board(db: Session) -> dict:
             lines.append(
                 {
                     "line_id": f"{order.id}-{line_index}",
+                "line_index": line_index,
                     "station_key": station["key"],
                     "station_label": station["label"],
                     "name": str(item.get("name") or "Item"),
