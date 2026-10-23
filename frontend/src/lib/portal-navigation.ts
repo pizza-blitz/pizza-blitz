@@ -13,6 +13,7 @@ import {
   Landmark,
   Megaphone,
   MessageCircle,
+  MessageSquareHeart,
   MonitorPlay,
   Package,
   PlusCircle,
@@ -85,6 +86,7 @@ export const portalNavGroups: PortalNavGroup[] = [
     title: "Customers & growth",
     items: [
       { name: "Customers", href: "/customers", icon: Users, description: "Profiles, consent and retention", allowedRoles: adminOnly },
+  { name: "Feedback & NPS", href: "/feedback", icon: MessageSquareHeart, description: "Ratings, NPS and guest comments", allowedRoles: adminOnly },
       { name: "Comms Center", href: "/communications", icon: MessageCircle, description: "WhatsApp, SMS and email campaigns", allowedRoles: adminOnly },
       { name: "Promotions", href: "/promotions", icon: Megaphone, description: "Coupons, flash sales and scheduling", allowedRoles: adminOnly },
       { name: "Social Publishing", href: "/social", icon: Share2, description: "Post to Instagram and Facebook", allowedRoles: adminOnly },

@@ -842,3 +842,18 @@ class PosHardwareConfig(Base):
     customer_display_url = Column(String(500), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     store = relationship("Store")
+
+
+class OrderFeedback(Base):
+    __tablename__ = "order_feedback"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(
+        Integer, ForeignKey("orders.id"), unique=True, index=True, nullable=False
+    )
+    customer_phone = Column(String(30), index=True, nullable=False)
+    rating = Column(Integer, nullable=False)
+    nps = Column(Integer, nullable=False)
+    comment = Column(String(1000), nullable=True)
+    tags = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    order = relationship("RestaurantOrder")

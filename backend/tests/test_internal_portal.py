@@ -138,6 +138,9 @@ class InternalPortalValidationTest(unittest.TestCase):
             )
             self.assertEqual(payment.status_code, 200)
 
+            baseline_collected = client.get(
+                "/api/v1/restaurant/orders/today"
+            ).json()["total_collected_today"]
             closed = client.patch(
                 f"/api/v1/restaurant/orders/{order_id}/close?payment_method=cash"
             )
@@ -146,7 +149,11 @@ class InternalPortalValidationTest(unittest.TestCase):
 
             today_orders = client.get("/api/v1/restaurant/orders/today")
             self.assertEqual(today_orders.status_code, 200)
-            self.assertEqual(today_orders.json()["total_collected_today"], 417.9)
+            self.assertAlmostEqual(
+                today_orders.json()["total_collected_today"],
+                baseline_collected + order.json()["total"],
+                places=2,
+            )
 
             for inventory_item in [
                 {

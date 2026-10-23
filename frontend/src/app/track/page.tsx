@@ -18,6 +18,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import FeedbackForm from "@/components/feedback/FeedbackForm";
 
 const TRACK_API = getApiUrl("/api/v1/restaurant/orders/track");
 const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
@@ -617,6 +618,9 @@ export default function TrackOrderPage() {
                   </Link>
                 </div>
               )}
+              {(order.status === "closed" ||
+                order.delivery_assignment?.status === "delivered") &&
+                phone && <FeedbackForm orderId={order.id} phone={phone} />}
             </aside>
           </div>
         )}

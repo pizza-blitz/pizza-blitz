@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **274 API endpoints**, **47 routes/pages** (36 portal,
-1 KDS, 10 public), **143 browser proof scripts**, **148 backend tests**, **56
+Numbers in this snapshot: **277 API endpoints**, **48 routes/pages** (37 portal,
+1 KDS, 10 public), **144 browser proof scripts**, **150 backend tests**, **57
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -44,7 +44,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons and offers | Validate/apply server-side, promotion engine | Built | Public offers page, auto-apply best offer | Offers surface on landing page missing |
 | Pickup / delivery | Delivery quote by zone, fees, minimums, ETAs | Built | Address autocomplete + geocoding | Keyword zones only |
 | Order tracking | Phone + order-id tracking with status steps, rider status/last GPS link and proof-captured flag | Built | Live status + notifications + embedded map | Map is link-out only |
-| Customer account | OTP login (or phone + recent order), order history, profile/consent, saved addresses, loyalty points and referral code | Built | Password/OTP, saved addresses, loyalty | Saved payments missing |
+| Customer account | OTP login (or phone + recent order), order history, profile/consent, saved addresses, loyalty points, feedback after completed orders | Built | Password/OTP, saved addresses, loyalty, feedback | Saved payments missing |
 | Scheduled orders | 15-minute slots up to 14 days ahead, capacity-checked, validated against opening hours, stored on the order and shown in tracking/POS/kitchen/receipt | Built | Order for later time/date, slot capacity | Slot capacity is fixed at 6; no per-day holiday calendar |
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
 | Tips | Preset/custom tip at checkout and POS, persisted on the order, included in totals/receipts, tips summary API | Built | Preset/custom tip, tip reporting | Tip pooling and payout missing |
@@ -144,7 +144,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Order history | Customer history, tracking, receipts | Built | Same | — |
 | Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, points redemption at checkout (10 points = ₹1, 100-point minimum), account card and transactions | Built | Points, tiers, rewards, referrals | Redemption is checkout-only; no gift catalog |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
-| Feedback / NPS / reviews | — | Missing | Post-order feedback, review routing | Must build |
+| Feedback / NPS / reviews | Post-order star rating, 0–10 NPS, tags and comments; admin NPS/average/response-rate dashboard with low-rating follow-up | Built | Post-order feedback, review routing | Public review-site routing missing |
 | Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id; saved addresses scoped by customer token | Built | OTP login, saved sessions | Saved payment methods missing |
 
 ## 9. Marketing, communications, social, ads
@@ -400,6 +400,11 @@ reachability, Alembic head, auth-secret strength, master-admin configuration,
 CORS origins, media writability, live payment provider and security headers,
 with ready/warn/blocked states, remediation text and copyable verification
 commands. Covered by two backend tests and `verify:deployment-checklist`.
+
+W4 measured results (feedback): completed orders expose a one-time star/NPS/tag/
+comment form on tracking. Admins get NPS, average rating, response rate, rating
+distribution, top tags and low-rating follow-up at `/feedback`. Covered by two
+backend tests and `verify:feedback`.
 
 ---
 
