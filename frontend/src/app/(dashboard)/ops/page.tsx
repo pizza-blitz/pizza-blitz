@@ -21,6 +21,7 @@ import {
   Users,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import ClientErrorMonitor from "@/components/ops/ClientErrorMonitor";
 
 const OPS_API = getApiUrl("/api/v1/restaurant/ops");
 const CUSTOMER_CSV_VALIDATE_API = getApiUrl("/api/v1/restaurant/customers/import/validate");
@@ -1176,6 +1177,8 @@ export default function ProductionOpsPage() {
           {message}
         </div>
       )}
+
+      <ClientErrorMonitor />
 
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Metric

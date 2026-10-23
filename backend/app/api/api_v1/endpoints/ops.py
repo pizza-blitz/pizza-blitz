@@ -1,11 +1,19 @@
 from datetime import date, datetime, time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
-from app.models.domain import DailySales, Expense, OperationalAuditEvent, RestaurantOrder, ShiftLog
+from app.models.domain import (
+    ClientErrorReport,
+    DailySales,
+    Expense,
+    OperationalAuditEvent,
+    RestaurantOrder,
+    ShiftLog,
+)
 from app.services.operational_audit_service import (
     operational_audit_report,
     record_operational_audit_event,
@@ -698,3 +706,60 @@ def update_store_profile_settings(
         },
     )
     return serialize_admin_profile(profile)
+
+
+class ClientErrorPayload(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    stack: Optional[str] = Field(default=None, max_length=5000)
+    url: Optional[str] = Field(default=None, max_length=500)
+    user_agent: Optional[str] = Field(default=None, max_length=500)
+
+
+@router.post("/client-errors", status_code=202)
+def report_client_error(
+    payload: ClientErrorPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    from app.core.rate_limit import enforce_rate_limit
+
+    enforce_rate_limit(request, "client-error-report", 30)
+    report = ClientErrorReport(
+        message=payload.message.strip()[:500],
+        stack=(payload.stack or "").strip()[:5000] or None,
+        url=(payload.url or "").strip()[:500] or None,
+        user_agent=(payload.user_agent or "").strip()[:500] or None,
+        request_id=request.headers.get("X-Request-ID"),
+    )
+    db.add(report)
+    db.commit()
+    return {"status": "recorded", "request_id": report.request_id}
+
+
+@router.get("/client-errors")
+def list_client_errors(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    rows = (
+        db.query(ClientErrorReport)
+        .order_by(ClientErrorReport.created_at.desc(), ClientErrorReport.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "count": len(rows),
+        "errors": [
+            {
+                "id": row.id,
+                "message": row.message,
+                "stack": row.stack,
+                "url": row.url,
+                "user_agent": row.user_agent,
+                "request_id": row.request_id,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ],
+    }

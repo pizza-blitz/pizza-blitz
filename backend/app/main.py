@@ -1,6 +1,9 @@
+import logging
 import os
+import time
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -175,6 +178,76 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+request_logger = logging.getLogger("pizzablitz.requests")
+
+
+def _security_headers() -> dict[str, str]:
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(self)",
+        "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        "X-XSS-Protection": "0",
+    }
+    if settings.ENVIRONMENT.lower() == "production":
+        headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains; preload"
+        )
+    return headers
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for name, value in _security_headers().items():
+        response.headers.setdefault(name, value)
+    return response
+
+
+@app.middleware("http")
+async def monitor_requests(request: Request, call_next):
+    request_id = (request.headers.get("X-Request-ID") or uuid4().hex)[:64]
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        request_logger.exception(
+            "Unhandled request error id=%s method=%s path=%s",
+            request_id,
+            request.method,
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal server error.",
+                "request_id": request_id,
+            },
+            headers={"X-Request-ID": request_id, **_security_headers()},
+        )
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 1)
+    response.headers["X-Request-ID"] = request_id
+    if response.status_code >= 500:
+        request_logger.warning(
+            "Server error id=%s status=%s method=%s path=%s duration_ms=%s",
+            request_id,
+            response.status_code,
+            request.method,
+            request.url.path,
+            duration_ms,
+        )
+    elif duration_ms >= 2000:
+        request_logger.info(
+            "Slow request id=%s status=%s method=%s path=%s duration_ms=%s",
+            request_id,
+            response.status_code,
+            request.method,
+            request.url.path,
+            duration_ms,
+        )
+    return response
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 

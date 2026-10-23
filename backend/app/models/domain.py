@@ -778,3 +778,14 @@ class AggregatorOrder(Base):
     error = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     integration = relationship("AggregatorIntegration")
+
+
+class ClientErrorReport(Base):
+    __tablename__ = "client_error_reports"
+    id = Column(Integer, primary_key=True, index=True)
+    message = Column(String(500), nullable=False)
+    stack = Column(String(5000), nullable=True)
+    url = Column(String(500), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    request_id = Column(String(64), nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **265 API endpoints**, **44 routes/pages** (34 portal,
-1 KDS, 9 public), **140 browser proof scripts**, **138 backend tests**, **53
+Numbers in this snapshot: **267 API endpoints**, **44 routes/pages** (34 portal,
+1 KDS, 9 public), **141 browser proof scripts**, **140 backend tests**, **54
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -215,7 +215,8 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Multi-store / franchise | — | Missing | Tenant hierarchy, per-store config | Later |
 | API keys / webhooks | — | Missing | Public API + outbound webhooks | Later |
 | Observability | Logs only | Missing | Error tracking, metrics, traces | Later |
-| Security headers | Next defaults | Partial | CSP, HSTS, frame options | Quick win |
+| Security headers | CSP, HSTS, nosniff, frame-deny, referrer and permissions policies on Next and API; request IDs and structured error logs | Built | CSP, HSTS, frame options | Nonce-based strict CSP missing |
+| Error monitoring | Backend request IDs/exception logs, client error boundary reporting, admin monitor on Production Ops | Built | Error tracking integration | External provider (Sentry) missing |
 | Localisation | INR, English only | Partial | Per-store currency/locale | Later |
 
 ## 14. UI/UX and accessibility (measured)
@@ -370,6 +371,12 @@ uses the active channel’s price, hides unavailable channels, reprices the cart
 when switching pickup/delivery, and order creation enforces the same channel
 price/availability. Covered by two backend tests and `verify:channel-pricing`.
 
+W4 measured results (security headers): Next and the API send CSP, HSTS,
+nosniff, frame-deny, referrer and permissions policies. Requests carry an
+`X-Request-ID` and server exceptions are logged with it. Client error boundaries
+report to `/ops/client-errors`, and Production Ops shows recent browser errors.
+Covered by two backend tests and `verify:security-headers`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -439,7 +446,10 @@ price/availability. Covered by two backend tests and `verify:channel-pricing`.
 18. ~~**Labour vs sales dashboard and shift scheduling**~~ — done in W4: weekly
     scheduled shifts with hourly rates, confirmation, roster and a labour-cost
     versus sales dashboard. Clock-in/out and statutory rules remain.
-19. Security headers/CSP and error monitoring.
+19. ~~**Security headers/CSP and error monitoring**~~ — done in W4: CSP, HSTS,
+    nosniff, frame-deny, referrer/permissions policies, request IDs, backend
+    exception logging, client error boundaries and an ops monitor. External
+    Sentry-style aggregation remains.
 20. Hardware: thermal printer + cash drawer + customer display integration.
 
 ### P2 — scale and ecosystem
@@ -466,7 +476,7 @@ price/availability. Covered by two backend tests and `verify:channel-pricing`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing (done); hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition + channel pricing + CSP/error monitoring (done); hardware (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu + channel + monitoring proofs |
 | W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

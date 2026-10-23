@@ -162,6 +162,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Labour scheduling and labour-vs-sales dashboard.
 - [x] Allergens/nutrition.
 - [x] Channel-specific pricing.
-- [ ] Hardware integrations and CSP/error monitoring.
+- [x] Security headers and error monitoring.
+- [ ] Hardware integrations.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
