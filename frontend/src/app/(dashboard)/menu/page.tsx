@@ -50,6 +50,12 @@ type MenuItem = {
   is_available: boolean;
   image_url?: string | null;
   image_alt?: string | null;
+  allergens?: string[] | null;
+  dietary_tags?: string[] | null;
+  calories?: number | null;
+  protein_g?: number | null;
+  carbs_g?: number | null;
+  fat_g?: number | null;
   customization_groups?: CustomizationGroup[];
 };
 
@@ -127,6 +133,12 @@ const emptyForm: MenuItem = {
   selling_price: 0,
   cost_price: 0,
   is_available: true,
+  allergens: [],
+  dietary_tags: [],
+  calories: null,
+  protein_g: null,
+  carbs_g: null,
+  fat_g: null,
 };
 
 export default function MenuManagement() {
@@ -769,6 +781,84 @@ export default function MenuManagement() {
                   onChange={(value) => setFormData({ ...formData, cost_price: Number(value) })}
                   required
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <Input
+                  label="Calories"
+                  type="number"
+                  value={formData.calories == null ? "" : String(formData.calories)}
+                  onChange={(value) =>
+                    setFormData({ ...formData, calories: value === "" ? null : Number(value) })
+                  }
+                />
+                <Input
+                  label="Protein (g)"
+                  type="number"
+                  value={formData.protein_g == null ? "" : String(formData.protein_g)}
+                  onChange={(value) =>
+                    setFormData({ ...formData, protein_g: value === "" ? null : Number(value) })
+                  }
+                />
+                <Input
+                  label="Carbs (g)"
+                  type="number"
+                  value={formData.carbs_g == null ? "" : String(formData.carbs_g)}
+                  onChange={(value) =>
+                    setFormData({ ...formData, carbs_g: value === "" ? null : Number(value) })
+                  }
+                />
+                <Input
+                  label="Fat (g)"
+                  type="number"
+                  value={formData.fat_g == null ? "" : String(formData.fat_g)}
+                  onChange={(value) =>
+                    setFormData({ ...formData, fat_g: value === "" ? null : Number(value) })
+                  }
+                />
+              </div>
+              <Input
+                label="Allergens (comma separated)"
+                value={(formData.allergens || []).join(", ")}
+                onChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    allergens: value
+                      .split(",")
+                      .map((entry) => entry.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  Dietary tags
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {["Vegetarian", "Vegan", "Gluten-free"].map((tag) => {
+                    const active = (formData.dietary_tags || []).includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            dietary_tags: active
+                              ? (formData.dietary_tags || []).filter((entry) => entry !== tag)
+                              : [...(formData.dietary_tags || []), tag],
+                          })
+                        }
+                        className={`rounded-full border px-3 py-1.5 text-xs font-black ${
+                          active
+                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                            : "border-gray-300 text-gray-500"
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <label className="flex items-center gap-3 text-sm text-gray-300">
                 <input

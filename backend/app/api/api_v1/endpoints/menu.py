@@ -89,6 +89,12 @@ class MenuItemSchema(BaseModel):
     is_available: bool = True
     image_url: Optional[str] = None
     image_alt: Optional[str] = None
+    allergens: Optional[List[str]] = None
+    dietary_tags: Optional[List[str]] = None
+    calories: Optional[int] = Field(default=None, ge=0, le=5000)
+    protein_g: Optional[float] = Field(default=None, ge=0, le=500)
+    carbs_g: Optional[float] = Field(default=None, ge=0, le=500)
+    fat_g: Optional[float] = Field(default=None, ge=0, le=500)
 
     class Config:
         from_attributes = True
@@ -378,6 +384,16 @@ def update_or_create_menu(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin")),
 ):
+    def clean_list(values: Optional[List[str]]) -> list[str]:
+        cleaned: list[str] = []
+        for value in values or []:
+            text = str(value or "").strip()[:60]
+            if text and text.lower() not in {existing.lower() for existing in cleaned}:
+                cleaned.append(text)
+        return cleaned
+
+    allergens = clean_list(item.allergens)
+    dietary_tags = clean_list(item.dietary_tags)
     if item.id:
         db_item = db.query(MenuItem).filter(MenuItem.id == item.id).first()
         if not db_item:
@@ -389,6 +405,12 @@ def update_or_create_menu(
         db_item.is_available = item.is_available
         if item.image_alt is not None:
             db_item.image_alt = item.image_alt.strip()[:255] or None
+        db_item.allergens = allergens
+        db_item.dietary_tags = dietary_tags
+        db_item.calories = item.calories
+        db_item.protein_g = item.protein_g
+        db_item.carbs_g = item.carbs_g
+        db_item.fat_g = item.fat_g
     else:
         db_item = MenuItem(
             name=item.name,
@@ -397,6 +419,12 @@ def update_or_create_menu(
             cost_price=item.cost_price,
             is_available=item.is_available,
             image_alt=(item.image_alt or "").strip()[:255] or None,
+            allergens=allergens,
+            dietary_tags=dietary_tags,
+            calories=item.calories,
+            protein_g=item.protein_g,
+            carbs_g=item.carbs_g,
+            fat_g=item.fat_g,
         )
         db.add(db_item)
 

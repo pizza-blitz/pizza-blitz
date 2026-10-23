@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **265 API endpoints**, **44 routes/pages** (34 portal,
-1 KDS, 9 public), **138 browser proof scripts**, **134 backend tests**, **52
+1 KDS, 9 public), **139 browser proof scripts**, **136 backend tests**, **52
 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -49,7 +49,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Store hours / order pause | Weekly opening hours, pause toggle, prep time, public open/closed status, checkout + order enforcement | Built | Per-day hours, overnight windows, holiday closures, pause with message, prep capacity | Holiday calendar and per-slot capacity missing |
 | Tips | Preset/custom tip at checkout and POS, persisted on the order, included in totals/receipts, tips summary API | Built | Preset/custom tip, tip reporting | Tip pooling and payout missing |
 | Order notifications | Transactional status events (preparing, ready, out for delivery, delivered, completed, cancelled) over SMS/WhatsApp/email via the configured provider, gated by `ORDER_NOTIFICATIONS_ENABLED`, logged per order and exposed on tracking | Built | Confirmation, ready, out-for-delivery, delivered via WhatsApp/SMS/email | Email needs an email on the order; provider credentials required |
-| Allergens / nutrition | — | Missing | Allergen flags, vegetarian/vegan, nutrition per item | Must build (menu metadata) |
+| Allergens / nutrition | Per-item allergens, dietary tags (vegetarian/vegan/gluten-free), calories, protein/carbs/fat; admin editing and customer-menu badges | Built | Allergen flags, vegetarian/vegan, nutrition per item | Channel-specific menus missing |
 | PWA / installable | — | Missing | Installable app, offline menu, push | Later |
 | Multi-language | — | Missing | Localisation (English/Hindi) | Later |
 | Table reservation | — | Missing | Booking + table availability | Out of scope for now |
@@ -103,7 +103,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Item CRUD | Create/update/delete, availability, image upload/removal, alt text | Built | Same + media + channels | Channel pricing missing |
+| Item CRUD | Create/update/delete, availability, image upload/removal, alt text, allergens/dietary tags/nutrition | Built | Same + media + channels | Channel pricing missing |
 | Modifier groups | Groups, options, min/max, pricing | Built | Same | — |
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
@@ -111,7 +111,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | — | Missing | Different price for delivery/aggregator | Later |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
-| Allergens/nutrition | — | Missing | Per-item flags and nutrition | With public site |
+| Allergens/nutrition | Per-item allergens, dietary tags, calories and macros shown on the customer menu | Built | Per-item flags and nutrition | With public site |
 
 ## 6. Inventory, procurement, supply chain
 
@@ -358,6 +358,12 @@ hourly rate, confirm or delete them, and see weekly hours, wage cost, sales and
 labour percentage with day and role breakdowns at `/shifts/schedule`. Covered by
 two backend tests and `verify:shift-schedule`.
 
+W4 measured results (allergens): menu items store allergens, dietary tags,
+calories and protein/carbs/fat. Admins edit them in the menu modal (comma-
+separated allergens + tag toggles), and the customer menu shows vegetarian/vegan/
+gluten-free chips, kcal and “Contains:” allergens. Covered by two backend tests
+and `verify:menu-nutrition`.
+
 ---
 
 ## Enterprise gap register (build order)
@@ -420,7 +426,9 @@ two backend tests and `verify:shift-schedule`.
 16. ~~**2FA/SSO and granular permissions**~~ — done in W4: TOTP 2FA with
     recovery codes, a two-step login challenge (portal and API), and granular
     staff permissions enforced on reports and refunds. SSO remains.
-17. Allergens/nutrition and channel-specific menus/pricing.
+17. ~~**Allergens/nutrition**~~ and **channel-specific menus/pricing** — allergens,
+    dietary tags, calories and macros are done in W4 with admin editing and
+    customer-menu badges. Channel-specific pricing remains.
 18. ~~**Labour vs sales dashboard and shift scheduling**~~ — done in W4: weekly
     scheduled shifts with hourly rates, confirmation, roster and a labour-cost
     versus sales dashboard. Clock-in/out and statutory rules remain.
@@ -451,7 +459,7 @@ two backend tests and `verify:shift-schedule`.
 | W1 (done) | Landing page, portal shell/nav, master access, brand tokens, metadata, storefront cost-price leak | Landing + portal-shell proofs pass, build + audit suite green |
 | W2 (done) | Store profile + weekly hours/order pause + prep time; scheduled orders with slot capacity; tips at checkout/POS with reporting; mobile card layouts for reports/menu/inventory and icon hit areas | Backend tests + proof scripts for each |
 | W3 (done) | Refunds/voids with ledger + audit; full-screen KDS; order notifications; menu media uploads | Payment + kitchen proofs |
-| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling (done); allergens/nutrition, hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce proofs |
+| W4 (in progress) | Customer OTP login + saved addresses + loyalty/referrals with redemption + rider app/GPS/proof + custom/scheduled reports + 2FA/granular permissions + multi-store/franchise + accounting/GST + aggregator intake + labour scheduling + allergens/nutrition (done); channel pricing, hardware, CSP (next) | Public + account + rider + reports + security + franchise + accounting + aggregator + workforce + menu proofs |
 | W5 | Hardware, security headers/CSP, deployment-ready checklist | Deployment checklist |
 | W6 | Aggregators, multi-store, forecasting, accounting | Integration proofs |
 

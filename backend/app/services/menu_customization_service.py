@@ -387,6 +387,12 @@ def customized_menu_payload(db: Session) -> list[dict]:
             "is_available": item.is_available,
             "image_url": item.image_url,
             "image_alt": item.image_alt,
+            "allergens": list(item.allergens or []),
+            "dietary_tags": list(item.dietary_tags or []),
+            "calories": item.calories,
+            "protein_g": item.protein_g,
+            "carbs_g": item.carbs_g,
+            "fat_g": item.fat_g,
             "customization_groups": groups_for_menu_item(groups, item),
         }
         for item in items

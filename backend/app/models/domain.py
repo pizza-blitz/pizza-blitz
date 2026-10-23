@@ -34,6 +34,12 @@ class MenuItem(Base):
     is_available = Column(Boolean, default=True)
     image_url = Column(String(500), nullable=True)
     image_alt = Column(String(255), nullable=True)
+    allergens = Column(JSON, default=list)
+    dietary_tags = Column(JSON, default=list)
+    calories = Column(Integer, nullable=True)
+    protein_g = Column(Float, nullable=True)
+    carbs_g = Column(Float, nullable=True)
+    fat_g = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class MenuCustomizationGroup(Base):

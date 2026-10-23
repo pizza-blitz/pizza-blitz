@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 134 backend tests, 138 browser proof scripts, a backend Ruff
+- Automation: 136 backend tests, 139 browser proof scripts, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -142,11 +142,14 @@ Wave 4 (in progress):
 - Workforce: weekly shift scheduling with hourly rates, confirmation, roster,
   and a labour-versus-sales dashboard at `/shifts/schedule`.
 - New `verify:shift-schedule` browser proof and two backend tests.
-- Next: allergens/nutrition, hardware, CSP/error monitoring.
+- Menu allergens/nutrition: per-item allergens, dietary tags, calories and
+  macros with admin editing and customer-menu badges.
+- New `verify:menu-nutrition` browser proof and two backend tests.
+- Next: channel-specific pricing, hardware, CSP/error monitoring.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 134 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 136 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

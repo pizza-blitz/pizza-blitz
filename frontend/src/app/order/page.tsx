@@ -42,6 +42,12 @@ type MenuItem = {
   is_available: boolean;
   image_url?: string | null;
   image_alt?: string | null;
+  allergens?: string[] | null;
+  dietary_tags?: string[] | null;
+  calories?: number | null;
+  protein_g?: number | null;
+  carbs_g?: number | null;
+  fat_g?: number | null;
   customization_groups?: CustomizationGroup[];
 };
 
@@ -1572,6 +1578,32 @@ export default function PublicOrderPage() {
                     <div className="col-span-8 p-4">
                       <p className="text-xs font-bold text-red-700">{item.category}</p>
                       <h3 className="mt-1 min-h-12 text-lg font-black leading-6">{item.name}</h3>
+                      {((item.dietary_tags || []).length > 0 ||
+                        item.calories != null ||
+                        (item.allergens || []).length > 0) && (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {(item.dietary_tags || []).map((tag) => (
+                              <span
+                                key={tag}
+                                className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-700"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                            {item.calories != null && (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                                {item.calories} kcal
+                              </span>
+                            )}
+                          </div>
+                          {(item.allergens || []).length > 0 && (
+                            <p className="text-[11px] font-semibold text-amber-700">
+                              Contains: {(item.allergens || []).join(", ")}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {selectedOptions.length > 0 && (
                         <p className="mt-2 line-clamp-2 text-xs font-semibold text-slate-500">
                           {selectedOptions.map(optionLabel).join(" | ")}
