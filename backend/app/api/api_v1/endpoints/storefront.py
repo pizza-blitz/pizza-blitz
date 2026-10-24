@@ -15,6 +15,7 @@ from app.services.store_profile_service import (
     serialize_public_profile,
     store_status,
 )
+from app.services.storefront_content_service import content_payload
 
 
 router = APIRouter()
@@ -94,4 +95,5 @@ def storefront_bootstrap(db: Session = Depends(get_db)):
         "active_promotions": public_promotions(db),
         "delivery_zones": public_delivery_zones(db),
         "store_profile": serialize_public_profile(profile),
+        "site_content": content_payload(db),
     }

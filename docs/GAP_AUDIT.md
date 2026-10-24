@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 60 frontend routes, the 152 browser proof scripts plus portal smoke in
+- Listed all 61 frontend routes, the 153 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -99,6 +99,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 68 | HR access | HR pages were admin-only, so an HR head/manager could not use the department without full admin; there was no department-scoped permission model. | HR access gap. | Added `hr.view`, `hr.people`, `hr.leave`, `hr.attendance`, `hr.payroll`, `hr.onboarding`, `hr.documents` and `hr.exits` staff permissions plus HR membership checks in `require_hr_permission`. HR members see only the HR department; admins bypass; module cards hide/lock ungranted areas. Added `/restaurant/hr/access`, `/departments` staff routing, and `verify:hr-permissions`. Two backend tests. Per-user overrides and HR analytics remain. |
 | 69 | HR analytics | Each HR module had counts but there was no consolidated headcount, attendance, leave, payroll, onboarding, attrition or document-expiry view, and `/departments/hr` was still a generic department page. | HR analytics gap. | Added `/restaurant/hr/overview` and replaced `/departments/hr` with an HR command center: headcount/new joiners, workforce mix, present/absent/on-leave, leave liability, latest payroll/YTD/trend, onboarding funnel, attrition, exits, documents expiring and letters, plus module links. Access requires `hr.view`. Two backend tests and `verify:hr-analytics`. CSV/PDF exports remain. |
 | 70 | Media workflow | Menu images uploaded one at a time; social/ads required a pasted public URL; landing images were code constants. There was no shared asset library, reuse, search or safe delete. | Media gap. | Added `media_assets` (migration), `/restaurant/media/assets` upload/list/delete with magic-byte validation, search/tags and usage guards, menu uploads registering automatically, `/settings/media` Media Studio, and one `MediaPicker` reused by menu, social and ad forms. Two backend tests and `verify:media-studio`. Landing CMS, stock/AI search, auto-crops and video remain. |
+| 71 | Landing content | Hero/story copy and images were code constants; changing the brand page required a deploy, and category imagery could not be managed from the portal. | Landing CMS gap. | Added `storefront_content` (migration), `/restaurant/storefront-content` admin GET/PUT/reset, public `site_content` in the storefront bootstrap, and `/settings/content` with live preview, Media Studio pickers for hero/story/category images, on-demand revalidation and restore defaults. Two backend tests and `verify:landing-cms`. Theme, FAQ and section-order editing remain. |
 
 ## Still open
 
@@ -113,7 +114,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 176 tests, all pass (in a clean venv built from
+- Backend unit suite: 178 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

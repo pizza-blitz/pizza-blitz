@@ -100,12 +100,24 @@ type StoreProfilePublic = {
   };
 };
 
+type StorefrontContent = {
+  hero_title?: string;
+  hero_highlight?: string;
+  hero_subtitle?: string;
+  hero_image_url?: string | null;
+  story_title?: string;
+  story_body?: string;
+  story_image_url?: string | null;
+  category_images?: Record<string, string>;
+};
+
 type StorefrontPayload = {
   menu: StorefrontMenuItem[];
   active_promotions: StorefrontPromotion[];
   delivery_zones: StorefrontZone[];
   checkout_readiness?: { accepting_orders?: boolean };
   store_profile?: StoreProfilePublic;
+  site_content?: StorefrontContent;
 };
 
 const emptyStorefront: StorefrontPayload = {
@@ -216,6 +228,7 @@ async function loadStorefront(): Promise<StorefrontPayload> {
       delivery_zones: Array.isArray(payload.delivery_zones) ? payload.delivery_zones : [],
       checkout_readiness: payload.checkout_readiness || { accepting_orders: true },
       store_profile: payload.store_profile,
+      site_content: payload.site_content,
     };
   } catch {
     return emptyStorefront;
@@ -236,10 +249,6 @@ function highlightItems(menu: StorefrontMenuItem[]): StorefrontMenuItem[] {
 
 function formatPrice(value: number) {
   return `${storeProfile.currency} ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
-}
-
-function itemImage(item: StorefrontMenuItem) {
-  return categoryImages[item.category] || categoryImages.Pizza;
 }
 
 const faqs = [
@@ -332,6 +341,15 @@ export default async function PublicHomePage() {
   const zones = storefront.delivery_zones.slice(0, 6);
   const acceptingOrders = storefront.checkout_readiness?.accepting_orders !== false;
   const profile = storefront.store_profile;
+  const siteContent = storefront.site_content;
+  const heroImageUrl = siteContent?.hero_image_url || heroImage;
+  const storyImageUrl = siteContent?.story_image_url || storyImage;
+  const categoryImageMap = {
+    ...categoryImages,
+    ...(siteContent?.category_images || {}),
+  };
+  const categoryImageFor = (category: string) =>
+    categoryImageMap[category] || categoryImageMap.Pizza;
   const storeName = profile?.name || storeProfile.name;
   const storeTagline = profile?.tagline || storeProfile.tagline;
   const storePhone = profile?.phone || storeProfile.phone;
@@ -406,7 +424,7 @@ export default async function PublicHomePage() {
       {/* Hero */}
       <section className="relative isolate overflow-hidden bg-[#17130f] text-white">
         <Image
-          src={heroImage}
+          src={heroImageUrl}
           alt="Freshly baked pizza with melted cheese and basil"
           fill
           priority
@@ -453,11 +471,14 @@ export default async function PublicHomePage() {
               Fresh dough · fired to order
             </p>
             <h1 className="mt-6 max-w-2xl text-4xl font-black leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-              Pizza that shows up <span className="text-amber-300">in a Blitz.</span>
+              {siteContent?.hero_title || "Pizza that shows up"}{" "}
+              <span className="text-amber-300">
+                {siteContent?.hero_highlight || "in a Blitz."}
+              </span>
             </h1>
             <p className="mt-6 max-w-xl text-base font-medium leading-7 text-white/80 sm:text-lg">
-              Hand-stretched pizza, loaded sides, thick shakes, and desserts — with server-verified
-              pricing, coupons that actually apply, and live tracking from oven to doorstep.
+              {siteContent?.hero_subtitle ||
+                "Hand-stretched pizza, loaded sides, thick shakes, and desserts — with server-verified pricing, coupons that actually apply, and live tracking from oven to doorstep."}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -565,7 +586,7 @@ export default async function PublicHomePage() {
                   />
                 ) : (
                   <Image
-                    src={itemImage(item)}
+                    src={categoryImageFor(item.category)}
                     alt={item.name}
                     fill
                     sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
@@ -700,7 +721,7 @@ export default async function PublicHomePage() {
         <div className="grid gap-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div className="relative h-72 overflow-hidden rounded-2xl sm:h-96 lg:h-[460px]">
             <Image
-              src={storyImage}
+              src={storyImageUrl}
               alt="Pizza kitchen at work"
               fill
               sizes="(min-width: 1024px) 45vw, 100vw"
@@ -708,7 +729,9 @@ export default async function PublicHomePage() {
             />
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17130f]/90 to-transparent p-6 text-white">
               <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-300">The kitchen</p>
-              <p className="mt-1 text-xl font-black">Small batches. Real ingredients. No shortcuts.</p>
+              <p className="mt-1 text-xl font-black">
+                {siteContent?.story_title || "Small batches. Real ingredients. No shortcuts."}
+              </p>
             </div>
           </div>
           <div>
@@ -717,9 +740,8 @@ export default async function PublicHomePage() {
               What good pizza service actually requires
             </h2>
             <p className="mt-3 max-w-xl text-sm font-medium leading-7 text-[#5a4f45]">
-              A restaurant is a supply chain, a kitchen, and a delivery network running at the same
-              time. These are the standards we hold ourselves to — from dough handling to the box
-              that reaches your door.
+              {siteContent?.story_body ||
+                "A restaurant is a supply chain, a kitchen, and a delivery network running at the same time. These are the standards we hold ourselves to — from dough handling to the box that reaches your door."}
             </p>
             <div className="mt-8 grid gap-4 sm:grid-cols-2">
               {standards.map((standard) => {

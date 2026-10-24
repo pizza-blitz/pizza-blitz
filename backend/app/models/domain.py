@@ -1244,3 +1244,19 @@ class MediaAsset(Base):
     tags = Column(JSON, default=list)
     uploaded_by = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class StorefrontContent(Base):
+    """Editable landing-page hero, story and category imagery."""
+
+    __tablename__ = "storefront_content"
+    id = Column(Integer, primary_key=True, index=True)
+    hero_title = Column(String(160), nullable=False)
+    hero_highlight = Column(String(120), nullable=False)
+    hero_subtitle = Column(Text, nullable=False)
+    hero_image_url = Column(String(500), nullable=True)
+    story_title = Column(String(200), nullable=False)
+    story_body = Column(Text, nullable=False)
+    story_image_url = Column(String(500), nullable=True)
+    category_images = Column(JSON, default=dict)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

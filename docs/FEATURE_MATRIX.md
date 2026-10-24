@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **345 API endpoints**, **60 routes/pages** (49 portal,
-1 KDS, 10 public), **152 browser proof scripts** plus portal smoke, **176 backend
-tests**, **76 database tables**, **19 integration points**.
+Numbers in this snapshot: **348 API endpoints**, **61 routes/pages** (50 portal,
+1 KDS, 10 public), **153 browser proof scripts** plus portal smoke, **178 backend
+tests**, **77 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -37,7 +37,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 
 | Capability | What exists today | Status | Enterprise expectation | Gap |
 |---|---|---|---|---|
-| Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Uploaded item images supported; brand hero assets still remote |
+| Landing page | Full landing page: live menu previews, offers, story, kitchen standards, delivery areas, FAQ, JSON-LD, responsive, plus an admin content editor for hero/story copy and imagery | Built | Brand story, offers, menu preview, service area, trust, FAQ, SEO, store info | Theme/FAQ/section-order editing later |
 | Menu browsing | `/order` catalog with categories/search and item images (uploaded or curated fallback) | Built | Fast filtered catalog, sold-out states, images | Channel-specific menus missing |
 | Product customization | Sizes, crusts, toppings, add-ons, combos with server-side pricing | Built | Same | — |
 | Cart and checkout | Cart, coupon, pickup/delivery, address, contact, payment choice, tips, scheduling | Built | Guest + saved checkout, tips, scheduling | Saved-cart recovery missing |
@@ -108,7 +108,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
-| Media Studio | Shared library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads | Built | One image library + picker | Landing CMS, stock/AI search, auto-crops and video later |
+| Media Studio | Shared library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing | Built | One image library + picker | Stock/AI search, auto-crops and video later |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | Per-channel price/availability/visibility for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | — |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
