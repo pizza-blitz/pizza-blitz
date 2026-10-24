@@ -49,7 +49,7 @@ class DepartmentRegistryTest(unittest.TestCase):
         self.assertEqual(modules["payroll"]["status"], "active")
         self.assertEqual(modules["onboarding"]["status"], "active")
         self.assertEqual(modules["documents"]["status"], "active")
-        self.assertEqual(modules["exits"]["status"], "planned")
+        self.assertEqual(modules["exits"]["status"], "active")
         self.assertIn("leave", modules)
 
         catalog = self.client.get(

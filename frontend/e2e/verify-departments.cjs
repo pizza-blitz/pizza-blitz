@@ -133,10 +133,7 @@ async function main() {
       "Documents should be active."
     );
     const exits = page.getByTestId("department-module-exits");
-    assert(
-      /planned/i.test(await exits.innerText()),
-      "Exits should be honestly marked planned."
-    );
+    assert(/active/i.test(await exits.innerText()), "Exits should be active.");
     const people = page.getByTestId("department-module-people");
     assert(/active/i.test(await people.innerText()), "People directory should be active.");
     const activeLink = page.getByTestId("department-module-overview");

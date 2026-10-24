@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 57 frontend routes, the 148 browser proof scripts plus portal smoke in
+- Listed all 58 frontend routes, the 149 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -95,6 +95,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 64 | HR payroll | There was no salary structure, monthly pay run, statutory deduction or payslip, so HR could not close pay inside the platform. | HR Payroll gap. | Added `hr_salary_structures`, `hr_pay_runs` and `hr_payslips` (migration), monthly draft/finalized runs, attendance/unpaid-leave proration, PF/ESI/professional-tax/TDS deductions, employer cost and printable payslips. Added `/departments/hr/payroll` with Pay runs and Salary structures tabs and activated the module. Two backend tests and a browser proof. Bank payouts, statutory filings and state-specific PT slabs remain. Also moved leave/department seeding to startup to avoid concurrent seed writes. |
 | 65 | HR onboarding | New hires had to be created directly in the employee directory; there was no candidate pipeline, checklist, document/verification tracking or guarded handoff to an employee. | HR Onboarding gap. | Added `hr_onboarding_candidates` and `hr_onboarding_tasks` (migration), candidate codes/statuses, six default document/verification/orientation tasks, task completion, summary and conversion only when the checklist is complete (or explicitly forced). Added `/departments/hr/onboarding` with create/detail/checklist/convert and activated the module. Two backend tests and a browser proof. Document uploads and e-signature remain. |
 | 66 | HR documents | There was no private employee document vault and no way to issue a verifiable offer/experience/relieving letter, so HR records lived outside the platform. | HR Documents gap. | Added `hr_documents` and `hr_letters` (migration), private PDF/JPEG/PNG/DOCX storage outside the public media mount, categories/visibility/expiry, download/delete, and offer/confirmation/experience/relieving letter generation with public verification codes and printable HTML. Added `/departments/hr/documents` with Documents/Letters tabs and activated the module. Two backend tests and a browser proof. E-signature and custom letter templates remain. |
+| 67 | HR exits | Offboarding had no exit record, notice tracking, clearance checklist or final-settlement estimate, and settling an employee did not revoke POS access. | HR Exits gap. | Added `hr_exits` and `hr_exit_clearance` (migration), resignation/termination/absconding/retirement, notice days, six clearance tasks, settlement preview (pending salary, leave encashment, gratuity, notice recovery), settlement lock, employee exit and linked POS credential deactivation. Added `/departments/hr/exits`. Two backend tests and a browser proof. Statutory F&F review remains. |
 
 ## Still open
 
@@ -109,7 +110,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 168 tests, all pass (in a clean venv built from
+- Backend unit suite: 170 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

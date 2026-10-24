@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **332 API endpoints**, **57 routes/pages** (46 portal,
-1 KDS, 10 public), **148 browser proof scripts** plus portal smoke, **168 backend
-tests**, **73 database tables**, **19 integration points**.
+Numbers in this snapshot: **340 API endpoints**, **58 routes/pages** (47 portal,
+1 KDS, 10 public), **149 browser proof scripts** plus portal smoke, **170 backend
+tests**, **75 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -198,7 +198,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Attendance | Attendance command | Built | Biometric/PIN clock, geofence | Partial |
 | Payroll preview | Hours × rate preview | Built | Full payroll, tips, statutory | Partial |
 | Staff credentials | Managed staff login plus granular staff permission toggles (orders, kitchen, delivery, refunds, reports, settings, staff) | Built | Granular permissions | Per-user permission sets missing (role-level only) |
-| HR department | People & HR as a department with working People, Leave, Attendance, Payroll, Onboarding and Documents/Letters modules; exits listed with Euron pilot status | Partial | Full HRMS and payroll | Exits still planned |
+| HR department | People & HR as a department with People, Leave, Attendance, Payroll, Onboarding, Documents/Letters and Exits all live | Built | Full HRMS and payroll | Department-scoped permissions and statutory filing later |
 
 ## 13. Admin, platform, security, integrations
 
@@ -219,6 +219,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | HR payroll | Salary structures, monthly draft/finalized pay runs, attendance/leave-aware proration, PF/ESI/professional-tax/TDS deductions, payslips and employer cost | Built | Payroll + payslips | Bank payouts, statutory filings and state-specific PT slabs later |
 | HR onboarding | Candidate pipeline, document/verification checklist, task completion, status tracking and guarded conversion to an employee | Built | Onboarding workflow | Document uploads/e-signature later |
 | HR documents | Private employee vault (PDF/JPEG/PNG/DOCX, categories, visibility, expiry, download/delete) and offer/confirmation/experience/relieving letters with public verification codes and print view | Built | Document vault + letters | E-signature and templated custom letters later |
+| HR exits | Resignation/termination/absconding/retirement, notice, clearance checklist, final-settlement estimate, employee exit and POS access revocation on settlement | Built | Offboarding + F&F | Statutory F&F review and custom clearance templates later |
 | Multi-store / franchise | Store registry, per-store profile/hours, store-scoped orders/stock, consolidated reporting and POS hardware | Built | Tenant hierarchy, per-store config | Per-store menus/overrides missing |
 | API keys / webhooks | Aggregator HMAC tokens, signed inbound order webhooks, signed outbound status/menu webhooks | Built | Public API + outbound webhooks | General public API keys missing |
 | Observability | Request IDs, structured exception/error logs, client error monitor, health probes | Partial | Error tracking, metrics, traces | External APM/Sentry and metrics missing |

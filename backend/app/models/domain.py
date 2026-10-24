@@ -1192,3 +1192,40 @@ class HRLetter(Base):
     issued_by = Column(String(120), nullable=True)
     issued_at = Column(DateTime, default=datetime.utcnow, index=True)
     employee = relationship("HREmployee")
+
+
+class HRExit(Base):
+    __tablename__ = "hr_exits"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), unique=True, index=True, nullable=False
+    )
+    exit_type = Column(String(30), nullable=False, default="resignation")
+    status = Column(String(30), nullable=False, default="initiated", index=True)
+    resignation_date = Column(Date, nullable=False)
+    last_working_date = Column(Date, nullable=False, index=True)
+    notice_days = Column(Integer, nullable=False, default=30)
+    reason = Column(String(500), nullable=True)
+    settlement = Column(JSON, default=dict)
+    settled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    employee = relationship("HREmployee")
+    clearance_tasks = relationship(
+        "HRExitClearance", back_populates="exit", cascade="all, delete-orphan"
+    )
+
+
+class HRExitClearance(Base):
+    __tablename__ = "hr_exit_clearance"
+    id = Column(Integer, primary_key=True, index=True)
+    exit_id = Column(
+        Integer, ForeignKey("hr_exits.id"), index=True, nullable=False
+    )
+    title = Column(String(160), nullable=False)
+    department = Column(String(60), nullable=False, default="HR")
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    notes = Column(String(500), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=100)
+    cleared_at = Column(DateTime, nullable=True)
+    exit = relationship("HRExit", back_populates="clearance_tasks")

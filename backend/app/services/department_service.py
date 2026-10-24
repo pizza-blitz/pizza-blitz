@@ -456,6 +456,7 @@ def ensure_departments(db: Session) -> None:
                 "payroll": "/departments/hr/payroll",
                 "onboarding": "/departments/hr/onboarding",
                 "documents": "/departments/hr/documents",
+                "exits": "/departments/hr/exits",
             }
             db.flush()
             for module_key, route in active_routes.items():
