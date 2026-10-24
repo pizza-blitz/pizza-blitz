@@ -5,7 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.core.config import settings
+from app.services.provider_settings_service import effective_config
 
 
 META_OBJECTIVES = {
@@ -26,18 +26,21 @@ class AdProviderResult:
     error: Optional[str] = None
 
 
-def ad_provider_status() -> dict:
+def ad_provider_status(db=None) -> dict:
+    config = effective_config("ads", db)
+    values = config["values"]
     missing_settings: list[str] = []
-    if not settings.ADS_LAUNCH_ENABLED:
+    if not config["enabled"]:
         missing_settings.append("ADS_LAUNCH_ENABLED=true")
-    if not settings.META_AD_ACCOUNT_ID:
+    if not values.get("META_AD_ACCOUNT_ID"):
         missing_settings.append("META_AD_ACCOUNT_ID")
-    if not settings.META_AD_ACCESS_TOKEN:
+    if not values.get("META_AD_ACCESS_TOKEN"):
         missing_settings.append("META_AD_ACCESS_TOKEN")
 
     return {
         "provider": "meta-ads",
-        "enabled": settings.ADS_LAUNCH_ENABLED,
+        "enabled": config["enabled"],
+        "source": config["source"],
         "configured": not missing_settings,
         "missing_settings": missing_settings,
         "launch_mode": "paused_campaign",
@@ -50,8 +53,9 @@ def launch_meta_campaign(
     objective: str,
     daily_budget: float,
     lifetime_budget: float,
+    db=None,
 ) -> AdProviderResult:
-    status = ad_provider_status()
+    status = ad_provider_status(db)
     if not status["configured"]:
         return AdProviderResult(
             provider="meta-ads",
@@ -59,9 +63,10 @@ def launch_meta_campaign(
             error=f"Provider not configured: {', '.join(status['missing_settings'])}",
             response_payload={"provider_status": status},
         )
+    config = effective_config("ads", db)["values"]
 
     payload: dict[str, Any] = {
-        "access_token": settings.META_AD_ACCESS_TOKEN or "",
+        "access_token": config.get("META_AD_ACCESS_TOKEN", ""),
         "name": name,
         "objective": META_OBJECTIVES.get(objective, "OUTCOME_TRAFFIC"),
         "status": "PAUSED",
@@ -73,9 +78,9 @@ def launch_meta_campaign(
     if lifetime_budget > 0:
         payload["lifetime_budget"] = _minor_units(lifetime_budget)
 
-    account_id = _ad_account_id(settings.META_AD_ACCOUNT_ID or "")
+    account_id = _ad_account_id(config.get("META_AD_ACCOUNT_ID", ""))
     response = _post_form(
-        f"https://graph.facebook.com/{settings.META_GRAPH_VERSION}/{account_id}/campaigns",
+        f"https://graph.facebook.com/{config.get('META_GRAPH_VERSION') or 'v25.0'}/{account_id}/campaigns",
         payload,
     )
     return _result_from_response("meta-ads", response)

@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 62 frontend routes, the 154 browser proof scripts plus portal smoke in
+- Listed all 63 frontend routes, the 155 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -101,6 +101,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 70 | Media workflow | Menu images uploaded one at a time; social/ads required a pasted public URL; landing images were code constants. There was no shared asset library, reuse, search or safe delete. | Media gap. | Added `media_assets` (migration), `/restaurant/media/assets` upload/list/delete with magic-byte validation, search/tags and usage guards, menu uploads registering automatically, `/settings/media` Media Studio, and one `MediaPicker` reused by menu, social and ad forms. Two backend tests and `verify:media-studio`. Landing CMS, stock/AI search, auto-crops and video remain. |
 | 71 | Landing content | Hero/story copy and images were code constants; changing the brand page required a deploy, and category imagery could not be managed from the portal. | Landing CMS gap. | Added `storefront_content` (migration), `/restaurant/storefront-content` admin GET/PUT/reset, public `site_content` in the storefront bootstrap, and `/settings/content` with live preview, Media Studio pickers for hero/story/category images, on-demand revalidation and restore defaults. Two backend tests and `verify:landing-cms`. Theme, FAQ and section-order editing remain. |
 | 72 | Tax and billing | GST was hardcoded at 5% in order creation, coupon quotes, aggregator intake, invoice CGST/SGST and three frontend estimates; tax labels and tips were code constants. | Billing-config gap. | Added `billing_settings` (migration), authenticated GET/PUT plus public settings and bootstrap exposure, `/settings/billing` for rate/label/footer/tip presets, and wired orders, coupon validation, aggregator intake, POS counter/order estimates, invoice split and invoice archive footer. Two backend tests and `verify:billing-settings`. Tax-inclusive pricing, service charge and slabs remain. |
+| 73 | Provider credentials | Email/SMS/WhatsApp/social/ads credentials lived only in environment variables; an owner could see readiness but could not edit, rotate or validate them from the portal. | Provider-config gap. | Added `provider_settings` (migration), Fernet-encrypted credentials derived from the app secret, authenticated list/read/save/validate/reset, public-safe masked reads, and `/settings/providers`. Campaign, social and ads readiness/send paths resolve the stored config with per-field environment fallback. Three backend tests and `verify:provider-settings`. Payment credentials and live provider verification remain. |
 
 ## Still open
 
@@ -115,7 +116,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 180 tests, all pass (in a clean venv built from
+- Backend unit suite: 183 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

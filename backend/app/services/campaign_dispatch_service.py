@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.core.config import settings
+from app.services.provider_settings_service import effective_config
 
 
 @dataclass
@@ -18,37 +19,42 @@ class CampaignProviderResult:
     error: Optional[str] = None
 
 
-def campaign_provider_status(channel: str) -> dict:
+def campaign_provider_status(channel: str, db=None) -> dict:
     channel = channel.lower()
     provider = _provider_name(channel)
+    config = effective_config(_provider_key(channel), db)
+    values = config["values"]
     missing_settings: list[str] = []
-    unsupported = False
+    unsupported = provider == "unsupported"
 
-    if not settings.CAMPAIGN_SEND_ENABLED:
+    if not config["enabled"]:
         missing_settings.append("CAMPAIGN_SEND_ENABLED=true")
+        missing_settings.append("Enable this provider in Settings > Providers")
 
     if channel == "email":
         if provider != "resend":
             unsupported = True
-        if not settings.RESEND_API_KEY:
+        if not values.get("RESEND_API_KEY"):
             missing_settings.append("RESEND_API_KEY")
-        if not settings.RESEND_FROM_EMAIL:
+        if not values.get("RESEND_FROM_EMAIL"):
             missing_settings.append("RESEND_FROM_EMAIL")
     elif channel == "sms":
         if provider != "twilio":
             unsupported = True
-        if not settings.TWILIO_ACCOUNT_SID:
+        if not values.get("TWILIO_ACCOUNT_SID"):
             missing_settings.append("TWILIO_ACCOUNT_SID")
-        if not settings.TWILIO_AUTH_TOKEN:
+        if not values.get("TWILIO_AUTH_TOKEN"):
             missing_settings.append("TWILIO_AUTH_TOKEN")
-        if not settings.TWILIO_FROM_NUMBER and not settings.TWILIO_MESSAGING_SERVICE_SID:
+        if not values.get("TWILIO_FROM_NUMBER") and not values.get(
+            "TWILIO_MESSAGING_SERVICE_SID"
+        ):
             missing_settings.append("TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID")
     elif channel == "whatsapp":
         if provider != "meta":
             unsupported = True
-        if not settings.WHATSAPP_ACCESS_TOKEN:
+        if not values.get("WHATSAPP_ACCESS_TOKEN"):
             missing_settings.append("WHATSAPP_ACCESS_TOKEN")
-        if not settings.WHATSAPP_PHONE_NUMBER_ID:
+        if not values.get("WHATSAPP_PHONE_NUMBER_ID"):
             missing_settings.append("WHATSAPP_PHONE_NUMBER_ID")
     else:
         unsupported = True
@@ -56,7 +62,8 @@ def campaign_provider_status(channel: str) -> dict:
     return {
         "channel": channel,
         "provider": provider,
-        "enabled": settings.CAMPAIGN_SEND_ENABLED,
+        "enabled": config["enabled"],
+        "source": config["source"],
         "configured": bool(not unsupported and not missing_settings),
         "unsupported": unsupported,
         "missing_settings": missing_settings,
@@ -69,8 +76,9 @@ def send_campaign_message(
     destination: str,
     message: str,
     subject: str,
+    db=None,
 ) -> CampaignProviderResult:
-    status = campaign_provider_status(channel)
+    status = campaign_provider_status(channel, db)
     if not status["configured"]:
         return CampaignProviderResult(
             provider=status["provider"],
@@ -79,12 +87,17 @@ def send_campaign_message(
             response_payload={"provider_status": status},
         )
 
+    config = effective_config(_provider_key(channel), db)["values"]
     if channel == "email":
-        return _send_resend_email(destination=destination, subject=subject, message=message)
+        return _send_resend_email(
+            destination=destination, subject=subject, message=message, config=config
+        )
     if channel == "sms":
-        return _send_twilio_sms(destination=destination, message=message)
+        return _send_twilio_sms(destination=destination, message=message, config=config)
     if channel == "whatsapp":
-        return _send_meta_whatsapp(destination=destination, message=message)
+        return _send_meta_whatsapp(
+            destination=destination, message=message, config=config
+        )
     return CampaignProviderResult(
         provider=status["provider"],
         status="failed",
@@ -105,6 +118,12 @@ def normalize_campaign_destination(channel: str, destination: Optional[str]) -> 
     return destination.strip()
 
 
+def _provider_key(channel: str) -> str:
+    return {"email": "email", "sms": "sms", "whatsapp": "whatsapp"}.get(
+        channel, "email"
+    )
+
+
 def _provider_name(channel: str) -> str:
     if channel == "email":
         return settings.EMAIL_PROVIDER.lower()
@@ -120,9 +139,10 @@ def _send_resend_email(
     destination: str,
     subject: str,
     message: str,
+    config: dict,
 ) -> CampaignProviderResult:
     payload = {
-        "from": settings.RESEND_FROM_EMAIL,
+        "from": config.get("RESEND_FROM_EMAIL"),
         "to": [destination],
         "subject": subject,
         "text": message,
@@ -131,41 +151,49 @@ def _send_resend_email(
     response = _post_json(
         "https://api.resend.com/emails",
         payload,
-        {"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+        {"Authorization": f"Bearer {config.get('RESEND_API_KEY', '')}"},
     )
     return _result_from_response("resend", response, lambda body: body.get("id"))
 
 
-def _send_twilio_sms(*, destination: str, message: str) -> CampaignProviderResult:
+def _send_twilio_sms(
+    *, destination: str, message: str, config: dict
+) -> CampaignProviderResult:
     payload = {
         "To": _e164_phone(destination),
         "Body": message,
     }
-    if settings.TWILIO_MESSAGING_SERVICE_SID:
-        payload["MessagingServiceSid"] = settings.TWILIO_MESSAGING_SERVICE_SID
+    if config.get("TWILIO_MESSAGING_SERVICE_SID"):
+        payload["MessagingServiceSid"] = config["TWILIO_MESSAGING_SERVICE_SID"]
     else:
-        payload["From"] = settings.TWILIO_FROM_NUMBER or ""
+        payload["From"] = config.get("TWILIO_FROM_NUMBER") or ""
 
-    credentials = f"{settings.TWILIO_ACCOUNT_SID}:{settings.TWILIO_AUTH_TOKEN}".encode("utf-8")
+    credentials = (
+        f"{config.get('TWILIO_ACCOUNT_SID', '')}:{config.get('TWILIO_AUTH_TOKEN', '')}"
+    ).encode("utf-8")
     auth_header = base64.b64encode(credentials).decode("ascii")
     response = _post_form(
-        f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json",
+        f"https://api.twilio.com/2010-04-01/Accounts/{config.get('TWILIO_ACCOUNT_SID', '')}/Messages.json",
         payload,
         {"Authorization": f"Basic {auth_header}"},
     )
     return _result_from_response("twilio", response, lambda body: body.get("sid"))
 
 
-def _send_meta_whatsapp(*, destination: str, message: str) -> CampaignProviderResult:
+def _send_meta_whatsapp(
+    *, destination: str, message: str, config: dict
+) -> CampaignProviderResult:
     to_number = normalize_campaign_destination("whatsapp", destination)
-    if settings.WHATSAPP_TEMPLATE_NAME:
+    if config.get("WHATSAPP_TEMPLATE_NAME"):
         payload: dict[str, Any] = {
             "messaging_product": "whatsapp",
             "to": to_number,
             "type": "template",
             "template": {
-                "name": settings.WHATSAPP_TEMPLATE_NAME,
-                "language": {"code": settings.WHATSAPP_TEMPLATE_LANGUAGE},
+                "name": config["WHATSAPP_TEMPLATE_NAME"],
+                "language": {
+                    "code": config.get("WHATSAPP_TEMPLATE_LANGUAGE") or "en_US"
+                },
                 "components": [
                     {
                         "type": "body",
@@ -185,11 +213,11 @@ def _send_meta_whatsapp(*, destination: str, message: str) -> CampaignProviderRe
 
     response = _post_json(
         (
-            f"https://graph.facebook.com/{settings.WHATSAPP_GRAPH_VERSION}/"
-            f"{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+            f"https://graph.facebook.com/{config.get('WHATSAPP_GRAPH_VERSION') or 'v25.0'}/"
+            f"{config.get('WHATSAPP_PHONE_NUMBER_ID', '')}/messages"
         ),
         payload,
-        {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"},
+        {"Authorization": f"Bearer {config.get('WHATSAPP_ACCESS_TOKEN', '')}"},
     )
     return _result_from_response(
         "meta-whatsapp",

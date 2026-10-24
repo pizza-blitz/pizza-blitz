@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **351 API endpoints**, **62 routes/pages** (51 portal,
-1 KDS, 10 public), **154 browser proof scripts** plus portal smoke, **180 backend
-tests**, **78 database tables**, **19 integration points**.
+Numbers in this snapshot: **356 API endpoints**, **63 routes/pages** (52 portal,
+1 KDS, 10 public), **155 browser proof scripts** plus portal smoke, **183 backend
+tests**, **79 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -212,7 +212,8 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Readiness | Production ops, launch candidate, acceptance and a deployment checklist (DB, migrations, secret, admin, CORS, media, payments, headers) with commands | Built | Uptime/alerting/monitoring | External Sentry-style monitoring missing |
 | Health probes | `/health`, `/ready` (DB) | Built | Same | — |
 | Rate limiting | Per-instance sliding window | Built | Shared/edge limiter | Documented upgrade |
-| Config | Env-based, timezone, secrets guard | Built | Feature flags, per-store settings | Partial |
+| Config | Env-based defaults, timezone, secrets guard; tax/billing, landing content and provider credentials are database-backed admin settings | Built | Feature flags, per-store settings | Per-store overrides and feature flags partial |
+| Providers | Encrypted provider registry for email/SMS/WhatsApp/social/ads with environment fallback, masked reads, validate and reset; campaign/social/ads readiness reads stored config | Built | Encrypted credentials + readiness | Payment providers and live verification later |
 | Department registry | Operations and People & HR seeded; departments own modules and members | Built | Department/module extensibility | Per-department permissions later |
 | HR people directory | Employee mirror with code, designation, employment type/status, joining date, store, reporting line and optional POS staff link; search/filter and summary | Built | Employee master + org chart | Payroll/leave/onboarding/exits still planned |
 | HR leave | Leave types, per-employee/year balances, requests, approvals/rejections/cancellation, holiday calendar and summary | Built | Leave policy + balances + approvals | Accrual rules and payroll deduction integration later |

@@ -5,7 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from app.core.config import settings
+from app.services.provider_settings_service import effective_config
 
 
 @dataclass
@@ -17,24 +17,26 @@ class SocialPublishResult:
     error: Optional[str] = None
 
 
-def social_provider_status(platform: str) -> dict:
+def social_provider_status(platform: str, db=None) -> dict:
     platform = platform.lower()
     provider = _provider_name(platform)
+    config = effective_config("social", db)
+    values = config["values"]
     missing_settings: list[str] = []
     unsupported = False
 
-    if not settings.SOCIAL_PUBLISH_ENABLED:
+    if not config["enabled"]:
         missing_settings.append("SOCIAL_PUBLISH_ENABLED=true")
 
     if platform == "facebook":
-        if not settings.FACEBOOK_PAGE_ID:
+        if not values.get("FACEBOOK_PAGE_ID"):
             missing_settings.append("FACEBOOK_PAGE_ID")
-        if not settings.FACEBOOK_PAGE_ACCESS_TOKEN:
+        if not values.get("FACEBOOK_PAGE_ACCESS_TOKEN"):
             missing_settings.append("FACEBOOK_PAGE_ACCESS_TOKEN")
     elif platform == "instagram":
-        if not settings.INSTAGRAM_BUSINESS_ACCOUNT_ID:
+        if not values.get("INSTAGRAM_BUSINESS_ACCOUNT_ID"):
             missing_settings.append("INSTAGRAM_BUSINESS_ACCOUNT_ID")
-        if not settings.INSTAGRAM_ACCESS_TOKEN:
+        if not values.get("INSTAGRAM_ACCESS_TOKEN"):
             missing_settings.append("INSTAGRAM_ACCESS_TOKEN")
     else:
         unsupported = True
@@ -42,7 +44,8 @@ def social_provider_status(platform: str) -> dict:
     return {
         "platform": platform,
         "provider": provider,
-        "enabled": settings.SOCIAL_PUBLISH_ENABLED,
+        "enabled": config["enabled"],
+        "source": config["source"],
         "configured": bool(not unsupported and not missing_settings),
         "unsupported": unsupported,
         "missing_settings": missing_settings,
@@ -55,9 +58,10 @@ def publish_social_post(
     message: str,
     link_url: Optional[str] = None,
     image_url: Optional[str] = None,
+    db=None,
 ) -> SocialPublishResult:
     platform = platform.lower()
-    status = social_provider_status(platform)
+    status = social_provider_status(platform, db)
     if not status["configured"]:
         return SocialPublishResult(
             provider=status["provider"],
@@ -66,10 +70,18 @@ def publish_social_post(
             response_payload={"provider_status": status},
         )
 
+    config = effective_config("social", db)["values"]
     if platform == "facebook":
-        return _publish_facebook_page(message=message, link_url=link_url, image_url=image_url)
+        return _publish_facebook_page(
+            message=message,
+            link_url=link_url,
+            image_url=image_url,
+            config=config,
+        )
     if platform == "instagram":
-        return _publish_instagram_media(message=message, image_url=image_url)
+        return _publish_instagram_media(
+            message=message, image_url=image_url, config=config
+        )
 
     return SocialPublishResult(
         provider=status["provider"],
@@ -84,12 +96,14 @@ def _publish_facebook_page(
     message: str,
     link_url: Optional[str],
     image_url: Optional[str],
+    config: dict,
 ) -> SocialPublishResult:
+    graph = config.get("META_GRAPH_VERSION") or "v25.0"
     if image_url:
         response = _post_form(
-            f"https://graph.facebook.com/{settings.META_GRAPH_VERSION}/{settings.FACEBOOK_PAGE_ID}/photos",
+            f"https://graph.facebook.com/{graph}/{config.get('FACEBOOK_PAGE_ID', '')}/photos",
             {
-                "access_token": settings.FACEBOOK_PAGE_ACCESS_TOKEN or "",
+                "access_token": config.get("FACEBOOK_PAGE_ACCESS_TOKEN", ""),
                 "url": image_url,
                 "caption": message,
             },
@@ -97,19 +111,21 @@ def _publish_facebook_page(
         return _result_from_response("meta-facebook", response, lambda body: body.get("post_id") or body.get("id"))
 
     payload = {
-        "access_token": settings.FACEBOOK_PAGE_ACCESS_TOKEN or "",
+        "access_token": config.get("FACEBOOK_PAGE_ACCESS_TOKEN", ""),
         "message": message,
     }
     if link_url:
         payload["link"] = link_url
     response = _post_form(
-        f"https://graph.facebook.com/{settings.META_GRAPH_VERSION}/{settings.FACEBOOK_PAGE_ID}/feed",
+        f"https://graph.facebook.com/{graph}/{config.get('FACEBOOK_PAGE_ID', '')}/feed",
         payload,
     )
     return _result_from_response("meta-facebook", response, lambda body: body.get("id"))
 
 
-def _publish_instagram_media(*, message: str, image_url: Optional[str]) -> SocialPublishResult:
+def _publish_instagram_media(
+    *, message: str, image_url: Optional[str], config: dict
+) -> SocialPublishResult:
     if not image_url:
         return SocialPublishResult(
             provider="meta-instagram",
@@ -117,13 +133,15 @@ def _publish_instagram_media(*, message: str, image_url: Optional[str]) -> Socia
             error="Instagram publishing requires an image_url.",
         )
 
+    graph = config.get("META_GRAPH_VERSION") or "v25.0"
+    instagram_id = config.get("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
     create_response = _post_form(
         (
-            f"https://graph.facebook.com/{settings.META_GRAPH_VERSION}/"
-            f"{settings.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media"
+            f"https://graph.facebook.com/{graph}/"
+            f"{instagram_id}/media"
         ),
         {
-            "access_token": settings.INSTAGRAM_ACCESS_TOKEN or "",
+            "access_token": config.get("INSTAGRAM_ACCESS_TOKEN", ""),
             "image_url": image_url,
             "caption": message,
         },
@@ -135,11 +153,11 @@ def _publish_instagram_media(*, message: str, image_url: Optional[str]) -> Socia
     creation_id = create_body.get("id")
     publish_response = _post_form(
         (
-            f"https://graph.facebook.com/{settings.META_GRAPH_VERSION}/"
-            f"{settings.INSTAGRAM_BUSINESS_ACCOUNT_ID}/media_publish"
+            f"https://graph.facebook.com/{graph}/"
+            f"{instagram_id}/media_publish"
         ),
         {
-            "access_token": settings.INSTAGRAM_ACCESS_TOKEN or "",
+            "access_token": config.get("INSTAGRAM_ACCESS_TOKEN", ""),
             "creation_id": creation_id,
         },
     )

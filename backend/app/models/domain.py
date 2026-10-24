@@ -1272,3 +1272,15 @@ class BillingSettings(Base):
     invoice_footer = Column(String(255), nullable=True)
     tip_presets = Column(JSON, default=lambda: [0, 5, 10, 15])
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProviderSetting(Base):
+    """Encrypted provider credentials with environment fallback."""
+
+    __tablename__ = "provider_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(60), unique=True, index=True, nullable=False)
+    credentials_encrypted = Column(Text, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    updated_by = Column(String(120), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

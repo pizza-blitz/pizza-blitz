@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 180 backend tests, 154 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 183 backend tests, 155 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -215,11 +215,14 @@ Wave 4 (in progress):
 - Tax & billing is live: `/settings/billing` controls tax rate/label, invoice footer and tip
   presets; orders, coupon quotes, aggregator intake, POS estimates and invoice CGST/SGST use
   the configured rate; new `verify:billing-settings` proof and two backend tests.
-- Next: provider settings registry, messaging inbox/journeys, marketing hub and hiring pipeline.
+- Providers is live: encrypted email/SMS/WhatsApp/social/ads credentials at
+  `/settings/providers`, masked reads, validation, reset to environment fallback, and live
+  readiness wiring; new `verify:provider-settings` proof and three backend tests.
+- Next: payment credentials, messaging inbox/journeys, marketing hub and hiring pipeline.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 180 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 183 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the
