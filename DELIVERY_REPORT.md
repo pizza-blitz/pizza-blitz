@@ -3,7 +3,7 @@
 **Status:** delivered for local/staging evaluation; production launch depends on the
 provider and deployment gates below.
 **Master access:** `admin` / `admin123` at `/login` (development defaults).
-**Verification:** 164 backend tests, 146 browser proofs + portal smoke, full audit green,
+**Verification:** 166 backend tests, 147 browser proofs + portal smoke, full audit green,
 production build green with the API offline.
 
 ---
@@ -19,11 +19,11 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Staff counter/POS | `/counter`, `/orders`, `/kds` | Walk-in orders, table service, payments, receipts, kitchen tickets, item-level bump/recall |
 | Kitchen display | `/kds`, `/kitchen-ticket/[id]` | Station board, SLAs, per-line start/bump/recall, print tickets |
 | Rider app | `/rider/[token]` | Assigned deliveries, GPS, proof of delivery |
-| Owner/admin portal | 44 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing, reports, stores, departments/HR, hardware, integrations, deployment, feedback |
+| Owner/admin portal | 45 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing, reports, stores, departments/HR, hardware, integrations, deployment, feedback |
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
-**Current inventory:** 316 API endpoints, 55 frontend routes (44 portal, 1 KDS,
-10 public), 69 database tables, 164 backend tests, 146 browser proof scripts.
+**Current inventory:** 324 API endpoints, 56 frontend routes (45 portal, 1 KDS,
+10 public), 71 database tables, 166 backend tests, 147 browser proof scripts.
 
 ### Core capabilities
 
@@ -106,7 +106,7 @@ Run from the repository root:
 
 ```powershell
 cd backend
-python -W error::FutureWarning -m unittest discover -s tests -v   # 164 tests
+python -W error::FutureWarning -m unittest discover -s tests -v   # 166 tests
 alembic upgrade head
 alembic check                                                      # no pending operations
 ruff check .
@@ -115,13 +115,13 @@ cd ..\frontend
 npm run typecheck
 npm run lint
 npm run build                                                      # API offline
-npm run verify:audit                                               # 146 proofs + audit
+npm run verify:audit                                               # 147 proofs + audit
 npm run test:e2e                                                   # portal smoke
 ```
 
 Latest recorded results:
 
-- backend suite: **164 passed**;
+- backend suite: **166 passed**;
 - audit: **green** (surface, inventory, action hygiene and all 32 proof groups);
 - production build: **compiled successfully** with the backend stopped;
 - migrations: fresh upgrade + `alembic check` clean;

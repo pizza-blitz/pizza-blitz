@@ -124,8 +124,13 @@ async function main() {
     assert(/active/i.test(await payroll.innerText()), "Payroll should be active.");
     const onboarding = page.getByTestId("department-module-onboarding");
     assert(
-      /planned/i.test(await onboarding.innerText()),
-      "Onboarding should be honestly marked planned."
+      /active/i.test(await onboarding.innerText()),
+      "Onboarding should be active."
+    );
+    const documents = page.getByTestId("department-module-documents");
+    assert(
+      /planned/i.test(await documents.innerText()),
+      "Documents should be honestly marked planned."
     );
     const people = page.getByTestId("department-module-people");
     assert(/active/i.test(await people.innerText()), "People directory should be active.");

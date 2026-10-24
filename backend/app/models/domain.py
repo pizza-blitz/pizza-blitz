@@ -1110,3 +1110,49 @@ class HRPayslip(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     run = relationship("HRPayRun", back_populates="payslips")
     employee = relationship("HREmployee")
+
+
+class HROnboardingCandidate(Base):
+    __tablename__ = "hr_onboarding_candidates"
+    id = Column(Integer, primary_key=True, index=True)
+    candidate_code = Column(String(40), unique=True, index=True, nullable=False)
+    full_name = Column(String(160), nullable=False)
+    email = Column(String(200), unique=True, index=True, nullable=True)
+    phone = Column(String(30), nullable=True)
+    designation = Column(String(120), nullable=True)
+    employment_type = Column(String(30), nullable=False, default="full_time")
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    expected_joining_date = Column(Date, nullable=True)
+    status = Column(String(30), nullable=False, default="documents_pending", index=True)
+    source = Column(String(80), nullable=True)
+    notes = Column(String(1000), nullable=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), unique=True, index=True, nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    store = relationship("Store")
+    employee = relationship("HREmployee")
+    tasks = relationship(
+        "HROnboardingTask", back_populates="candidate", cascade="all, delete-orphan"
+    )
+
+
+class HROnboardingTask(Base):
+    __tablename__ = "hr_onboarding_tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    candidate_id = Column(
+        Integer,
+        ForeignKey("hr_onboarding_candidates.id"),
+        index=True,
+        nullable=False,
+    )
+    title = Column(String(160), nullable=False)
+    category = Column(String(40), nullable=False, default="documents")
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    due_date = Column(Date, nullable=True)
+    notes = Column(String(500), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=100)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    candidate = relationship("HROnboardingCandidate", back_populates="tasks")

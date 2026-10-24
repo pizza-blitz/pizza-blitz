@@ -47,7 +47,8 @@ class DepartmentRegistryTest(unittest.TestCase):
         modules = {row["key"]: row for row in hr.json()["modules"]}
         self.assertEqual(modules["overview"]["status"], "active")
         self.assertEqual(modules["payroll"]["status"], "active")
-        self.assertEqual(modules["onboarding"]["status"], "planned")
+        self.assertEqual(modules["onboarding"]["status"], "active")
+        self.assertEqual(modules["documents"]["status"], "planned")
         self.assertIn("leave", modules)
 
         catalog = self.client.get(
