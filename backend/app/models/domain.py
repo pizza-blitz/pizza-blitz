@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Date, Numeric, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Date, Numeric, UniqueConstraint, Text
 from sqlalchemy.orm import relationship
 from datetime import date, datetime
 from app.db.base import Base
@@ -1156,3 +1156,39 @@ class HROnboardingTask(Base):
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     candidate = relationship("HROnboardingCandidate", back_populates="tasks")
+
+
+class HRDocument(Base):
+    __tablename__ = "hr_documents"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=False
+    )
+    category = Column(String(40), nullable=False, default="other", index=True)
+    title = Column(String(160), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    mime_type = Column(String(120), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    storage_path = Column(String(500), nullable=False)
+    visibility = Column(String(20), nullable=False, default="hr")
+    expires_at = Column(Date, nullable=True, index=True)
+    notes = Column(String(500), nullable=True)
+    uploaded_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    employee = relationship("HREmployee")
+
+
+class HRLetter(Base):
+    __tablename__ = "hr_letters"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=False
+    )
+    letter_type = Column(String(30), nullable=False, index=True)
+    title = Column(String(160), nullable=False)
+    content_html = Column(Text, nullable=False)
+    verification_code = Column(String(40), unique=True, index=True, nullable=False)
+    status = Column(String(20), nullable=False, default="issued", index=True)
+    issued_by = Column(String(120), nullable=True)
+    issued_at = Column(DateTime, default=datetime.utcnow, index=True)
+    employee = relationship("HREmployee")

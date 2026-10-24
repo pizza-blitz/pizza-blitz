@@ -177,6 +177,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] HR Attendance & time clock.
 - [x] HR Payroll & payslips.
 - [x] HR Onboarding pipeline.
-- [ ] HR documents/letters, exits, permissions.
+- [x] HR Documents & letters.
+- [ ] HR exits/settlement, department permissions.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
