@@ -15,6 +15,7 @@ from app.models.domain import (
     Recipe,
     RestaurantOrder,
 )
+from app.services.media_library_service import register_asset
 from app.services.media_service import delete_menu_image, save_menu_image
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
@@ -418,6 +419,8 @@ def update_or_create_menu(
         db_item.selling_price = item.selling_price
         db_item.cost_price = item.cost_price
         db_item.is_available = item.is_available
+        if item.image_url is not None:
+            db_item.image_url = item.image_url.strip()[:500] or None
         if item.image_alt is not None:
             db_item.image_alt = item.image_alt.strip()[:255] or None
         db_item.allergens = allergens
@@ -433,6 +436,7 @@ def update_or_create_menu(
             selling_price=item.selling_price,
             cost_price=item.cost_price,
             is_available=item.is_available,
+            image_url=(item.image_url or "").strip()[:500] or None,
             image_alt=(item.image_alt or "").strip()[:255] or None,
             allergens=allergens,
             dietary_tags=dietary_tags,
@@ -482,7 +486,6 @@ async def upload_menu_item_image(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin")),
 ):
-    del session
     db_item = db.query(MenuItem).filter(MenuItem.id == item_id).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -492,6 +495,16 @@ async def upload_menu_item_image(
         image_url = save_menu_image(item_id, data)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    register_asset(
+        db,
+        url=image_url,
+        file_name=image_url.rsplit("/", 1)[-1],
+        mime_type=file.content_type or "image/jpeg",
+        size_bytes=len(data),
+        name=db_item.name,
+        uploaded_by=str(session.get("subject") or ""),
+        tags=["menu"],
+    )
 
     previous_url = db_item.image_url
     db_item.image_url = image_url

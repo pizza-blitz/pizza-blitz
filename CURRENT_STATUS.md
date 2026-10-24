@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 174 backend tests, 151 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 176 backend tests, 152 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -206,11 +206,15 @@ Wave 4 (in progress):
 - HR Analytics is live: headcount/new joiners, workforce mix, attendance, leave liability,
   payroll trend/YTD, onboarding funnel, attrition, exits and document expiry at
   `/departments/hr`; new `verify:hr-analytics` proof and two backend tests.
-- Next: optional Euron sync adapter; HR analytics CSV/PDF exports.
+- Media Studio is live: a shared image library at `/settings/media`, uploads with search/tags,
+  usage-guarded delete, menu uploads registering automatically, and one picker reused in
+  menu, social and ad forms; new `verify:media-studio` proof and two backend tests.
+- Next: landing-page content/media CMS, configurable tax/fees/providers, messaging inbox,
+  marketing hub and hiring pipeline.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 174 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 176 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

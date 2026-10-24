@@ -17,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import MediaPicker from "@/components/media-picker";
 
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu");
 const CUSTOMIZED_MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
@@ -280,6 +281,34 @@ export default function MenuManagement() {
       await fetchMenu();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Image could not be uploaded.");
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const attachLibraryImage = async (url: string) => {
+    if (!imageItem?.id || !url) return;
+    setImageBusy(true);
+    try {
+      const response = await fetch(MENU_API, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...imageItem,
+          image_url: url,
+          image_alt: imageAlt || imageItem.name,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Image could not be attached.");
+      setImageItem(data);
+      setImagePreview(data.image_url || "");
+      setImageFile(null);
+      setMessage(`Image updated for ${data.name}.`);
+      await fetchMenu();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Image could not be attached.");
     } finally {
       setImageBusy(false);
     }
@@ -1065,6 +1094,16 @@ export default function MenuManagement() {
             <p className="mt-2 text-[10px] font-semibold text-gray-500">
               JPEG, PNG or WebP, up to 5 MB. The public menu uses this image with its alt text.
             </p>
+
+            <div className="mt-4 rounded-xl border border-white/10 p-3">
+              <MediaPicker
+                label="Or choose from media library"
+                value={imageItem.image_url || ""}
+                onChange={(url) => void attachLibraryImage(url)}
+                testId="menu-image-library"
+                helpText="Selecting a library image attaches it to this menu item immediately."
+              />
+            </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button

@@ -16,6 +16,7 @@ import {
   Target,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import MediaPicker from "@/components/media-picker";
 
 const ADS_API = getApiUrl("/api/v1/restaurant/ads");
 const fetchWithAuth = (url: string, init?: RequestInit) => fetch(url, { ...init, credentials: "include" });
@@ -1515,7 +1516,13 @@ export default function AdsManagerPage() {
               <Input label="Audience" value={campaignForm.audience} onChange={(value) => setCampaignForm({ ...campaignForm, audience: value })} />
               <Input label="Location" value={campaignForm.location} onChange={(value) => setCampaignForm({ ...campaignForm, location: value })} />
               <Input label="Link URL" value={campaignForm.link_url} onChange={(value) => setCampaignForm({ ...campaignForm, link_url: value })} />
-              <Input label="Image URL" value={campaignForm.image_url} onChange={(value) => setCampaignForm({ ...campaignForm, image_url: value })} />
+              <MediaPicker
+                label="Creative image"
+                value={campaignForm.image_url}
+                onChange={(value) => setCampaignForm({ ...campaignForm, image_url: value })}
+                testId="ad-image-picker"
+                helpText="Pick a shared creative or upload a new image for this campaign."
+              />
               <NumberInput label="Daily Budget" value={campaignForm.daily_budget} onChange={(value) => setCampaignForm({ ...campaignForm, daily_budget: value })} />
               <NumberInput label="Lifetime Budget" value={campaignForm.lifetime_budget} onChange={(value) => setCampaignForm({ ...campaignForm, lifetime_budget: value })} />
               <Input label="Start Date" type="date" value={campaignForm.start_date} onChange={(value) => setCampaignForm({ ...campaignForm, start_date: value })} />

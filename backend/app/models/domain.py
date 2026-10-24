@@ -1229,3 +1229,18 @@ class HRExitClearance(Base):
     sort_order = Column(Integer, nullable=False, default=100)
     cleared_at = Column(DateTime, nullable=True)
     exit = relationship("HRExit", back_populates="clearance_tasks")
+
+
+class MediaAsset(Base):
+    """Shared media library used by menu, landing content, social and ads."""
+
+    __tablename__ = "media_assets"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(160), nullable=False)
+    url = Column(String(500), unique=True, index=True, nullable=False)
+    file_name = Column(String(255), nullable=False)
+    mime_type = Column(String(120), nullable=False)
+    size_bytes = Column(Integer, nullable=False, default=0)
+    tags = Column(JSON, default=list)
+    uploaded_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

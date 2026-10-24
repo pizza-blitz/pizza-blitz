@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **342 API endpoints**, **59 routes/pages** (48 portal,
-1 KDS, 10 public), **151 browser proof scripts** plus portal smoke, **174 backend
-tests**, **75 database tables**, **19 integration points**.
+Numbers in this snapshot: **345 API endpoints**, **60 routes/pages** (49 portal,
+1 KDS, 10 public), **152 browser proof scripts** plus portal smoke, **176 backend
+tests**, **76 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -108,6 +108,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
+| Media Studio | Shared library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads | Built | One image library + picker | Landing CMS, stock/AI search, auto-crops and video later |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | Per-channel price/availability/visibility for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | — |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
@@ -154,7 +155,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons / flash sales | Builder, audience, channel, schedule | Built | Same + auto-apply | — |
 | Campaign dispatch | WhatsApp/SMS/email, logs, retries, suppression | Built | Drip journeys, A/B tests | Journeys/A-B missing |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
-| Social publishing | Post creation, delivery logs, auto-publish gated | Built | Multi-platform scheduling, media | Media library missing |
+| Social publishing | Post creation, delivery logs, auto-publish gated | Built | Multi-platform scheduling, media | Reels/shorts video missing |
 | Ad campaigns | Create, launch, pause, budgets, metrics, ROI | Built | Provider sync depth, attribution | Attribution partial |
 | Templates | Message text fields | Partial | Rich template editor with variables/preview | Later |
 | Reputation / reviews | — | Missing | Review collection and response | Later |

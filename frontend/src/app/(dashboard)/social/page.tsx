@@ -14,6 +14,7 @@ import {
   Share2,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import MediaPicker from "@/components/media-picker";
 
 const SOCIAL_API = getApiUrl("/api/v1/restaurant/social");
 
@@ -1121,10 +1122,12 @@ export default function SocialPublishingPage() {
                 value={formData.link_url}
                 onChange={(value) => setFormData({ ...formData, link_url: value })}
               />
-              <Input
-                label="Image URL"
+              <MediaPicker
+                label="Image"
                 value={formData.image_url}
                 onChange={(value) => setFormData({ ...formData, image_url: value })}
+                testId="social-image-picker"
+                helpText="Instagram needs a public image. Pick a library image or upload a new one."
               />
               <Input
                 label="Schedule"
