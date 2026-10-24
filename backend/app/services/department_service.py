@@ -452,6 +452,7 @@ def ensure_departments(db: Session) -> None:
             active_routes = {
                 "people": "/departments/hr/people",
                 "leave": "/departments/hr/leave",
+                "attendance": "/departments/hr/attendance",
             }
             for module_key, route in active_routes.items():
                 module = next(

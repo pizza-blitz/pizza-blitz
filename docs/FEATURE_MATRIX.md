@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **303 API endpoints**, **53 routes/pages** (42 portal,
-1 KDS, 10 public), **144 browser proof scripts** plus portal smoke, **159 backend
-tests**, **65 database tables**, **19 integration points**.
+Numbers in this snapshot: **308 API endpoints**, **54 routes/pages** (43 portal,
+1 KDS, 10 public), **145 browser proof scripts** plus portal smoke, **162 backend
+tests**, **66 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -198,7 +198,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Attendance | Attendance command | Built | Biometric/PIN clock, geofence | Partial |
 | Payroll preview | Hours × rate preview | Built | Full payroll, tips, statutory | Partial |
 | Staff credentials | Managed staff login plus granular staff permission toggles (orders, kitchen, delivery, refunds, reports, settings, staff) | Built | Granular permissions | Per-user permission sets missing (role-level only) |
-| HR department | People & HR as a department with working People and Leave modules; attendance, payroll, onboarding, documents and exits listed with Euron pilot status | Partial | Full HRMS and payroll | Attendance/payroll/onboarding/documents/exits still planned |
+| HR department | People & HR as a department with working People, Leave and Attendance modules; payroll, onboarding, documents and exits listed with Euron pilot status | Partial | Full HRMS and payroll | Payroll/onboarding/documents/exits still planned |
 
 ## 13. Admin, platform, security, integrations
 
@@ -215,6 +215,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Department registry | Operations and People & HR seeded; departments own modules and members | Built | Department/module extensibility | Per-department permissions later |
 | HR people directory | Employee mirror with code, designation, employment type/status, joining date, store, reporting line and optional POS staff link; search/filter and summary | Built | Employee master + org chart | Payroll/leave/onboarding/exits still planned |
 | HR leave | Leave types, per-employee/year balances, requests, approvals/rejections/cancellation, holiday calendar and summary | Built | Leave policy + balances + approvals | Accrual rules and payroll deduction integration later |
+| HR attendance | Daily roster with clock-in/out, leave-aware status, worked minutes, HR regularisation and day summary | Built | Time clock + attendance register | Biometric/geofence and payroll hour export later |
 | Multi-store / franchise | Store registry, per-store profile/hours, store-scoped orders/stock, consolidated reporting and POS hardware | Built | Tenant hierarchy, per-store config | Per-store menus/overrides missing |
 | API keys / webhooks | Aggregator HMAC tokens, signed inbound order webhooks, signed outbound status/menu webhooks | Built | Public API + outbound webhooks | General public API keys missing |
 | Observability | Request IDs, structured exception/error logs, client error monitor, health probes | Partial | Error tracking, metrics, traces | External APM/Sentry and metrics missing |

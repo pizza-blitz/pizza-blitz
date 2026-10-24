@@ -1011,3 +1011,24 @@ class HRLeaveRequest(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     employee = relationship("HREmployee")
     leave_type = relationship("HRLeaveType")
+
+
+class HRAttendance(Base):
+    __tablename__ = "hr_attendance"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "date", name="uq_hr_attendance_day"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=False
+    )
+    date = Column(Date, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="present", index=True)
+    check_in_at = Column(DateTime, nullable=True)
+    check_out_at = Column(DateTime, nullable=True)
+    worked_minutes = Column(Integer, nullable=False, default=0)
+    source = Column(String(20), nullable=False, default="manual")
+    note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    employee = relationship("HREmployee")

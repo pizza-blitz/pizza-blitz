@@ -174,6 +174,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Department registry with HR as a department.
 - [x] HR People directory.
 - [x] HR Leave & holidays.
-- [ ] HR attendance, payroll, onboarding, documents, exits, permissions.
+- [x] HR Attendance & time clock.
+- [ ] HR payroll, onboarding, documents, exits, permissions.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
