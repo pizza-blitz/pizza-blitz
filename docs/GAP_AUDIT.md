@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 51 frontend routes, the 143 browser proof scripts plus portal smoke in
+- Listed all 52 frontend routes, the 143 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -89,6 +89,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 58 | Feedback | There was no post-order rating, NPS or comment capture, so quality issues and promoters were invisible. | W4 feedback gap. | Added `order_feedback` (migration), phone-verified one-time submission after completion, and a summary with NPS, average rating, response rate, distribution, tags and low-rating follow-up. Added the tracking form and `/feedback` admin page with nav entry. Two backend tests and a browser proof. Public review-site routing remains. |
 | 59 | KDS item status | Bumping one line moved every line in that station and there was no per-item recall, so a single late pizza could not be tracked. | W4 item-readiness gap. | Added `PATCH /orders/{id}/items/{line_index}/status` with independent start/bump/recall, timestamp clearing on recall, aggregate order status and per-line audit. The KDS line controls now call it and expose Start/Bump/Recall. Two backend tests; the KDS browser proof exercises a single-line bump. |
 | 60 | Departments | Business units were hard-coded into navigation; adding HR (or any future department) would mean new tables and bespoke pages. | Admin-domain extensibility gap. | Added `business_departments`, `department_members` and `department_modules` (migration), a module catalogue, CRUD/membership APIs and `/departments` + `/departments/[key]` pages. Operations and People & HR are seeded; HR exposes planned people/leave/payroll/onboarding/documents/exits modules and an honest Euron pilot status. Future departments are created from the catalogue. Three backend tests and `verify:departments`. Per-department permissions remain later. |
+| 61 | HR people | The HR department had no employee record to operate on, so the People module could not go live and there was no local key for a future Euron sync. | HR People gap. | Added `hr_employees` (migration) with code, designation, employment type/status, joining date, store, reporting line, notes, optional POS staff link and external-system/id fields. Added list/search/filter, summary, create/update APIs and `/departments/hr/people`, with HR's People module activated. Two backend tests and the departments browser proof. Payroll/leave/onboarding/exits remain planned. |
 
 ## Still open
 
@@ -103,7 +104,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 155 tests, all pass (in a clean venv built from
+- Backend unit suite: 157 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

@@ -916,3 +916,29 @@ class DepartmentModule(Base):
     status = Column(String(20), nullable=False, default="planned")
     sort_order = Column(Integer, nullable=False, default=100)
     department = relationship("BusinessDepartment", back_populates="modules")
+
+
+class HREmployee(Base):
+    """Local HR employee mirror, linked to a POS staff credential when present."""
+
+    __tablename__ = "hr_employees"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_code = Column(String(40), unique=True, index=True, nullable=False)
+    full_name = Column(String(160), nullable=False)
+    email = Column(String(200), unique=True, index=True, nullable=True)
+    phone = Column(String(30), nullable=True)
+    designation = Column(String(120), nullable=True)
+    employment_type = Column(
+        String(30), nullable=False, default="full_time", index=True
+    )
+    status = Column(String(30), nullable=False, default="active", index=True)
+    joining_date = Column(Date, nullable=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    staff_id = Column(String(120), unique=True, index=True, nullable=True)
+    reports_to = Column(String(160), nullable=True)
+    notes = Column(String(1000), nullable=True)
+    external_system = Column(String(80), nullable=True)
+    external_id = Column(String(120), index=True, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    store = relationship("Store")

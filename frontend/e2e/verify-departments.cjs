@@ -122,6 +122,8 @@ async function main() {
     assert(/Pilot/i.test(externalText), "HR pilot status missing.");
     const payroll = page.getByTestId("department-module-payroll");
     assert(/planned/i.test(await payroll.innerText()), "Payroll should be honestly marked planned.");
+    const people = page.getByTestId("department-module-people");
+    assert(/active/i.test(await people.innerText()), "People directory should be active.");
     const activeLink = page.getByTestId("department-module-overview");
     assert((await activeLink.getAttribute("href")) === "/departments/hr", "Overview link mismatch.");
 
@@ -129,6 +131,43 @@ async function main() {
       path: path.join(artifactsDir, "visible-departments-hr.png"),
       fullPage: false,
     });
+
+    await people.click();
+    await page
+      .locator('[data-testid="hr-people-page"][data-hydrated="true"]')
+      .waitFor({ timeout: 30000 });
+    await page.getByTestId("hr-employee-create-open").click();
+    await page.getByTestId("hr-employee-form").waitFor({ timeout: 15000 });
+    await page.getByTestId("hr-employee-name").fill("Aarav HR Proof");
+    await page.getByTestId("hr-employee-code").fill(`EMP-PROOF-${Date.now()}`);
+    await page.getByLabel("Designation").fill("Kitchen Lead");
+    await page.getByTestId("hr-employee-save").click();
+    const employeeRow = page.getByText("Aarav HR Proof").first();
+    await employeeRow.waitFor({ timeout: 20000 });
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-hr-people.png"),
+      fullPage: false,
+    });
+
+    const employees = await fetch(
+      `${apiURL}/api/v1/restaurant/hr/employees?q=Aarav%20HR%20Proof`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const employeeData = await employees.json();
+    const proofEmployee = (employeeData.employees || [])[0];
+    if (proofEmployee) {
+      await fetch(
+        `${apiURL}/api/v1/restaurant/hr/employees/${proofEmployee.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status: "exited", notes: "Proof cleanup" }),
+        }
+      ).catch(() => {});
+    }
 
     console.log("Departments proof passed.");
   } finally {
