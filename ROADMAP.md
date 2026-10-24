@@ -183,6 +183,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] HR analytics command center.
 - [x] Shared Media Studio and image picker.
 - [x] Landing page content CMS.
-- [ ] Configurable tax/fees/providers, messaging inbox, marketing hub, hiring.
+- [x] Configurable tax, invoice footer and tip presets.
+- [ ] Provider settings registry, messaging inbox/journeys, marketing hub, hiring.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

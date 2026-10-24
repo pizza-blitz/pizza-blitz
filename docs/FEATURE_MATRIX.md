@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **348 API endpoints**, **61 routes/pages** (50 portal,
-1 KDS, 10 public), **153 browser proof scripts** plus portal smoke, **178 backend
-tests**, **77 database tables**, **19 integration points**.
+Numbers in this snapshot: **351 API endpoints**, **62 routes/pages** (51 portal,
+1 KDS, 10 public), **154 browser proof scripts** plus portal smoke, **180 backend
+tests**, **78 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -64,7 +64,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Customization | Full modifier pricing server-side | Built | Same | — |
 | Discounts / coupons | Manual discount + coupon codes | Built | Manager-approved discounts, comps | Permissions/audit weak |
 | Payments | Cash, UPI, card (manual), Razorpay/Cashfree, direct bank | Built | Split tender, partial payments, refunds | Split tender missing |
-| Invoicing | Invoice generation, numbering, tax split | Built | GST-compliant fields, e-invoice | Tax configuration partial |
+| Invoicing | Invoice generation, numbering, configurable CGST/SGST split, invoice footer | Built | GST-compliant fields, e-invoice | Tax-inclusive pricing and e-invoice missing |
 | Close / cancel | Close order, cancel with reason | Built | Void with approval + stock reversal | Void workflow needs audit |
 | Cash drawer | Drawer command, close, variance | Built | Cash drops, shift handover | Partial |
 | Receipts | Receipt page + print-ready kitchen ticket; browser print with configurable header/footer/paper width | Built | Thermal printer, reprints, email receipt | Thermal output needs a local ESC/POS bridge |
@@ -186,7 +186,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Expenses | Categories, add, audit command | Built | Approval workflow depth | Partial |
 | Refunds / voids | Void unpaid orders via cancel; refund captured payments with a reason, method, reference, ledger and audit trail | Built | Refund with reason/audit/provider call | Provider-initiated refund call not wired |
 | Tips | Captured per order, included in totals, receipts and the tips summary | Partial | Tip pool, payout report | Payout missing |
-| Tax | 5% split CGST/SGST, GST-ready accounting summary and order CSV | Built | Configurable tax rules, GST reports | Tax rates are fixed at 5% |
+| Tax | Admin-configurable rate/label, invoice footer and tip presets; orders, coupon quotes, aggregator intake, POS estimates and CGST/SGST split use the configured rate | Built | Tax and invoice settings | Tax-inclusive prices, slabs and service charge missing |
 | Gift cards | — | Missing | Issue/redeem | Later |
 
 ## 12. Workforce

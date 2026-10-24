@@ -79,6 +79,7 @@ export const portalNavGroups: PortalNavGroup[] = [
       { name: "Menu Intelligence", href: "/menu", icon: Utensils, description: "Items, modifiers, combos and margins", allowedRoles: adminOnly },
       { name: "Media Studio", href: "/settings/media", icon: Image, description: "Shared images for menu, social, ads and landing", allowedRoles: adminOnly },
       { name: "Landing page", href: "/settings/content", icon: Sparkles, description: "Hero, story and category content for the storefront", allowedRoles: adminOnly },
+      { name: "Tax & billing", href: "/settings/billing", icon: Receipt, description: "Tax rate, invoice footer and tip presets", allowedRoles: adminOnly },
       { name: "Recipes", href: "/recipes", icon: ClipboardList, description: "Ingredients, cost and prep forecast", allowedRoles: adminOnly },
       { name: "Inventory", href: "/inventory", icon: Package, description: "Stock, movements and low-stock queue", allowedRoles: adminOnly },
       { name: "Inventory Scan", href: "/inventory/scan", icon: ScanLine, description: "Scan invoices into stock items", allowedRoles: adminOnly },

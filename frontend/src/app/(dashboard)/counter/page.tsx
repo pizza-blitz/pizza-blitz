@@ -19,6 +19,7 @@ import { getApiUrl } from "@/lib/api";
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
 const QUICK_BUILDS_API = getApiUrl("/api/v1/restaurant/menu/customizations/quick-builds");
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders/");
+const BILLING_API = getApiUrl("/api/v1/restaurant/billing-settings/public");
 
 type CustomizationOption = {
   id: number;
@@ -151,6 +152,7 @@ export default function QuickCounterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null);
+  const [billing, setBilling] = useState({ tax_rate: 5, tax_label: "GST" });
 
   useEffect(() => {
     fetchCounterData();
@@ -160,12 +162,15 @@ export default function QuickCounterPage() {
     setLoading(true);
     setMessage("");
     try {
-      const [menuResponse, quickBuildResponse] = await Promise.all([
+      const [menuResponse, quickBuildResponse, billingResponse] = await Promise.all([
         fetch(MENU_API),
         fetch(QUICK_BUILDS_API),
+        fetch(BILLING_API),
       ]);
       const menuData = await menuResponse.json();
       const quickBuildData = await quickBuildResponse.json().catch(() => ({}));
+      const billingData = await billingResponse.json().catch(() => ({}));
+      if (billingData?.settings) setBilling(billingData.settings);
       setMenu(Array.isArray(menuData) ? menuData.filter((item) => item.is_available) : []);
       setQuickBuilds(Array.isArray(quickBuildData.builds) ? quickBuildData.builds : []);
     } catch {
@@ -198,7 +203,7 @@ export default function QuickCounterPage() {
   );
   const safeDiscount = roundMoney(Math.min(Math.max(Number(discount || 0), 0), subtotal));
   const taxableSubtotal = roundMoney(Math.max(subtotal - safeDiscount, 0));
-  const tax = roundMoney(taxableSubtotal * 0.05);
+  const tax = roundMoney(taxableSubtotal * (billing.tax_rate / 100));
   const total = roundMoney(taxableSubtotal + tax);
   const itemCount = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
 
@@ -597,7 +602,7 @@ export default function QuickCounterPage() {
           <div className="space-y-2 border-y border-white/10 py-4 text-sm font-semibold text-gray-400">
             <PriceRow label="Subtotal" value={subtotal} />
             <PriceRow label="Discount" value={safeDiscount} />
-            <PriceRow label="GST 5%" value={tax} />
+            <PriceRow label={`${billing.tax_label} ${billing.tax_rate}%`} value={tax} />
             <div className="flex items-center justify-between pt-2 text-xl font-black text-white">
               <span>Total</span>
               <span>Rs {Math.round(total).toLocaleString()}</span>

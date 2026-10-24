@@ -28,6 +28,7 @@ export default function InvoicesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState<InvoiceStatus | null>(null);
+  const [invoiceFooter, setInvoiceFooter] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -65,6 +66,13 @@ export default function InvoicesPage() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    fetch(getApiUrl("/api/v1/restaurant/billing-settings/public"), { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => setInvoiceFooter(data?.settings?.invoice_footer || ""))
+      .catch(() => setInvoiceFooter(""));
   }, []);
 
   const filtered = invoices.filter((i) =>
@@ -168,7 +176,7 @@ export default function InvoicesPage() {
 
             <div className="flex items-center gap-10 w-full md:w-auto justify-between md:justify-end">
               <div className="flex flex-col items-end">
-                <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">GST (5%)</span>
+                <span className="text-[10px] font-black text-gray-500 uppercase tracking-tighter">GST</span>
                 <span className="text-sm font-mono text-orange-400/80">Rs {inv.cgst + inv.sgst}</span>
               </div>
               <div className="flex flex-col items-end">
@@ -194,6 +202,15 @@ export default function InvoicesPage() {
           <Search className="w-16 h-16 mb-4" />
           <p className="text-xl font-bold italic">No matching invoices found in history node.</p>
         </div>
+      )}
+
+      {invoiceFooter && !isLoading && !error && (
+        <p
+          data-testid="invoice-footer"
+          className="mt-8 border-t border-white/10 pt-4 text-center text-xs font-semibold text-gray-500"
+        >
+          {invoiceFooter}
+        </p>
       )}
     </div>
   );

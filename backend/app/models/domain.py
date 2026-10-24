@@ -1260,3 +1260,15 @@ class StorefrontContent(Base):
     story_image_url = Column(String(500), nullable=True)
     category_images = Column(JSON, default=dict)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BillingSettings(Base):
+    """Single-row tax, invoice and tip configuration."""
+
+    __tablename__ = "billing_settings"
+    id = Column(Integer, primary_key=True, index=True)
+    tax_rate = Column(Float, nullable=False, default=5.0)
+    tax_label = Column(String(30), nullable=False, default="GST")
+    invoice_footer = Column(String(255), nullable=True)
+    tip_presets = Column(JSON, default=lambda: [0, 5, 10, 15])
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -33,6 +33,7 @@ const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 const MENU_API = getApiUrl("/api/v1/restaurant/menu/menu-with-customizations");
 const QUICK_BUILDS_API = getApiUrl("/api/v1/restaurant/menu/customizations/quick-builds");
 const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
+const BILLING_API = getApiUrl("/api/v1/restaurant/billing-settings/public");
 
 type CustomizationOption = {
   id: number;
@@ -278,6 +279,7 @@ function notificationTime(value: string) {
 
 export default function OrdersPage() {
   const [tables, setTables] = useState<Table[]>([]);
+  const [billing, setBilling] = useState({ tax_rate: 5, tax_label: "GST" });
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [quickBuilds, setQuickBuilds] = useState<QuickBuild[]>([]);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
@@ -418,7 +420,7 @@ export default function OrdersPage() {
   const discount = Math.max(Number(formData.discount_amount || 0), 0);
   const tip = Math.min(Math.max(Number(formData.tip_amount || 0), 0), 2000);
   const taxableSubtotal = Math.max(subtotal - discount, 0);
-  const tax = taxableSubtotal * 0.05;
+  const tax = taxableSubtotal * (billing.tax_rate / 100);
   const isDeliveryOrder = !selectedTable && orderMode === "delivery";
   const deliveryFee =
     isDeliveryOrder && deliveryQuote?.is_deliverable
@@ -589,13 +591,17 @@ export default function OrdersPage() {
   }, []);
 
   const fetchData = async () => {
-    const [tablesRes, menuRes, todayRes, zonesRes, quickBuildsRes] = await Promise.all([
+    const [tablesRes, menuRes, todayRes, zonesRes, quickBuildsRes, billingRes] = await Promise.all([
       fetch(`${ORDERS_API}/tables`, { credentials: "include" }),
       fetch(MENU_API),
       fetch(`${ORDERS_API}/today`, { credentials: "include" }),
       fetch(`${DELIVERY_API}/zones`),
       fetch(QUICK_BUILDS_API),
+      fetch(BILLING_API),
     ]);
+
+    const billingData = await billingRes.json().catch(() => ({}));
+    if (billingData?.settings) setBilling(billingData.settings);
 
     setTables(await tablesRes.json());
     const menu = await menuRes.json();
@@ -2767,7 +2773,7 @@ export default function OrdersPage() {
             <div className="mt-6 rounded-xl bg-black/30 border border-white/10 p-4 space-y-2 text-sm">
               <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>Rs {Math.round(subtotal).toLocaleString()}</span></div>
               <div className="flex justify-between text-gray-400"><span>Discount</span><span>Rs {Math.round(discount).toLocaleString()}</span></div>
-              <div className="flex justify-between text-gray-400"><span>GST 5%</span><span>Rs {Math.round(tax).toLocaleString()}</span></div>
+              <div className="flex justify-between text-gray-400"><span>{billing.tax_label} {billing.tax_rate}%</span><span>Rs {Math.round(tax).toLocaleString()}</span></div>
               {tip > 0 && (
                 <div className="flex justify-between text-emerald-200">
                   <span>Tip</span>

@@ -26,6 +26,7 @@ from app.services.campaign_dispatch_service import (
     send_campaign_message,
 )
 from app.services.campaign_schedule_service import activate_due_scheduled_campaigns
+from app.services.billing_settings_service import tax_for_subtotal
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import date, datetime, timedelta
@@ -2142,7 +2143,7 @@ def validate_coupon(payload: CouponValidationRequest, db: Session = Depends(get_
 
     discount = _calculate_discount(promo, payload.subtotal)
     taxable_subtotal = max(round(payload.subtotal - discount, 2), 0)
-    tax = round(taxable_subtotal * 0.05, 2)
+    tax = tax_for_subtotal(db, taxable_subtotal)
     total = round(taxable_subtotal + tax, 2)
     return {
         "valid": True,

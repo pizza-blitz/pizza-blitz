@@ -162,6 +162,7 @@ type StorefrontBootstrap = {
   payment_checkout: PublicPaymentCheckout;
   active_promotions: ActivePromotion[];
   delivery_zones: DeliveryZone[];
+  billing?: { tax_rate: number; tax_label: string; tip_presets: number[] };
 };
 
 type ScheduledSlot = {
@@ -338,7 +339,12 @@ export default function PublicOrderPage() {
   const [scheduledLabel, setScheduledLabel] = useState("");
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [confirmedSchedule, setConfirmedSchedule] = useState<string | null>(null);
-  const [tipPercent, setTipPercent] = useState<"0" | "5" | "10" | "15" | "custom">("0");
+  const [tipPercent, setTipPercent] = useState("0");
+  const [billing, setBilling] = useState({
+    tax_rate: 5,
+    tax_label: "GST",
+    tip_presets: [0, 5, 10, 15],
+  });
   const [customTip, setCustomTip] = useState("");
   const checkoutRef = useRef<HTMLElement | null>(null);
 
@@ -471,6 +477,12 @@ export default function PublicOrderPage() {
           setPaymentMethod("cash");
         }
         setActivePromotions(data.active_promotions.filter((promotion) => promotion.code));
+        if (data.billing) {
+          setBilling(data.billing);
+          if (!data.billing.tip_presets.map(String).includes(tipPercent)) {
+            setTipPercent("0");
+          }
+        }
         const activeZones = data.delivery_zones.filter((zone) => zone.is_active);
         setDeliveryZones(activeZones);
         if (activeZones[0]) {
@@ -782,7 +794,7 @@ export default function PublicOrderPage() {
 
   const discount = coupon ? coupon.discount : 0;
   const taxableSubtotal = Math.max(roundMoney(subtotal - discount), 0);
-  const tax = coupon ? coupon.tax : roundMoney(taxableSubtotal * 0.05);
+  const tax = coupon ? coupon.tax : roundMoney(taxableSubtotal * (billing.tax_rate / 100));
   const deliveryFee =
     orderType === "delivery" && deliveryQuote?.is_deliverable
       ? Number(deliveryQuote.delivery_fee || 0)
@@ -805,7 +817,7 @@ export default function PublicOrderPage() {
     : 0;
   const loyaltyTaxable = Math.max(taxableSubtotal - loyaltyDiscount, 0);
   const effectiveTax =
-    loyaltyDiscount > 0 ? roundMoney(loyaltyTaxable * 0.05) : tax;
+    loyaltyDiscount > 0 ? roundMoney(loyaltyTaxable * (billing.tax_rate / 100)) : tax;
   const total =
     loyaltyDiscount > 0
       ? roundMoney(loyaltyTaxable + effectiveTax + deliveryFee + tipAmount)
@@ -2186,23 +2198,26 @@ export default function PublicOrderPage() {
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-4 gap-2">
-                {(["0", "5", "10", "15"] as const).map((percent) => (
+                {billing.tip_presets.map((percent) => {
+                  const value = String(percent);
+                  return (
                   <button
-                    key={percent}
+                    key={value}
                     type="button"
                     onClick={() => {
-                      setTipPercent(percent);
+                      setTipPercent(value);
                       setCustomTip("");
                     }}
                     className={`rounded-md border px-2 py-2 text-xs font-black ${
-                      tipPercent === percent
+                      tipPercent === value
                         ? "border-red-700 bg-red-700 text-white"
                         : "border-slate-200 bg-white text-slate-600 hover:border-red-300"
                     }`}
                   >
-                    {percent === "0" ? "No tip" : `${percent}%`}
+                    {value === "0" ? "No tip" : `${value}%`}
                   </button>
-                ))}
+                  );
+                })}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
@@ -2290,7 +2305,7 @@ export default function PublicOrderPage() {
             <div className="mb-5 space-y-2 border-y border-slate-200 py-4 text-sm">
               <PriceRow label="Subtotal" value={subtotal} />
               <PriceRow label="Discount" value={discount} />
-              <PriceRow label="Tax" value={effectiveTax} />
+              <PriceRow label={billing.tax_label} value={effectiveTax} />
               {orderType === "delivery" && (
                 <PriceRow label="Delivery" value={deliveryFee} />
               )}

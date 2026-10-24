@@ -39,6 +39,7 @@ from app.models.domain import (
     Store,
 )
 from app.services.aggregator_service import queue_status_event
+from app.services.billing_settings_service import split_tax, tax_for_subtotal
 from app.services.delivery_service import delivery_quote, serialize_delivery_zone
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
@@ -2197,7 +2198,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
             )
     discount = round(min(base_discount + loyalty_discount, subtotal), 2)
     taxable_subtotal = max(subtotal - discount, 0)
-    tax = round(taxable_subtotal * 0.05, 2)
+    tax = tax_for_subtotal(db, taxable_subtotal)
     delivery_fee = 0.0
     delivery_zone_id = None
     delivery_zone_name = None
@@ -3369,8 +3370,7 @@ def generate_invoice(
 
     count = db.query(Invoice).count()
     invoice_number = f"PB-{business_today().strftime('%Y%m')}-{str(count + 1).zfill(4)}"
-    cgst = round((order.subtotal or 0) * 0.025, 2)
-    sgst = round((order.subtotal or 0) * 0.025, 2)
+    cgst, sgst = split_tax(order.tax_amount or 0)
 
     invoice = Invoice(
         invoice_number=invoice_number,

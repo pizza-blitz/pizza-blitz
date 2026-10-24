@@ -16,6 +16,7 @@ from app.services.store_profile_service import (
     store_status,
 )
 from app.services.storefront_content_service import content_payload
+from app.services.billing_settings_service import public_payload as billing_public_payload
 
 
 router = APIRouter()
@@ -96,4 +97,5 @@ def storefront_bootstrap(db: Session = Depends(get_db)):
         "delivery_zones": public_delivery_zones(db),
         "store_profile": serialize_public_profile(profile),
         "site_content": content_payload(db),
+        "billing": billing_public_payload(db),
     }
