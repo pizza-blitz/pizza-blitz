@@ -121,6 +121,10 @@ Shortcut including browser smoke:
 
 Keep `CAMPAIGN_SEND_ENABLED=false`, `SOCIAL_PUBLISH_ENABLED=false`, and `ADS_LAUNCH_ENABLED=false` until the corresponding provider credentials are verified.
 
+For the messaging inbox, set `MESSAGING_WEBHOOK_TOKEN` and point the provider webhook to
+`/api/v1/restaurant/messaging/webhook/{whatsapp|sms|email|instagram}` with the token as the
+`token` query parameter or `X-Webhook-Token` header. Without it, inbound webhooks return 503.
+
 ## Deployment Checklist
 
 - Production database created and migrated.

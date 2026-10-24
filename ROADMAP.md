@@ -185,6 +185,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Landing page content CMS.
 - [x] Configurable tax, invoice footer and tip presets.
 - [x] Encrypted provider settings registry.
-- [ ] Payment credentials, messaging inbox/journeys, marketing hub, hiring.
+- [x] Messaging inbox and templates.
+- [ ] Marketing journeys, marketing hub/reels, hiring pipeline.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

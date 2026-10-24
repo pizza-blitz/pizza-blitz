@@ -1284,3 +1284,61 @@ class ProviderSetting(Base):
     enabled = Column(Boolean, nullable=False, default=True)
     updated_by = Column(String(120), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MessageThread(Base):
+    """One conversation with a customer or contact, per channel."""
+
+    __tablename__ = "message_threads"
+    __table_args__ = (
+        UniqueConstraint("channel", "destination", name="uq_message_thread_channel_destination"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    channel = Column(String(30), nullable=False, index=True)
+    destination = Column(String(255), nullable=False, index=True)
+    contact_name = Column(String(160), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    status = Column(String(30), nullable=False, default="open", index=True)
+    assigned_to = Column(String(120), nullable=True)
+    unread_count = Column(Integer, nullable=False, default=0)
+    last_message_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    customer = relationship("Customer")
+    messages = relationship(
+        "Message", back_populates="thread", cascade="all, delete-orphan"
+    )
+
+
+class Message(Base):
+    """An inbound or outbound message in a conversation."""
+
+    __tablename__ = "messages"
+    id = Column(Integer, primary_key=True, index=True)
+    thread_id = Column(Integer, ForeignKey("message_threads.id"), nullable=False, index=True)
+    direction = Column(String(20), nullable=False, index=True)
+    channel = Column(String(30), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    subject = Column(String(255), nullable=True)
+    status = Column(String(30), nullable=False, default="received", index=True)
+    provider = Column(String(60), nullable=True)
+    external_id = Column(String(255), nullable=True)
+    error = Column(Text, nullable=True)
+    actor = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    thread = relationship("MessageThread", back_populates="messages")
+
+
+class MessageTemplate(Base):
+    """Reusable channel-specific message copy."""
+
+    __tablename__ = "message_templates"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(140), nullable=False)
+    channel = Column(String(30), nullable=False)
+    subject = Column(String(255), nullable=True)
+    body = Column(Text, nullable=False)
+    category = Column(String(40), nullable=False, default="marketing")
+    status = Column(String(30), nullable=False, default="draft")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

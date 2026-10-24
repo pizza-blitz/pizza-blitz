@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **356 API endpoints**, **63 routes/pages** (52 portal,
-1 KDS, 10 public), **155 browser proof scripts** plus portal smoke, **183 backend
-tests**, **79 database tables**, **19 integration points**.
+Numbers in this snapshot: **367 API endpoints**, **64 routes/pages** (53 portal,
+1 KDS, 10 public), **156 browser proof scripts** plus portal smoke, **186 backend
+tests**, **82 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -154,6 +154,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 |---|---|---|---|---|
 | Coupons / flash sales | Builder, audience, channel, schedule | Built | Same + auto-apply | — |
 | Campaign dispatch | WhatsApp/SMS/email, logs, retries, suppression | Built | Drip journeys, A/B tests | Journeys/A-B missing |
+| Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
 | Social publishing | Post creation, delivery logs, auto-publish gated | Built | Multi-platform scheduling, media | Reels/shorts video missing |
 | Ad campaigns | Create, launch, pause, budgets, metrics, ROI | Built | Provider sync depth, attribution | Attribution partial |

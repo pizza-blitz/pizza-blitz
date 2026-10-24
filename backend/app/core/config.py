@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     )
     ORDER_NOTIFICATION_CHANNEL: str = os.getenv("ORDER_NOTIFICATION_CHANNEL", "sms")
     CUSTOMER_OTP_CHANNEL: str = os.getenv("CUSTOMER_OTP_CHANNEL", "console")
+    MESSAGING_WEBHOOK_TOKEN: str | None = os.getenv("MESSAGING_WEBHOOK_TOKEN")
     CUSTOMER_OTP_TTL_SECONDS: int = int(os.getenv("CUSTOMER_OTP_TTL_SECONDS", "300"))
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
