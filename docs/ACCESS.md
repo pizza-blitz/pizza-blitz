@@ -7,7 +7,7 @@ Start the backend on `8010` and the frontend on `3011`, then open
 
 | Role | ID | Password | Landing page | What they can open |
 |---|---|---|---|---|
-| Master admin | `admin` | `admin123` | `/dashboard` | Every portal page: dashboard, POS, kitchen, menu, inventory, purchase orders, customers, marketing, reports, finance, feedback/NPS, ops, deployment checklist, store profile, hardware, settings |
+| Master admin | `admin` | `admin123` | `/dashboard` | Every portal page: dashboard, departments, POS, kitchen, menu, inventory, purchase orders, customers, marketing, reports, finance, feedback/NPS, ops, deployment checklist, store profile, hardware, settings |
 | Counter staff | `staff` | `staff123` | `/orders` | Quick Counter, POS (Orders), Kitchen Ops, receipts and kitchen tickets |
 | Customer | phone number + one-time code (or a recent order ID) | none (OTP/proof-based) | `/account` | Own order history, profile and consent |
 

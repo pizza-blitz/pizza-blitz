@@ -9,6 +9,12 @@
 
 ## 1. Executive verdict
 
+> **Direction update (24 Oct 2026):** Pizza Blitz now models HR as a **department**
+> under the admin domain (`/departments/hr`), with its people, leave, payroll,
+> onboarding, documents and exits modules listed but marked *planned*. Euron remains the
+> external HR system behind that department. This preserves the recommendation below:
+> one admin experience, a separate HR system of record, and no fake integration status.
+
 Euron Open HRMS is a **credible, well-engineered HR/payroll codebase**, but it is **not a
 drop-in replacement for Pizza Blitz’s workforce module** and it is **not proven “100%
 stable.”**

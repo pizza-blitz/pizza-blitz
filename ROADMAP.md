@@ -171,6 +171,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Post-order feedback and NPS.
 - [x] Item-level KDS bump/recall.
 - [x] Final delivery report ([DELIVERY_REPORT.md](DELIVERY_REPORT.md)).
+- [x] Department registry with HR as a department.
 - [ ] External monitoring, live payment verification, per-store menus.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

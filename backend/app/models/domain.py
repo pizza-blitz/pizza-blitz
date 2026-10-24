@@ -857,3 +857,62 @@ class OrderFeedback(Base):
     tags = Column(JSON, default=list)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     order = relationship("RestaurantOrder")
+
+
+class BusinessDepartment(Base):
+    """An admin-domain department (Operations, People & HR, Finance...)."""
+
+    __tablename__ = "business_departments"
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(60), unique=True, index=True, nullable=False)
+    name = Column(String(120), nullable=False)
+    description = Column(String(500), nullable=True)
+    color = Column(String(20), nullable=False, default="#f97316")
+    icon = Column(String(40), nullable=False, default="building")
+    status = Column(String(20), nullable=False, default="active", index=True)
+    sort_order = Column(Integer, nullable=False, default=100)
+    external_system = Column(String(80), nullable=True)
+    external_url = Column(String(500), nullable=True)
+    integration_status = Column(String(30), nullable=False, default="not_connected")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    members = relationship(
+        "DepartmentMember", back_populates="department", cascade="all, delete-orphan"
+    )
+    modules = relationship(
+        "DepartmentModule", back_populates="department", cascade="all, delete-orphan"
+    )
+
+
+class DepartmentMember(Base):
+    __tablename__ = "department_members"
+    __table_args__ = (
+        UniqueConstraint("department_id", "staff_id", name="uq_department_member"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=False
+    )
+    staff_id = Column(String(120), index=True, nullable=False)
+    role = Column(String(30), nullable=False, default="member")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    department = relationship("BusinessDepartment", back_populates="members")
+
+
+class DepartmentModule(Base):
+    __tablename__ = "department_modules"
+    __table_args__ = (
+        UniqueConstraint(
+            "department_id", "module_key", name="uq_department_module"
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=False
+    )
+    module_key = Column(String(60), nullable=False)
+    label = Column(String(120), nullable=False)
+    route = Column(String(240), nullable=True)
+    status = Column(String(20), nullable=False, default="planned")
+    sort_order = Column(Integer, nullable=False, default=100)
+    department = relationship("BusinessDepartment", back_populates="modules")
