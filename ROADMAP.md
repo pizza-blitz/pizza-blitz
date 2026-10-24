@@ -180,6 +180,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] HR Documents & letters.
 - [x] HR Exits & settlement.
 - [x] Department-scoped HR permissions.
-- [ ] HR analytics/reports, Euron sync.
+- [x] HR analytics command center.
+- [ ] Optional Euron sync adapter and HR report exports.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
