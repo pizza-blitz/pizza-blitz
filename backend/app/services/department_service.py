@@ -449,17 +449,22 @@ def ensure_departments(db: Session) -> None:
             ):
                 add_module(db, department, module_key)
         if department.key == "hr":
-            people = next(
-                (
-                    row
-                    for row in department.modules
-                    if row.module_key == "people"
-                ),
-                None,
-            )
-            if people is not None:
-                people.route = "/departments/hr/people"
-                people.status = "active"
+            active_routes = {
+                "people": "/departments/hr/people",
+                "leave": "/departments/hr/leave",
+            }
+            for module_key, route in active_routes.items():
+                module = next(
+                    (
+                        row
+                        for row in department.modules
+                        if row.module_key == module_key
+                    ),
+                    None,
+                )
+                if module is not None:
+                    module.route = route
+                    module.status = "active"
     try:
         db.commit()
     except IntegrityError:

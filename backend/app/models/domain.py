@@ -942,3 +942,72 @@ class HREmployee(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     store = relationship("Store")
+
+
+class HRLeaveType(Base):
+    __tablename__ = "hr_leave_types"
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(30), unique=True, index=True, nullable=False)
+    name = Column(String(80), nullable=False)
+    paid = Column(Boolean, nullable=False, default=True)
+    annual_quota = Column(Float, nullable=False, default=0.0)
+    carry_forward = Column(Boolean, nullable=False, default=False)
+    max_carry_forward = Column(Float, nullable=False, default=0.0)
+    color = Column(String(20), nullable=False, default="#0f766e")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class HRHoliday(Base):
+    __tablename__ = "hr_holidays"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False)
+    date = Column(Date, index=True, nullable=False)
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    notes = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    store = relationship("Store")
+
+
+class HRLeaveBalance(Base):
+    __tablename__ = "hr_leave_balances"
+    __table_args__ = (
+        UniqueConstraint(
+            "employee_id", "leave_type_id", "year", name="uq_hr_leave_balance"
+        ),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=False
+    )
+    leave_type_id = Column(
+        Integer, ForeignKey("hr_leave_types.id"), index=True, nullable=False
+    )
+    year = Column(Integer, nullable=False, index=True)
+    entitled = Column(Float, nullable=False, default=0.0)
+    used = Column(Float, nullable=False, default=0.0)
+    adjusted = Column(Float, nullable=False, default=0.0)
+    employee = relationship("HREmployee")
+    leave_type = relationship("HRLeaveType")
+
+
+class HRLeaveRequest(Base):
+    __tablename__ = "hr_leave_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=False
+    )
+    leave_type_id = Column(
+        Integer, ForeignKey("hr_leave_types.id"), index=True, nullable=False
+    )
+    start_date = Column(Date, index=True, nullable=False)
+    end_date = Column(Date, index=True, nullable=False)
+    days = Column(Float, nullable=False, default=1.0)
+    reason = Column(String(500), nullable=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    decided_by = Column(String(120), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    decision_note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    employee = relationship("HREmployee")
+    leave_type = relationship("HRLeaveType")
