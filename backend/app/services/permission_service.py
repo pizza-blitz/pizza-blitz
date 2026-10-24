@@ -53,6 +53,54 @@ PERMISSIONS = [
         "group": "Administration",
         "description": "Manage staff credentials and permission toggles.",
     },
+    {
+        "key": "hr.view",
+        "label": "HR workspace",
+        "group": "People & HR",
+        "description": "Open the People & HR department and its overview.",
+    },
+    {
+        "key": "hr.people",
+        "label": "HR people directory",
+        "group": "People & HR",
+        "description": "View and edit employee records and POS links.",
+    },
+    {
+        "key": "hr.leave",
+        "label": "HR leave",
+        "group": "People & HR",
+        "description": "Manage leave types, balances, requests and holidays.",
+    },
+    {
+        "key": "hr.attendance",
+        "label": "HR attendance",
+        "group": "People & HR",
+        "description": "View the roster, clock in/out and regularise attendance.",
+    },
+    {
+        "key": "hr.payroll",
+        "label": "HR payroll",
+        "group": "People & HR",
+        "description": "Manage salary structures, pay runs and payslips.",
+    },
+    {
+        "key": "hr.onboarding",
+        "label": "HR onboarding",
+        "group": "People & HR",
+        "description": "Manage candidates, checklists and employee conversion.",
+    },
+    {
+        "key": "hr.documents",
+        "label": "HR documents",
+        "group": "People & HR",
+        "description": "Upload/delete documents and issue or verify letters.",
+    },
+    {
+        "key": "hr.exits",
+        "label": "HR exits",
+        "group": "People & HR",
+        "description": "Manage exits, clearance and final settlement.",
+    },
 ]
 PERMISSION_KEYS = {item["key"] for item in PERMISSIONS}
 DEFAULT_STAFF = {
@@ -64,6 +112,14 @@ DEFAULT_STAFF = {
     "reports.view": False,
     "settings.manage": False,
     "staff.manage": False,
+    "hr.view": False,
+    "hr.people": False,
+    "hr.leave": False,
+    "hr.attendance": False,
+    "hr.payroll": False,
+    "hr.onboarding": False,
+    "hr.documents": False,
+    "hr.exits": False,
 }
 
 

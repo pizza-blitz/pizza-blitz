@@ -59,7 +59,7 @@ export const portalNavGroups: PortalNavGroup[] = [
       { name: "Reports", href: "/reports", icon: BarChart3, description: "Comparisons, audit logs and exports", allowedRoles: adminOnly },
       { name: "CEO Command", href: "/ceo", icon: Crown, description: "Weekly owner summary and health score", allowedRoles: adminOnly },
       { name: "Roadmap", href: "/roadmap", icon: CalendarDays, description: "Readiness, proofs and launch board", allowedRoles: adminOnly },
-      { name: "Departments", href: "/departments", icon: Building2, description: "Business units, modules and teams", allowedRoles: adminOnly },
+      { name: "Departments", href: "/departments", icon: Building2, description: "Business units, modules and teams", allowedRoles: floorRoles },
     ],
   },
   {

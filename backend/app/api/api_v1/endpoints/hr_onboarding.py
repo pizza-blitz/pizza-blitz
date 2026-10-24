@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission
 from app.models.domain import HROnboardingCandidate
 from app.services.hr_onboarding_service import (
     CANDIDATE_STATUSES,
@@ -82,7 +82,7 @@ def _candidate_or_404(db: Session, candidate_id: int) -> HROnboardingCandidate:
 @router.get("/onboarding/summary")
 def onboarding_summary(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     return summary(db)
 
@@ -91,7 +91,7 @@ def onboarding_summary(
 def onboarding_candidates(
     status: str = "",
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     return {
         "candidates": [
@@ -104,7 +104,7 @@ def onboarding_candidates(
 def create_onboarding_candidate(
     payload: CandidateCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     if payload.status not in CANDIDATE_STATUSES:
         raise HTTPException(status_code=422, detail="Unknown onboarding status.")
@@ -119,7 +119,7 @@ def create_onboarding_candidate(
 def onboarding_candidate_detail(
     candidate_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     return serialize_candidate(_candidate_or_404(db, candidate_id))
 
@@ -129,7 +129,7 @@ def update_onboarding_candidate(
     candidate_id: int,
     payload: CandidateUpdate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     row = _candidate_or_404(db, candidate_id)
     try:
@@ -144,7 +144,7 @@ def update_onboarding_task(
     task_id: int,
     payload: TaskUpdate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     try:
         task = update_task(db, task_id, payload.status, payload.notes)
@@ -158,7 +158,7 @@ def create_onboarding_task(
     candidate_id: int,
     payload: TaskCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     candidate = _candidate_or_404(db, candidate_id)
     try:
@@ -173,7 +173,7 @@ def convert_onboarding_candidate(
     candidate_id: int,
     payload: ConvertPayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.onboarding")),
 ):
     candidate = _candidate_or_404(db, candidate_id)
     try:

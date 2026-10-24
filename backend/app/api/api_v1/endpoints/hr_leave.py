@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission
 from app.models.domain import HRHoliday, HRLeaveType
 from app.services.hr_leave_service import (
     balances_overview,
@@ -61,7 +61,7 @@ class HolidayCreate(BaseModel):
 @router.get("/leave/types")
 def list_leave_types(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     return {
         "types": [
@@ -77,7 +77,7 @@ def list_leave_types(
 def create_leave_type_endpoint(
     payload: LeaveTypeCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = create_leave_type(db, payload.model_dump())
@@ -91,7 +91,7 @@ def list_leave_requests(
     status: str = Query(default="", max_length=20),
     employee_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     return {
         "requests": [
@@ -105,7 +105,7 @@ def list_leave_requests(
 def create_leave_request(
     payload: LeaveRequestCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = create_request(db, payload.model_dump())
@@ -119,7 +119,7 @@ def decide_leave_request(
     request_id: int,
     payload: LeaveDecision,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = decide_request(
@@ -139,7 +139,7 @@ def cancel_leave_request(
     request_id: int,
     payload: LeaveCancel,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = cancel_request(db, request_id, payload.note)
@@ -152,7 +152,7 @@ def cancel_leave_request(
 def leave_balances(
     year: int = Query(default_factory=lambda: date.today().year),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     return {"year": year, "employees": balances_overview(db, year)}
 
@@ -161,7 +161,7 @@ def leave_balances(
 def leave_summary_endpoint(
     year: int = Query(default_factory=lambda: date.today().year),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     return leave_summary(db, year)
 
@@ -169,7 +169,7 @@ def leave_summary_endpoint(
 @router.get("/leave/holidays")
 def list_holidays(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     return {
         "holidays": [
@@ -185,7 +185,7 @@ def list_holidays(
 def add_holiday(
     payload: HolidayCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = create_holiday(db, payload.model_dump())
@@ -198,7 +198,7 @@ def add_holiday(
 def delete_holiday(
     holiday_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.leave")),
 ):
     row = db.query(HRHoliday).filter(HRHoliday.id == holiday_id).first()
     if row is None:

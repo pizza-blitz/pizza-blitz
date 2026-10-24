@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission
 from app.services.hr_attendance_service import (
     clock_in,
     clock_out,
@@ -35,7 +35,7 @@ def attendance_day(
     date: Optional[str] = Query(default=None),
     store_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.attendance")),
 ):
     try:
         return day_roster(db, date, store_id)
@@ -47,7 +47,7 @@ def attendance_day(
 def attendance_clock_in(
     payload: ClockAction,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.attendance")),
 ):
     try:
         return serialize(clock_in(db, payload.employee_id, payload.note))
@@ -59,7 +59,7 @@ def attendance_clock_in(
 def attendance_clock_out(
     payload: ClockAction,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.attendance")),
 ):
     try:
         return serialize(clock_out(db, payload.employee_id, payload.note))
@@ -72,7 +72,7 @@ def attendance_regularize(
     employee_id: int,
     payload: RegularizePayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.attendance")),
 ):
     try:
         return serialize(regularize(db, employee_id, payload.model_dump()))
@@ -85,7 +85,7 @@ def attendance_history(
     employee_id: int,
     month: Optional[str] = Query(default=None, max_length=7),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.attendance")),
 ):
     try:
         return {"records": history(db, employee_id, month)}

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission
 from app.services.hr_payroll_service import (
     finalize_run,
     generate_run,
@@ -39,7 +39,7 @@ class PayRunCreate(BaseModel):
 @router.get("/payroll/salary-structures")
 def list_salary_structures(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     return {"employees": salary_overview(db)}
 
@@ -49,7 +49,7 @@ def save_salary_structure(
     employee_id: int,
     payload: SalaryPayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     try:
         row = upsert_salary(db, employee_id, payload.model_dump())
@@ -61,7 +61,7 @@ def save_salary_structure(
 @router.get("/payroll/runs")
 def payroll_runs(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     return {"runs": [serialize_run(row) for row in list_runs(db)]}
 
@@ -70,7 +70,7 @@ def payroll_runs(
 def create_pay_run(
     payload: PayRunCreate,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     try:
         run, skipped = generate_run(
@@ -88,7 +88,7 @@ def create_pay_run(
 def payroll_run_detail(
     run_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     try:
         run = get_run(db, run_id)
@@ -101,7 +101,7 @@ def payroll_run_detail(
 def recalculate_pay_run(
     run_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     try:
         run, skipped = recalculate_run(db, run_id)
@@ -114,7 +114,7 @@ def recalculate_pay_run(
 def finalize_pay_run(
     run_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     try:
         run = finalize_run(db, run_id)
@@ -127,7 +127,7 @@ def finalize_pay_run(
 def payslip_detail(
     payslip_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.payroll")),
 ):
     try:
         row = get_payslip(db, payslip_id)

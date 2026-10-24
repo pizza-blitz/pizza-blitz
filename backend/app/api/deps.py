@@ -5,12 +5,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
+from app.models.domain import BusinessDepartment, DepartmentMember
 from app.services.auth_service import (
     AuthError,
     decode_access_token,
     decode_portal_session_token,
 )
-from app.services.permission_service import permission_enabled
+from app.services.permission_service import permission_enabled, staff_permission_state
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -122,3 +123,80 @@ def require_permission(permission: str) -> Callable:
         return session
 
     return _dependency
+
+
+def _hr_membership(db: Session, session: dict) -> DepartmentMember | None:
+    subject = str(session.get("subject") or "")
+    if not subject.startswith("staff:"):
+        return None
+    staff_id = subject.split("staff:", 1)[1].strip()
+    hr = (
+        db.query(BusinessDepartment)
+        .filter(BusinessDepartment.key == "hr")
+        .first()
+    )
+    if hr is None:
+        return None
+    return (
+        db.query(DepartmentMember)
+        .filter(
+            DepartmentMember.department_id == hr.id,
+            DepartmentMember.staff_id == staff_id,
+        )
+        .first()
+    )
+
+
+def require_hr_permission(permission: str) -> Callable:
+    """Allow admins, or HR department members with the staff permission."""
+
+    def _dependency(
+        session: dict = Depends(get_current_session),
+        db: Session = Depends(get_db),
+    ) -> dict:
+        if session.get("role") == "admin":
+            return session
+        if session.get("role") != "staff":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account does not have access to the HR department.",
+            )
+        member = _hr_membership(db, session)
+        if member is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of the People & HR department.",
+            )
+        if not permission_enabled(db, "staff", permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This account lacks the {permission} permission.",
+            )
+        session = dict(session)
+        session["hr_member_role"] = member.role
+        return session
+
+    return _dependency
+
+
+def hr_access_state(db: Session, session: dict) -> dict:
+    """Describe the caller's HR membership and effective permissions."""
+    if session.get("role") == "admin":
+        return {
+            "is_admin": True,
+            "is_hr_member": True,
+            "hr_role": "admin",
+            "permissions": {
+                row["key"]: True for row in staff_permission_state(db)
+            },
+        }
+    member = _hr_membership(db, session)
+    permissions = {
+        row["key"]: bool(row["enabled"]) for row in staff_permission_state(db)
+    }
+    return {
+        "is_admin": False,
+        "is_hr_member": member is not None,
+        "hr_role": member.role if member else None,
+        "permissions": permissions if member is not None else {},
+    }

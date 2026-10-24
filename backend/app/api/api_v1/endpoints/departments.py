@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission, require_roles
 from app.models.domain import BusinessDepartment, StaffCredential
 from app.services.department_service import (
     MODULE_BY_KEY,
@@ -92,7 +92,7 @@ def department_staff_catalog(
 @router.get("/")
 def list_departments(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_hr_permission("hr.view")),
 ):
     staff = _staff_map(db)
     rows = (
@@ -100,6 +100,8 @@ def list_departments(
         .order_by(BusinessDepartment.sort_order.asc(), BusinessDepartment.id.asc())
         .all()
     )
+    if session.get("role") != "admin":
+        rows = [row for row in rows if row.key == "hr"]
     return {
         "departments": [
             serialize_department(row, staff_by_id=staff) for row in rows
@@ -133,9 +135,11 @@ def create_department_endpoint(
 def get_department_endpoint(
     key_or_id: str,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_hr_permission("hr.view")),
 ):
     department = _department_or_404(db, key_or_id)
+    if session.get("role") != "admin" and department.key != "hr":
+        raise HTTPException(status_code=403, detail="HR members can only open the HR department.")
     return serialize_department(
         department, staff_by_id=_staff_map(db), include_detail=True
     )

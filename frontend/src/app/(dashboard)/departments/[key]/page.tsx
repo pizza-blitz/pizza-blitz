@@ -69,6 +69,11 @@ export default function DepartmentDetailPage() {
   const [catalog, setCatalog] = useState<CatalogModule[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [message, setMessage] = useState("");
+  const [access, setAccess] = useState<{
+    is_admin: boolean;
+    is_hr_member: boolean;
+    permissions: Record<string, boolean>;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [memberDraft, setMemberDraft] = useState({ staff_id: "", role: "member" });
@@ -106,6 +111,11 @@ export default function DepartmentDetailPage() {
         url: departmentData.external_url || "",
         status: departmentData.integration_status || "pilot",
       });
+      const accessResponse = await fetch(
+        getApiUrl("/api/v1/restaurant/hr/access"),
+        { credentials: "include", cache: "no-store" }
+      );
+      if (accessResponse.ok) setAccess(await accessResponse.json());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Department not found.");
     } finally {
@@ -243,6 +253,22 @@ export default function DepartmentDetailPage() {
   const availableModules = catalog.filter(
     (module) => !activeModuleKeys.has(module.key)
   );
+  const canAdmin = access?.is_admin ?? true;
+  const modulePermissions: Record<string, string> = {
+    overview: "hr.view",
+    people: "hr.people",
+    leave: "hr.leave",
+    attendance: "hr.attendance",
+    payroll: "hr.payroll",
+    onboarding: "hr.onboarding",
+    documents: "hr.documents",
+    exits: "hr.exits",
+  };
+  const canOpenModule = (moduleKey: string) => {
+    if (canAdmin) return true;
+    const permission = modulePermissions[moduleKey];
+    return permission ? Boolean(access?.permissions?.[permission]) : true;
+  };
 
   return (
     <div
@@ -298,7 +324,7 @@ export default function DepartmentDetailPage() {
             <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-500">
               <Settings2 className="h-4 w-4 text-orange-600" /> Modules
             </p>
-            {availableModules.length > 0 && (
+            {canAdmin && availableModules.length > 0 && (
               <div className="flex items-center gap-2">
                 <select
                   aria-label="Add module"
@@ -327,7 +353,8 @@ export default function DepartmentDetailPage() {
 
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {department.modules.map((module) => {
-              const active = module.status === "active" && module.route;
+              const permitted = canOpenModule(module.key);
+              const active = module.status === "active" && module.route && permitted;
               const card = (
                 <>
                   <div className="flex items-start justify-between gap-2">
@@ -345,6 +372,11 @@ export default function DepartmentDetailPage() {
                   <p className="mt-1 text-[11px] font-semibold text-gray-500">
                     {module.route || "Route not configured"}
                   </p>
+                  {!permitted && (
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                      No access for this account
+                    </p>
+                  )}
                   {active && (
                     <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-black text-orange-700">
                       Open <ArrowUpRight className="h-3 w-3" />
@@ -394,15 +426,17 @@ export default function DepartmentDetailPage() {
                       {member.staff_id} · {member.role}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${member.display_name}`}
-                    onClick={() => void removeMember(member.staff_id)}
-                    disabled={busy === `remove-${member.staff_id}`}
-                    className="text-gray-300 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {canAdmin && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${member.display_name}`}
+                      onClick={() => void removeMember(member.staff_id)}
+                      disabled={busy === `remove-${member.staff_id}`}
+                      className="text-gray-300 hover:text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               ))
             ) : (
@@ -412,6 +446,7 @@ export default function DepartmentDetailPage() {
             )}
           </div>
 
+          {canAdmin && (
           <div className="mt-4 space-y-2 border-t border-gray-100 pt-3">
             <select
               aria-label="Staff member"
@@ -451,6 +486,7 @@ export default function DepartmentDetailPage() {
               </button>
             </div>
           </div>
+          )}
         </section>
       </div>
 
@@ -487,6 +523,7 @@ export default function DepartmentDetailPage() {
                 onChange={(event) =>
                   setExternalDraft({ ...externalDraft, url: event.target.value })
                 }
+                disabled={!canAdmin}
                 placeholder="https://hr.example.com"
                 className="mt-1 block w-full rounded-lg border border-teal-200 bg-white px-3 py-2 font-mono text-xs font-bold text-gray-700"
               />
@@ -498,6 +535,7 @@ export default function DepartmentDetailPage() {
                 onChange={(event) =>
                   setExternalDraft({ ...externalDraft, status: event.target.value })
                 }
+                disabled={!canAdmin}
                 className="mt-1 block rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-gray-700"
               >
                 <option value="not_connected">Not connected</option>
@@ -509,7 +547,7 @@ export default function DepartmentDetailPage() {
             <button
               type="button"
               onClick={() => void saveIntegration()}
-              disabled={busy === "integration"}
+              disabled={busy === "integration" || !canAdmin}
               className="rounded-lg bg-teal-800 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
             >
               Save

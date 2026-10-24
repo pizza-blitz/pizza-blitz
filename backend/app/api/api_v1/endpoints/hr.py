@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_current_session, get_db, hr_access_state, require_hr_permission
 from app.models.domain import HREmployee
 from app.services.hr_service import (
     create_employee,
@@ -16,6 +16,14 @@ from app.services.hr_service import (
 )
 
 router = APIRouter()
+
+
+@router.get("/access")
+def hr_access(
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_current_session),
+):
+    return hr_access_state(db, session)
 
 
 class HREmployeeCreate(BaseModel):
@@ -66,7 +74,7 @@ def list_hr_employees(
     employment_type: str = Query(default="", max_length=30),
     store_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.people")),
 ):
     rows = list_employees(db, q, status, employment_type, store_id)
     return {"employees": [serialize_employee(row) for row in rows]}
@@ -75,7 +83,7 @@ def list_hr_employees(
 @router.get("/summary")
 def hr_employee_summary(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.people")),
 ):
     return employee_summary(db)
 
@@ -84,7 +92,7 @@ def hr_employee_summary(
 def create_hr_employee(
     payload: HREmployeeCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.people")),
 ):
     try:
         employee = create_employee(db, payload.model_dump())
@@ -97,7 +105,7 @@ def create_hr_employee(
 def get_hr_employee(
     employee_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.people")),
 ):
     return serialize_employee(_employee_or_404(db, employee_id))
 
@@ -107,7 +115,7 @@ def update_hr_employee(
     employee_id: int,
     payload: HREmployeeUpdate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.people")),
 ):
     employee = _employee_or_404(db, employee_id)
     try:

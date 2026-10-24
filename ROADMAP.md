@@ -179,6 +179,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] HR Onboarding pipeline.
 - [x] HR Documents & letters.
 - [x] HR Exits & settlement.
-- [ ] Department-scoped permissions, HR reports, Euron sync.
+- [x] Department-scoped HR permissions.
+- [ ] HR analytics/reports, Euron sync.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

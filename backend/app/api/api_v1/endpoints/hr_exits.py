@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission
 from app.models.domain import HRExit
 from app.services.hr_exits_service import (
     EXIT_STATUSES,
@@ -60,7 +60,7 @@ def _exit_or_404(db: Session, exit_id: int) -> HRExit:
 @router.get("/exits/summary")
 def exit_summary(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     return summary(db)
 
@@ -69,7 +69,7 @@ def exit_summary(
 def list_hr_exits(
     status: str = "",
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     return {
         "exits": [serialize_exit(row) for row in list_exits(db, status)],
@@ -82,7 +82,7 @@ def list_hr_exits(
 def create_hr_exit(
     payload: ExitCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     try:
         row = create_exit(db, payload.model_dump())
@@ -95,7 +95,7 @@ def create_hr_exit(
 def get_hr_exit(
     exit_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     row = _exit_or_404(db, exit_id)
     return {**serialize_exit(row), "preview": calculate_settlement(db, row)}
@@ -106,7 +106,7 @@ def update_hr_exit(
     exit_id: int,
     payload: ExitUpdate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     row = _exit_or_404(db, exit_id)
     try:
@@ -121,7 +121,7 @@ def update_hr_clearance(
     task_id: int,
     payload: ClearanceUpdate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     try:
         task = update_clearance(db, task_id, payload.status, payload.notes)
@@ -135,7 +135,7 @@ def settle_hr_exit(
     exit_id: int,
     payload: SettlePayload,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     row = _exit_or_404(db, exit_id)
     try:
@@ -149,7 +149,7 @@ def settle_hr_exit(
 def cancel_hr_exit(
     exit_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.exits")),
 ):
     row = _exit_or_404(db, exit_id)
     try:

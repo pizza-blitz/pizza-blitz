@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db, require_roles
+from app.api.deps import get_db, require_hr_permission
 from app.models.domain import HRDocument, HRLetter
 from app.services.hr_documents_service import (
     DOCUMENT_CATEGORIES,
@@ -30,7 +30,7 @@ def hr_documents(
     employee_id: Optional[int] = None,
     category: str = "",
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.documents")),
 ):
     return {
         "documents": [
@@ -51,7 +51,7 @@ async def upload_hr_document(
     expires_at: Optional[str] = Form(default=None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_hr_permission("hr.documents")),
 ):
     try:
         expiry = date.fromisoformat(expires_at[:10]) if expires_at else None
@@ -80,7 +80,7 @@ async def upload_hr_document(
 def download_hr_document(
     document_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.documents")),
 ):
     row = db.query(HRDocument).filter(HRDocument.id == document_id).first()
     if row is None:
@@ -100,7 +100,7 @@ def download_hr_document(
 def remove_hr_document(
     document_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.documents")),
 ):
     row = db.query(HRDocument).filter(HRDocument.id == document_id).first()
     if row is None:
@@ -117,7 +117,7 @@ def hr_letters(
     employee_id: Optional[int] = None,
     letter_type: str = "",
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.documents")),
 ):
     return {
         "letters": [
@@ -134,7 +134,7 @@ def hr_letters(
 def issue_hr_letter(
     payload: dict,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_hr_permission("hr.documents")),
 ):
     try:
         row = create_letter(
@@ -152,7 +152,7 @@ def issue_hr_letter(
 def hr_letter_detail(
     letter_id: int,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    _: dict = Depends(require_hr_permission("hr.documents")),
 ):
     row = db.query(HRLetter).filter(HRLetter.id == letter_id).first()
     if row is None:

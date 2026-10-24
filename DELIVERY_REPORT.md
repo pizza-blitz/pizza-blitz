@@ -3,7 +3,7 @@
 **Status:** delivered for local/staging evaluation; production launch depends on the
 provider and deployment gates below.
 **Master access:** `admin` / `admin123` at `/login` (development defaults).
-**Verification:** 170 backend tests, 149 browser proofs + portal smoke, full audit green,
+**Verification:** 172 backend tests, 150 browser proofs + portal smoke, full audit green,
 production build green with the API offline.
 
 ---
@@ -22,8 +22,8 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Owner/admin portal | 47 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing, reports, stores, departments/HR, hardware, integrations, deployment, feedback |
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
-**Current inventory:** 340 API endpoints, 58 frontend routes (47 portal, 1 KDS,
-10 public), 75 database tables, 170 backend tests, 149 browser proof scripts.
+**Current inventory:** 341 API endpoints, 58 frontend routes (47 portal, 1 KDS,
+10 public), 75 database tables, 172 backend tests, 150 browser proof scripts.
 
 ### Core capabilities
 
@@ -106,7 +106,7 @@ Run from the repository root:
 
 ```powershell
 cd backend
-python -W error::FutureWarning -m unittest discover -s tests -v   # 170 tests
+python -W error::FutureWarning -m unittest discover -s tests -v   # 172 tests
 alembic upgrade head
 alembic check                                                      # no pending operations
 ruff check .
@@ -115,13 +115,13 @@ cd ..\frontend
 npm run typecheck
 npm run lint
 npm run build                                                      # API offline
-npm run verify:audit                                               # 149 proofs + audit
+npm run verify:audit                                               # 150 proofs + audit
 npm run test:e2e                                                   # portal smoke
 ```
 
 Latest recorded results:
 
-- backend suite: **170 passed**;
+- backend suite: **172 passed**;
 - audit: **green** (surface, inventory, action hygiene and all 32 proof groups);
 - production build: **compiled successfully** with the backend stopped;
 - migrations: fresh upgrade + `alembic check` clean;

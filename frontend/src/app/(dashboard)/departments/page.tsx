@@ -44,6 +44,10 @@ export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [catalog, setCatalog] = useState<Module[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [access, setAccess] = useState<{
+    is_admin: boolean;
+    is_hr_member: boolean;
+  } | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -67,6 +71,11 @@ export default function DepartmentsPage() {
       if (!response.ok) throw new Error(data.detail || "Departments failed to load.");
       setDepartments(data.departments || []);
       setCatalog(data.catalog || []);
+      const accessResponse = await fetch(
+        getApiUrl("/api/v1/restaurant/hr/access"),
+        { credentials: "include", cache: "no-store" }
+      );
+      if (accessResponse.ok) setAccess(await accessResponse.json());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Departments failed to load.");
     } finally {
@@ -154,15 +163,24 @@ export default function DepartmentsPage() {
             not a separate product; future departments are created from this registry.
           </p>
         </div>
-        <button
-          type="button"
-          data-testid="department-create-open"
-          onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
-        >
-          <Plus className="h-4 w-4" /> New department
-        </button>
+        {(!access || access.is_admin) && (
+          <button
+            type="button"
+            data-testid="department-create-open"
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
+          >
+            <Plus className="h-4 w-4" /> New department
+          </button>
+        )}
       </div>
+
+      {access && !access.is_admin && !access.is_hr_member && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          Your account is not assigned to the People &amp; HR department. Ask an admin
+          to add you to the HR team and grant the HR workspace permission.
+        </div>
+      )}
 
       {message && (
         <div className="rounded-xl border border-orange-100 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-900">
