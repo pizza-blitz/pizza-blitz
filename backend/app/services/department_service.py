@@ -453,15 +453,17 @@ def ensure_departments(db: Session) -> None:
                 "people": "/departments/hr/people",
                 "leave": "/departments/hr/leave",
                 "attendance": "/departments/hr/attendance",
+                "payroll": "/departments/hr/payroll",
             }
+            db.flush()
             for module_key, route in active_routes.items():
-                module = next(
-                    (
-                        row
-                        for row in department.modules
-                        if row.module_key == module_key
-                    ),
-                    None,
+                module = (
+                    db.query(DepartmentModule)
+                    .filter(
+                        DepartmentModule.department_id == department.id,
+                        DepartmentModule.module_key == module_key,
+                    )
+                    .first()
                 )
                 if module is not None:
                     module.route = route

@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 54 frontend routes, the 145 browser proof scripts plus portal smoke in
+- Listed all 55 frontend routes, the 146 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -92,6 +92,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 61 | HR people | The HR department had no employee record to operate on, so the People module could not go live and there was no local key for a future Euron sync. | HR People gap. | Added `hr_employees` (migration) with code, designation, employment type/status, joining date, store, reporting line, notes, optional POS staff link and external-system/id fields. Added list/search/filter, summary, create/update APIs and `/departments/hr/people`, with HR's People module activated. Two backend tests and the departments browser proof. Payroll/leave/onboarding/exits remain planned. |
 | 62 | HR leave | The HR department had no leave types, balances, request flow, approvals or holiday calendar, so time off could not be managed inside the platform. | HR Leave gap. | Added `hr_leave_types`, `hr_leave_balances`, `hr_leave_requests` and `hr_holidays` (migration), default leave types, per-employee/year balances with carry-forward, overlap/balance validation, approve/reject/cancel, holiday CRUD and summary. Added `/departments/hr/leave` with Requests/Balances/Holidays/Leave types tabs and activated HR's Leave module. Two backend tests and a browser proof. Accrual automation and payroll deduction integration remain. |
 | 63 | HR attendance | There was no HR time clock or attendance register, so hours worked, leave-aware daily status and corrections were invisible. | HR Attendance gap. | Added `hr_attendance` (migration) with one record per employee/day, clock-in/out, worked minutes, half-day detection, source and notes. Added day roster/summary, leave-aware status, clock-in blocking on approved leave, HR regularisation and history APIs. Added `/departments/hr/attendance` and activated the module. Three backend tests and a browser proof. Biometric/geofence capture and payroll hour export remain. |
+| 64 | HR payroll | There was no salary structure, monthly pay run, statutory deduction or payslip, so HR could not close pay inside the platform. | HR Payroll gap. | Added `hr_salary_structures`, `hr_pay_runs` and `hr_payslips` (migration), monthly draft/finalized runs, attendance/unpaid-leave proration, PF/ESI/professional-tax/TDS deductions, employer cost and printable payslips. Added `/departments/hr/payroll` with Pay runs and Salary structures tabs and activated the module. Two backend tests and a browser proof. Bank payouts, statutory filings and state-specific PT slabs remain. Also moved leave/department seeding to startup to avoid concurrent seed writes. |
 
 ## Still open
 
@@ -106,7 +107,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 162 tests, all pass (in a clean venv built from
+- Backend unit suite: 164 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

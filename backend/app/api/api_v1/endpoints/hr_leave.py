@@ -14,7 +14,6 @@ from app.services.hr_leave_service import (
     create_leave_type,
     create_request,
     decide_request,
-    ensure_leave_types,
     leave_summary,
     list_requests,
     serialize_holiday,
@@ -64,7 +63,6 @@ def list_leave_types(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_leave_types(db)
     return {
         "types": [
             serialize_type(row)
@@ -81,7 +79,6 @@ def create_leave_type_endpoint(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_leave_types(db)
     try:
         row = create_leave_type(db, payload.model_dump())
     except ValueError as exc:
@@ -96,7 +93,6 @@ def list_leave_requests(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_leave_types(db)
     return {
         "requests": [
             serialize_request(row)
@@ -111,7 +107,6 @@ def create_leave_request(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_leave_types(db)
     try:
         row = create_request(db, payload.model_dump())
     except ValueError as exc:
@@ -159,7 +154,6 @@ def leave_balances(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_leave_types(db)
     return {"year": year, "employees": balances_overview(db, year)}
 
 
@@ -169,7 +163,6 @@ def leave_summary_endpoint(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_leave_types(db)
     return leave_summary(db, year)
 
 

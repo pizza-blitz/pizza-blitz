@@ -12,7 +12,6 @@ from app.services.department_service import (
     catalog_payload,
     create_department,
     delete_department,
-    ensure_departments,
     get_department,
     remove_member,
     serialize_department,
@@ -95,7 +94,6 @@ def list_departments(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_departments(db)
     staff = _staff_map(db)
     rows = (
         db.query(BusinessDepartment)
@@ -137,7 +135,6 @@ def get_department_endpoint(
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    ensure_departments(db)
     department = _department_or_404(db, key_or_id)
     return serialize_department(
         department, staff_by_id=_staff_map(db), include_detail=True

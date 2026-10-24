@@ -1032,3 +1032,81 @@ class HRAttendance(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     employee = relationship("HREmployee")
+
+
+class HRSalaryStructure(Base):
+    __tablename__ = "hr_salary_structures"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), unique=True, index=True, nullable=False
+    )
+    basic = Column(Float, nullable=False, default=0.0)
+    hra = Column(Float, nullable=False, default=0.0)
+    allowances = Column(Float, nullable=False, default=0.0)
+    other_deductions = Column(Float, nullable=False, default=0.0)
+    tds = Column(Float, nullable=False, default=0.0)
+    pf_enabled = Column(Boolean, nullable=False, default=True)
+    esi_enabled = Column(Boolean, nullable=False, default=True)
+    professional_tax = Column(Float, nullable=False, default=200.0)
+    effective_from = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    employee = relationship("HREmployee")
+
+
+class HRPayRun(Base):
+    __tablename__ = "hr_pay_runs"
+    __table_args__ = (
+        UniqueConstraint("year", "month", name="uq_hr_pay_run_month"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    year = Column(Integer, nullable=False, index=True)
+    month = Column(Integer, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="draft", index=True)
+    employee_count = Column(Integer, nullable=False, default=0)
+    gross_total = Column(Float, nullable=False, default=0.0)
+    deductions_total = Column(Float, nullable=False, default=0.0)
+    net_total = Column(Float, nullable=False, default=0.0)
+    employer_cost = Column(Float, nullable=False, default=0.0)
+    created_by = Column(String(120), nullable=True)
+    finalized_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    payslips = relationship(
+        "HRPayslip", back_populates="run", cascade="all, delete-orphan"
+    )
+
+
+class HRPayslip(Base):
+    __tablename__ = "hr_payslips"
+    __table_args__ = (
+        UniqueConstraint("run_id", "employee_id", name="uq_hr_payslip_run_employee"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(
+        Integer, ForeignKey("hr_pay_runs.id"), index=True, nullable=False
+    )
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=False
+    )
+    employee_code = Column(String(40), nullable=False)
+    employee_name = Column(String(160), nullable=False)
+    designation = Column(String(120), nullable=True)
+    days_in_month = Column(Integer, nullable=False, default=30)
+    paid_days = Column(Float, nullable=False, default=30)
+    basic = Column(Float, nullable=False, default=0.0)
+    hra = Column(Float, nullable=False, default=0.0)
+    allowances = Column(Float, nullable=False, default=0.0)
+    gross = Column(Float, nullable=False, default=0.0)
+    pf_employee = Column(Float, nullable=False, default=0.0)
+    esi_employee = Column(Float, nullable=False, default=0.0)
+    professional_tax = Column(Float, nullable=False, default=0.0)
+    tds = Column(Float, nullable=False, default=0.0)
+    other_deductions = Column(Float, nullable=False, default=0.0)
+    total_deductions = Column(Float, nullable=False, default=0.0)
+    net = Column(Float, nullable=False, default=0.0)
+    employer_pf = Column(Float, nullable=False, default=0.0)
+    employer_esi = Column(Float, nullable=False, default=0.0)
+    breakdown = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    run = relationship("HRPayRun", back_populates="payslips")
+    employee = relationship("HREmployee")

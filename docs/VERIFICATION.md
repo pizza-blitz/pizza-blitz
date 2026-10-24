@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 162 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 164 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -449,6 +449,16 @@ leave (`on_leave`), blocks clock-in on approved leave, detects half-days under f
 and supports HR regularisation plus monthly history. `/departments/hr/attendance` shows the
 roster, summary cards and clock/regularise actions. Covered by
 `backend/tests/test_hr_attendance.py` and `frontend/e2e/verify-hr-attendance.cjs`.
+
+## HR payroll
+
+`/restaurant/hr/payroll` stores salary structures and generates one draft pay run per
+month: attendance/unpaid leave prorate basic/HRA/allowances, PF is 12% of basic up to the
+Rs 15,000 cap, ESI applies only up to Rs 21,000 gross, professional tax is the configured
+flat amount and TDS is HR-entered. Draft runs can be recalculated, finalized runs lock, and
+each payslip carries earnings/deductions, employer contributions and a printable view.
+`/departments/hr/payroll` exposes pay runs and salary structures. Covered by
+`backend/tests/test_hr_payroll.py` and `frontend/e2e/verify-hr-payroll.cjs`.
 
 ## Item-level KDS
 

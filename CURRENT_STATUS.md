@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 162 backend tests, 145 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 164 backend tests, 146 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -190,11 +190,15 @@ Wave 4 (in progress):
   reject/cancel, holidays and summary; new `verify:hr-leave` proof and two backend tests.
 - HR Attendance is live: daily clock-in/out, leave-aware roster, worked minutes,
   regularisation and day summary; new `verify:hr-attendance` proof and three backend tests.
-- Next: HR payroll, onboarding/documents/exits, department permissions.
+- HR Payroll is live: salary structures, draft/finalized monthly runs, attendance/leave
+  proration, PF/ESI/professional-tax/TDS deductions, employer cost and printable payslips;
+  new `verify:hr-payroll` proof and two backend tests.
+- HR module activation now uses startup-only seeding, avoiding concurrent seed writes.
+- Next: HR onboarding, documents/letters, exits, department permissions.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 162 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 164 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

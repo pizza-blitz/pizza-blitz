@@ -19,6 +19,7 @@ from app.services.delivery_service import seed_default_delivery_zones
 from app.services.menu_customization_service import seed_default_customizations
 from app.services.store_service import ensure_default_store
 from app.services.department_service import ensure_departments
+from app.services.hr_leave_service import ensure_leave_types
 from app.services.media_service import media_root
 
 from contextlib import asynccontextmanager
@@ -122,6 +123,7 @@ def seed_baseline_data(db=None) -> None:
         seed_default_customizations(db)
         ensure_default_store(db)
         ensure_departments(db)
+        ensure_leave_types(db)
         if owns_session:
             db.commit()
         else:

@@ -121,7 +121,12 @@ async function main() {
     assert(/Euron Open HRMS/i.test(externalText), "HR external system panel missing.");
     assert(/Pilot/i.test(externalText), "HR pilot status missing.");
     const payroll = page.getByTestId("department-module-payroll");
-    assert(/planned/i.test(await payroll.innerText()), "Payroll should be honestly marked planned.");
+    assert(/active/i.test(await payroll.innerText()), "Payroll should be active.");
+    const onboarding = page.getByTestId("department-module-onboarding");
+    assert(
+      /planned/i.test(await onboarding.innerText()),
+      "Onboarding should be honestly marked planned."
+    );
     const people = page.getByTestId("department-module-people");
     assert(/active/i.test(await people.innerText()), "People directory should be active.");
     const activeLink = page.getByTestId("department-module-overview");
