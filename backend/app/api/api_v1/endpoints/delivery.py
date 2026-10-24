@@ -869,6 +869,10 @@ def update_delivery_assignment(
     if status in {"out_for_delivery", "delivered"} and status != previous_status:
         notify_order_event(db, order, status)
         queue_status_event(db, order, status)
+        if status == "delivered":
+            from app.services.journey_service import enroll_order_trigger
+
+            enroll_order_trigger(db, "order_delivered", order)
     record_operational_audit_event(
         db,
         session=session,

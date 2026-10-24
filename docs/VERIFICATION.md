@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 186 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library, storefront landing content, configurable tax/billing, provider credentials, messaging inbox/webhooks/templates, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 188 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library, storefront landing content, configurable tax/billing, provider credentials, messaging inbox/webhooks/templates, marketing journeys, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -548,6 +548,15 @@ marked read, put on pending/closed and replied to through the configured provide
 status and provider errors are stored on each outbound message. Templates are reusable per
 channel. Covered by `backend/tests/test_messaging_inbox.py` and
 `frontend/e2e/verify-messaging-inbox.cjs`.
+
+## Marketing journeys
+
+`/journeys` creates active sequences with a trigger (`order_completed`, `order_delivered`,
+`feedback_low`, `manual`), delay/send steps and optional templates. Order completion/delivery
+and low-feedback hooks enroll contacts; a one-minute APScheduler job processes due steps and
+records each step result. Enrollment is unique per journey/trigger reference, and provider
+failures are stored as failed/skipped events rather than blocking the sequence. Covered by
+`backend/tests/test_marketing_journeys.py` and `frontend/e2e/verify-marketing-journeys.cjs`.
 
 ## Item-level KDS
 

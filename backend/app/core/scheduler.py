@@ -101,6 +101,21 @@ def aggregator_outbound_job():
         session.close()
 
 
+def journey_runner_job():
+    from app.db.session import SessionLocal
+    from app.services.journey_service import process_due
+
+    session = SessionLocal()
+    try:
+        summary = process_due(session)
+        if summary["processed"]:
+            logger.info("Journey runner summary: %s", summary)
+    except Exception:
+        logger.exception("Journey runner failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -129,6 +144,13 @@ scheduler.add_job(
     "interval",
     minutes=1,
     id="aggregator_outbound_delivery",
+    replace_existing=True,
+)
+scheduler.add_job(
+    journey_runner_job,
+    "interval",
+    minutes=1,
+    id="marketing_journey_runner",
     replace_existing=True,
 )
 

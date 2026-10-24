@@ -125,6 +125,9 @@ For the messaging inbox, set `MESSAGING_WEBHOOK_TOKEN` and point the provider we
 `/api/v1/restaurant/messaging/webhook/{whatsapp|sms|email|instagram}` with the token as the
 `token` query parameter or `X-Webhook-Token` header. Without it, inbound webhooks return 503.
 
+Marketing journeys run on the backend scheduler every minute. Keep journey status `draft`
+until the relevant provider is live; skipped/failed send steps are recorded on the enrollment.
+
 ## Deployment Checklist
 
 - Production database created and migrated.

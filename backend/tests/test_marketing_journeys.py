@@ -1,0 +1,142 @@
+"""Marketing journeys: order trigger, enrollment and delayed send steps."""
+
+import os
+import unittest
+from unittest.mock import patch
+
+os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+
+from fastapi.testclient import TestClient
+
+from app.core.config import settings
+from app.main import app
+from app.services.campaign_dispatch_service import CampaignProviderResult
+
+
+class MarketingJourneyTest(unittest.TestCase):
+    def setUp(self):
+        self._ctx = TestClient(app)
+        self.client = self._ctx.__enter__()
+        login = self.client.post(
+            "/api/v1/auth/admin/login",
+            json={
+                "id": settings.PIZZA_BLITZ_ADMIN_ID,
+                "password": settings.PIZZA_BLITZ_ADMIN_PASSWORD,
+            },
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        self.headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    def tearDown(self):
+        self._ctx.__exit__(None, None, None)
+
+    def create_order(self, phone: str) -> int:
+        created = self.client.post(
+            "/api/v1/restaurant/orders/",
+            json={
+                "order_type": "takeaway",
+                "customer_name": "Journey Proof Guest",
+                "customer_phone": phone,
+                "payment_method": "cash",
+                "items": [{"name": "Garlic Bread", "quantity": 1, "price": 119}],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        return created.json()["order_id"]
+
+    def test_order_completion_enrolls_and_runs_journey(self):
+        phone = f"9195{str(id(self))[-8:]}"
+        created = self.client.post(
+            "/api/v1/restaurant/journeys",
+            json={
+                "name": "Post-order thank you proof",
+                "description": "Thank the guest after a completed order.",
+                "trigger": "order_completed",
+                "status": "active",
+                "steps": [
+                    {"type": "delay", "hours": 0},
+                    {
+                        "type": "send",
+                        "channel": "whatsapp",
+                        "body": "Thanks for ordering from Pizza Blitz!",
+                    },
+                ],
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        journey = created.json()["journey"]
+        self.assertEqual(journey["trigger"], "order_completed")
+        self.assertEqual(len(journey["steps"]), 2)
+
+        order_id = self.create_order(phone)
+        ready = self.client.patch(
+            f"/api/v1/restaurant/orders/{order_id}/status",
+            json={"status": "ready"},
+            headers=self.headers,
+        )
+        self.assertEqual(ready.status_code, 200, ready.text)
+        closed = self.client.patch(
+            f"/api/v1/restaurant/orders/{order_id}/close",
+            headers=self.headers,
+        )
+        self.assertEqual(closed.status_code, 200, closed.text)
+
+        detail = self.client.get(
+            f"/api/v1/restaurant/journeys/{journey['id']}",
+            headers=self.headers,
+        )
+        self.assertEqual(detail.status_code, 200, detail.text)
+        enrollments = detail.json()["journey"]["recent_enrollments"]
+        self.assertTrue(
+            any(item["trigger_ref"] == f"order:{order_id}:order_completed" for item in enrollments)
+        )
+
+        with patch(
+            "app.services.journey_service.send_campaign_message",
+            return_value=CampaignProviderResult(
+                provider="meta-whatsapp", status="sent", external_id="journey-proof"
+            ),
+        ):
+            run = self.client.post(
+                "/api/v1/restaurant/journeys/run-due", headers=self.headers
+            )
+        self.assertEqual(run.status_code, 200, run.text)
+        self.assertGreaterEqual(run.json()["processed"], 1)
+
+        after = self.client.get(
+            f"/api/v1/restaurant/journeys/{journey['id']}",
+            headers=self.headers,
+        ).json()["journey"]
+        enrollment = next(
+            item
+            for item in after["recent_enrollments"]
+            if item["trigger_ref"] == f"order:{order_id}:order_completed"
+        )
+        self.assertEqual(enrollment["status"], "completed")
+        self.assertTrue(
+            any(event["step_type"] == "send" and event["status"] == "sent" for event in enrollment["events"])
+        )
+        self.assertGreaterEqual(after["completed_count"], 1)
+
+    def test_manual_enrollment_rejects_draft_journey(self):
+        created = self.client.post(
+            "/api/v1/restaurant/journeys",
+            json={
+                "name": "Draft journey proof",
+                "trigger": "manual",
+                "steps": [{"type": "send", "channel": "sms", "body": "Hello"}],
+            },
+            headers=self.headers,
+        )
+        journey = created.json()["journey"]
+        response = self.client.post(
+            f"/api/v1/restaurant/journeys/{journey['id']}/enroll",
+            json={"destination": "919500000001", "name": "Draft Guest"},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+
+
+if __name__ == "__main__":
+    unittest.main()

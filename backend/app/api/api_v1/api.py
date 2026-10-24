@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.api.deps import require_roles
-from app.api.api_v1.endpoints import auth, sync, inventory, stats, daily, menu, expenses, insights, reports, purchase_orders, import_data, ocr, shifts, orders, vendors, promotions, recipes, customers, delivery, social, ads, ops, storefront, stores, accounting, aggregators, hardware, feedback, departments, hr, hr_leave, hr_attendance, hr_payroll, hr_onboarding, hr_documents, hr_exits, hr_analytics, media, storefront_content, billing_settings, provider_settings, messaging
+from app.api.api_v1.endpoints import auth, sync, inventory, stats, daily, menu, expenses, insights, reports, purchase_orders, import_data, ocr, shifts, orders, vendors, promotions, recipes, customers, delivery, social, ads, ops, storefront, stores, accounting, aggregators, hardware, feedback, departments, hr, hr_leave, hr_attendance, hr_payroll, hr_onboarding, hr_documents, hr_exits, hr_analytics, media, storefront_content, billing_settings, provider_settings, messaging, journeys
 
 api_router = APIRouter()
 admin_only = [Depends(require_roles("admin"))]
@@ -31,6 +31,7 @@ api_router.include_router(storefront_content.router, prefix="/restaurant/storefr
 api_router.include_router(billing_settings.router, prefix="/restaurant/billing-settings", tags=["billing-settings"])
 api_router.include_router(provider_settings.router, prefix="/restaurant/provider-settings", tags=["provider-settings"])
 api_router.include_router(messaging.router, prefix="/restaurant/messaging", tags=["messaging"])
+api_router.include_router(journeys.router, prefix="/restaurant/journeys", tags=["journeys"])
 api_router.include_router(ops.router, prefix="/restaurant/ops", tags=["ops"])
 api_router.include_router(storefront.router, prefix="/restaurant/storefront", tags=["storefront"])
 api_router.include_router(stores.router, prefix="/restaurant/stores", tags=["stores"])

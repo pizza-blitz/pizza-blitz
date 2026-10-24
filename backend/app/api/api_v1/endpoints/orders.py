@@ -2499,6 +2499,9 @@ def close_order(
     if notify_completed:
         award_order_points(db, order)
         notify_order_event(db, order, "completed")
+        from app.services.journey_service import enroll_order_trigger
+
+        enroll_order_trigger(db, "order_completed", order)
     record_operational_audit_event(
         db,
         session=session,

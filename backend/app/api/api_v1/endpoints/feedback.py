@@ -96,6 +96,10 @@ def submit_feedback(
     db.add(feedback)
     db.commit()
     db.refresh(feedback)
+    if feedback.nps <= 6:
+        from app.services.journey_service import enroll_feedback_trigger
+
+        enroll_feedback_trigger(db, order, feedback.nps)
     return {**_serialize(feedback), "status": "recorded"}
 
 

@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **367 API endpoints**, **64 routes/pages** (53 portal,
-1 KDS, 10 public), **156 browser proof scripts** plus portal smoke, **186 backend
-tests**, **82 database tables**, **19 integration points**.
+Numbers in this snapshot: **374 API endpoints**, **65 routes/pages** (54 portal,
+1 KDS, 10 public), **157 browser proof scripts** plus portal smoke, **188 backend
+tests**, **85 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -155,6 +155,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons / flash sales | Builder, audience, channel, schedule | Built | Same + auto-apply | — |
 | Campaign dispatch | WhatsApp/SMS/email, logs, retries, suppression | Built | Drip journeys, A/B tests | Journeys/A-B missing |
 | Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
+| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay + send steps, templates, durable runner, enrollment/event history, pause/activate | Built | Automated lifecycle journeys | Branching, A/B, frequency caps and revenue attribution later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
 | Social publishing | Post creation, delivery logs, auto-publish gated | Built | Multi-platform scheduling, media | Reels/shorts video missing |
 | Ad campaigns | Create, launch, pause, budgets, metrics, ROI | Built | Provider sync depth, attribution | Attribution partial |

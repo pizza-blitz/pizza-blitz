@@ -1342,3 +1342,55 @@ class MessageTemplate(Base):
     status = Column(String(30), nullable=False, default="draft")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MarketingJourney(Base):
+    """A trigger-based sequence of delays and message steps."""
+
+    __tablename__ = "marketing_journeys"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(160), nullable=False)
+    description = Column(String(500), nullable=True)
+    trigger = Column(String(50), nullable=False, index=True)
+    status = Column(String(30), nullable=False, default="draft", index=True)
+    steps = Column(JSON, default=list)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JourneyEnrollment(Base):
+    """One customer's progress through a journey."""
+
+    __tablename__ = "journey_enrollments"
+    __table_args__ = (
+        UniqueConstraint("journey_id", "trigger_ref", name="uq_journey_enrollment_ref"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    journey_id = Column(Integer, ForeignKey("marketing_journeys.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    trigger_ref = Column(String(160), nullable=False)
+    status = Column(String(30), nullable=False, default="running", index=True)
+    current_step = Column(Integer, nullable=False, default=0)
+    next_run_at = Column(DateTime, default=datetime.utcnow, index=True)
+    context = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    journey = relationship("MarketingJourney")
+    customer = relationship("Customer")
+    events = relationship(
+        "JourneyEvent", back_populates="enrollment", cascade="all, delete-orphan"
+    )
+
+
+class JourneyEvent(Base):
+    """A step result recorded for an enrollment."""
+
+    __tablename__ = "journey_events"
+    id = Column(Integer, primary_key=True, index=True)
+    enrollment_id = Column(Integer, ForeignKey("journey_enrollments.id"), nullable=False, index=True)
+    step_index = Column(Integer, nullable=False, default=0)
+    step_type = Column(String(30), nullable=False)
+    status = Column(String(30), nullable=False)
+    detail = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    enrollment = relationship("JourneyEnrollment", back_populates="events")
