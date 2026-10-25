@@ -18,6 +18,8 @@ type Offer = {
   signed_name?: string | null;
   countersigned_by?: string | null;
   countersigned_at?: string | null;
+  template_name?: string | null;
+  terms?: string | null;
 };
 
 const money = (value: number | null | undefined) =>
@@ -195,6 +197,17 @@ export default function PublicOfferPage() {
               Blitz people policies shared during onboarding.
             </p>
           </div>
+
+          {offer.terms && (
+            <div className="mt-4 rounded-xl border border-[#17130f]/10 bg-[#faf6ef] p-4">
+              <p className="text-[9px] font-black uppercase tracking-widest text-[#8a7a6a]">
+                Offer terms{offer.template_name ? ` · ${offer.template_name}` : ""}
+              </p>
+              <p className="mt-2 whitespace-pre-line text-xs font-semibold leading-5 text-[#4c4138]">
+                {offer.terms}
+              </p>
+            </div>
+          )}
 
           {offer.countersigned_by && (
             <p className="mt-4 rounded-xl border border-[#17130f]/10 bg-[#faf6ef] px-3 py-2 text-[11px] font-bold text-[#4c4138]">

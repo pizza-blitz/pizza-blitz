@@ -203,6 +203,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Multi-path journey branching with explicit stop paths.
 - [x] Campaign lift and linear channel attribution.
 - [x] S3-compatible media storage with CDN URLs and local fallback.
+- [x] Reusable offer templates with snapshot terms.
 - [ ] Person-level multi-touch attribution, holdout experiments, in-app video capture.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

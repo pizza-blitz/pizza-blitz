@@ -1442,6 +1442,19 @@ class RecruitmentJob(Base):
     )
 
 
+class OfferTemplate(Base):
+    """Reusable offer terms that are snapshotted onto an application."""
+
+    __tablename__ = "offer_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(160), unique=True, nullable=False)
+    body = Column(Text, nullable=False)
+    is_default = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class RecruitmentApplication(Base):
     """One candidate's application to a job."""
 
@@ -1481,6 +1494,9 @@ class RecruitmentApplication(Base):
     offer_reminder_count = Column(Integer, nullable=False, default=0, server_default="0")
     offer_countersigned_by = Column(String(160), nullable=True)
     offer_countersigned_at = Column(DateTime, nullable=True)
+    offer_template_id = Column(Integer, ForeignKey("offer_templates.id"), nullable=True)
+    offer_template_name = Column(String(160), nullable=True)
+    offer_terms = Column(Text, nullable=True)
     applied_at = Column(DateTime, default=datetime.utcnow, index=True)
     stage_changed_at = Column(DateTime, default=datetime.utcnow)
     hired_at = Column(DateTime, nullable=True)

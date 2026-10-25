@@ -28,6 +28,13 @@ type Job = {
   application_count: number;
   hired_count: number;
 };
+type OfferTemplate = {
+  id: number;
+  name: string;
+  body: string;
+  is_default: boolean;
+};
+
 type Application = {
   id: number;
   job_id: number;
@@ -149,6 +156,14 @@ export default function HRRecruitmentPage() {
   const [offerSalary, setOfferSalary] = useState("");
   const [offerJoining, setOfferJoining] = useState("");
   const [offerDays, setOfferDays] = useState("7");
+  const [offerTemplates, setOfferTemplates] = useState<OfferTemplate[]>([]);
+  const [offerTemplateId, setOfferTemplateId] = useState("");
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templateDraft, setTemplateDraft] = useState({
+    name: "",
+    body: "",
+    is_default: false,
+  });
   const [jobDraft, setJobDraft] = useState({
     title: "",
     department: "Kitchen",
@@ -167,6 +182,65 @@ export default function HRRecruitmentPage() {
     source: "careers",
     expected_salary: "",
   });
+
+  const loadTemplates = async () => {
+    const response = await fetch(`${API}/offer-templates`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    setOfferTemplates(data.templates || []);
+  };
+
+  const saveTemplate = async () => {
+    if (!templateDraft.name.trim() || templateDraft.body.trim().length < 20) {
+      setMessage("Template needs a name and at least 20 characters of terms.");
+      return;
+    }
+    setBusy("template");
+    try {
+      const response = await fetch(`${API}/offer-templates`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(templateDraft),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Template save failed.");
+      setTemplateDraft({ name: "", body: "", is_default: false });
+      await loadTemplates();
+      setMessage(`Offer template “${data.template.name}” saved.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Template save failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const makeTemplateDefault = async (template: OfferTemplate) => {
+    const response = await fetch(`${API}/offer-templates/${template.id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_default: true }),
+    });
+    if (response.ok) {
+      await loadTemplates();
+      setMessage(`${template.name} is now the default offer template.`);
+    }
+  };
+
+  const removeTemplate = async (template: OfferTemplate) => {
+    const response = await fetch(`${API}/offer-templates/${template.id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (response.ok) {
+      await loadTemplates();
+      setMessage(`Deleted ${template.name}.`);
+    }
+  };
 
   const loadAll = async (preferredJobId?: number | null) => {
     const [summaryRes, jobsRes] = await Promise.all([
@@ -207,6 +281,7 @@ export default function HRRecruitmentPage() {
     void loadAll().catch((error) =>
       setMessage(error instanceof Error ? error.message : "Recruitment failed to load.")
     );
+    void loadTemplates();
   }, []);
 
   const visible = useMemo(() => {
@@ -342,6 +417,7 @@ export default function HRRecruitmentPage() {
           expires_in_days: Number(offerDays) || 7,
           offered_salary: offerSalary ? Number(offerSalary) : undefined,
           joining_date: offerJoining || undefined,
+          template_id: offerTemplateId ? Number(offerTemplateId) : undefined,
         }),
       });
       const data = await response.json();
@@ -492,6 +568,14 @@ export default function HRRecruitmentPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            data-testid="recruitment-offer-templates"
+            onClick={() => setShowTemplates(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-gray-600"
+          >
+            Offer templates
+          </button>
           <button
             type="button"
             onClick={() => setShowJobForm(true)}
@@ -829,6 +913,23 @@ export default function HRRecruitmentPage() {
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">
+                      <label className="block text-[9px] font-black uppercase tracking-widest text-amber-800">
+                        Offer template
+                        <select
+                          data-testid="recruitment-offer-template"
+                          value={offerTemplateId}
+                          onChange={(event) => setOfferTemplateId(event.target.value)}
+                          className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-800"
+                        >
+                          <option value="">Default / no template</option>
+                          {offerTemplates.map((template) => (
+                            <option key={template.id} value={template.id}>
+                              {template.name}
+                              {template.is_default ? " (default)" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
                       <div className="grid grid-cols-2 gap-2">
                         <label className="text-[9px] font-black uppercase tracking-widest text-amber-800">
                           Monthly salary
@@ -974,6 +1075,119 @@ export default function HRRecruitmentPage() {
           )}
         </aside>
       </div>
+
+      {showTemplates && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">
+                  Hiring · offer terms
+                </p>
+                <h2 className="text-2xl font-black text-gray-950">Offer templates</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Close offer templates"
+                onClick={() => setShowTemplates(false)}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                  Saved templates
+                </p>
+                {offerTemplates.length === 0 ? (
+                  <p className="text-xs font-semibold text-gray-400">No templates yet.</p>
+                ) : (
+                  offerTemplates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="rounded-xl border border-gray-100 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs font-black text-gray-800">
+                          {template.name}
+                          {template.is_default ? " · default" : ""}
+                        </p>
+                        <button
+                          type="button"
+                          aria-label={`Delete template ${template.name}`}
+                          onClick={() => void removeTemplate(template)}
+                          className="text-gray-300 hover:text-red-600"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <p className="mt-1 line-clamp-3 text-[10px] font-medium leading-4 text-gray-500">
+                        {template.body}
+                      </p>
+                      {!template.is_default && (
+                        <button
+                          type="button"
+                          onClick={() => void makeTemplateDefault(template)}
+                          className="mt-2 text-[9px] font-black uppercase tracking-widest text-amber-700 underline"
+                        >
+                          Make default
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="space-y-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                  New template
+                </p>
+                <input
+                  data-testid="offer-template-name"
+                  value={templateDraft.name}
+                  onChange={(event) =>
+                    setTemplateDraft({ ...templateDraft, name: event.target.value })
+                  }
+                  placeholder="Template name"
+                  className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-800"
+                />
+                <textarea
+                  data-testid="offer-template-body"
+                  value={templateDraft.body}
+                  onChange={(event) =>
+                    setTemplateDraft({ ...templateDraft, body: event.target.value })
+                  }
+                  rows={7}
+                  placeholder="Offer terms shown in the PDF and candidate page"
+                  className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-800"
+                />
+                <label className="flex items-center gap-2 text-[10px] font-bold text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={templateDraft.is_default}
+                    onChange={(event) =>
+                      setTemplateDraft({
+                        ...templateDraft,
+                        is_default: event.target.checked,
+                      })
+                    }
+                  />
+                  Make this the default template
+                </label>
+                <button
+                  type="button"
+                  data-testid="offer-template-save"
+                  onClick={() => void saveTemplate()}
+                  disabled={busy === "template"}
+                  className="rounded-lg bg-gray-950 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                >
+                  {busy === "template" ? "Saving..." : "Save template"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showJobForm && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">

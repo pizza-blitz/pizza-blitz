@@ -27,10 +27,14 @@ from app.services.recruitment_service import (
 from app.services.resume_service import resume_path
 from app.services.offer_service import (
     countersign_offer,
+    create_offer_template,
+    delete_offer_template,
     generate_offer,
+    list_offer_templates,
     offer_path,
     run_offer_reminders,
     send_offer_notification,
+    update_offer_template,
 )
 
 router = APIRouter()
@@ -92,6 +96,19 @@ class OfferCreate(BaseModel):
     expires_in_days: int = Field(default=7, ge=1, le=30)
     offered_salary: Optional[float] = Field(default=None, ge=0)
     joining_date: Optional[date] = None
+    template_id: Optional[int] = Field(default=None, ge=1)
+
+
+class OfferTemplateCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    body: str = Field(min_length=20, max_length=4000)
+    is_default: bool = False
+
+
+class OfferTemplateUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=160)
+    body: Optional[str] = Field(default=None, min_length=20, max_length=4000)
+    is_default: Optional[bool] = None
 
 
 class OfferCountersign(BaseModel):
@@ -262,6 +279,7 @@ def create_offer_letter(
                 expires_in_days=payload.expires_in_days,
                 offered_salary=payload.offered_salary,
                 joining_date=payload.joining_date,
+                template_id=payload.template_id,
             )
         }
     except ValueError as exc:
@@ -310,6 +328,73 @@ def countersign(
         return {"application": countersign_offer(db, row, signed_by=payload.signed_by)}
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/offer-templates")
+def offer_templates(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    return {"templates": list_offer_templates(db)}
+
+
+@router.post("/offer-templates", status_code=201)
+def add_offer_template(
+    payload: OfferTemplateCreate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    try:
+        return {
+            "template": create_offer_template(
+                db,
+                name=payload.name,
+                body=payload.body,
+                is_default=payload.is_default,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch("/offer-templates/{template_id}")
+def edit_offer_template(
+    template_id: int,
+    payload: OfferTemplateUpdate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    from app.models.domain import OfferTemplate
+
+    row = db.query(OfferTemplate).filter(OfferTemplate.id == template_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Offer template not found.")
+    try:
+        return {
+            "template": update_offer_template(
+                db,
+                row,
+                name=payload.name,
+                body=payload.body,
+                is_default=payload.is_default,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/offer-templates/{template_id}", status_code=204)
+def remove_offer_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    from app.models.domain import OfferTemplate
+
+    row = db.query(OfferTemplate).filter(OfferTemplate.id == template_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Offer template not found.")
+    delete_offer_template(db, row)
 
 
 @router.post("/offers/run-reminders")

@@ -12,7 +12,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.domain import RecruitmentApplication
+from app.models.domain import OfferTemplate, RecruitmentApplication
 from app.services.campaign_dispatch_service import send_campaign_message
 from app.services.private_storage import private_root
 
@@ -35,6 +35,105 @@ def effective_offer_status(row: RecruitmentApplication) -> str | None:
     if row.offer_status == "sent" and offer_expired(row):
         return "expired"
     return row.offer_status
+
+
+def serialize_offer_template(row: OfferTemplate) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "body": row.body,
+        "is_default": bool(row.is_default),
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def list_offer_templates(db: Session) -> list[dict]:
+    rows = db.query(OfferTemplate).order_by(OfferTemplate.is_default.desc(), OfferTemplate.name).all()
+    return [serialize_offer_template(row) for row in rows]
+
+
+def _clear_default(db: Session, except_id: int | None = None) -> None:
+    query = db.query(OfferTemplate).filter(OfferTemplate.is_default.is_(True))
+    if except_id is not None:
+        query = query.filter(OfferTemplate.id != except_id)
+    for row in query.all():
+        row.is_default = False
+
+
+def create_offer_template(
+    db: Session, *, name: str, body: str, is_default: bool = False
+) -> dict:
+    clean_name = name.strip()[:160]
+    clean_body = body.strip()
+    if len(clean_name) < 2:
+        raise ValueError("Template name is too short.")
+    if len(clean_body) < 20:
+        raise ValueError("Template terms must be at least 20 characters.")
+    if db.query(OfferTemplate).filter(OfferTemplate.name == clean_name).first():
+        raise ValueError("A template with that name already exists.")
+    if is_default:
+        _clear_default(db)
+    row = OfferTemplate(name=clean_name, body=clean_body, is_default=is_default)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return serialize_offer_template(row)
+
+
+def update_offer_template(
+    db: Session,
+    row: OfferTemplate,
+    *,
+    name: str | None = None,
+    body: str | None = None,
+    is_default: bool | None = None,
+) -> dict:
+    if name is not None:
+        clean_name = name.strip()[:160]
+        if len(clean_name) < 2:
+            raise ValueError("Template name is too short.")
+        conflict = (
+            db.query(OfferTemplate)
+            .filter(OfferTemplate.name == clean_name, OfferTemplate.id != row.id)
+            .first()
+        )
+        if conflict:
+            raise ValueError("A template with that name already exists.")
+        row.name = clean_name
+    if body is not None:
+        clean_body = body.strip()
+        if len(clean_body) < 20:
+            raise ValueError("Template terms must be at least 20 characters.")
+        row.body = clean_body
+    if is_default is not None:
+        if is_default:
+            _clear_default(db, except_id=row.id)
+        row.is_default = is_default
+    db.commit()
+    db.refresh(row)
+    return serialize_offer_template(row)
+
+
+def delete_offer_template(db: Session, row: OfferTemplate) -> None:
+    db.delete(row)
+    db.commit()
+
+
+def _resolve_template(
+    db: Session, template_id: int | None
+) -> OfferTemplate | None:
+    if template_id is not None:
+        row = db.query(OfferTemplate).filter(OfferTemplate.id == template_id).first()
+        if row is None:
+            raise ValueError("Offer template not found.")
+        return row
+    return (
+        db.query(OfferTemplate)
+        .filter(OfferTemplate.is_default.is_(True))
+        .order_by(OfferTemplate.id.asc())
+        .first()
+    )
 
 
 def serialize_offer(row: RecruitmentApplication) -> dict | None:
@@ -67,6 +166,11 @@ def serialize_offer(row: RecruitmentApplication) -> dict | None:
             "at": row.offer_countersigned_at.isoformat()
             if row.offer_countersigned_at
             else None,
+        },
+        "template": {
+            "id": row.offer_template_id,
+            "name": row.offer_template_name,
+            "terms": row.offer_terms,
         },
         "public_url": f"{settings.PIZZA_BLITZ_PUBLIC_URL.rstrip('/')}/offer/{token}"
         if token
@@ -135,6 +239,17 @@ def _pdf(
             body,
         ),
         Spacer(1, 3 * mm),
+        *(
+            [
+                Paragraph(
+                    escape(row.offer_terms).replace("\n", "<br/>"),
+                    body,
+                ),
+                Spacer(1, 3 * mm),
+            ]
+            if row.offer_terms
+            else []
+        ),
         Paragraph(
             "Please respond through your secure offer link by "
             f"<b>{expires_at.strftime('%d %B %Y')}</b>. Accepting online records your "
@@ -173,6 +288,7 @@ def generate_offer(
     expires_in_days: int = 7,
     offered_salary: float | None = None,
     joining_date=None,
+    template_id: int | None = None,
 ) -> dict:
     if row.stage != "offer":
         raise ValueError("Move the candidate to the offer stage first.")
@@ -182,6 +298,10 @@ def generate_offer(
         row.joining_date = joining_date
     if row.offered_salary is None:
         raise ValueError("Add the offered salary before generating a letter.")
+    template = _resolve_template(db, template_id)
+    row.offer_template_id = template.id if template else None
+    row.offer_template_name = template.name if template else None
+    row.offer_terms = template.body if template else None
     days = max(1, min(int(expires_in_days), 30))
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(days=days)
@@ -242,6 +362,8 @@ def public_offer_payload(row: RecruitmentApplication) -> dict:
         "countersigned_at": row.offer_countersigned_at.isoformat()
         if row.offer_countersigned_at
         else None,
+        "template_name": row.offer_template_name,
+        "terms": row.offer_terms,
     }
 
 

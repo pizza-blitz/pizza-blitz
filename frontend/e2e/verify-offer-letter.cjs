@@ -61,6 +61,18 @@ async function main() {
       status: "open",
     }),
   }).then((response) => response.json());
+  const template = await fetch(
+    `${apiURL}/api/v1/restaurant/hr/recruitment/offer-templates`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        name: `Chef terms ${Date.now()}`,
+        body: "Proof terms: probation is 90 days and the notice period is 30 days.",
+        is_default: true,
+      }),
+    }
+  ).then((response) => response.json());
   const application = await fetch(
     `${apiURL}/api/v1/restaurant/hr/recruitment/applications`,
     {
@@ -135,6 +147,9 @@ async function main() {
       .waitFor({ timeout: 30000 });
     await page.getByTestId(`recruitment-job-${job.job.id}`).click();
     await page.getByTestId(`recruitment-candidate-${applicationId}`).click();
+    await page
+      .getByTestId("recruitment-offer-template")
+      .selectOption(String(template.template.id));
     await page.getByTestId("recruitment-generate-offer").click();
     const link = page.getByTestId("recruitment-offer-link");
     await link.waitFor({ timeout: 30000 });
@@ -161,6 +176,10 @@ async function main() {
     );
     assert(offerText.includes("Ananya Offer"), "Candidate name missing.");
     assert(offerText.includes("38,000"), "Offered salary missing.");
+    assert(
+      offerText.toLowerCase().includes("probation is 90 days"),
+      "Offer template terms missing from public offer."
+    );
     assert(
       offerText.includes("Countersigned for Pizza Blitz by People Lead"),
       "Countersignature missing from public offer."
