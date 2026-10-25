@@ -11,6 +11,7 @@ from app.models.domain import (
     RecruitmentStageEvent,
 )
 from app.services.hr_onboarding_service import create_candidate
+from app.services.resume_service import delete_resume, save_resume
 
 JOB_STATUSES = {"draft", "open", "paused", "closed"}
 STAGES = ("applied", "screening", "interview", "offer", "hired", "rejected", "withdrawn")
@@ -54,6 +55,9 @@ def serialize_interview(row: RecruitmentInterview) -> dict:
         "interviewer": row.interviewer,
         "notes": row.notes,
         "status": row.status,
+        "score": row.score,
+        "recommendation": row.recommendation,
+        "scored_at": row.scored_at.isoformat() if row.scored_at else None,
     }
 
 
@@ -74,6 +78,18 @@ def serialize_application(row: RecruitmentApplication, *, detail: bool = False) 
         "offered_salary": row.offered_salary,
         "joining_date": row.joining_date.isoformat() if row.joining_date else None,
         "onboarding_candidate_id": row.onboarding_candidate_id,
+        "resume": {
+            "file_name": row.resume_original_name or row.resume_file_name,
+            "mime_type": row.resume_mime_type,
+            "uploaded_at": row.resume_uploaded_at.isoformat()
+            if row.resume_uploaded_at
+            else None,
+            "parsed": row.resume_parsed or {},
+            "text_excerpt": (row.resume_text or "")[:1200] or None,
+            "download_url": f"/restaurant/hr/recruitment/applications/{row.id}/resume"
+            if row.resume_file_name
+            else None,
+        },
         "applied_at": row.applied_at.isoformat() if row.applied_at else None,
         "stage_changed_at": row.stage_changed_at.isoformat() if row.stage_changed_at else None,
         "hired_at": row.hired_at.isoformat() if row.hired_at else None,
@@ -328,9 +344,48 @@ def update_interview(db: Session, row: RecruitmentInterview, payload: dict) -> d
         row.notes = str(payload["notes"] or "").strip() or None
     if "interviewer" in payload:
         row.interviewer = str(payload["interviewer"] or "").strip()[:160] or None
+    if "score" in payload:
+        score = payload["score"]
+        if score is not None and not 1 <= int(score) <= 5:
+            raise ValueError("Interview score must be between 1 and 5.")
+        row.score = int(score) if score is not None else None
+    if "recommendation" in payload:
+        recommendation = str(payload["recommendation"] or "").strip().lower() or None
+        if recommendation not in {None, "strong_yes", "yes", "no", "strong_no"}:
+            raise ValueError("Unknown interview recommendation.")
+        row.recommendation = recommendation
+    if row.score is not None or row.recommendation is not None:
+        row.scored_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
     return serialize_interview(row)
+
+
+def attach_resume(
+    db: Session,
+    application: RecruitmentApplication,
+    *,
+    data: bytes,
+    original_name: str,
+) -> dict:
+    saved = save_resume(application.id, data, original_name)
+    previous = application.resume_file_name
+    application.resume_file_name = saved["storage_name"]
+    application.resume_original_name = saved["file_name"]
+    application.resume_mime_type = saved["mime_type"]
+    application.resume_text = saved["text"] or None
+    application.resume_parsed = saved["parsed"]
+    application.resume_uploaded_at = datetime.utcnow()
+    parsed = saved["parsed"]
+    if not application.email and parsed.get("email"):
+        application.email = parsed["email"][:200]
+    if not application.phone and parsed.get("phone"):
+        application.phone = parsed["phone"][:30]
+    db.commit()
+    db.refresh(application)
+    if previous and previous != saved["storage_name"]:
+        delete_resume(previous)
+    return serialize_application(application, detail=True)
 
 
 def pipeline(db: Session, job_id: int | None = None) -> dict:

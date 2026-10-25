@@ -1,13 +1,15 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_hr_permission
 from app.services.recruitment_service import (
     add_interview,
+    attach_resume,
     create_application,
     create_job,
     get_application,
@@ -22,6 +24,7 @@ from app.services.recruitment_service import (
     update_interview,
     update_job,
 )
+from app.services.resume_service import resume_path
 
 router = APIRouter()
 
@@ -82,6 +85,8 @@ class InterviewUpdate(BaseModel):
     status: Optional[str] = Field(default=None, max_length=30)
     notes: Optional[str] = Field(default=None, max_length=2000)
     interviewer: Optional[str] = Field(default=None, max_length=160)
+    score: Optional[int] = Field(default=None, ge=1, le=5)
+    recommendation: Optional[str] = Field(default=None, max_length=30)
 
 
 def _job_or_404(db: Session, job_id: int):
@@ -183,6 +188,45 @@ def application_detail(
 ):
     row = _application_or_404(db, application_id)
     return {"application": serialize_application(row, detail=True)}
+
+
+@router.post("/applications/{application_id}/resume", status_code=201)
+async def upload_application_resume(
+    application_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    data = await file.read()
+    try:
+        return {
+            "application": attach_resume(
+                db,
+                row,
+                data=data,
+                original_name=file.filename or "resume.pdf",
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/applications/{application_id}/resume")
+def download_application_resume(
+    application_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    target = resume_path(row.resume_file_name or "")
+    if target is None:
+        raise HTTPException(status_code=404, detail="Resume not found.")
+    return FileResponse(
+        path=target,
+        media_type=row.resume_mime_type or "application/octet-stream",
+        filename=row.resume_original_name or target.name,
+    )
 
 
 @router.patch("/applications/{application_id}/stage")

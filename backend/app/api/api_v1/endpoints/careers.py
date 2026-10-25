@@ -1,13 +1,14 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.rate_limit import enforce_rate_limit
 from app.models.domain import RecruitmentJob
-from app.services.recruitment_service import create_application, get_job
+from app.services.recruitment_service import attach_resume, create_application, get_job
+from app.services.resume_service import inspect_resume
 
 router = APIRouter()
 
@@ -90,4 +91,63 @@ def public_apply(
         "ok": True,
         "application_id": application["id"],
         "message": "Application received. Our team will contact you.",
+    }
+
+
+@router.post("/jobs/{job_id}/apply-resume", status_code=201)
+async def public_apply_with_resume(
+    job_id: int,
+    request: Request,
+    candidate_name: str = Form(..., min_length=2, max_length=160),
+    email: Optional[str] = Form(default=None, max_length=200),
+    phone: Optional[str] = Form(default=None, max_length=30),
+    expected_salary: Optional[float] = Form(default=None, ge=0),
+    notes: Optional[str] = Form(default=None, max_length=2000),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(request, "careers-apply-resume", 8)
+    job = _open_job(db, job_id)
+    data = await file.read()
+    try:
+        inspected = inspect_resume(data, file.filename or "resume.pdf")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    parsed = inspected["parsed"]
+    resolved_email = (email or "").strip() or parsed.get("email")
+    resolved_phone = (phone or "").strip() or parsed.get("phone")
+    if not resolved_email and not resolved_phone:
+        raise HTTPException(
+            status_code=422,
+            detail="Add an email/phone in the form or include one in the resume.",
+        )
+    try:
+        application = create_application(
+            db,
+            {
+                "job_id": job.id,
+                "candidate_name": candidate_name,
+                "email": resolved_email,
+                "phone": resolved_phone,
+                "source": "Careers page",
+                "expected_salary": expected_salary,
+                "notes": notes,
+            },
+        )
+        from app.services.recruitment_service import get_application
+
+        row = get_application(db, application["id"])
+        attach_resume(
+            db,
+            row,
+            data=data,
+            original_name=file.filename or "resume.pdf",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "application_id": application["id"],
+        "resume_parsed": parsed,
+        "message": "Application and resume received. Our team will contact you.",
     }

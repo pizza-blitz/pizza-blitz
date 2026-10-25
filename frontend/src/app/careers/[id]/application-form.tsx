@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2, Send } from "lucide-react";
+import { CheckCircle2, Loader2, Paperclip, Send } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
 type Props = { jobId: number; jobTitle: string };
@@ -17,21 +17,38 @@ export default function CareerApplicationForm({ jobId, jobTitle }: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [done, setDone] = useState(false);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setMessage("");
     try {
+      const endpoint = resumeFile ? "apply-resume" : "apply";
+      let body: FormData | string;
+      let headers: Record<string, string> = {};
+      if (resumeFile) {
+        const formData = new FormData();
+        formData.append("candidate_name", form.candidate_name);
+        formData.append("email", form.email);
+        formData.append("phone", form.phone);
+        formData.append("expected_salary", form.expected_salary);
+        formData.append("notes", form.notes);
+        formData.append("file", resumeFile);
+        body = formData;
+      } else {
+        headers = { "Content-Type": "application/json" };
+        body = JSON.stringify({
+          ...form,
+          expected_salary: form.expected_salary ? Number(form.expected_salary) : null,
+        });
+      }
       const response = await fetch(
-        getApiUrl(`/api/v1/restaurant/careers/jobs/${jobId}/apply`),
+        getApiUrl(`/api/v1/restaurant/careers/jobs/${jobId}/${endpoint}`),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...form,
-            expected_salary: form.expected_salary ? Number(form.expected_salary) : null,
-          }),
+          headers,
+          body,
         }
       );
       const data = await response.json();
@@ -114,8 +131,22 @@ export default function CareerApplicationForm({ jobId, jobTitle }: Props) {
           className="mt-1 w-full rounded-xl border border-[#17130f]/15 bg-white px-3 py-2.5 text-sm font-semibold text-[#17130f] outline-none focus:border-red-600"
         />
       </label>
+      <label className="block text-[10px] font-black uppercase tracking-widest text-[#8a7a6a]">
+        Resume (PDF, DOCX or TXT — optional)
+        <span className="mt-1 flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-[#17130f]/20 bg-[#faf6ef] px-3 py-2.5 text-xs font-bold text-[#5a4f45]">
+          <Paperclip className="h-4 w-4" />
+          {resumeFile ? resumeFile.name : "Attach a resume to auto-fill contact details"}
+          <input
+            type="file"
+            accept=".pdf,.docx,.txt"
+            className="hidden"
+            onChange={(event) => setResumeFile(event.target.files?.[0] || null)}
+          />
+        </span>
+      </label>
       <p className="text-[10px] font-semibold text-[#8a7a6a]">
-        Add an email or phone so the team can contact you.
+        Add an email or phone so the team can contact you. If omitted, we use the details
+        found in your resume.
       </p>
       {message && (
         <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">

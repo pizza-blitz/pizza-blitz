@@ -44,12 +44,29 @@ type Application = {
   offered_salary?: number | null;
   joining_date?: string | null;
   onboarding_candidate_id?: number | null;
+  resume?: {
+    file_name?: string | null;
+    mime_type?: string | null;
+    uploaded_at?: string | null;
+    parsed?: {
+      email?: string | null;
+      phone?: string | null;
+      name?: string | null;
+      skills?: string[];
+      character_count?: number;
+    };
+    text_excerpt?: string | null;
+    download_url?: string | null;
+  };
   interviews: {
     id: number;
     scheduled_at: string;
     mode: string;
     interviewer?: string | null;
     status: string;
+    score?: number | null;
+    recommendation?: string | null;
+    scored_at?: string | null;
   }[];
   stage_history: {
     id: number;
@@ -223,6 +240,37 @@ export default function HRRecruitmentPage() {
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Stage move failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const scoreInterview = async (
+    interviewId: number,
+    score: number | null,
+    recommendation: string | null
+  ) => {
+    if (!selected) return;
+    setBusy(`score-${interviewId}`);
+    try {
+      const response = await fetch(`${API}/interviews/${interviewId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "completed",
+          score,
+          recommendation,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Scorecard failed.");
+      }
+      await selectApplication(selected.id);
+      setMessage("Interview scorecard saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Scorecard failed.");
     } finally {
       setBusy("");
     }
@@ -457,7 +505,10 @@ export default function HRRecruitmentPage() {
           </div>
         </section>
 
-        <aside className="rounded-2xl border border-gray-100 bg-white p-5">
+        <aside
+          data-testid="recruitment-drawer"
+          className="rounded-2xl border border-gray-100 bg-white p-5"
+        >
           {!selected ? (
             <div className="grid h-full min-h-[300px] place-items-center text-center">
               <div>
@@ -490,6 +541,44 @@ export default function HRRecruitmentPage() {
               {selected.onboarding_candidate_id && (
                 <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-800">
                   Onboarding candidate #{selected.onboarding_candidate_id} created.
+                </div>
+              )}
+
+              {selected.resume?.file_name && (
+                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/70 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate text-[10px] font-black uppercase tracking-widest text-gray-500">
+                      Resume · {selected.resume.file_name}
+                    </p>
+                    {selected.resume.download_url && (
+                      <a
+                        href={getApiUrl(selected.resume.download_url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-[9px] font-black uppercase tracking-widest text-teal-700 underline"
+                      >
+                        Download
+                      </a>
+                    )}
+                  </div>
+                  {selected.resume.parsed?.skills &&
+                    selected.resume.parsed.skills.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {selected.resume.parsed.skills.map((skill) => (
+                          <span
+                            key={skill}
+                            className="rounded-full bg-white px-2 py-0.5 text-[9px] font-bold text-gray-600"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  {selected.resume.text_excerpt && (
+                    <p className="mt-2 line-clamp-4 text-[10px] font-medium leading-4 text-gray-500">
+                      {selected.resume.text_excerpt}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -539,10 +628,56 @@ export default function HRRecruitmentPage() {
                     <p className="text-xs font-semibold text-gray-400">None scheduled.</p>
                   ) : (
                     selected.interviews.map((interview) => (
-                      <p key={interview.id} className="text-xs font-semibold text-gray-600">
-                        {new Date(interview.scheduled_at).toLocaleString("en-IN")} ·{" "}
-                        {interview.mode} · {interview.status}
-                      </p>
+                      <div
+                        key={interview.id}
+                        className="rounded-lg border border-gray-100 p-2"
+                      >
+                        <p className="text-[10px] font-bold text-gray-600">
+                          {new Date(interview.scheduled_at).toLocaleString("en-IN")} ·{" "}
+                          {interview.mode} · {interview.status}
+                        </p>
+                        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                          <select
+                            aria-label={`Score interview ${interview.id}`}
+                            value={interview.score ?? ""}
+                            onChange={(event) =>
+                              void scoreInterview(
+                                interview.id,
+                                event.target.value ? Number(event.target.value) : null,
+                                interview.recommendation || null
+                              )
+                            }
+                            disabled={busy === `score-${interview.id}`}
+                            className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600"
+                          >
+                            <option value="">Score...</option>
+                            {[1, 2, 3, 4, 5].map((score) => (
+                              <option key={score} value={score}>
+                                {score} / 5
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label={`Recommendation interview ${interview.id}`}
+                            value={interview.recommendation ?? ""}
+                            onChange={(event) =>
+                              void scoreInterview(
+                                interview.id,
+                                interview.score ?? null,
+                                event.target.value || null
+                              )
+                            }
+                            disabled={busy === `score-${interview.id}`}
+                            className="rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-bold text-gray-600"
+                          >
+                            <option value="">Recommend...</option>
+                            <option value="strong_yes">Strong yes</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="strong_no">Strong no</option>
+                          </select>
+                        </div>
+                      </div>
                     ))
                   )}
                 </div>

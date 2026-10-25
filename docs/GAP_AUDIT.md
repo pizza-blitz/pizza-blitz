@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 69 frontend routes, the 161 browser proof scripts plus portal smoke in
+- Listed all 69 frontend routes, the 162 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -110,6 +110,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 79 | Payment credentials | Cashfree, Razorpay and direct-bank credentials still came from environment variables; the provider registry stopped at messaging/social/ads, so owners could not rotate payment credentials from the portal. | Payment-config gap. | Added Cashfree, Razorpay and direct-bank provider cards, encrypted fields and validation to the registry, a merged `payment_values()` resolver, and wired checkout status, payment sessions, direct-bank instructions, Cashfree/Razorpay request credentials and webhook secrets to it. Two backend tests and `verify:payment-providers`. Active-provider routing UI and live provider verification remain. |
 | 80 | Payment routing | The active payment provider was still environment-only, so switching from manual/cash to Cashfree, Razorpay or direct bank required a deploy and could disagree with the credential registry. | Payment-routing gap. | Added nullable `billing_settings.payment_provider` (migration), active-provider resolution with env fallback, admin selector in `/settings/billing`, public settings exposure, and switched checkout status and new payment sessions to the stored provider. Existing orders keep their provider. One backend test plus the extended payment-provider proof. Live provider verification remains. |
 | 81 | Journey conditions and revenue | Journeys ran every step linearly and reported only counts; there was no way to branch on order value or see revenue influenced by a journey. | Journey targeting/attribution gap. | Added numeric condition steps (`order_total` and operators), a `stopped` enrollment outcome, condition events and per-journey attributed revenue/per-enrollment revenue. `/journeys` builds conditions and shows revenue. Two backend tests plus condition/revenue assertions in the browser proof. A/B tests, frequency caps and multi-path branching remain. |
+| 82 | Resumes and scorecards | Recruitment accepted only typed candidate fields; there was no resume upload/parsing, no private download and no structured interview score/recommendation. | Recruitment evidence gap. | Added private resume columns (migration) for PDF/DOCX/TXT, a parser for email/phone/name/skills, public multipart resume applications that fill missing contact fields, authenticated admin upload/download, and interview score/recommendation fields with completion. `/departments/hr/recruitment` shows resume skills/excerpt/download and scorecard controls; the public careers form accepts a resume. Three backend tests and `verify:recruitment-resume`. Offer letters/e-signature and richer screening remain. |
 
 ## Still open
 
@@ -124,7 +125,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 197 tests, all pass (in a clean venv built from
+- Backend unit suite: 200 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

@@ -193,6 +193,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Encrypted payment provider credentials (Cashfree, Razorpay, direct bank).
 - [x] Admin-selectable active payment provider.
 - [x] Journey conditions and revenue attribution.
-- [ ] Journey A/B tests/frequency caps, resume parsing/scorecards, video transcoding.
+- [x] Recruitment resumes, parsing and interview scorecards.
+- [ ] Journey A/B tests/frequency caps, offer letters/e-signature, video transcoding.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

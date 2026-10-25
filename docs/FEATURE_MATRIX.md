@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **390 API endpoints**, **69 routes/pages** (56 portal,
-1 KDS, 12 public), **161 browser proof scripts** plus portal smoke, **196 backend
+Numbers in this snapshot: **393 API endpoints**, **69 routes/pages** (56 portal,
+1 KDS, 12 public), **162 browser proof scripts** plus portal smoke, **200 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -227,7 +227,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | HR exits | Resignation/termination/absconding/retirement, notice, clearance checklist, final-settlement estimate, employee exit and POS access revocation on settlement | Built | Offboarding + F&F | Statutory F&F review and custom clearance templates later |
 | HR access | HR department membership plus per-module staff permissions (view, people, leave, attendance, payroll, recruitment, onboarding, documents, exits); admins bypass | Built | Department-scoped RBAC | Per-user overrides later |
 | HR analytics | Command center with headcount/new joiners, workforce mix, attendance rate, on-leave today, leave liability, payroll trend/YTD, onboarding funnel, attrition, exits and document expiry | Built | HR dashboard + reports | CSV/PDF exports later |
-| HR recruitment | Job requisitions, applicant board (applied→screening→interview→offer→hired/rejected), ratings/notes, interview scheduling, offer salary/joining date, stage history, automatic onboarding handoff and a public careers page with online applications | Built | Recruitment/ATS + careers site | Resume parsing, scorecards and offer letters later |
+| HR recruitment | Job requisitions, applicant board (applied→screening→interview→offer→hired/rejected), ratings/notes, resume upload with PDF/DOCX/TXT parsing, private download, interview scheduling, 1–5 scorecards/recommendation, offer salary/joining date, stage history, automatic onboarding handoff and a public careers page with resume applications | Built | Recruitment/ATS + careers site | Offer letters/e-signature and richer screening later |
 | Multi-store / franchise | Store registry, per-store profile/hours, store-scoped orders/stock, consolidated reporting and POS hardware | Built | Tenant hierarchy, per-store config | Per-store menus/overrides missing |
 | API keys / webhooks | Aggregator HMAC tokens, signed inbound order webhooks, signed outbound status/menu webhooks | Built | Public API + outbound webhooks | General public API keys missing |
 | Observability | Request IDs, structured exception/error logs, client error monitor, health probes | Partial | Error tracking, metrics, traces | External APM/Sentry and metrics missing |
