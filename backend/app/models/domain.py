@@ -275,6 +275,7 @@ class Promotion(Base):
     channel = Column(String(50), default="whatsapp")
     status = Column(String(30), default="draft")
     message_template = Column(String, nullable=True)
+    holdout_percent = Column(Float, nullable=False, default=0.0, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class CampaignDelivery(Base):

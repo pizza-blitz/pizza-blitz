@@ -209,6 +209,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] VTT/SRT video captions with SRT-to-WebVTT conversion.
 - [x] Optional multi-step offer approvals that gate letter generation.
 - [x] Person-level first/last/linear campaign attribution.
-- [ ] Incrementality holdouts, longer attribution windows, video editing.
+- [x] Deterministic holdout experiments with incremental revenue.
+- [ ] Statistical significance, click/view tracking, video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

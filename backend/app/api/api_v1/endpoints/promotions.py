@@ -27,6 +27,7 @@ from app.services.campaign_dispatch_service import (
 )
 from app.services.campaign_schedule_service import activate_due_scheduled_campaigns
 from app.services.attribution_service import person_level_attribution
+from app.services.holdout_service import experiment_summary, select_holdout_ids
 from app.services.billing_settings_service import calculate_charges
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -206,6 +207,7 @@ class PromotionCreate(BaseModel):
     channel: str = "whatsapp"
     status: str = "draft"
     message_template: Optional[str] = None
+    holdout_percent: float = Field(default=0, ge=0, le=50)
 
 class CouponValidationRequest(BaseModel):
     code: str = Field(..., min_length=1)
@@ -296,6 +298,8 @@ def _validate_promotion_payload(promo: PromotionCreate) -> tuple[date, date]:
         raise HTTPException(status_code=422, detail="Unsupported campaign channel.")
     if promo.status not in VALID_STATUSES:
         raise HTTPException(status_code=422, detail="Unsupported campaign status.")
+    if promo.holdout_percent < 0 or promo.holdout_percent > 50:
+        raise HTTPException(status_code=422, detail="Holdout percent must be between 0 and 50.")
     return start_date, end_date
 
 
@@ -331,6 +335,7 @@ def _promotion_dict(promo: Promotion) -> dict:
         "channel": promo.channel,
         "status": promo.status,
         "message_template": promo.message_template,
+        "holdout_percent": float(promo.holdout_percent or 0),
         "created_at": promo.created_at.isoformat() if promo.created_at else None,
         "schedule": _promotion_schedule_state(promo),
     }
@@ -1411,6 +1416,7 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
         "dry_run_count": sum(1 for delivery in deliveries if delivery.status == "dry_run"),
         "failed_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
         "skipped_count": sum(1 for delivery in deliveries if delivery.status == "skipped"),
+        "holdout_count": sum(1 for delivery in deliveries if delivery.status == "holdout"),
         "needs_attention_count": sum(
             1 for delivery in deliveries if delivery.status in {"failed", "skipped"}
         ),
@@ -1779,6 +1785,9 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
             ),
         },
         "person_attribution": person_level_attribution(db, promo, coupon_orders),
+        "holdout_experiment": experiment_summary(
+            db, promo, coupon_orders, delivery_rows
+        ),
     }
 
 
@@ -1995,6 +2004,7 @@ def create_promotion(
         channel=promo.channel,
         status=promo.status,
         message_template=promo.message_template,
+        holdout_percent=promo.holdout_percent,
     )
     db.add(db_promo)
     db.commit()
@@ -2870,6 +2880,11 @@ def send_promotion_campaign(
         .all()
     )
     deliveries: list[CampaignDelivery] = []
+    holdout_ids = select_holdout_ids(
+        promo.id,
+        [customer.id for customer in customers],
+        promo.holdout_percent or 0,
+    )
     provider_status = campaign_provider_status(promo.channel)
     if not payload.dry_run:
         expected_confirmation = _live_send_confirmation_phrase(promo)
@@ -2901,6 +2916,19 @@ def send_promotion_campaign(
             "message": message,
             "attempted_at": datetime.utcnow(),
         }
+
+        if customer.id in holdout_ids:
+            delivery = CampaignDelivery(
+                **delivery_kwargs,
+                provider=None,
+                status="holdout",
+                error="Campaign holdout - excluded from send",
+                dry_run=payload.dry_run,
+                response_payload={"holdout_percent": promo.holdout_percent},
+            )
+            db.add(delivery)
+            deliveries.append(delivery)
+            continue
 
         if not contact["send_ready"] or not destination:
             delivery = CampaignDelivery(

@@ -41,6 +41,7 @@ type Promotion = {
   channel: ChannelKey;
   status: StatusKey;
   message_template?: string | null;
+  holdout_percent?: number;
   schedule?: PromotionSchedule;
 };
 
@@ -442,7 +443,7 @@ type CampaignDelivery = {
   } | null;
   destination?: string | null;
   provider?: string | null;
-  status: "sent" | "dry_run" | "failed" | "skipped" | "pending";
+  status: "sent" | "dry_run" | "failed" | "skipped" | "pending" | "holdout";
   external_id?: string | null;
   error?: string | null;
   dry_run: boolean;
@@ -599,6 +600,23 @@ type CampaignPerformance = {
     linear: PersonAttributionModel;
     note: string;
   };
+  holdout_experiment: {
+    enabled: boolean;
+    holdout_percent: number;
+    treated: HoldoutGroup;
+    holdout: HoldoutGroup;
+    lift_percent: number;
+    incremental_revenue: number;
+    note: string;
+  };
+};
+
+type HoldoutGroup = {
+  customers: number;
+  converted: number;
+  conversion_rate: number;
+  revenue: number;
+  revenue_per_customer: number;
 };
 
 type PersonAttributionModel = {
@@ -670,6 +688,7 @@ type CampaignForm = {
   channel: ChannelKey;
   status: StatusKey;
   message_template: string;
+  holdout_percent: number;
 };
 
 type CampaignReturnState = {
@@ -728,6 +747,7 @@ const deliveryStatusFilters: { value: DeliveryStatusFilter; label: string }[] = 
   { value: "sent", label: "Sent" },
   { value: "failed", label: "Failed" },
   { value: "skipped", label: "Skipped" },
+  { value: "holdout", label: "Holdout" },
 ];
 
 const deliveryReasonFilters: { value: DeliveryReasonFilter; label: string }[] = [
@@ -783,6 +803,7 @@ const emptyForm: CampaignForm = {
   status: "draft" as StatusKey,
   message_template:
     "Hi {name}, Pizza Blitz has {offer} for you. Use code {code} before {end_date}. Reply or visit us to order.",
+  holdout_percent: 0,
 };
 
 export default function PromotionsPage() {
@@ -3259,6 +3280,45 @@ export default function PromotionsPage() {
                         {performance.person_attribution.note}
                       </p>
                     </div>
+
+                    <div
+                      data-testid="campaign-holdout-experiment"
+                      className="mt-4 rounded-xl border border-sky-500/15 bg-black/30 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">
+                            Holdout experiment
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-gray-400">
+                            {performance.holdout_experiment.enabled
+                              ? `${performance.holdout_experiment.holdout_percent}% of the audience is excluded from sends.`
+                              : "No holdout configured for this campaign."}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-sky-500/15 px-3 py-1 text-[10px] font-black uppercase text-sky-300">
+                          Incremental {formatRupees(performance.holdout_experiment.incremental_revenue)}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        {[
+                          ["Treated customers", performance.holdout_experiment.treated.customers],
+                          ["Treated conversion", `${performance.holdout_experiment.treated.conversion_rate}%`],
+                          ["Holdout conversion", `${performance.holdout_experiment.holdout.conversion_rate}%`],
+                          ["Lift", `${performance.holdout_experiment.lift_percent}%`],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-lg bg-black/30 p-3">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                              {label}
+                            </p>
+                            <p className="mt-1 text-lg font-black text-white">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[10px] font-semibold text-gray-500">
+                        {performance.holdout_experiment.note}
+                      </p>
+                    </div>
                   </section>
                 )}
 
@@ -3897,6 +3957,31 @@ export default function PromotionsPage() {
                   className="w-full rounded-xl border border-white/10 bg-black/30 p-4 outline-none focus:border-orange-500"
                   required
                 />
+              </label>
+              <label className="space-y-2">
+                <span className="text-xs font-black uppercase tracking-widest text-gray-500">
+                  Holdout %
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="1"
+                  value={formData.holdout_percent}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      holdout_percent: Math.max(
+                        0,
+                        Math.min(50, Number(event.target.value))
+                      ),
+                    })
+                  }
+                  className="w-full rounded-xl border border-white/10 bg-black/30 p-4 outline-none focus:border-orange-500"
+                />
+                <span className="block text-[10px] font-semibold text-gray-500">
+                  Excluded from sends and compared against the treated audience.
+                </span>
               </label>
               <Select
                 label="Audience"

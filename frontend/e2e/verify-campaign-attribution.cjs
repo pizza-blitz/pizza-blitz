@@ -119,12 +119,14 @@ async function main() {
     assert(text.includes("incremental revenue"), "Incremental revenue missing.");
     assert(text.includes("coupon"), "Coupon channel missing in UI.");
     await page.getByTestId("campaign-person-attribution").waitFor({ timeout: 20000 });
+    await page.getByTestId("campaign-holdout-experiment").waitFor({ timeout: 20000 });
     assert(
       text.includes("person-level multi-touch"),
       "Person-level attribution panel missing."
     );
     assert(text.includes("first touch"), "First-touch model missing.");
     assert(text.includes("last touch"), "Last-touch model missing.");
+    assert(text.includes("holdout experiment"), "Holdout experiment panel missing.");
     await panel.screenshot({
       path: path.join(artifactsDir, "visible-campaign-attribution.png"),
     });

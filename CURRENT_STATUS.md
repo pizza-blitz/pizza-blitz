@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 233 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 236 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -257,7 +257,9 @@ Wave 4 (in progress):
   channel credit across outreach, social, ads and coupon channels; new
   `verify:campaign-attribution` proof. Campaign performance now also reports person-level
 first-touch, last-touch and linear credit by matching sent campaign deliveries to coupon orders
-within a 30-day window; unmatched orders fall back to the coupon channel.
+within a 30-day window; unmatched orders fall back to the coupon channel. Campaigns can reserve
+a deterministic 0–50% holdout that receives no send, with treated-vs-holdout conversion, lift
+and incremental revenue in the same panel.
 - Social/reel approvals are live: staff can submit posts for review, admins approve or reject
   with a note, and pending/rejected posts are blocked from live publishing and auto-publish;
   new `verify:social-approvals` proof and three backend tests.
@@ -270,7 +272,7 @@ within a 30-day window; unmatched orders fall back to the coupon channel.
   conversation link, and admin/staff triage them at `/support-inbox` with internal notes,
   priority, assignment and resolution status; new `verify:support-tickets` proof and three
   backend tests.
-- Next: incrementality holdout experiments, longer attribution windows and video editing.
+- Next: attribution statistical significance, click/view tracking and video editing.
 
 ## Verified State (2026-10-22)
 
