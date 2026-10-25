@@ -112,6 +112,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 81 | Journey conditions and revenue | Journeys ran every step linearly and reported only counts; there was no way to branch on order value or see revenue influenced by a journey. | Journey targeting/attribution gap. | Added numeric condition steps (`order_total` and operators), a `stopped` enrollment outcome, condition events and per-journey attributed revenue/per-enrollment revenue. `/journeys` builds conditions and shows revenue. Two backend tests plus condition/revenue assertions in the browser proof. A/B tests, frequency caps and multi-path branching remain. |
 | 82 | Resumes and scorecards | Recruitment accepted only typed candidate fields; there was no resume upload/parsing, no private download and no structured interview score/recommendation. | Recruitment evidence gap. | Added private resume columns (migration) for PDF/DOCX/TXT, a parser for email/phone/name/skills, public multipart resume applications that fill missing contact fields, authenticated admin upload/download, and interview score/recommendation fields with completion. `/departments/hr/recruitment` shows resume skills/excerpt/download and scorecard controls; the public careers form accepts a resume. Three backend tests and `verify:recruitment-resume`. Offer letters/e-signature and richer screening remain. |
 | 83 | Pricing modes | Tax was always added at a single rate; service charge and tax-inclusive menu prices were unsupported, so Indian restaurant pricing patterns required code changes. | Pricing-config gap. | Added `prices_include_tax`, service charge rate/label, tax slabs and order-level service charge (migration), a shared `calculate_charges` used by orders, coupon quotes and aggregator intake, inclusive tax extraction, and billing-preview/slab controls. Two backend tests and extended billing proof. Per-item tax classes and statutory filing remain. |
+| 84 | Offer letters | Offers were a stage plus salary fields; there was no letter document, candidate-facing acceptance, or auditable e-signature, so hiring still depended on offline paperwork. | Offer/e-sign gap. | Added offer token/status/expiry/signature columns and invoice-style PDF generation with ReportLab, admin generate/download endpoints, a public `/offer/{token}` page with PDF download and accept/decline, electronic-signature capture, expiry enforcement and automatic hired/onboarding handoff. Three backend tests and `verify:offer-letter`. Countersignature, templates and email delivery remain. |
 
 ## Still open
 
@@ -126,7 +127,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 202 tests, all pass (in a clean venv built from
+- Backend unit suite: 205 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

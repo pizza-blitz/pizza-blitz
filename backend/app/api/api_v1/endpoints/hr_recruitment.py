@@ -25,6 +25,10 @@ from app.services.recruitment_service import (
     update_job,
 )
 from app.services.resume_service import resume_path
+from app.services.offer_service import (
+    generate_offer,
+    offer_path,
+)
 
 router = APIRouter()
 
@@ -79,6 +83,12 @@ class InterviewCreate(BaseModel):
     mode: str = Field(default="in_person", max_length=30)
     interviewer: Optional[str] = Field(default=None, max_length=160)
     notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class OfferCreate(BaseModel):
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+    offered_salary: Optional[float] = Field(default=None, ge=0)
+    joining_date: Optional[date] = None
 
 
 class InterviewUpdate(BaseModel):
@@ -226,6 +236,45 @@ def download_application_resume(
         path=target,
         media_type=row.resume_mime_type or "application/octet-stream",
         filename=row.resume_original_name or target.name,
+    )
+
+
+@router.post("/applications/{application_id}/offer", status_code=201)
+def create_offer_letter(
+    application_id: int,
+    payload: OfferCreate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    try:
+        return {
+            "application": generate_offer(
+                db,
+                row,
+                expires_in_days=payload.expires_in_days,
+                offered_salary=payload.offered_salary,
+                joining_date=payload.joining_date,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/applications/{application_id}/offer/pdf")
+def download_offer_letter(
+    application_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    target = offer_path(row)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Offer letter not found.")
+    return FileResponse(
+        path=target,
+        media_type="application/pdf",
+        filename=f"offer-{row.candidate_name.replace(' ', '-').lower()}.pdf",
     )
 
 

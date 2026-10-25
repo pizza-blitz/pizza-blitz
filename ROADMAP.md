@@ -195,6 +195,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Journey conditions and revenue attribution.
 - [x] Recruitment resumes, parsing and interview scorecards.
 - [x] Tax-inclusive prices, service charge and tax slabs.
-- [ ] Journey A/B tests/frequency caps, offer letters/e-signature, video transcoding.
+- [x] Offer letters with secure candidate acceptance.
+- [ ] Journey A/B tests/frequency caps, offer countersignature/templates, video transcoding.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

@@ -1,12 +1,19 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.core.rate_limit import enforce_rate_limit
 from app.models.domain import RecruitmentJob
+from app.services.offer_service import (
+    find_by_token,
+    offer_path,
+    public_offer_payload,
+    respond_to_offer,
+)
 from app.services.recruitment_service import attach_resume, create_application, get_job
 from app.services.resume_service import inspect_resume
 
@@ -19,6 +26,12 @@ class PublicApplicationCreate(BaseModel):
     phone: Optional[str] = Field(default=None, max_length=30)
     expected_salary: Optional[float] = Field(default=None, ge=0)
     notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class PublicOfferResponse(BaseModel):
+    decision: str = Field(min_length=6, max_length=10)
+    signed_name: str = Field(default="", max_length=160)
+    note: str = Field(default="", max_length=2000)
 
 
 def _open_job(db: Session, job_id: int):
@@ -150,4 +163,62 @@ async def public_apply_with_resume(
         "application_id": application["id"],
         "resume_parsed": parsed,
         "message": "Application and resume received. Our team will contact you.",
+    }
+
+
+def _offer_or_404(db: Session, token: str):
+    row = find_by_token(db, token)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Offer not found.")
+    return row
+
+
+@router.get("/offers/{token}")
+def public_offer(token: str, db: Session = Depends(get_db)):
+    row = _offer_or_404(db, token)
+    payload = public_offer_payload(row)
+    return {"offer": payload}
+
+
+@router.get("/offers/{token}/pdf")
+def public_offer_pdf(token: str, db: Session = Depends(get_db)):
+    row = _offer_or_404(db, token)
+    target = offer_path(row)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Offer letter not found.")
+    return FileResponse(
+        path=target,
+        media_type="application/pdf",
+        filename=f"pizza-blitz-offer-{row.id}.pdf",
+    )
+
+
+@router.post("/offers/{token}/respond")
+def public_offer_response(
+    token: str,
+    payload: PublicOfferResponse,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_rate_limit(request, "offer-response", 10)
+    row = _offer_or_404(db, token)
+    try:
+        updated = respond_to_offer(
+            db,
+            row,
+            decision=payload.decision,
+            signed_name=payload.signed_name,
+            note=payload.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    accepted = bool(updated.get("offer", {}).get("status") == "accepted")
+    return {
+        "ok": True,
+        "status": updated.get("offer", {}).get("status"),
+        "message": (
+            "Offer accepted. Your onboarding handoff has started."
+            if accepted
+            else "Offer declined. The people team has been notified."
+        ),
     }

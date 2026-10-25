@@ -58,6 +58,16 @@ type Application = {
     text_excerpt?: string | null;
     download_url?: string | null;
   };
+  offer?: {
+    status: "sent" | "accepted" | "declined" | "expired";
+    sent_at?: string | null;
+    expires_at?: string | null;
+    responded_at?: string | null;
+    signed_name?: string | null;
+    response_note?: string | null;
+    public_url?: string | null;
+    pdf_url?: string | null;
+  } | null;
   interviews: {
     id: number;
     scheduled_at: string;
@@ -125,6 +135,9 @@ export default function HRRecruitmentPage() {
   const [showCandidateForm, setShowCandidateForm] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [interviewAt, setInterviewAt] = useState("");
+  const [offerSalary, setOfferSalary] = useState("");
+  const [offerJoining, setOfferJoining] = useState("");
+  const [offerDays, setOfferDays] = useState("7");
   const [jobDraft, setJobDraft] = useState({
     title: "",
     department: "Kitchen",
@@ -206,6 +219,12 @@ export default function HRRecruitmentPage() {
       setSelected(data.application);
       setRejectReason("");
       setInterviewAt("");
+      setOfferSalary(
+        data.application.offered_salary != null
+          ? String(data.application.offered_salary)
+          : ""
+      );
+      setOfferJoining(data.application.joining_date || "");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Candidate failed to load.");
     }
@@ -224,6 +243,9 @@ export default function HRRecruitmentPage() {
           stage,
           note: `Moved to ${stage} from the recruitment board.`,
           rejection_reason: stage === "rejected" ? rejectReason : "",
+          offered_salary:
+            stage === "offer" && offerSalary ? Number(offerSalary) : undefined,
+          joining_date: stage === "offer" && offerJoining ? offerJoining : undefined,
         }),
       });
       const data = await response.json();
@@ -240,6 +262,32 @@ export default function HRRecruitmentPage() {
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Stage move failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const generateOffer = async () => {
+    if (!selected) return;
+    setBusy("offer");
+    setMessage("");
+    try {
+      const response = await fetch(`${API}/applications/${selected.id}/offer`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expires_in_days: Number(offerDays) || 7,
+          offered_salary: offerSalary ? Number(offerSalary) : undefined,
+          joining_date: offerJoining || undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Offer letter failed.");
+      setSelected(data.application);
+      setMessage("Offer letter generated. Share the secure link with the candidate.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Offer letter failed.");
     } finally {
       setBusy("");
     }
@@ -617,6 +665,103 @@ export default function HRRecruitmentPage() {
                   placeholder="Rejection reason (required to reject)"
                   className="mt-2 w-full rounded-lg border border-gray-200 px-2 py-1.5 text-[10px] font-semibold text-gray-700"
                 />
+              )}
+
+              {selected.stage === "offer" && (
+                <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-amber-800">
+                    Offer letter
+                  </p>
+                  {selected.offer ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-800">
+                          {selected.offer.status}
+                        </span>
+                        {selected.offer.expires_at && (
+                          <span className="text-[10px] font-semibold text-amber-900">
+                            Valid to{" "}
+                            {new Date(selected.offer.expires_at).toLocaleDateString("en-IN")}
+                          </span>
+                        )}
+                      </div>
+                      {selected.offer.public_url && (
+                        <a
+                          data-testid="recruitment-offer-link"
+                          href={selected.offer.public_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block truncate text-[10px] font-bold text-teal-800 underline"
+                        >
+                          {selected.offer.public_url}
+                        </a>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <a
+                          href={getApiUrl(
+                            `/api/v1/restaurant/hr/recruitment/applications/${selected.id}/offer/pdf`
+                          )}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-lg border border-amber-200 bg-white px-2 py-1 text-[9px] font-black uppercase tracking-widest text-amber-800"
+                        >
+                          Download PDF
+                        </a>
+                        {selected.offer.status === "accepted" && (
+                          <span className="rounded-lg bg-emerald-100 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-800">
+                            Signed by {selected.offer.signed_name || selected.candidate_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-amber-800">
+                          Monthly salary
+                          <input
+                            type="number"
+                            min={0}
+                            value={offerSalary}
+                            onChange={(event) => setOfferSalary(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-800"
+                          />
+                        </label>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-amber-800">
+                          Joining date
+                          <input
+                            type="date"
+                            value={offerJoining}
+                            onChange={(event) => setOfferJoining(event.target.value)}
+                            className="mt-1 w-full rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-800"
+                          />
+                        </label>
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-amber-800">
+                          Valid days
+                          <input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={offerDays}
+                            onChange={(event) => setOfferDays(event.target.value)}
+                            className="mt-1 w-20 rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-semibold text-gray-800"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          data-testid="recruitment-generate-offer"
+                          onClick={() => void generateOffer()}
+                          disabled={busy === "offer" || !offerSalary}
+                          className="rounded-lg bg-amber-900 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                        >
+                          {busy === "offer" ? "Generating..." : "Generate offer"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               <div className="mt-4 border-t border-gray-100 pt-3">

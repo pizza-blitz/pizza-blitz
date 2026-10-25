@@ -11,6 +11,7 @@ from app.models.domain import (
     RecruitmentStageEvent,
 )
 from app.services.hr_onboarding_service import create_candidate
+from app.services.offer_service import serialize_offer
 from app.services.resume_service import delete_resume, save_resume
 
 JOB_STATUSES = {"draft", "open", "paused", "closed"}
@@ -90,6 +91,7 @@ def serialize_application(row: RecruitmentApplication, *, detail: bool = False) 
             if row.resume_file_name
             else None,
         },
+        "offer": serialize_offer(row),
         "applied_at": row.applied_at.isoformat() if row.applied_at else None,
         "stage_changed_at": row.stage_changed_at.isoformat() if row.stage_changed_at else None,
         "hired_at": row.hired_at.isoformat() if row.hired_at else None,
