@@ -1,6 +1,8 @@
 /* Media Studio proof: upload once, pick in the menu image dialog, persist URL. */
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
+const { execFileSync } = require("child_process");
 const { chromium } = require("@playwright/test");
 
 const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
@@ -94,6 +96,52 @@ async function main() {
 
     const card = page.getByTestId(`media-library-asset-${asset.id}`);
     await card.waitFor({ timeout: 20000 });
+
+    const videoPath = path.join(os.tmpdir(), `pizza-reel-${Date.now()}.mp4`);
+    execFileSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=#e64a19:s=360x640:d=2",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=44100:cl=stereo",
+        "-shortest",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        videoPath,
+      ],
+      { stdio: "ignore" }
+    );
+    const videoResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/restaurant/media/assets") &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
+      { timeout: 60000 }
+    );
+    await page.locator('input[type="file"]').setInputFiles(videoPath);
+    const videoUpload = await videoResponse;
+    const videoAsset = (await videoUpload.json()).asset;
+    assert(videoAsset.media_type === "video", "Video asset was not stored as video.");
+    assert(videoAsset.poster_url, "Video poster was not generated.");
+    assert(videoAsset.duration_seconds > 0, "Video duration was not probed.");
+    const videoCard = page.getByTestId(`media-library-asset-${videoAsset.id}`);
+    await videoCard.waitFor({ timeout: 30000 });
+    assert(
+      (await videoCard.innerText()).toLowerCase().includes("reel"),
+      "Video reel badge missing."
+    );
+    fs.unlinkSync(videoPath);
+
     await page.screenshot({
       path: path.join(artifactsDir, "visible-media-studio.png"),
       fullPage: false,

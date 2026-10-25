@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.domain import RecruitmentApplication
-from app.services.media_service import media_root
+from app.services.private_storage import private_root
 
 
 def offer_dir() -> Path:
-    target = media_root() / "offers"
+    target = private_root() / "offers"
     target.mkdir(parents=True, exist_ok=True)
     return target
 

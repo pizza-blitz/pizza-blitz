@@ -196,6 +196,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Recruitment resumes, parsing and interview scorecards.
 - [x] Tax-inclusive prices, service charge and tax slabs.
 - [x] Offer letters with secure candidate acceptance.
-- [ ] Journey A/B tests/frequency caps, offer countersignature/templates, video transcoding.
+- [x] Video media library with transcode/posters and private recruitment documents.
+- [ ] Journey A/B tests/frequency caps, offer countersignature/templates, in-app video capture.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

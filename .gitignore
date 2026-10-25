@@ -42,3 +42,5 @@ Thumbs.db
 /scratch/
 # Runtime log directory (server output, audit logs, summaries)
 /logs/
+# Private resumes and offer letters
+/backend/private_media/

@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from uuid import uuid4
 
-from app.services.media_service import media_root
+from app.services.private_storage import private_root
 
 MAX_RESUME_BYTES = 8 * 1024 * 1024
 RESUME_SUBDIR = "resumes"
@@ -33,7 +33,7 @@ SKILL_WORDS = [
 
 
 def resume_dir() -> Path:
-    target = media_root() / RESUME_SUBDIR
+    target = private_root() / RESUME_SUBDIR
     target.mkdir(parents=True, exist_ok=True)
     return target
 

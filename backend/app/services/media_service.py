@@ -6,15 +6,25 @@ Uploads are validated by magic bytes, stored under ``media/menu`` or
 persistent volume.
 """
 
+import json
 import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from uuid import uuid4
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
 PUBLIC_PREFIX = "/media/menu/"
 MENU_SUBDIR = "menu"
 LIBRARY_PREFIX = "/media/library/"
 LIBRARY_SUBDIR = "library"
+VIDEO_PREFIX = "/media/library/videos/"
+VIDEO_SUBDIR = "library/videos"
+POSTER_PREFIX = "/media/library/posters/"
+POSTER_SUBDIR = "library/posters"
+VIDEO_MAX_SECONDS = 180
 
 
 def media_root() -> Path:
@@ -79,6 +89,177 @@ def delete_library_image(image_url: str | None) -> None:
     if library_dir not in target.parents:
         return
     target.unlink(missing_ok=True)
+
+
+def _detect_video(data: bytes) -> str | None:
+    if len(data) > 12 and data[4:8] == b"ftyp":
+        return "mp4"
+    if data[:4] == b"\x1aE\xdf\xa3":
+        return "webm"
+    return None
+
+
+def _ffmpeg(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def _probe_video(path: Path) -> dict:
+    ffprobe = _ffmpeg("ffprobe")
+    if not ffprobe:
+        return {}
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height,duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            return {}
+        streams = json.loads(result.stdout or "{}").get("streams") or []
+        if not streams:
+            return {}
+        stream = streams[0]
+        return {
+            "width": int(stream.get("width") or 0),
+            "height": int(stream.get("height") or 0),
+            "duration_seconds": round(float(stream.get("duration") or 0), 2),
+        }
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {}
+
+
+def validate_video(data: bytes) -> str:
+    if not data:
+        raise ValueError("The uploaded file is empty.")
+    if len(data) > MAX_VIDEO_BYTES:
+        raise ValueError("Videos must be 100 MB or smaller.")
+    extension = _detect_video(data)
+    if extension is None:
+        raise ValueError("Upload an MP4, MOV or WebM video.")
+    return extension
+
+
+def save_library_video(data: bytes, original_name: str = "") -> dict:
+    extension = validate_video(data)
+    stem = "".join(
+        char for char in Path(original_name).stem.lower() if char.isalnum() or char in "-_"
+    )[:60] or "video"
+    token = uuid4().hex[:12]
+    filename = f"{stem}-{token}.mp4"
+    video_dir = media_root() / VIDEO_SUBDIR
+    poster_dir = media_root() / POSTER_SUBDIR
+    video_dir.mkdir(parents=True, exist_ok=True)
+    poster_dir.mkdir(parents=True, exist_ok=True)
+    target = video_dir / filename
+    poster_name = f"{stem}-{token}.jpg"
+    poster_target = poster_dir / poster_name
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source = Path(temp_dir) / f"source.{extension}"
+        source.write_bytes(data)
+        ffmpeg = _ffmpeg("ffmpeg")
+        if ffmpeg:
+            try:
+                subprocess.run(  # noqa: S603
+                    [
+                        ffmpeg,
+                        "-y",
+                        "-i",
+                        str(source),
+                        "-t",
+                        str(VIDEO_MAX_SECONDS),
+                        "-vf",
+                        "scale='min(1080,iw)':-2",
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "fast",
+                        "-crf",
+                        "23",
+                        "-c:a",
+                        "aac",
+                        "-b:a",
+                        "128k",
+                        "-movflags",
+                        "+faststart",
+                        str(target),
+                    ],
+                    capture_output=True,
+                    timeout=600,
+                    check=True,
+                )
+                subprocess.run(  # noqa: S603
+                    [
+                        ffmpeg,
+                        "-y",
+                        "-ss",
+                        "00:00:00.100",
+                        "-i",
+                        str(target),
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        "scale=720:-2",
+                        str(poster_target),
+                    ],
+                    capture_output=True,
+                    timeout=120,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                target.unlink(missing_ok=True)
+                raise ValueError("That video could not be processed.") from exc
+        else:
+            target.write_bytes(data)
+
+    meta = _probe_video(target)
+    duration = meta.get("duration_seconds") or 0
+    if duration and duration > VIDEO_MAX_SECONDS + 1:
+        target.unlink(missing_ok=True)
+        poster_target.unlink(missing_ok=True)
+        raise ValueError(f"Videos must be {VIDEO_MAX_SECONDS} seconds or shorter.")
+    if not target.exists() or target.stat().st_size == 0:
+        raise ValueError("That video could not be processed.")
+    return {
+        "url": f"{VIDEO_PREFIX}{filename}",
+        "poster_url": f"{POSTER_PREFIX}{poster_name}" if poster_target.exists() else None,
+        "file_name": filename,
+        "mime_type": "video/mp4",
+        "size_bytes": target.stat().st_size,
+        "media_type": "video",
+        "duration_seconds": duration or None,
+        "width": meta.get("width") or None,
+        "height": meta.get("height") or None,
+    }
+
+
+def delete_library_video(video_url: str | None, poster_url: str | None = None) -> None:
+    for url, prefix, subdir in (
+        (video_url, VIDEO_PREFIX, VIDEO_SUBDIR),
+        (poster_url, POSTER_PREFIX, POSTER_SUBDIR),
+    ):
+        if not url or not url.startswith(prefix):
+            continue
+        filename = url[len(prefix):]
+        if not filename or "/" in filename or "\\" in filename or ".." in filename:
+            continue
+        target = (media_root() / subdir / filename).resolve()
+        root = (media_root() / subdir).resolve()
+        if root not in target.parents:
+            continue
+        target.unlink(missing_ok=True)
 
 
 def delete_menu_image(image_url: str | None) -> None:

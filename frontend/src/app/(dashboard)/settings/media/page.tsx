@@ -19,6 +19,11 @@ type MediaAsset = {
   file_name: string;
   mime_type: string;
   size_bytes: number;
+  media_type: "image" | "video";
+  poster_url?: string | null;
+  duration_seconds?: number | null;
+  width?: number | null;
+  height?: number | null;
   tags: string[];
   uploaded_by?: string | null;
   created_at?: string | null;
@@ -30,6 +35,12 @@ const formatBytes = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const formatDuration = (seconds?: number | null) => {
+  if (!seconds) return "";
+  const whole = Math.round(seconds);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 };
 
 export default function MediaStudioPage() {
@@ -90,7 +101,7 @@ export default function MediaStudioPage() {
   };
 
   const remove = async (asset: MediaAsset) => {
-    if (!window.confirm(`Delete ${asset.name}? Images used by menu, social or ads cannot be deleted.`)) {
+    if (!window.confirm(`Delete ${asset.name}? Media used by menu, social or ads cannot be deleted.`)) {
       return;
     }
     setBusy(true);
@@ -101,12 +112,12 @@ export default function MediaStudioPage() {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || "Image could not be deleted.");
+        throw new Error(data.detail || "Media could not be deleted.");
       }
       setMessage(`Deleted ${asset.name}.`);
       await fetchAssets(query);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Image could not be deleted.");
+      setMessage(error instanceof Error ? error.message : "Media could not be deleted.");
     } finally {
       setBusy(false);
     }
@@ -135,15 +146,15 @@ export default function MediaStudioPage() {
           </p>
           <h1 className="text-3xl font-black text-gray-950">Media Studio</h1>
           <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            One image library for the menu, landing page, social posts and ad creatives.
-            Upload once, then choose it anywhere.
+            One library for menu, landing, social posts and ad creatives. Images are optimised
+            for the storefront; videos are transcoded to MP4 with a poster for reels and shorts.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <input
             ref={fileRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm"
             className="hidden"
             onChange={(event) => void upload(event.target.files?.[0] || null)}
           />
@@ -155,7 +166,7 @@ export default function MediaStudioPage() {
             className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600 disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            Add image
+            Add media
           </button>
         </div>
       </div>
@@ -177,7 +188,7 @@ export default function MediaStudioPage() {
           />
         </label>
         <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-          {assets.length} assets · JPEG, PNG, WebP · max 5 MB
+          {assets.length} assets · JPEG, PNG, WebP, MP4, MOV, WebM
         </p>
       </div>
 
@@ -188,16 +199,16 @@ export default function MediaStudioPage() {
       ) : assets.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-12 text-center">
           <ImageIcon className="mx-auto h-9 w-9 text-gray-300" />
-          <h2 className="mt-3 text-lg font-black text-gray-800">No images yet</h2>
+          <h2 className="mt-3 text-lg font-black text-gray-800">No media yet</h2>
           <p className="mt-1 text-sm font-semibold text-gray-500">
-            Upload a product shot to start the shared library.
+            Upload a product shot or a short reel to start the shared library.
           </p>
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             className="mt-4 inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white"
           >
-            <Upload className="h-4 w-4" /> Add first image
+            <Upload className="h-4 w-4" /> Add first media
           </button>
         </div>
       ) : (
@@ -208,12 +219,27 @@ export default function MediaStudioPage() {
               data-testid={`media-library-asset-${asset.id}`}
               className="overflow-hidden rounded-2xl border border-gray-100 bg-white"
             >
-              <div className="aspect-[4/3] bg-gray-100">
-                <img
-                  src={asset.url}
-                  alt={asset.name}
-                  className="h-full w-full object-cover"
-                />
+              <div className="relative aspect-[4/3] bg-gray-100">
+                {asset.media_type === "video" ? (
+                  <video
+                    src={asset.url}
+                    poster={asset.poster_url || undefined}
+                    controls
+                    preload="metadata"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <img
+                    src={asset.url}
+                    alt={asset.name}
+                    className="h-full w-full object-cover"
+                  />
+                )}
+                {asset.media_type === "video" && (
+                  <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white">
+                    Reel · {formatDuration(asset.duration_seconds)}
+                  </span>
+                )}
               </div>
               <div className="space-y-2 p-3">
                 <div>

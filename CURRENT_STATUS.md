@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 205 backend tests, 163 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 207 backend tests, 163 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -206,9 +206,13 @@ Wave 4 (in progress):
 - HR Analytics is live: headcount/new joiners, workforce mix, attendance, leave liability,
   payroll trend/YTD, onboarding funnel, attrition, exits and document expiry at
   `/departments/hr`; new `verify:hr-analytics` proof and two backend tests.
-- Media Studio is live: a shared image library at `/settings/media`, uploads with search/tags,
-  usage-guarded delete, menu uploads registering automatically, and one picker reused in
-  menu, social and ad forms; new `verify:media-studio` proof and two backend tests.
+- Media Studio is live: a shared image/video library at `/settings/media`, uploads with
+  search/tags, usage-guarded delete, menu uploads registering automatically, one picker reused
+  in menu, social and ad forms; reels are transcoded to H.264 MP4 with an extracted poster and
+  duration metadata; new `verify:media-studio` proof and four backend tests.
+- Private recruitment documents (resumes and offer letters) now live outside the public
+  `/media` mount under `PRIVATE_MEDIA_ROOT`; only authenticated HR routes or offer tokens can
+  read them.
 - Landing page CMS is live: `/settings/content` edits hero copy, story copy, hero/story images
   and category imagery with live preview, Media Studio picker, on-demand revalidation and
   restore defaults; new `verify:landing-cms` proof and two backend tests.
@@ -252,7 +256,7 @@ Wave 4 (in progress):
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 205 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 207 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **398 API endpoints**, **70 routes/pages** (56 portal,
-1 KDS, 13 public), **163 browser proof scripts** plus portal smoke, **205 backend
+1 KDS, 13 public), **163 browser proof scripts** plus portal smoke, **207 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -108,7 +108,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
-| Media Studio | Shared library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing | Built | One image library + picker | Stock/AI search, auto-crops and video later |
+| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata | Built | One media library + picker | Stock/AI search, auto-crops, subtitles and object storage later |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | Per-channel price/availability/visibility for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | — |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
@@ -157,7 +157,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
 | Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/send steps, templates, durable runner, enrollment/event history, pause/activate and attributed revenue | Built | Automated lifecycle journeys | A/B tests, frequency caps, multi-path branching and campaign-level attribution later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
-| Social publishing | Image, video and Instagram reel posts, delivery logs, auto-publish gated, real Instagram REELS/VIDEO container flow | Built | Multi-platform scheduling, media | Facebook video/reels and video transcoding missing |
+| Social publishing | Image, video and Instagram reel posts, delivery logs, auto-publish gated, real Instagram REELS/VIDEO container flow | Built | Multi-platform scheduling, media | Facebook video/reels and in-app capture/editing missing |
 | Marketing Hub | Month calendar aggregating social posts, reels, campaigns and ads; filters, upcoming list, shortcuts and a schedule-content composer | Built | Unified content calendar | Approvals, drag/drop rescheduling and revenue attribution later |
 | Ad campaigns | Create, launch, pause, budgets, metrics, ROI | Built | Provider sync depth, attribution | Attribution partial |
 | Templates | Message text fields | Partial | Rich template editor with variables/preview | Later |

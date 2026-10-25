@@ -3,7 +3,7 @@
 **Status:** delivered for local/staging evaluation; production launch depends on the
 provider and deployment gates below.
 **Master access:** `admin` / `admin123` at `/login` (development defaults).
-**Verification:** 205 backend tests, 163 browser proofs + portal smoke, full audit green,
+**Verification:** 207 backend tests, 163 browser proofs + portal smoke, full audit green,
 production build green with the API offline.
 
 ---
@@ -23,7 +23,7 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
 **Current inventory:** 390 API endpoints, 69 frontend routes (56 portal, 1 KDS,
-12 public), 89 database tables, 205 backend tests, 163 browser proof scripts.
+12 public), 89 database tables, 207 backend tests, 163 browser proof scripts.
 
 ### Core capabilities
 
@@ -106,7 +106,7 @@ Run from the repository root:
 
 ```powershell
 cd backend
-python -W error::FutureWarning -m unittest discover -s tests -v   # 205 tests
+python -W error::FutureWarning -m unittest discover -s tests -v   # 207 tests
 alembic upgrade head
 alembic check                                                      # no pending operations
 ruff check .
@@ -121,7 +121,7 @@ npm run test:e2e                                                   # portal smok
 
 Latest recorded results:
 
-- backend suite: **205 passed**;
+- backend suite: **207 passed**;
 - audit: **green** (surface, inventory, action hygiene and all 32 proof groups);
 - production build: **compiled successfully** with the backend stopped;
 - migrations: fresh upgrade + `alembic check` clean;

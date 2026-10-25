@@ -113,6 +113,8 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 82 | Resumes and scorecards | Recruitment accepted only typed candidate fields; there was no resume upload/parsing, no private download and no structured interview score/recommendation. | Recruitment evidence gap. | Added private resume columns (migration) for PDF/DOCX/TXT, a parser for email/phone/name/skills, public multipart resume applications that fill missing contact fields, authenticated admin upload/download, and interview score/recommendation fields with completion. `/departments/hr/recruitment` shows resume skills/excerpt/download and scorecard controls; the public careers form accepts a resume. Three backend tests and `verify:recruitment-resume`. Offer letters/e-signature and richer screening remain. |
 | 83 | Pricing modes | Tax was always added at a single rate; service charge and tax-inclusive menu prices were unsupported, so Indian restaurant pricing patterns required code changes. | Pricing-config gap. | Added `prices_include_tax`, service charge rate/label, tax slabs and order-level service charge (migration), a shared `calculate_charges` used by orders, coupon quotes and aggregator intake, inclusive tax extraction, and billing-preview/slab controls. Two backend tests and extended billing proof. Per-item tax classes and statutory filing remain. |
 | 84 | Offer letters | Offers were a stage plus salary fields; there was no letter document, candidate-facing acceptance, or auditable e-signature, so hiring still depended on offline paperwork. | Offer/e-sign gap. | Added offer token/status/expiry/signature columns and invoice-style PDF generation with ReportLab, admin generate/download endpoints, a public `/offer/{token}` page with PDF download and accept/decline, electronic-signature capture, expiry enforcement and automatic hired/onboarding handoff. Three backend tests and `verify:offer-letter`. Countersignature, templates and email delivery remain. |
+| 85 | Video media | Media Studio accepted only images, while reels/shorts required a pre-hosted public URL; there was no transcoding, poster or duration metadata. | Video-media gap. | Added MP4/MOV/WebM validation up to 100 MB/180 s, ffmpeg H.264 1080p transcode with faststart, poster extraction, duration/dimension probe, `media_type`/poster/duration metadata (migration), a video preview with reel badge and usage guards. Two backend tests (one ffmpeg-gated) and the extended Media Studio proof. Object storage, captions and in-app editing remain. |
+| 86 | Private documents | Resumes and offer letters were stored under the statically mounted `media` directory, so a leaked filename could bypass HR authorization. | Document-privacy gap. | Moved both to `PRIVATE_MEDIA_ROOT` (`backend/private_media` by default), outside the `/media` mount; downloads still go through authenticated HR endpoints or the offer token. Added a unit assertion that the roots are separate and ignored the private directory in git. |
 
 ## Still open
 
@@ -127,7 +129,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 205 tests, all pass (in a clean venv built from
+- Backend unit suite: 207 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

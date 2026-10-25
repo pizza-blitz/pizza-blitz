@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+from app.services.media_service import media_root
+from app.services.private_storage import private_root
 
 RESUME_TEXT = b"""Riya Sharma
 riya.resume@example.com
@@ -72,6 +74,8 @@ class RecruitmentResumeTest(unittest.TestCase):
         self.assertEqual(application["resume"]["file_name"], "riya-resume.txt")
         self.assertIn("Pizza chef", application["resume"]["text_excerpt"])
         self.assertEqual(application["resume"]["parsed"]["skills"][:1], ["pizza"])
+        self.assertNotIn(media_root(), private_root().parents)
+        self.assertNotIn(private_root(), media_root().parents)
 
         download = self.client.get(
             f"/api/v1/restaurant/hr/recruitment/applications/{application_id}/resume",
