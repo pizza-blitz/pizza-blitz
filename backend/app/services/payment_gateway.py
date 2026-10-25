@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.core.config import settings
+from app.services.billing_settings_service import active_payment_provider
 from app.services.provider_settings_service import payment_values
 
 
@@ -57,7 +58,7 @@ def _configured(provider: str) -> bool:
 
 
 def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
-    selected_provider = (provider or settings.PAYMENT_PROVIDER or "manual").strip().lower()
+    selected_provider = (provider or active_payment_provider() or "manual").strip().lower()
     if selected_provider not in SUPPORTED_PAYMENT_PROVIDERS:
         selected_provider = "manual"
 
@@ -824,7 +825,7 @@ def create_payment_session(
     provider: Optional[str] = None,
     return_url: Optional[str] = None,
 ) -> dict:
-    selected_provider = (provider or settings.PAYMENT_PROVIDER or "manual").lower()
+    selected_provider = (provider or active_payment_provider() or "manual").lower()
     if selected_provider not in SUPPORTED_PAYMENT_PROVIDERS:
         selected_provider = "manual"
 

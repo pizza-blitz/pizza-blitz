@@ -108,8 +108,37 @@ async function main() {
       path: path.join(artifactsDir, "visible-payment-providers.png"),
     });
 
+    await page.goto(`${baseURL}/settings/billing`, { waitUntil: "domcontentloaded" });
+    await page
+      .locator('[data-testid="billing-settings-page"][data-hydrated="true"]')
+      .waitFor({ timeout: 30000 });
+    await page.getByTestId("billing-payment-provider").selectOption("direct_bank");
+    await page.getByTestId("billing-save").click();
+    await page.getByText("Billing settings saved", { exact: false }).waitFor({
+      timeout: 20000,
+    });
+    const publicSettings = await fetch(
+      `${apiURL}/api/v1/restaurant/billing-settings/public`
+    ).then((response) => response.json());
+    assert(
+      publicSettings.settings.payment_provider === "direct_bank",
+      "Active payment provider did not switch to direct bank."
+    );
+
+    await page.getByTestId("billing-payment-provider").selectOption("manual");
+    await page.getByTestId("billing-save").click();
+    await page.getByText("Billing settings saved", { exact: false }).waitFor({
+      timeout: 20000,
+    });
+
+    await page.goto(`${baseURL}/settings/providers`, { waitUntil: "domcontentloaded" });
+    await page
+      .locator('[data-testid="providers-page"][data-hydrated="true"]')
+      .waitFor({ timeout: 30000 });
+    const resetBank = page.getByTestId("provider-direct_bank");
+    await resetBank.waitFor({ timeout: 20000 });
     page.once("dialog", (dialog) => void dialog.accept());
-    await bank.getByText("Reset", { exact: true }).click();
+    await resetBank.getByText("Reset", { exact: true }).click();
     await page.getByText("reset to the environment fallback", { exact: false }).waitFor({
       timeout: 20000,
     });

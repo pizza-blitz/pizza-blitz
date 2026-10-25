@@ -9,6 +9,7 @@ type BillingSettings = {
   tax_label: string;
   invoice_footer: string | null;
   tip_presets: number[];
+  payment_provider: "manual" | "direct_bank" | "cashfree" | "razorpay";
   updated_at?: string | null;
 };
 
@@ -62,6 +63,7 @@ export default function BillingSettingsPage() {
           tax_label: settings.tax_label,
           invoice_footer: settings.invoice_footer || null,
           tip_presets: presets,
+          payment_provider: settings.payment_provider || "manual",
         }),
       });
       const data = await response.json();
@@ -168,6 +170,31 @@ export default function BillingSettingsPage() {
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 outline-none focus:border-orange-400"
             />
           </label>
+
+          <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500">
+            Active payment provider
+            <select
+              data-testid="billing-payment-provider"
+              value={settings.payment_provider || "manual"}
+              onChange={(event) =>
+                setSettings({
+                  ...settings,
+                  payment_provider: event.target.value as BillingSettings["payment_provider"],
+                })
+              }
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 outline-none focus:border-orange-400"
+            >
+              <option value="manual">Manual / cash at counter</option>
+              <option value="direct_bank">Direct bank / UPI</option>
+              <option value="cashfree">Cashfree</option>
+              <option value="razorpay">Razorpay</option>
+            </select>
+          </label>
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-[11px] font-semibold leading-5 text-gray-500">
+            Credentials live in <strong>Providers</strong>. Switching this selector changes
+            the checkout provider for new payment sessions; existing orders keep their
+            recorded provider.
+          </p>
 
           <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500">
             Tip presets (%)

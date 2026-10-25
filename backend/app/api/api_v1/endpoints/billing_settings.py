@@ -19,6 +19,7 @@ class BillingSettingsUpdate(BaseModel):
     tax_label: str = Field(min_length=1, max_length=30)
     invoice_footer: Optional[str] = Field(default=None, max_length=255)
     tip_presets: List[int] = Field(default_factory=list, max_length=8)
+    payment_provider: str = Field(default="manual", max_length=30)
 
 
 @router.get("/")
@@ -51,6 +52,7 @@ def save_billing_settings(
                 "tax_label": payload.tax_label.strip() or "GST",
                 "invoice_footer": (payload.invoice_footer or "").strip() or None,
                 "tip_presets": presets,
+                "payment_provider": payload.payment_provider,
             },
         )
     }

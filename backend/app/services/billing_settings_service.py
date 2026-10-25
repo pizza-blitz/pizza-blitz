@@ -1,13 +1,15 @@
-"""Tax, invoice and tip settings shared by orders, invoices and the storefront."""
+"""Tax, invoice, tips and active payment provider settings."""
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.domain import BillingSettings
 
 DEFAULT_TAX_RATE = 5.0
 DEFAULT_TAX_LABEL = "GST"
 DEFAULT_TIP_PRESETS = [0, 5, 10, 15]
 DEFAULT_INVOICE_FOOTER = ""
+PAYMENT_PROVIDERS = ("manual", "direct_bank", "cashfree", "razorpay")
 
 
 def _row(db: Session) -> BillingSettings | None:
@@ -21,8 +23,27 @@ def settings_payload(db: Session) -> dict:
         "tax_label": row.tax_label if row else DEFAULT_TAX_LABEL,
         "invoice_footer": row.invoice_footer if row else DEFAULT_INVOICE_FOOTER,
         "tip_presets": list(row.tip_presets) if row and row.tip_presets else list(DEFAULT_TIP_PRESETS),
+        "payment_provider": active_payment_provider_from_row(row),
         "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
     }
+
+
+def active_payment_provider_from_row(row: BillingSettings | None) -> str:
+    value = (row.payment_provider if row else None) or settings.PAYMENT_PROVIDER or "manual"
+    value = str(value).strip().lower()
+    return value if value in PAYMENT_PROVIDERS else "manual"
+
+
+def active_payment_provider(db: Session | None = None) -> str:
+    if db is not None:
+        return active_payment_provider_from_row(_row(db))
+    from app.db.session import SessionLocal
+
+    session = SessionLocal()
+    try:
+        return active_payment_provider_from_row(_row(session))
+    finally:
+        session.close()
 
 
 def public_payload(db: Session) -> dict:
@@ -32,6 +53,7 @@ def public_payload(db: Session) -> dict:
         "tax_label": data["tax_label"],
         "tip_presets": data["tip_presets"],
         "invoice_footer": data["invoice_footer"],
+        "payment_provider": data["payment_provider"],
     }
 
 
@@ -58,6 +80,9 @@ def update_settings(db: Session, values: dict) -> dict:
     row.tax_label = values["tax_label"]
     row.invoice_footer = values.get("invoice_footer") or None
     row.tip_presets = values["tip_presets"]
+    if "payment_provider" in values:
+        provider = str(values["payment_provider"] or "").strip().lower()
+        row.payment_provider = provider if provider in PAYMENT_PROVIDERS else "manual"
     db.commit()
     db.refresh(row)
     return settings_payload(db)

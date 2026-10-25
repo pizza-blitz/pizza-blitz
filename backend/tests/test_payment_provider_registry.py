@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 from app.main import app
 from app.models.domain import ProviderSetting
 from app.services import payment_gateway
+from app.services.billing_settings_service import update_settings
 from app.services.provider_settings_service import save_provider
 
 
@@ -75,6 +76,53 @@ class PaymentProviderRegistryTest(unittest.TestCase):
         status = payment_gateway.payment_provider_status("direct_bank")
         self.assertFalse(status["checkout_configured"])
         self.assertTrue(status["missing_checkout_settings"])
+
+    def test_active_payment_provider_routes_new_sessions(self):
+        session = SessionLocal()
+        try:
+            save_provider(
+                session,
+                "direct_bank",
+                values={"DIRECT_BANK_UPI_ID": "routing@upi"},
+                enabled=True,
+            )
+            update_settings(
+                session,
+                {
+                    "tax_rate": 5,
+                    "tax_label": "GST",
+                    "invoice_footer": None,
+                    "tip_presets": [0, 5, 10, 15],
+                    "payment_provider": "direct_bank",
+                },
+            )
+            active = payment_gateway.payment_provider_status()
+            self.assertEqual(active["provider"], "direct_bank")
+            self.assertTrue(active["checkout_configured"])
+
+            payment_session = payment_gateway.create_payment_session(
+                order_id=777,
+                amount=199,
+                customer_name="Routing Guest",
+                customer_phone="+91 90000 00001",
+            )
+            self.assertEqual(payment_session["provider"], "direct_bank")
+            self.assertEqual(
+                payment_session["checkout_payload"]["upi_id"], "routing@upi"
+            )
+        finally:
+            update_settings(
+                session,
+                {
+                    "tax_rate": 5,
+                    "tax_label": "GST",
+                    "invoice_footer": None,
+                    "tip_presets": [0, 5, 10, 15],
+                    "payment_provider": "manual",
+                },
+            )
+            session.close()
+        self.assertEqual(payment_gateway.payment_provider_status()["provider"], "manual")
 
 
 if __name__ == "__main__":

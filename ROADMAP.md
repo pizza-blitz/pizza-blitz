@@ -191,6 +191,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Public careers page with online applications.
 - [x] Marketing Hub calendar and Instagram reel/video publishing.
 - [x] Encrypted payment provider credentials (Cashfree, Razorpay, direct bank).
+- [x] Admin-selectable active payment provider.
 - [ ] Journey branching/attribution, resume parsing/scorecards, video transcoding.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

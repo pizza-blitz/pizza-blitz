@@ -1274,6 +1274,7 @@ class BillingSettings(Base):
     tax_label = Column(String(30), nullable=False, default="GST")
     invoice_footer = Column(String(255), nullable=True)
     tip_presets = Column(JSON, default=lambda: [0, 5, 10, 15])
+    payment_provider = Column(String(30), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

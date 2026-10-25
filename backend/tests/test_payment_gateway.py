@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from app.core.config import settings
+from app.db.session import SessionLocal
+from app.models.domain import BillingSettings
 from app.services import payment_gateway
 
 
@@ -27,6 +29,14 @@ class PaymentGatewayProviderTest(unittest.TestCase):
     def tearDown(self):
         for key, value in self.original_values.items():
             setattr(settings, key, value)
+        session = SessionLocal()
+        try:
+            row = session.query(BillingSettings).first()
+            if row is not None:
+                row.payment_provider = None
+                session.commit()
+        finally:
+            session.close()
 
     def test_cashfree_session_creates_provider_order(self):
         settings.PAYMENT_CURRENCY = "INR"

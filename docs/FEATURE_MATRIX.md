@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **390 API endpoints**, **69 routes/pages** (56 portal,
-1 KDS, 12 public), **161 browser proof scripts** plus portal smoke, **195 backend
+1 KDS, 12 public), **161 browser proof scripts** plus portal smoke, **196 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -189,7 +189,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Expenses | Categories, add, audit command | Built | Approval workflow depth | Partial |
 | Refunds / voids | Void unpaid orders via cancel; refund captured payments with a reason, method, reference, ledger and audit trail | Built | Refund with reason/audit/provider call | Provider-initiated refund call not wired |
 | Tips | Captured per order, included in totals, receipts and the tips summary | Partial | Tip pool, payout report | Payout missing |
-| Tax | Admin-configurable rate/label, invoice footer and tip presets; orders, coupon quotes, aggregator intake, POS estimates and CGST/SGST split use the configured rate | Built | Tax and invoice settings | Tax-inclusive prices, slabs and service charge missing |
+| Tax | Admin-configurable rate/label, invoice footer, tip presets and active payment provider; orders, coupon quotes, aggregator intake, POS estimates and CGST/SGST split use the configured rate | Built | Tax and billing settings | Tax-inclusive prices, slabs and service charge missing |
 | Gift cards | — | Missing | Issue/redeem | Later |
 
 ## 12. Workforce
@@ -216,7 +216,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Health probes | `/health`, `/ready` (DB) | Built | Same | — |
 | Rate limiting | Per-instance sliding window | Built | Shared/edge limiter | Documented upgrade |
 | Config | Env-based defaults, timezone, secrets guard; tax/billing, landing content and provider credentials are database-backed admin settings | Built | Feature flags, per-store settings | Per-store overrides and feature flags partial |
-| Providers | Encrypted provider registry for email/SMS/WhatsApp/social/ads/Cashfree/Razorpay/direct-bank with environment fallback, masked reads, validate and reset; campaign/social/ads/payment readiness and checkout read stored config | Built | Encrypted credentials + readiness | Live provider verification and payment routing UI later |
+| Providers | Encrypted provider registry for email/SMS/WhatsApp/social/ads/Cashfree/Razorpay/direct-bank with environment fallback, masked reads, validate and reset; campaign/social/ads/payment readiness and checkout read stored config | Built | Encrypted credentials + readiness | Live provider verification later |
 | Department registry | Operations and People & HR seeded; departments own modules and members | Built | Department/module extensibility | Per-department permissions later |
 | HR people directory | Employee mirror with code, designation, employment type/status, joining date, store, reporting line and optional POS staff link; search/filter and summary | Built | Employee master + org chart | Payroll/leave/onboarding/exits still planned |
 | HR leave | Leave types, per-employee/year balances, requests, approvals/rejections/cancellation, holiday calendar and summary | Built | Leave policy + balances + approvals | Accrual rules and payroll deduction integration later |
