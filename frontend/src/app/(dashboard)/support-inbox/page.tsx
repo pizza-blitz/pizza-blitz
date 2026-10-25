@@ -20,9 +20,11 @@ type Ticket = {
   last_message?: string | null;
   last_message_at?: string | null;
   sla_due_at?: string | null;
+  first_response_due_at?: string | null;
   first_response_at?: string | null;
   resolved_at?: string | null;
   sla_state?: string;
+  response_state?: string;
   sla_remaining_minutes?: number | null;
   sla_target_hours?: number;
   messages?: Message[];
@@ -37,16 +39,27 @@ type Message = {
   created_at?: string | null;
 };
 
+type SlaPolicy = {
+  priority: string;
+  response_minutes: number;
+  resolution_minutes: number;
+  response_hours: number;
+  resolution_hours: number;
+};
+
 type Summary = {
   counts: Record<string, number>;
   urgent_open: number;
   sla: {
     overdue: number;
     due_soon: number;
+    first_response_overdue: number;
     breached_resolved: number;
     avg_first_response_minutes: number;
     avg_resolution_minutes: number;
     targets_hours: Record<string, number>;
+    targets_minutes: Record<string, { response: number; resolution: number }>;
+    policies: SlaPolicy[];
   };
 };
 
@@ -92,6 +105,9 @@ export default function SupportInboxPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [hydrated, setHydrated] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [policyDraft, setPolicyDraft] = useState<SlaPolicy[]>([]);
+  const [policyBusy, setPolicyBusy] = useState(false);
 
   const load = useCallback(async () => {
     const [listRes, summaryRes] = await Promise.all([
@@ -154,6 +170,40 @@ export default function SupportInboxPage() {
     }
   };
 
+  const openPolicy = () => {
+    setPolicyDraft(
+      (summary?.sla.policies || []).map((policy) => ({ ...policy }))
+    );
+    setPolicyOpen(true);
+  };
+
+  const savePolicy = async () => {
+    setPolicyBusy(true);
+    setMessage("");
+    try {
+      for (const policy of policyDraft) {
+        const response = await fetch(`${API}/sla-policy/${policy.priority}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            response_minutes: Number(policy.response_minutes),
+            resolution_minutes: Number(policy.resolution_minutes),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "SLA policy save failed.");
+      }
+      setPolicyOpen(false);
+      setMessage("SLA policy updated.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "SLA policy save failed.");
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
+
   const updateTicket = async (patch: Record<string, string>) => {
     if (!selected) return;
     setBusy(true);
@@ -193,6 +243,14 @@ export default function SupportInboxPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid="support-sla-policy-button"
+            onClick={openPolicy}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600"
+          >
+            SLA policy
+          </button>
           {["open", "pending", "resolved", "closed"].map((status) => (
             <button
               key={status}
@@ -223,6 +281,11 @@ export default function SupportInboxPage() {
         {[
           ["Overdue", summary?.sla?.overdue || 0, "text-red-700"],
           ["Due soon", summary?.sla?.due_soon || 0, "text-amber-700"],
+          [
+            "First reply overdue",
+            summary?.sla?.first_response_overdue || 0,
+            "text-red-700",
+          ],
           [
             "Avg first reply",
             `${summary?.sla?.avg_first_response_minutes || 0}m`,
@@ -336,11 +399,20 @@ export default function SupportInboxPage() {
                     </span>
                     {selected.sla_due_at && (
                       <span>
-                        Target{" "}
+                        Resolution target{" "}
                         {new Date(selected.sla_due_at).toLocaleString("en-IN", {
                           dateStyle: "medium",
                           timeStyle: "short",
                         })}
+                      </span>
+                    )}
+                    {selected.first_response_due_at && (
+                      <span>
+                        Reply target{" "}
+                        {new Date(selected.first_response_due_at).toLocaleTimeString(
+                          "en-IN",
+                          { hour: "2-digit", minute: "2-digit" }
+                        )}
                       </span>
                     )}
                     {selected.first_response_at && (
@@ -454,6 +526,101 @@ export default function SupportInboxPage() {
           )}
         </section>
       </div>
+
+      {policyOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+          <div
+            data-testid="support-sla-policy-modal"
+            className="w-full max-w-lg rounded-2xl bg-white p-5"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">
+                  Support SLA
+                </p>
+                <h2 className="text-xl font-black text-gray-950">Response targets</h2>
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  Minutes per priority. First response cannot exceed resolution.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close SLA policy"
+                onClick={() => setPolicyOpen(false)}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {policyDraft.map((policy, index) => (
+                <div
+                  key={policy.priority}
+                  className="grid grid-cols-[90px_1fr_1fr] items-end gap-2 rounded-lg bg-gray-50 p-2"
+                >
+                  <p className="pb-2 text-[10px] font-black uppercase tracking-widest text-gray-600">
+                    {policy.priority}
+                  </p>
+                  <label className="text-[8px] font-black uppercase tracking-widest text-gray-400">
+                    First reply (min)
+                    <input
+                      type="number"
+                      min={5}
+                      max={10080}
+                      value={policy.response_minutes}
+                      onChange={(event) => {
+                        const next = [...policyDraft];
+                        next[index] = {
+                          ...policy,
+                          response_minutes: Number(event.target.value),
+                        };
+                        setPolicyDraft(next);
+                      }}
+                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-800"
+                    />
+                  </label>
+                  <label className="text-[8px] font-black uppercase tracking-widest text-gray-400">
+                    Resolve (min)
+                    <input
+                      type="number"
+                      min={5}
+                      max={10080}
+                      value={policy.resolution_minutes}
+                      onChange={(event) => {
+                        const next = [...policyDraft];
+                        next[index] = {
+                          ...policy,
+                          resolution_minutes: Number(event.target.value),
+                        };
+                        setPolicyDraft(next);
+                      }}
+                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-800"
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPolicyOpen(false)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="support-sla-policy-save"
+                onClick={() => void savePolicy()}
+                disabled={policyBusy}
+                className="rounded-lg bg-gray-950 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {policyBusy ? "Saving..." : "Save policy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

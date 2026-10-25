@@ -211,6 +211,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Person-level first/last/linear campaign attribution.
 - [x] Deterministic holdout experiments with incremental revenue.
 - [x] Priority-based support SLAs with breach reporting.
+- [x] Editable per-priority SLA policies with first-response targets.
 - [ ] Statistical significance, click/view tracking, video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

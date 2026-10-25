@@ -1588,6 +1588,7 @@ class SupportTicket(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
     assigned_to = Column(String(120), nullable=True)
     sla_due_at = Column(DateTime, nullable=True, index=True)
+    first_response_due_at = Column(DateTime, nullable=True)
     first_response_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -1598,9 +1599,20 @@ class SupportTicket(Base):
     )
 
 
+class SupportSlaPolicy(Base):
+    """Editable first-response and resolution targets per ticket priority."""
+
+    __tablename__ = "support_sla_policies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    priority = Column(String(20), unique=True, index=True, nullable=False)
+    response_minutes = Column(Integer, nullable=False)
+    resolution_minutes = Column(Integer, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SupportMessage(Base):
     __tablename__ = "support_messages"
-
     id = Column(Integer, primary_key=True, index=True)
     ticket_id = Column(
         Integer, ForeignKey("support_tickets.id"), nullable=False, index=True

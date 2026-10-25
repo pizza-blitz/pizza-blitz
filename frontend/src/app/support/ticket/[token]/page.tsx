@@ -22,7 +22,9 @@ type Ticket = {
   status: string;
   order_id?: number | null;
   sla_due_at?: string | null;
+  first_response_due_at?: string | null;
   sla_state?: string;
+  response_state?: string;
   sla_target_hours?: number;
   messages: Message[];
 };
@@ -138,19 +140,25 @@ export default function SupportTicketPage() {
             {ticket.customer_name} · {ticket.category}
             {ticket.order_id ? ` · order #${ticket.order_id}` : ""}
           </p>
-          {ticket.sla_due_at && ticket.status !== "closed" && (
-            <p
-              data-testid="public-support-sla"
-              className="mt-1 text-[10px] font-bold text-[#8a7a6a]"
-            >
-              Reply target:{" "}
-              {new Date(ticket.sla_due_at).toLocaleString("en-IN", {
-                dateStyle: "medium",
-                timeStyle: "short",
-              })}
-              {ticket.sla_state === "overdue" ? " · overdue" : ""}
-            </p>
-          )}
+          {(ticket.first_response_due_at || ticket.sla_due_at) &&
+            ticket.status !== "closed" && (
+              <p
+                data-testid="public-support-sla"
+                className="mt-1 text-[10px] font-bold text-[#8a7a6a]"
+              >
+                Reply target:{" "}
+                {new Date(
+                  ticket.first_response_due_at || ticket.sla_due_at || ""
+                ).toLocaleString("en-IN", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+                {ticket.response_state === "overdue" ||
+                ticket.sla_state === "overdue"
+                  ? " · overdue"
+                  : ""}
+              </p>
+            )}
 
           <div className="mt-6 space-y-3">
             {ticket.messages.map((message) => (

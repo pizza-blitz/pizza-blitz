@@ -10,10 +10,13 @@ from app.services.support_service import (
     add_message,
     create_ticket,
     find_by_token,
+    get_sla_policies,
     list_tickets,
     public_payload,
+    serialize_sla_policy,
     serialize_ticket,
     support_summary,
+    update_sla_policy,
     update_ticket,
 )
 
@@ -41,6 +44,11 @@ class TicketUpdate(BaseModel):
     priority: Optional[str] = Field(default=None, max_length=20)
     category: Optional[str] = Field(default=None, max_length=40)
     assigned_to: Optional[str] = Field(default=None, max_length=120)
+
+
+class SlaPolicyUpdate(BaseModel):
+    response_minutes: int = Field(ge=5, le=10080)
+    resolution_minutes: int = Field(ge=5, le=10080)
 
 
 def _ticket_or_404(db: Session, ticket_id: int):
@@ -110,6 +118,40 @@ def public_ticket_reply(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"ticket": public_payload(row)}
+
+
+@router.get("/sla-policy")
+def support_sla_policy(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin", "staff")),
+):
+    policies = get_sla_policies(db)
+    return {
+        "policies": [
+            serialize_sla_policy(policies[priority])
+            for priority in ("urgent", "high", "normal", "low")
+        ]
+    }
+
+
+@router.put("/sla-policy/{priority}")
+def support_sla_policy_update(
+    priority: str,
+    payload: SlaPolicyUpdate,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    try:
+        return {
+            "policy": update_sla_policy(
+                db,
+                priority,
+                response_minutes=payload.response_minutes,
+                resolution_minutes=payload.resolution_minutes,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/tickets")

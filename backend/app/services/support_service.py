@@ -7,13 +7,87 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.domain import RestaurantOrder, SupportMessage, SupportTicket
+from app.models.domain import RestaurantOrder, SupportMessage, SupportSlaPolicy, SupportTicket
 
 CATEGORIES = ("order", "delivery", "payment", "account", "other")
 PRIORITIES = ("low", "normal", "high", "urgent")
 STATUSES = ("open", "pending", "resolved", "closed")
-SLA_HOURS = {"urgent": 2, "high": 8, "normal": 24, "low": 48}
+DEFAULT_SLA_MINUTES = {
+    "urgent": {"response": 30, "resolution": 120},
+    "high": {"response": 120, "resolution": 480},
+    "normal": {"response": 480, "resolution": 1440},
+    "low": {"response": 1440, "resolution": 2880},
+}
 DUE_SOON_MINUTES = 240
+
+
+def get_sla_policies(db: Session) -> dict[str, SupportSlaPolicy]:
+    rows = db.query(SupportSlaPolicy).all()
+    by_priority = {row.priority: row for row in rows}
+    missing = False
+    for priority, values in DEFAULT_SLA_MINUTES.items():
+        if priority not in by_priority:
+            row = SupportSlaPolicy(
+                priority=priority,
+                response_minutes=values["response"],
+                resolution_minutes=values["resolution"],
+            )
+            db.add(row)
+            by_priority[priority] = row
+            missing = True
+    if missing:
+        db.commit()
+        for row in by_priority.values():
+            db.refresh(row)
+    return by_priority
+
+
+def update_sla_policy(
+    db: Session,
+    priority: str,
+    *,
+    response_minutes: int,
+    resolution_minutes: int,
+) -> dict:
+    if priority not in PRIORITIES:
+        raise ValueError("Unknown support priority.")
+    if not 5 <= response_minutes <= 10080 or not 5 <= resolution_minutes <= 10080:
+        raise ValueError("SLA minutes must be between 5 and 10080 (one week).")
+    if response_minutes > resolution_minutes:
+        raise ValueError("First-response target cannot be longer than resolution.")
+    policies = get_sla_policies(db)
+    row = policies[priority]
+    row.response_minutes = response_minutes
+    row.resolution_minutes = resolution_minutes
+    db.commit()
+    db.refresh(row)
+    return serialize_sla_policy(row)
+
+
+def serialize_sla_policy(row: SupportSlaPolicy) -> dict:
+    return {
+        "priority": row.priority,
+        "response_minutes": row.response_minutes,
+        "resolution_minutes": row.resolution_minutes,
+        "response_hours": round(row.response_minutes / 60, 2),
+        "resolution_hours": round(row.resolution_minutes / 60, 2),
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def response_state(row: SupportTicket, now: datetime | None = None) -> str:
+    now = now or datetime.utcnow()
+    if row.first_response_at and row.first_response_due_at:
+        return "met" if row.first_response_at <= row.first_response_due_at else "breached"
+    if row.status in {"resolved", "closed"}:
+        return "closed"
+    if row.first_response_due_at is None:
+        return "no_target"
+    if row.first_response_due_at < now:
+        return "overdue"
+    if row.first_response_due_at - now <= timedelta(minutes=DUE_SOON_MINUTES):
+        return "due_soon"
+    return "on_track"
 
 
 def sla_state(row: SupportTicket, now: datetime | None = None) -> str:
@@ -40,13 +114,21 @@ def _sla_payload(row: SupportTicket) -> dict:
     )
     return {
         "sla_due_at": row.sla_due_at.isoformat() if row.sla_due_at else None,
+        "first_response_due_at": row.first_response_due_at.isoformat()
+        if row.first_response_due_at
+        else None,
         "first_response_at": row.first_response_at.isoformat()
         if row.first_response_at
         else None,
         "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
         "sla_state": sla_state(row, now),
+        "response_state": response_state(row, now),
         "sla_remaining_minutes": remaining,
-        "sla_target_hours": SLA_HOURS.get(row.priority, 24),
+        "sla_target_hours": round(
+            (row.sla_due_at - row.created_at).total_seconds() / 3600, 2
+        )
+        if row.sla_due_at and row.created_at
+        else None,
     }
 
 
@@ -145,6 +227,9 @@ def create_ticket(
         order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
         if order is None:
             raise ValueError("Order not found.")
+    policies = get_sla_policies(db)
+    policy = policies[priority]
+    now = datetime.utcnow()
     row = SupportTicket(
         token=secrets.token_urlsafe(24),
         customer_name=name,
@@ -155,7 +240,8 @@ def create_ticket(
         priority=priority,
         status="open",
         order_id=order_id,
-        sla_due_at=datetime.utcnow() + timedelta(hours=SLA_HOURS[priority]),
+        first_response_due_at=now + timedelta(minutes=policy.response_minutes),
+        sla_due_at=now + timedelta(minutes=policy.resolution_minutes),
     )
     db.add(row)
     db.flush()
@@ -294,6 +380,9 @@ def support_summary(db: Session) -> dict:
     )
     overdue = sum(1 for row in active if sla_state(row, now) == "overdue")
     due_soon = sum(1 for row in active if sla_state(row, now) == "due_soon")
+    first_response_overdue = sum(
+        1 for row in active if response_state(row, now) == "overdue"
+    )
     responded = [row for row in active if row.first_response_at and row.created_at]
     avg_first_response = (
         round(
@@ -329,15 +418,28 @@ def support_summary(db: Session) -> dict:
         for row in resolved
         if row.sla_due_at and row.resolved_at > row.sla_due_at
     )
+    policies = get_sla_policies(db)
     return {
         "counts": counts,
         "urgent_open": urgent,
         "sla": {
             "overdue": overdue,
             "due_soon": due_soon,
+            "first_response_overdue": first_response_overdue,
             "breached_resolved": breached,
             "avg_first_response_minutes": avg_first_response,
             "avg_resolution_minutes": avg_resolution,
-            "targets_hours": SLA_HOURS,
+            "targets_hours": {
+                priority: round(policy.resolution_minutes / 60, 2)
+                for priority, policy in policies.items()
+            },
+            "targets_minutes": {
+                priority: {
+                    "response": policy.response_minutes,
+                    "resolution": policy.resolution_minutes,
+                }
+                for priority, policy in policies.items()
+            },
+            "policies": [serialize_sla_policy(policy) for policy in policies.values()],
         },
     }

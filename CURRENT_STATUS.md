@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 239 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 242 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -272,8 +272,9 @@ and incremental revenue in the same panel.
   conversation link, and admin/staff triage them at `/support-inbox` with internal notes,
   priority, assignment, resolution status and priority-based SLAs (urgent 2h, high 8h, normal
   24h, low 48h) including first-response timestamps, overdue/due-soon counts, average response
-  and resolution time, and breach counts. New `verify:support-tickets` proof and six backend
-  tests.
+  and resolution time, and breach counts. SLA policies are editable per priority from the
+  inbox (response and resolution minutes) and apply to new tickets. New
+  `verify:support-tickets` proof and nine backend tests.
 - Next: attribution statistical significance, click/view tracking and video editing.
 
 ## Verified State (2026-10-22)

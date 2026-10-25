@@ -113,6 +113,14 @@ async function main() {
       slaText.toLowerCase().includes("avg first reply"),
       "SLA summary missing first-reply average."
     );
+    await inbox.getByTestId("support-sla-policy-button").click();
+    await inbox.getByTestId("support-sla-policy-modal").waitFor({ timeout: 10000 });
+    const policyText = await inbox.getByTestId("support-sla-policy-modal").innerText();
+    assert(
+      policyText.toLowerCase().includes("first reply"),
+      "SLA policy modal missing response targets."
+    );
+    await inbox.getByLabel("Close SLA policy").click();
 
     const statusUpdate = inbox.waitForResponse(
       (response) =>
