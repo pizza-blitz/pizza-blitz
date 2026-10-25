@@ -33,7 +33,9 @@ class MarketingJourneyTest(unittest.TestCase):
     def tearDown(self):
         self._ctx.__exit__(None, None, None)
 
-    def create_order(self, phone: str) -> int:
+    def create_order(
+        self, phone: str, price: float = 119, item_name: str = "Garlic Bread"
+    ) -> int:
         created = self.client.post(
             "/api/v1/restaurant/orders/",
             json={
@@ -41,7 +43,7 @@ class MarketingJourneyTest(unittest.TestCase):
                 "customer_name": "Journey Proof Guest",
                 "customer_phone": phone,
                 "payment_method": "cash",
-                "items": [{"name": "Garlic Bread", "quantity": 1, "price": 119}],
+                "items": [{"name": item_name, "quantity": 1, "price": price}],
             },
         )
         self.assertEqual(created.status_code, 200, created.text)
@@ -365,6 +367,121 @@ class MarketingJourneyTest(unittest.TestCase):
             self.assertEqual(capped, 1)
         finally:
             session.close()
+
+    def test_branch_routes_high_and_low_order_paths(self):
+        created = self.client.post(
+            "/api/v1/restaurant/journeys",
+            json={
+                "name": "Branch path proof",
+                "trigger": "order_completed",
+                "status": "active",
+                "steps": [
+                    {
+                        "type": "branch",
+                        "field": "order_total",
+                        "operator": ">=",
+                        "value": 100,
+                        "true_step": 1,
+                        "false_step": 3,
+                    },
+                    {
+                        "type": "send",
+                        "channel": "whatsapp",
+                        "body": "High value thank you",
+                    },
+                    {"type": "stop"},
+                    {
+                        "type": "send",
+                        "channel": "whatsapp",
+                        "body": "Small order thank you",
+                    },
+                ],
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        journey_id = created.json()["journey"]["id"]
+        high_phone = f"9197{str(id(self))[-8:]}"
+        low_phone = f"9196{str(id(self))[-8:]}"
+        high_order = self.create_order(high_phone, 250)
+        low_order = self.create_order(low_phone, 40, "Small Order Test Item")
+        for order_id in (high_order, low_order):
+            self.client.patch(
+                f"/api/v1/restaurant/orders/{order_id}/status",
+                json={"status": "ready"},
+                headers=self.headers,
+            )
+            self.client.patch(
+                f"/api/v1/restaurant/orders/{order_id}/close",
+                headers=self.headers,
+            )
+        with patch(
+            "app.services.journey_service.send_campaign_message",
+            return_value=CampaignProviderResult(
+                provider="meta-whatsapp", status="sent", external_id="branch-proof"
+            ),
+        ):
+            run = self.client.post(
+                "/api/v1/restaurant/journeys/run-due", headers=self.headers
+            )
+        self.assertEqual(run.status_code, 200, run.text)
+        detail = self.client.get(
+            f"/api/v1/restaurant/journeys/{journey_id}", headers=self.headers
+        ).json()["journey"]
+        high = next(
+            item
+            for item in detail["recent_enrollments"]
+            if item["trigger_ref"] == f"order:{high_order}:order_completed"
+        )
+        low = next(
+            item
+            for item in detail["recent_enrollments"]
+            if item["trigger_ref"] == f"order:{low_order}:order_completed"
+        )
+        self.assertTrue(
+            any(
+                event["step_type"] == "branch" and event["status"] == "passed"
+                for event in high["events"]
+            )
+        )
+        self.assertTrue(
+            any(
+                event["step_type"] == "branch" and event["status"] == "alternate"
+                for event in low["events"]
+            )
+        )
+        self.assertTrue(any(event["step_type"] == "stop" for event in high["events"]))
+        self.assertFalse(any(event["step_type"] == "stop" for event in low["events"]))
+        high_send = next(
+            event for event in high["events"] if event["step_type"] == "send"
+        )
+        low_send = next(
+            event for event in low["events"] if event["step_type"] == "send"
+        )
+        self.assertEqual(high_send["step_index"], 1)
+        self.assertEqual(low_send["step_index"], 3)
+
+    def test_branch_targets_must_point_forward(self):
+        created = self.client.post(
+            "/api/v1/restaurant/journeys",
+            json={
+                "name": "Invalid branch proof",
+                "trigger": "manual",
+                "steps": [
+                    {
+                        "type": "branch",
+                        "field": "order_total",
+                        "operator": ">=",
+                        "value": 100,
+                        "true_step": 0,
+                        "false_step": 3,
+                    },
+                    {"type": "send", "channel": "sms", "body": "Hello"},
+                ],
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 422, created.text)
 
     def test_manual_enrollment_rejects_draft_journey(self):
         created = self.client.post(

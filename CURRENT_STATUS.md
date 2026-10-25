@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 214 backend tests, 164 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 216 backend tests, 165 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -226,9 +226,10 @@ Wave 4 (in progress):
   replies with delivery status, read/close/pending and templates at `/messaging`; new
   `verify:messaging-inbox` proof and three backend tests.
 - Marketing journeys are live: completed/delivered order, low-feedback and manual triggers;
-  delay/condition/send steps, templates, durable runner, enrollment/event history,
-  pause/activate and attributed revenue at `/journeys`; send steps support 50/50 A/B variants
-  with variant-level results, and journeys enforce per-customer send caps across all sends.
+  delay/condition/branch/stop/send steps, templates, durable runner, enrollment/event history,
+  pause/activate and attributed revenue at `/journeys`; branches route to forward steps with
+  explicit stop paths, send steps support 50/50 A/B variants with variant-level results, and
+  journeys enforce per-customer send caps. New `verify:journey-branches` proof and two tests.
 - HR recruitment is live: jobs, applicant board, stage moves, interviews, offers and automatic
   onboarding handoff at `/departments/hr/recruitment`; new `verify:recruitment` proof and two
   backend tests.
@@ -255,12 +256,12 @@ Wave 4 (in progress):
   `verify:payment-providers` proof and two backend tests.
 - Active payment routing is admin-selectable in Tax & billing; new payment sessions and
   checkout status follow it, while existing orders keep their recorded provider.
-- Next: offer reminders/countersignature, multi-path journeys, campaign-level attribution and
-  object storage/CDN.
+- Next: campaign-level attribution, holdout experiments, object storage/CDN and in-app video
+  capture.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 214 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 216 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

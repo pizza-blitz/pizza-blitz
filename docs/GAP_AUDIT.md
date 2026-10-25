@@ -118,6 +118,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 87 | Journey experiments and caps | Journeys had one creative path and could message the same customer repeatedly; there was no A/B result breakdown or send-frequency control. | Marketing-governance gap. | Added optional A/B variants on send steps with 50/50 assignment, variant matching, variant-level enrollment/completion/revenue results, and per-journey `max_sends_per_customer`/`frequency_window_hours` enforced across all journeys (migration). The builder exposes variant selectors, caps and result cards. Two backend tests and extended journey proof. Multi-path branches, holdouts and campaign-level attribution remain. |
 | 88 | Social content approvals | Social/reel posts went from draft straight to scheduling/publishing; there was no reviewer queue, rejection reason, or guard against unapproved content. | Content-governance gap. | Added `approval_status`/note/approver/timestamps (migration), staff submission, admin approve/reject, an approval queue, publish blocking for pending/rejected posts and auto-publish blockers. Social UI shows approval badges and review actions; the composer can request approval. Three backend tests and `verify:social-approvals`. Multi-step approvals, role-based reviewers and scheduled approval reminders remain. |
 | 89 | Offer delivery and countersignature | Offer letters existed only as a private link; there was no email delivery, response reminder or company countersignature, and provider gaps were invisible. | Offer-workflow gap. | Added delivery/reminder/countersignature columns (migration), a Resend-backed send endpoint that reports provider gaps without faking success, a `mailto` fallback, a six-hourly reminder job for offers expiring within three days (max two, 24-hour dedupe), and countersignature that regenerates the PDF and appears on the public page. UI shows delivery state, send/countersign actions and errors. Two backend tests and the extended offer proof. Templates, multi-step approvals and e-sign certification remain. |
+| 90 | Journey multi-path branching | Journeys could stop on a condition but could not route to different sequences; every path continued linearly. | Journey-flow gap. | Added `branch` steps with `true_step`/`false_step` forward targets, explicit `stop` steps, validation against backward/out-of-range targets, branch/stop events, and builder controls with 1-based target display. Both paths are covered by tests; new `verify:journey-branches` proof shows the builder and high-value path. Holdouts, visual canvas and multi-touch attribution remain. |
 
 ## Still open
 
@@ -132,7 +133,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 214 tests, all pass (in a clean venv built from
+- Backend unit suite: 216 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

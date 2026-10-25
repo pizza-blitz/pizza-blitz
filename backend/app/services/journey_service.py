@@ -193,12 +193,48 @@ def validate_steps(steps: list) -> list[dict]:
                     "value": value,
                 }
             )
+        elif step_type == "branch":
+            field = str(raw.get("field") or "order_total").strip()[:40]
+            operator = str(raw.get("operator") or ">=").strip()
+            if operator not in {">=", ">", "<=", "<", "==", "!="}:
+                raise ValueError("Branch operator must be >=, >, <=, <, == or !=.")
+            try:
+                value = float(raw.get("value"))
+                true_step = int(raw.get("true_step"))
+                false_step = int(raw.get("false_step"))
+            except (TypeError, ValueError):
+                raise ValueError(
+                    "Branch needs a numeric value and true/false step targets."
+                ) from None
+            cleaned.append(
+                {
+                    "type": "branch",
+                    "field": field,
+                    "operator": operator,
+                    "value": value,
+                    "true_step": true_step,
+                    "false_step": false_step,
+                }
+            )
+        elif step_type == "stop":
+            cleaned.append({"type": "stop"})
         else:
-            raise ValueError("Journey steps must be delay, condition or send.")
+            raise ValueError(
+                "Journey steps must be delay, condition, branch, stop or send."
+            )
     if not cleaned:
         raise ValueError("Add at least one journey step.")
     if not any(step["type"] == "send" for step in cleaned):
         raise ValueError("A journey needs at least one send step.")
+    for index, step in enumerate(cleaned):
+        if step["type"] != "branch":
+            continue
+        for key in ("true_step", "false_step"):
+            target = step[key]
+            if target <= index or target > len(cleaned):
+                raise ValueError(
+                    f"Branch {key} must point forward to step {index + 2} or later."
+                )
     return cleaned
 
 
@@ -386,7 +422,36 @@ def _advance(db: Session, enrollment: JourneyEnrollment) -> None:
     ):
         index = enrollment.current_step
         step = steps[index]
-        if step.get("type") == "condition":
+        if step.get("type") == "branch":
+            passed, detail = _condition_passes(step, enrollment.context or {})
+            target = int(step.get("true_step") if passed else step.get("false_step"))
+            _log(
+                db,
+                enrollment,
+                step_index=index,
+                step_type="branch",
+                status="passed" if passed else "alternate",
+                detail=f"{detail} Moved to step {target + 1}.",
+            )
+            enrollment.current_step = target
+            if target >= len(steps):
+                enrollment.status = "completed"
+                enrollment.next_run_at = None
+            else:
+                enrollment.next_run_at = datetime.utcnow()
+        elif step.get("type") == "stop":
+            _log(
+                db,
+                enrollment,
+                step_index=index,
+                step_type="stop",
+                status="stopped",
+                detail="Journey path ended at a stop step.",
+            )
+            enrollment.status = "completed"
+            enrollment.next_run_at = None
+            break
+        elif step.get("type") == "condition":
             passed, detail = _condition_passes(step, enrollment.context or {})
             _log(
                 db,

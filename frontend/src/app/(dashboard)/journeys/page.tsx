@@ -19,7 +19,7 @@ const API = getApiUrl("/api/v1/restaurant/journeys");
 const TEMPLATES_API = getApiUrl("/api/v1/restaurant/messaging/templates");
 
 type Step = {
-  type: "delay" | "condition" | "send";
+  type: "delay" | "condition" | "branch" | "stop" | "send";
   hours: number;
   channel: string;
   subject: string;
@@ -28,6 +28,8 @@ type Step = {
   operator?: string;
   value?: number;
   variant?: string;
+  true_step?: number;
+  false_step?: number;
 };
 type EnrollmentEvent = {
   id: number;
@@ -384,6 +386,69 @@ export default function JourneysPage() {
                       className="mt-1 w-32 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
                     />
                   </label>
+                ) : step.type === "branch" ? (
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      If order total
+                      <select
+                        value={step.operator || ">="}
+                        onChange={(event) =>
+                          updateStep(index, { operator: event.target.value })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-800"
+                      >
+                        {[">=", ">", "<=", "<", "==", "!="].map((operator) => (
+                          <option key={operator} value={operator}>
+                            {operator}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      Value
+                      <input
+                        type="number"
+                        value={step.value ?? 0}
+                        onChange={(event) =>
+                          updateStep(index, { value: Number(event.target.value) })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-800"
+                      />
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      If true → step
+                      <input
+                        type="number"
+                        min={1}
+                        value={(step.true_step ?? 0) + 1}
+                        onChange={(event) =>
+                          updateStep(index, {
+                            true_step: Math.max(0, Number(event.target.value) - 1),
+                          })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-800"
+                      />
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      If false → step
+                      <input
+                        type="number"
+                        min={1}
+                        value={(step.false_step ?? 0) + 1}
+                        onChange={(event) =>
+                          updateStep(index, {
+                            false_step: Math.max(0, Number(event.target.value) - 1),
+                          })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-800"
+                      />
+                    </label>
+                  </div>
+                ) : step.type === "stop" ? (
+                  <p className="mt-2 rounded-lg bg-gray-100 px-2 py-1.5 text-[10px] font-bold text-gray-500">
+                    Ends this path. Use a stop at the end of each branch path so execution
+                    does not continue into the next path.
+                  </p>
                 ) : step.type === "condition" ? (
                   <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_100px_100px]">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -550,6 +615,47 @@ export default function JourneysPage() {
                   ...draft,
                   steps: [
                     ...draft.steps,
+                    {
+                      type: "branch",
+                      hours: 0,
+                      channel: "whatsapp",
+                      subject: "",
+                      body: "",
+                      field: "order_total",
+                      operator: ">=",
+                      value: 500,
+                      true_step: 0,
+                      false_step: 0,
+                    },
+                  ],
+                })
+              }
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-600"
+            >
+              + Branch
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setDraft({
+                  ...draft,
+                  steps: [
+                    ...draft.steps,
+                    { type: "stop", hours: 0, channel: "whatsapp", subject: "", body: "" },
+                  ],
+                })
+              }
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-600"
+            >
+              + Stop
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setDraft({
+                  ...draft,
+                  steps: [
+                    ...draft.steps,
                     { type: "send", hours: 0, channel: "whatsapp", subject: "", body: "" },
                   ],
                 })
@@ -679,9 +785,13 @@ export default function JourneysPage() {
                   >
                     {step.type === "delay"
                       ? `Wait ${step.hours}h`
-                      : step.type === "condition"
-                        ? `If ${step.field || "order_total"} ${step.operator || ">="} ${step.value ?? 0}`
-                        : `Send ${step.channel}${step.variant ? ` · ${step.variant}` : ""}`}
+                      : step.type === "branch"
+                        ? `If total ${step.operator || ">="} ${step.value ?? 0} → ${(step.true_step ?? 0) + 1} / ${(step.false_step ?? 0) + 1}`
+                        : step.type === "stop"
+                          ? "Stop path"
+                          : step.type === "condition"
+                            ? `If ${step.field || "order_total"} ${step.operator || ">="} ${step.value ?? 0}`
+                            : `Send ${step.channel}${step.variant ? ` · ${step.variant}` : ""}`}
                   </span>
                 ))}
               </div>

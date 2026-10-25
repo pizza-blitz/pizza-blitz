@@ -28,6 +28,8 @@ class JourneyStep(BaseModel):
     operator: Optional[str] = Field(default=None, max_length=4)
     value: Optional[float] = None
     variant: Optional[str] = Field(default=None, max_length=2)
+    true_step: Optional[int] = Field(default=None, ge=0, le=50)
+    false_step: Optional[int] = Field(default=None, ge=0, le=50)
 
 
 class JourneyCreate(BaseModel):

@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **405 API endpoints**, **70 routes/pages** (56 portal,
-1 KDS, 13 public), **164 browser proof scripts** plus portal smoke, **214 backend
+1 KDS, 13 public), **165 browser proof scripts** plus portal smoke, **216 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -155,7 +155,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons / flash sales | Builder, audience, channel, schedule | Built | Same + auto-apply | — |
 | Campaign dispatch | WhatsApp/SMS/email, logs, retries, suppression | Built | Drip journeys, A/B tests | Journeys/A-B missing |
 | Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
-| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/send steps, templates, durable runner, enrollment/event history, pause/activate, attributed revenue, 50/50 A/B send variants with variant results and per-customer send caps | Built | Automated lifecycle journeys | Multi-path branching, holdout groups and campaign-level multi-touch attribution later |
+| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/branch/stop/send steps, templates, durable runner, enrollment/event history, pause/activate, attributed revenue, 50/50 A/B send variants with variant results and per-customer send caps | Built | Automated lifecycle journeys | Holdout groups, campaign-level multi-touch attribution and visual branch canvas later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
 | Social publishing | Image, video and Instagram reel posts, delivery logs, auto-publish gated, real Instagram REELS/VIDEO container flow, optional admin approval with submit/approve/reject and publish blocking | Built | Multi-platform scheduling, media | Facebook video/reels and in-app capture/editing missing |
 | Marketing Hub | Month calendar aggregating social posts, reels, campaigns and ads; filters, upcoming list, shortcuts and a schedule-content composer | Built | Unified content calendar | Approvals, drag/drop rescheduling and revenue attribution later |
