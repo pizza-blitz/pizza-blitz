@@ -84,6 +84,12 @@ PERMISSIONS = [
         "description": "Manage salary structures, pay runs and payslips.",
     },
     {
+        "key": "hr.recruitment",
+        "label": "HR recruitment",
+        "group": "People & HR",
+        "description": "Manage jobs, applicants, interviews and offers.",
+    },
+    {
         "key": "hr.onboarding",
         "label": "HR onboarding",
         "group": "People & HR",
@@ -117,6 +123,7 @@ DEFAULT_STAFF = {
     "hr.leave": False,
     "hr.attendance": False,
     "hr.payroll": False,
+    "hr.recruitment": False,
     "hr.onboarding": False,
     "hr.documents": False,
     "hr.exits": False,

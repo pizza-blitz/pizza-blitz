@@ -3,7 +3,7 @@
 **Status:** delivered for local/staging evaluation; production launch depends on the
 provider and deployment gates below.
 **Master access:** `admin` / `admin123` at `/login` (development defaults).
-**Verification:** 188 backend tests, 157 browser proofs + portal smoke, full audit green,
+**Verification:** 190 backend tests, 158 browser proofs + portal smoke, full audit green,
 production build green with the API offline.
 
 ---
@@ -19,11 +19,11 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Staff counter/POS | `/counter`, `/orders`, `/kds` | Walk-in orders, table service, payments, receipts, kitchen tickets, item-level bump/recall |
 | Kitchen display | `/kds`, `/kitchen-ticket/[id]` | Station board, SLAs, per-line start/bump/recall, print tickets |
 | Rider app | `/rider/[token]` | Assigned deliveries, GPS, proof of delivery |
-| Owner/admin portal | 54 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing, journeys, reports, stores, departments/HR, Media Studio, landing CMS, tax/billing, providers, messaging inbox, hardware, integrations, deployment, feedback |
+| Owner/admin portal | 55 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing, journeys, reports, stores, departments/HR including recruitment, Media Studio, landing CMS, tax/billing, providers, messaging inbox, hardware, integrations, deployment, feedback |
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
-**Current inventory:** 374 API endpoints, 65 frontend routes (54 portal, 1 KDS,
-10 public), 85 database tables, 188 backend tests, 157 browser proof scripts.
+**Current inventory:** 386 API endpoints, 66 frontend routes (55 portal, 1 KDS,
+10 public), 89 database tables, 190 backend tests, 158 browser proof scripts.
 
 ### Core capabilities
 
@@ -106,7 +106,7 @@ Run from the repository root:
 
 ```powershell
 cd backend
-python -W error::FutureWarning -m unittest discover -s tests -v   # 188 tests
+python -W error::FutureWarning -m unittest discover -s tests -v   # 190 tests
 alembic upgrade head
 alembic check                                                      # no pending operations
 ruff check .
@@ -115,13 +115,13 @@ cd ..\frontend
 npm run typecheck
 npm run lint
 npm run build                                                      # API offline
-npm run verify:audit                                               # 157 proofs + audit
+npm run verify:audit                                               # 158 proofs + audit
 npm run test:e2e                                                   # portal smoke
 ```
 
 Latest recorded results:
 
-- backend suite: **188 passed**;
+- backend suite: **190 passed**;
 - audit: **green** (surface, inventory, action hygiene and all 32 proof groups);
 - production build: **compiled successfully** with the backend stopped;
 - migrations: fresh upgrade + `alembic check` clean;

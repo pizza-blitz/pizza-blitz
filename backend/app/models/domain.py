@@ -1394,3 +1394,88 @@ class JourneyEvent(Base):
     detail = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     enrollment = relationship("JourneyEnrollment", back_populates="events")
+
+
+class RecruitmentJob(Base):
+    """A job requisition for the HR recruitment pipeline."""
+
+    __tablename__ = "recruitment_jobs"
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(160), nullable=False, index=True)
+    department = Column(String(120), nullable=True)
+    location = Column(String(160), nullable=True)
+    employment_type = Column(String(30), nullable=False, default="full_time")
+    description = Column(Text, nullable=True)
+    requirements = Column(Text, nullable=True)
+    salary_min = Column(Float, nullable=True)
+    salary_max = Column(Float, nullable=True)
+    openings = Column(Integer, nullable=False, default=1)
+    status = Column(String(30), nullable=False, default="draft", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    applications = relationship(
+        "RecruitmentApplication", back_populates="job", cascade="all, delete-orphan"
+    )
+
+
+class RecruitmentApplication(Base):
+    """One candidate's application to a job."""
+
+    __tablename__ = "recruitment_applications"
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("recruitment_jobs.id"), nullable=False, index=True)
+    candidate_name = Column(String(160), nullable=False)
+    email = Column(String(200), nullable=True)
+    phone = Column(String(30), nullable=True)
+    source = Column(String(80), nullable=True)
+    stage = Column(String(30), nullable=False, default="applied", index=True)
+    rating = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+    rejection_reason = Column(String(500), nullable=True)
+    expected_salary = Column(Float, nullable=True)
+    offered_salary = Column(Float, nullable=True)
+    joining_date = Column(Date, nullable=True)
+    onboarding_candidate_id = Column(Integer, ForeignKey("hr_onboarding_candidates.id"), nullable=True)
+    applied_at = Column(DateTime, default=datetime.utcnow, index=True)
+    stage_changed_at = Column(DateTime, default=datetime.utcnow)
+    hired_at = Column(DateTime, nullable=True)
+    job = relationship("RecruitmentJob", back_populates="applications")
+    interviews = relationship(
+        "RecruitmentInterview", back_populates="application", cascade="all, delete-orphan"
+    )
+    stage_events = relationship(
+        "RecruitmentStageEvent", back_populates="application", cascade="all, delete-orphan"
+    )
+
+
+class RecruitmentInterview(Base):
+    """An interview scheduled for an application."""
+
+    __tablename__ = "recruitment_interviews"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(
+        Integer, ForeignKey("recruitment_applications.id"), nullable=False, index=True
+    )
+    scheduled_at = Column(DateTime, nullable=False, index=True)
+    mode = Column(String(30), nullable=False, default="in_person")
+    interviewer = Column(String(160), nullable=True)
+    notes = Column(Text, nullable=True)
+    status = Column(String(30), nullable=False, default="scheduled")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    application = relationship("RecruitmentApplication", back_populates="interviews")
+
+
+class RecruitmentStageEvent(Base):
+    """Audit trail for application stage moves."""
+
+    __tablename__ = "recruitment_stage_events"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(
+        Integer, ForeignKey("recruitment_applications.id"), nullable=False, index=True
+    )
+    from_stage = Column(String(30), nullable=True)
+    to_stage = Column(String(30), nullable=False)
+    actor = Column(String(120), nullable=True)
+    note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    application = relationship("RecruitmentApplication", back_populates="stage_events")

@@ -96,6 +96,7 @@ const MODULE_PERMISSIONS: Record<string, string> = {
   leave: "hr.leave",
   attendance: "hr.attendance",
   payroll: "hr.payroll",
+  recruitment: "hr.recruitment",
   onboarding: "hr.onboarding",
   documents: "hr.documents",
   exits: "hr.exits",
