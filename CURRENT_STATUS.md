@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 226 backend tests, 167 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 228 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -210,8 +210,9 @@ Wave 4 (in progress):
   search/tags, usage-guarded delete, menu uploads registering automatically, one picker reused
   in menu, social and ad forms; reels are transcoded to H.264 MP4 with an extracted poster and
   duration metadata. A Record reel modal captures camera/mic in the browser and pushes the
-  WebM through the same transcode pipeline. A storage-status badge reports local disk or
-  S3/CDN; S3-compatible uploads/deletes use CDN URLs with local fallback.
+  WebM through the same transcode pipeline. VTT/SRT captions can be attached to videos, with
+  SRT converted to WebVTT and a caption track on the player. A storage-status badge reports
+  local disk or S3/CDN; S3-compatible uploads/deletes use CDN URLs with local fallback.
 - Private recruitment documents (resumes and offer letters) now live outside the public
   `/media` mount under `PRIVATE_MEDIA_ROOT`; only authenticated HR routes or offer tokens can
   read them.
@@ -266,12 +267,12 @@ Wave 4 (in progress):
   conversation link, and admin/staff triage them at `/support-inbox` with internal notes,
   priority, assignment and resolution status; new `verify:support-tickets` proof and three
   backend tests.
-- Next: person-level multi-touch attribution, holdout experiments, video captions/editing and
+- Next: person-level multi-touch attribution, holdout experiments, video editing and
   multi-step offer approvals.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 226 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 228 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

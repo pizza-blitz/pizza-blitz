@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 226 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching, social approval workflow, marketing calendar/reels, campaign lift/channel attribution, HR recruitment, offer templates, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 228 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching, social approval workflow, marketing calendar/reels, campaign lift/channel attribution, HR recruitment, offer templates, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -518,6 +518,14 @@ social post or ad campaign uses the URL. Menu uploads register automatically, an
 is reused in menu, social and ad forms. Covered by
 `backend/tests/test_media_library.py`, `backend/tests/test_media_video.py`,
 `frontend/e2e/verify-media-studio.cjs` and `frontend/e2e/verify-reel-recorder.cjs`.
+
+## Video captions
+
+Videos accept VTT or SRT captions up to 1 MB. Files must be UTF-8 with timed cues; SRT
+timestamps are converted to WebVTT. Captions are stored under `library/captions` or the
+configured S3 bucket, attached as `caption_url`/`caption_language`, rendered as a default
+`<track>` in Media Studio, and removed when the asset or caption is deleted. Covered by
+`backend/tests/test_media_captions.py` and the extended Media Studio proof.
 
 ## Media object storage
 

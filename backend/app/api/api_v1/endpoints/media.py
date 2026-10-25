@@ -8,8 +8,10 @@ from app.services.media_library_service import (
     create_asset,
     delete_asset,
     list_assets,
+    serialize_asset,
 )
 from app.services.media_storage import storage_status
+from app.services.caption_service import delete_caption, save_caption
 
 router = APIRouter()
 
@@ -51,6 +53,51 @@ async def upload_media_asset(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"asset": asset}
+
+
+@router.post("/assets/{asset_id}/caption", status_code=201)
+async def upload_asset_caption(
+    asset_id: int,
+    file: UploadFile = File(...),
+    language: str = Form(default="en"),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    from app.models.domain import MediaAsset
+
+    asset = db.query(MediaAsset).filter(MediaAsset.id == asset_id).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+    data = await file.read()
+    try:
+        url, clean_language = save_caption(
+            asset, data, file.filename or "captions.vtt", language
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    delete_caption(asset.caption_url)
+    asset.caption_url = url
+    asset.caption_language = clean_language
+    db.commit()
+    db.refresh(asset)
+    return {"asset": serialize_asset(asset)}
+
+
+@router.delete("/assets/{asset_id}/caption", status_code=204)
+def remove_asset_caption(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    from app.models.domain import MediaAsset
+
+    asset = db.query(MediaAsset).filter(MediaAsset.id == asset_id).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+    delete_caption(asset.caption_url)
+    asset.caption_url = None
+    asset.caption_language = None
+    db.commit()
 
 
 @router.delete("/assets/{asset_id}", status_code=204)

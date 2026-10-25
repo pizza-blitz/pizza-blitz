@@ -90,7 +90,7 @@ async function main() {
         response.status() === 201,
       { timeout: 20000 }
     );
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.locator('input[type="file"]').first().setInputFiles({
       name: "proof-pizza.jpg",
       mimeType: "image/jpeg",
       buffer: PIZZA,
@@ -134,7 +134,7 @@ async function main() {
         response.status() === 201,
       { timeout: 60000 }
     );
-    await page.locator('input[type="file"]').setInputFiles(videoPath);
+    await page.locator('input[type="file"]').first().setInputFiles(videoPath);
     const videoUpload = await videoResponse;
     const videoAsset = (await videoUpload.json()).asset;
     assert(videoAsset.media_type === "video", "Video asset was not stored as video.");
@@ -147,6 +147,34 @@ async function main() {
       "Video reel badge missing."
     );
     fs.unlinkSync(videoPath);
+
+    const captionResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/media/assets/${videoAsset.id}/caption`) &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
+      { timeout: 30000 }
+    );
+    await page
+      .getByTestId(`media-caption-input-${videoAsset.id}`)
+      .setInputFiles({
+        name: "reel-captions.vtt",
+        mimeType: "text/vtt",
+        buffer: Buffer.from(
+          "WEBVTT\n\n00:00:00.500 --> 00:00:02.000\nFresh pizza, recorded in the browser.\n",
+          "utf8"
+        ),
+      });
+    const captionUpload = await captionResponse;
+    const captionAsset = (await captionUpload.json()).asset;
+    assert(captionAsset.caption_url, "Caption URL missing after upload.");
+    await page
+      .getByTestId(`media-caption-remove-${videoAsset.id}`)
+      .waitFor({ timeout: 20000 });
+    assert(
+      (await videoCard.locator("track").count()) >= 1,
+      "Caption track missing from the video player."
+    );
 
     await page.screenshot({
       path: path.join(artifactsDir, "visible-media-studio.png"),

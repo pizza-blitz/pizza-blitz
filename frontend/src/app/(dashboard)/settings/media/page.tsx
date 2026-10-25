@@ -26,6 +26,8 @@ type MediaAsset = {
   media_type: "image" | "video";
   poster_url?: string | null;
   duration_seconds?: number | null;
+  caption_url?: string | null;
+  caption_language?: string | null;
   width?: number | null;
   height?: number | null;
   tags: string[];
@@ -245,6 +247,47 @@ export default function MediaStudioPage() {
     }
   };
 
+  const uploadCaption = async (asset: MediaAsset, file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("language", "en");
+      const response = await fetch(`${API}/${asset.id}/caption`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Caption upload failed.");
+      setMessage(`Captions added to ${asset.name}.`);
+      await fetchAssets(query);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Caption upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeCaption = async (asset: MediaAsset) => {
+    setBusy(true);
+    try {
+      const response = await fetch(`${API}/${asset.id}/caption`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Caption could not be removed.");
+      setMessage(`Captions removed from ${asset.name}.`);
+      await fetchAssets(query);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Caption could not be removed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const upload = async (file: File | null) => {
     if (!file) return;
     setBusy(true);
@@ -428,7 +471,18 @@ export default function MediaStudioPage() {
                     controls
                     preload="metadata"
                     className="h-full w-full object-cover"
-                  />
+                  >
+                    {asset.caption_url && (
+                      <track
+                        key={asset.caption_url}
+                        kind="captions"
+                        src={asset.caption_url}
+                        srcLang={asset.caption_language || "en"}
+                        label="Captions"
+                        default
+                      />
+                    )}
+                  </video>
                 ) : (
                   <img
                     src={asset.url}
@@ -460,6 +514,38 @@ export default function MediaStudioPage() {
                   ))}
                 </div>
                 <div className="flex gap-1.5">
+                  {asset.media_type === "video" && (
+                    <label
+                      data-testid={`media-caption-button-${asset.id}`}
+                      className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50"
+                      title={asset.caption_url ? "Replace captions" : "Add VTT/SRT captions"}
+                    >
+                      CC
+                      <input
+                        data-testid={`media-caption-input-${asset.id}`}
+                        type="file"
+                        accept=".vtt,.srt,text/vtt"
+                        className="hidden"
+                        onChange={(event) =>
+                          void uploadCaption(
+                            asset,
+                            event.target.files?.[0] || null
+                          )
+                        }
+                      />
+                    </label>
+                  )}
+                  {asset.media_type === "video" && asset.caption_url && (
+                    <button
+                      type="button"
+                      data-testid={`media-caption-remove-${asset.id}`}
+                      aria-label={`Remove captions from ${asset.name}`}
+                      onClick={() => void removeCaption(asset)}
+                      className="rounded-lg border border-gray-200 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-500 hover:bg-red-50 hover:text-red-600"
+                    >
+                      CC×
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => void copyUrl(asset)}

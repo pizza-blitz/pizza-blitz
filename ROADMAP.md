@@ -206,6 +206,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Reusable offer templates with snapshot terms.
 - [x] Guest support tickets with private threads and staff inbox.
 - [x] In-browser reel recording through the media transcode pipeline.
-- [ ] Person-level multi-touch attribution, holdouts, video captions/editing.
+- [x] VTT/SRT video captions with SRT-to-WebVTT conversion.
+- [ ] Person-level multi-touch attribution, holdouts, video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

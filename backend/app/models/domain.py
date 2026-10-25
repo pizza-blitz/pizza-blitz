@@ -1256,6 +1256,8 @@ class MediaAsset(Base):
     media_type = Column(String(20), nullable=False, default="image", server_default="image")
     poster_url = Column(String(500), nullable=True)
     duration_seconds = Column(Float, nullable=True)
+    caption_url = Column(String(500), nullable=True)
+    caption_language = Column(String(20), nullable=True)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
     tags = Column(JSON, default=list)

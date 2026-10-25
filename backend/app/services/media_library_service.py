@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.domain import AdCampaign, MediaAsset, MenuItem, SocialPost
+from app.services.caption_service import delete_caption
 from app.services.media_service import (
     _detect_video,
     delete_library_image,
@@ -23,6 +24,8 @@ def serialize_asset(asset: MediaAsset) -> dict:
         "media_type": asset.media_type or "image",
         "poster_url": asset.poster_url,
         "duration_seconds": asset.duration_seconds,
+        "caption_url": asset.caption_url,
+        "caption_language": asset.caption_language,
         "width": asset.width,
         "height": asset.height,
         "tags": asset.tags or [],
@@ -145,10 +148,12 @@ def delete_asset(db: Session, asset_id: int) -> None:
         raise ValueError(f"This image is in use by {', '.join(usage)}.")
     url = asset.url
     poster_url = asset.poster_url
+    caption_url = asset.caption_url
     media_type = asset.media_type
     db.delete(asset)
     db.commit()
     if media_type == "video":
         delete_library_video(url, poster_url)
+        delete_caption(caption_url)
     else:
         delete_library_image(url)
