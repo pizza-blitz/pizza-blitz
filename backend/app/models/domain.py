@@ -525,6 +525,7 @@ class RestaurantOrder(Base):
     subtotal = Column(Float, default=0.0)
     discount_amount = Column(Float, default=0.0)
     tax_amount = Column(Float, default=0.0)
+    service_charge = Column(Float, default=0.0)
     tip_amount = Column(Float, nullable=False, default=0.0, server_default="0")
     refunded_amount = Column(Float, nullable=False, default=0.0, server_default="0")
     total_amount = Column(Float, default=0.0)
@@ -646,6 +647,7 @@ class Invoice(Base):
     customer_gstin = Column(String(20), nullable=True)
     items = Column(JSON, default=list)
     subtotal = Column(Float, default=0.0)
+    service_charge = Column(Float, default=0.0)
     cgst = Column(Float, default=0.0)
     sgst = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
@@ -1275,6 +1277,10 @@ class BillingSettings(Base):
     invoice_footer = Column(String(255), nullable=True)
     tip_presets = Column(JSON, default=lambda: [0, 5, 10, 15])
     payment_provider = Column(String(30), nullable=True)
+    prices_include_tax = Column(Boolean, nullable=False, default=False)
+    service_charge_rate = Column(Float, nullable=False, default=0.0)
+    service_charge_label = Column(String(40), nullable=False, default="Service charge")
+    tax_slabs = Column(JSON, default=list)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

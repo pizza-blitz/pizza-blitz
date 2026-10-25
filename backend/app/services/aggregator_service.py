@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 from sqlalchemy.orm import Session
 
 from app.core.clock import business_today
-from app.services.billing_settings_service import tax_for_subtotal
+from app.services.billing_settings_service import calculate_charges
 from app.models.domain import (
     AggregatorEvent,
     AggregatorIntegration,
@@ -227,8 +227,9 @@ def ingest_order(
     subtotal = round(
         sum(item["price"] * item["quantity"] for item in items), 2
     )
-    tax = tax_for_subtotal(db, subtotal)
-    total = round(subtotal + tax, 2)
+    charges = calculate_charges(db, subtotal)
+    tax = charges["tax"]
+    total = charges["total"]
     payment_status = str(payload.get("payment_status") or "").lower()
     payment_method = str(payload.get("payment_method") or integration.platform)
     paid = payment_status in {"paid", "prepaid", "captured"}
@@ -253,6 +254,7 @@ def ingest_order(
         subtotal=subtotal,
         discount_amount=0.0,
         tax_amount=tax,
+        service_charge=charges["service_charge"],
         tip_amount=0.0,
         total_amount=total,
         payment_method=payment_method,

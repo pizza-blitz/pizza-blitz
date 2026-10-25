@@ -90,6 +90,61 @@ class BillingSettingsTest(unittest.TestCase):
         self.assertAlmostEqual(invoice.json()["cgst"], 14.28, places=2)
         self.assertAlmostEqual(invoice.json()["sgst"], 14.28, places=2)
 
+    def test_service_charge_and_slab_apply_to_order(self):
+        saved = self.client.put(
+            "/api/v1/restaurant/billing-settings/",
+            json={
+                "tax_rate": 5,
+                "tax_label": "GST",
+                "invoice_footer": None,
+                "tip_presets": [0, 5, 10, 15],
+                "service_charge_rate": 10,
+                "service_charge_label": "Service charge",
+                "tax_slabs": [
+                    {"threshold": 0, "rate": 5},
+                    {"threshold": 200, "rate": 12},
+                ],
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["settings"]["service_charge_rate"], 10)
+        self.assertEqual(len(saved.json()["settings"]["tax_slabs"]), 2)
+
+        created = self.client.post(
+            "/api/v1/restaurant/orders/", json=order_payload("9812346222")
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        order = created.json()
+        self.assertAlmostEqual(order["subtotal"], 238, places=2)
+        self.assertAlmostEqual(order["service_charge"], 23.8, places=2)
+        self.assertAlmostEqual(order["tax"], 31.42, places=2)
+        self.assertAlmostEqual(order["total"], 293.22, places=2)
+
+    def test_tax_inclusive_prices_extract_tax_without_adding_it(self):
+        saved = self.client.put(
+            "/api/v1/restaurant/billing-settings/",
+            json={
+                "tax_rate": 5,
+                "tax_label": "GST",
+                "invoice_footer": None,
+                "tip_presets": [0, 5, 10, 15],
+                "prices_include_tax": True,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertTrue(saved.json()["settings"]["prices_include_tax"])
+
+        created = self.client.post(
+            "/api/v1/restaurant/orders/", json=order_payload("9812346333")
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        order = created.json()
+        self.assertAlmostEqual(order["subtotal"], 238, places=2)
+        self.assertAlmostEqual(order["tax"], 11.33, places=2)
+        self.assertAlmostEqual(order["total"], 238, places=2)
+
     def test_staff_cannot_change_billing_settings(self):
         staff_login = self.client.post(
             "/api/v1/auth/staff/login",

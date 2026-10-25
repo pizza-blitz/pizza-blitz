@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **393 API endpoints**, **69 routes/pages** (56 portal,
-1 KDS, 12 public), **162 browser proof scripts** plus portal smoke, **200 backend
+1 KDS, 12 public), **162 browser proof scripts** plus portal smoke, **202 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -189,7 +189,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Expenses | Categories, add, audit command | Built | Approval workflow depth | Partial |
 | Refunds / voids | Void unpaid orders via cancel; refund captured payments with a reason, method, reference, ledger and audit trail | Built | Refund with reason/audit/provider call | Provider-initiated refund call not wired |
 | Tips | Captured per order, included in totals, receipts and the tips summary | Partial | Tip pool, payout report | Payout missing |
-| Tax | Admin-configurable rate/label, invoice footer, tip presets and active payment provider; orders, coupon quotes, aggregator intake, POS estimates and CGST/SGST split use the configured rate | Built | Tax and billing settings | Tax-inclusive prices, slabs and service charge missing |
+| Tax | Admin-configurable rate/label, invoice footer, tip presets, active payment provider, tax-inclusive menu prices, service charge and subtotal tax slabs; orders, coupon quotes, aggregator intake, POS estimates and CGST/SGST split use the configured pricing | Built | Tax and billing settings | Per-item tax classes and statutory filing later |
 | Gift cards | — | Missing | Issue/redeem | Later |
 
 ## 12. Workforce

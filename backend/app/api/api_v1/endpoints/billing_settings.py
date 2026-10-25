@@ -14,12 +14,21 @@ from app.services.billing_settings_service import (
 router = APIRouter()
 
 
+class TaxSlab(BaseModel):
+    threshold: float = Field(ge=0)
+    rate: float = Field(ge=0, le=28)
+
+
 class BillingSettingsUpdate(BaseModel):
     tax_rate: float = Field(ge=0, le=28)
     tax_label: str = Field(min_length=1, max_length=30)
     invoice_footer: Optional[str] = Field(default=None, max_length=255)
     tip_presets: List[int] = Field(default_factory=list, max_length=8)
     payment_provider: str = Field(default="manual", max_length=30)
+    prices_include_tax: bool = False
+    service_charge_rate: float = Field(default=0, ge=0, le=30)
+    service_charge_label: str = Field(default="Service charge", max_length=40)
+    tax_slabs: List[TaxSlab] = Field(default_factory=list, max_length=6)
 
 
 @router.get("/")
@@ -53,6 +62,10 @@ def save_billing_settings(
                 "invoice_footer": (payload.invoice_footer or "").strip() or None,
                 "tip_presets": presets,
                 "payment_provider": payload.payment_provider,
+                "prices_include_tax": payload.prices_include_tax,
+                "service_charge_rate": payload.service_charge_rate,
+                "service_charge_label": payload.service_charge_label,
+                "tax_slabs": [slab.model_dump() for slab in payload.tax_slabs],
             },
         )
     }

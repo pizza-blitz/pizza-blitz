@@ -39,7 +39,7 @@ from app.models.domain import (
     Store,
 )
 from app.services.aggregator_service import queue_status_event
-from app.services.billing_settings_service import split_tax, tax_for_subtotal
+from app.services.billing_settings_service import calculate_charges, split_tax
 from app.services.delivery_service import delivery_quote, serialize_delivery_zone
 from app.services.menu_customization_service import (
     calculate_customized_item_price,
@@ -303,6 +303,7 @@ def serialize_invoice(invoice: Invoice) -> dict:
         "customer_gstin": invoice.customer_gstin,
         "items": invoice.items or [],
         "subtotal": invoice.subtotal,
+        "service_charge": invoice.service_charge or 0,
         "cgst": invoice.cgst,
         "sgst": invoice.sgst,
         "total": invoice.total,
@@ -341,6 +342,7 @@ def serialize_order(order: RestaurantOrder) -> dict:
         "subtotal": order.subtotal,
         "discount_amount": order.discount_amount,
         "tax_amount": order.tax_amount,
+        "service_charge": order.service_charge or 0,
         "tip_amount": order.tip_amount or 0,
         "refunded_amount": round(float(order.refunded_amount or 0), 2),
         "refundable_amount": refundable_amount(order),
@@ -2198,7 +2200,9 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
             )
     discount = round(min(base_discount + loyalty_discount, subtotal), 2)
     taxable_subtotal = max(subtotal - discount, 0)
-    tax = tax_for_subtotal(db, taxable_subtotal)
+    charges = calculate_charges(db, taxable_subtotal)
+    tax = charges["tax"]
+    service_charge = charges["service_charge"]
     delivery_fee = 0.0
     delivery_zone_id = None
     delivery_zone_name = None
@@ -2221,7 +2225,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         delivery_zone_name = quote["zone"]["name"] if quote.get("zone") else None
         delivery_eta = quote.get("eta_window")
         delivery_address = quote["address"]
-    total = round(taxable_subtotal + tax + delivery_fee, 2)
+    total = round(charges["total"] + delivery_fee, 2)
     tip = round(float(order.tip_amount or 0), 2)
     total = round(total + tip, 2)
     items = valid_items
@@ -2252,6 +2256,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         subtotal=subtotal,
         discount_amount=discount,
         tax_amount=tax,
+        service_charge=service_charge,
         tip_amount=tip,
         total_amount=total,
         payment_method=payment_method,
@@ -2316,6 +2321,7 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         "subtotal": subtotal,
         "discount": discount,
         "tax": tax,
+        "service_charge": service_charge,
         "tip_amount": tip,
         "delivery_fee": delivery_fee,
         "delivery_zone": delivery_zone_name,
@@ -3382,6 +3388,7 @@ def generate_invoice(
         customer_gstin=customer_gstin,
         items=order.items or [],
         subtotal=order.subtotal or 0,
+        service_charge=order.service_charge or 0,
         cgst=cgst,
         sgst=sgst,
         total=order.total_amount or 0,

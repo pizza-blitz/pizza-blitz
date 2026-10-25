@@ -194,6 +194,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Admin-selectable active payment provider.
 - [x] Journey conditions and revenue attribution.
 - [x] Recruitment resumes, parsing and interview scorecards.
+- [x] Tax-inclusive prices, service charge and tax slabs.
 - [ ] Journey A/B tests/frequency caps, offer letters/e-signature, video transcoding.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

@@ -4,12 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, Receipt, Save } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
+type TaxSlab = { threshold: number; rate: number };
 type BillingSettings = {
   tax_rate: number;
   tax_label: string;
   invoice_footer: string | null;
   tip_presets: number[];
   payment_provider: "manual" | "direct_bank" | "cashfree" | "razorpay";
+  prices_include_tax: boolean;
+  service_charge_rate: number;
+  service_charge_label: string;
+  tax_slabs: TaxSlab[];
   updated_at?: string | null;
 };
 
@@ -41,9 +46,33 @@ export default function BillingSettingsPage() {
 
   const preview = useMemo(() => {
     const subtotal = 500;
-    const tax = Math.round(subtotal * ((settings?.tax_rate || 0) / 100) * 100) / 100;
-    return { subtotal, tax, total: subtotal + tax };
-  }, [settings?.tax_rate]);
+    const slabs = [...(settings?.tax_slabs || [])].sort(
+      (a, b) => a.threshold - b.threshold
+    );
+    let rate = settings?.tax_rate || 0;
+    for (const slab of slabs) {
+      if (subtotal >= slab.threshold) rate = slab.rate;
+    }
+    const serviceRate = settings?.service_charge_rate || 0;
+    const service = Math.round(subtotal * (serviceRate / 100) * 100) / 100;
+    const base = subtotal + service;
+    const tax = settings?.prices_include_tax
+      ? Math.round((base - base / (1 + rate / 100)) * 100) / 100
+      : Math.round(base * (rate / 100) * 100) / 100;
+    return {
+      subtotal,
+      service,
+      serviceRate,
+      tax,
+      rate,
+      total: settings?.prices_include_tax ? base : base + tax,
+    };
+  }, [
+    settings?.tax_rate,
+    settings?.tax_slabs,
+    settings?.service_charge_rate,
+    settings?.prices_include_tax,
+  ]);
 
   const save = async () => {
     if (!settings) return;
@@ -64,6 +93,10 @@ export default function BillingSettingsPage() {
           invoice_footer: settings.invoice_footer || null,
           tip_presets: presets,
           payment_provider: settings.payment_provider || "manual",
+          prices_include_tax: Boolean(settings.prices_include_tax),
+          service_charge_rate: Number(settings.service_charge_rate || 0),
+          service_charge_label: settings.service_charge_label || "Service charge",
+          tax_slabs: settings.tax_slabs || [],
         }),
       });
       const data = await response.json();
@@ -158,6 +191,134 @@ export default function BillingSettingsPage() {
             order desk all read this setting.
           </p>
 
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Service charge (%)
+              <input
+                data-testid="billing-service-charge"
+                type="number"
+                min={0}
+                max={30}
+                step="0.01"
+                value={settings.service_charge_rate || 0}
+                onChange={(event) =>
+                  setSettings({
+                    ...settings,
+                    service_charge_rate: Number(event.target.value),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-black text-gray-900 outline-none focus:border-orange-400"
+              />
+            </label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Service charge label
+              <input
+                data-testid="billing-service-charge-label"
+                value={settings.service_charge_label || "Service charge"}
+                onChange={(event) =>
+                  setSettings({ ...settings, service_charge_label: event.target.value })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800 outline-none focus:border-orange-400"
+              />
+            </label>
+          </div>
+
+          <label className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-bold text-gray-600">
+            <input
+              data-testid="billing-tax-inclusive"
+              type="checkbox"
+              checked={Boolean(settings.prices_include_tax)}
+              onChange={(event) =>
+                setSettings({ ...settings, prices_include_tax: event.target.checked })
+              }
+            />
+            Menu prices already include tax (tax is extracted, not added)
+          </label>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+                Tax slabs by subtotal
+              </p>
+              <button
+                type="button"
+                onClick={() =>
+                  setSettings({
+                    ...settings,
+                    tax_slabs: [
+                      ...(settings.tax_slabs || []),
+                      { threshold: 0, rate: settings.tax_rate },
+                    ],
+                  })
+                }
+                className="rounded-lg border border-gray-200 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-gray-600"
+              >
+                + Slab
+              </button>
+            </div>
+            {(settings.tax_slabs || []).length === 0 ? (
+              <p className="mt-2 text-[10px] font-semibold text-gray-400">
+                No slabs: the single tax rate applies to every order.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {(settings.tax_slabs || []).map((slab, index) => (
+                  <div key={index} className="flex items-center gap-1.5">
+                    <input
+                      aria-label={`Slab ${index + 1} threshold`}
+                      type="number"
+                      min={0}
+                      value={slab.threshold}
+                      onChange={(event) => {
+                        const tax_slabs = [...settings.tax_slabs];
+                        tax_slabs[index] = {
+                          ...slab,
+                          threshold: Number(event.target.value),
+                        };
+                        setSettings({ ...settings, tax_slabs });
+                      }}
+                      placeholder="Threshold"
+                      className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-700"
+                    />
+                    <input
+                      aria-label={`Slab ${index + 1} rate`}
+                      type="number"
+                      min={0}
+                      max={28}
+                      step="0.01"
+                      value={slab.rate}
+                      onChange={(event) => {
+                        const tax_slabs = [...settings.tax_slabs];
+                        tax_slabs[index] = {
+                          ...slab,
+                          rate: Number(event.target.value),
+                        };
+                        setSettings({ ...settings, tax_slabs });
+                      }}
+                      placeholder="Rate %"
+                      className="w-24 rounded-lg border border-gray-200 px-2 py-1.5 text-xs font-semibold text-gray-700"
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove slab ${index + 1}`}
+                      onClick={() =>
+                        setSettings({
+                          ...settings,
+                          tax_slabs: settings.tax_slabs.filter(
+                            (_, slabIndex) => slabIndex !== index
+                          ),
+                        })
+                      }
+                      className="px-1 text-gray-400 hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500">
             Invoice footer
             <input
@@ -222,9 +383,18 @@ export default function BillingSettingsPage() {
                 <span>Subtotal</span>
                 <span className="font-bold text-gray-900">{money(preview.subtotal)}</span>
               </div>
+              {preview.service > 0 && (
+                <div className="flex justify-between text-gray-500">
+                  <span>
+                    {settings.service_charge_label || "Service charge"} ({preview.serviceRate}%)
+                  </span>
+                  <span className="font-bold text-gray-900">{money(preview.service)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-gray-500">
                 <span>
-                  {settings.tax_label || "Tax"} {settings.tax_rate}%
+                  {settings.tax_label || "Tax"} {preview.rate}%
+                  {settings.prices_include_tax ? " (included)" : ""}
                 </span>
                 <span className="font-bold text-gray-900">{money(preview.tax)}</span>
               </div>

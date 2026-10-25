@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 200 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library, storefront landing content, configurable tax/billing, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution, marketing calendar/reels, HR recruitment, resumes/scorecards, public careers, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 202 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution, marketing calendar/reels, HR recruitment, resumes/scorecards, public careers, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -615,6 +615,15 @@ applications can fill missing contact fields from the file. Admin download requi
 strong_yes/yes/no/strong_no recommendation. Covered by
 `backend/tests/test_recruitment_resumes.py` and
 `frontend/e2e/verify-recruitment-resume.cjs`.
+
+## Pricing modes
+
+`/settings/billing` now supports tax-inclusive menu prices, a percentage service charge with
+a custom label, and up to six tax slabs keyed by discounted subtotal. A shared
+`calculate_charges` drives new orders, coupon quotes and aggregator intake; inclusive prices
+extract tax instead of adding it, and service charge is included in the tax base. Orders store
+their own `service_charge`. Covered by `backend/tests/test_billing_settings.py` and
+`frontend/e2e/verify-billing-settings.cjs`.
 
 ## Item-level KDS
 

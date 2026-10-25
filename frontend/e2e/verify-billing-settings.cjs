@@ -83,6 +83,16 @@ async function main() {
     const pageText = await page.getByTestId("billing-settings-page").innerText();
     assert(pageText.includes("VAT 12%"), "Tax preview did not update to VAT 12%.");
     assert(pageText.includes("Rs 560"), "Tax total preview did not recalculate.");
+
+    await page.getByTestId("billing-service-charge").fill("10");
+    await page.getByText("+ Slab", { exact: true }).click();
+    await page.getByLabel("Slab 1 threshold").fill("200");
+    await page.getByLabel("Slab 1 rate").fill("12");
+    await page.getByTestId("billing-save").click();
+    await page.getByText("Billing settings saved", { exact: false }).waitFor({ timeout: 20000 });
+    const pricedText = await page.getByTestId("billing-settings-page").innerText();
+    assert(pricedText.includes("Service charge (10%)"), "Service charge preview missing.");
+    assert(pricedText.includes("Rs 616"), "Service charge total preview did not recalculate.");
     await page.screenshot({
       path: path.join(artifactsDir, "visible-billing-settings.png"),
       fullPage: false,
@@ -95,6 +105,8 @@ async function main() {
       publicSettings.settings.tip_presets.join(",") === "0,10,20",
       "Public tip presets not updated."
     );
+    assert(publicSettings.settings.service_charge_rate === 10, "Service charge not updated.");
+    assert(publicSettings.settings.tax_slabs.length === 1, "Tax slab not saved.");
 
     const orderResponse = await fetch(`${apiURL}/api/v1/restaurant/orders/`, {
       method: "POST",
@@ -109,7 +121,12 @@ async function main() {
     });
     const order = await orderResponse.json();
     assert(orderResponse.ok, `Order creation failed: ${JSON.stringify(order)}`);
-    assert(order.tax === 28.56, `Expected 12% tax 28.56, received ${order.tax}.`);
+    assert(order.tax === 31.42, `Expected slab tax 31.42, received ${order.tax}.`);
+    assert(
+      order.service_charge === 23.8,
+      `Expected service charge 23.8, received ${order.service_charge}.`
+    );
+    assert(order.total === 293.22, `Expected total 293.22, received ${order.total}.`);
 
     await page.goto(`${baseURL}/invoices`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("invoice-footer").waitFor({ timeout: 20000 });
@@ -126,10 +143,14 @@ async function main() {
     await page.getByTestId("billing-tax-label").fill("GST");
     await page.getByTestId("billing-invoice-footer").fill("");
     await page.getByTestId("billing-tip-presets").fill("0, 5, 10, 15");
+    await page.getByTestId("billing-service-charge").fill("0");
+    const removeSlab = page.getByLabel("Remove slab 1");
+    if (await removeSlab.count()) await removeSlab.click();
     await page.getByTestId("billing-save").click();
     await page.getByText("Billing settings saved", { exact: false }).waitFor({ timeout: 20000 });
     const reset = await fetch(`${apiURL}/api/v1/restaurant/billing-settings/public`).then((r) => r.json());
     assert(reset.settings.tax_rate === 5, "Tax rate was not reset to 5%.");
+    assert(reset.settings.service_charge_rate === 0, "Service charge was not reset.");
 
     console.log("Billing settings proof passed.");
   } finally {
