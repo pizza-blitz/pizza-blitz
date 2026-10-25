@@ -188,6 +188,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Messaging inbox and templates.
 - [x] Marketing journeys with order/feedback triggers.
 - [x] HR recruitment pipeline and onboarding handoff.
-- [ ] Marketing hub/reels, public careers page, journey branching/attribution.
+- [x] Public careers page with online applications.
+- [ ] Marketing hub/reels, journey branching/attribution, resume parsing/scorecards.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

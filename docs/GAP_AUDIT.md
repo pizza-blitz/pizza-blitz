@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 66 frontend routes, the 158 browser proof scripts plus portal smoke in
+- Listed all 68 frontend routes, the 159 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -105,6 +105,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 74 | Messaging inbox | Campaigns were one-way; replies, inbound webhooks, conversations, templates and delivery status lived outside the portal. | Messaging conversation gap. | Added `message_threads`, `messages` and `message_templates` (migration), token-protected inbound webhooks for WhatsApp/Twilio/email/form/JSON, shared threads, replies through the provider layer with delivery status/error, read/close/pending, templates and `/messaging`. Three backend tests and `verify:messaging-inbox`. Journeys, incoming media and provider delivery receipts remain. |
 | 75 | Marketing journeys | Campaigns were scheduled blasts; there was no trigger-based sequence from a completed/delivered order, low feedback or a manual audience, and no enrollment history. | Journey automation gap. | Added `marketing_journeys`, `journey_enrollments` and `journey_events` (migration), order-completed/order-delivered/feedback-low/manual triggers, delay and send steps with templates, durable one-minute runner, enrollment/event history, pause/activate and `/journeys`. Two backend tests and `verify:marketing-journeys`. Branching, A/B, frequency caps and revenue attribution remain. |
 | 76 | Recruitment pipeline | HR started at onboarding; there was no job requisition, applicant board, interview scheduling, offer stage or clean handoff from hired candidate to onboarding. | Hiring gap. | Added `recruitment_jobs`, `recruitment_applications`, `recruitment_interviews` and `recruitment_stage_events` (migration), `/restaurant/hr/recruitment` APIs, the `/departments/hr/recruitment` board, stage transition rules, interview scheduling, offer salary/joining date, stage history and automatic onboarding candidate creation on hire. Added the `recruitment` HR module and `hr.recruitment` permission. Two backend tests and `verify:recruitment`. Public careers page, resume parsing and scorecards remain. |
+| 77 | Public careers | Recruitment lived entirely behind admin login; there was no public role list or application form, so candidates could not enter the pipeline without HR data entry. | Careers-page gap. | Added public `/restaurant/careers` job/detail/application APIs with rate limiting and no auth, `/careers` and `/careers/{id}` pages, a footer link and application intake that writes to the recruitment pipeline with source `Careers page`. One backend test and `verify:careers`. Resume upload, parsing and structured scorecards remain. |
 
 ## Still open
 
@@ -119,7 +120,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 190 tests, all pass (in a clean venv built from
+- Backend unit suite: 191 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
