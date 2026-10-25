@@ -19,6 +19,12 @@ type Ticket = {
   assigned_to?: string | null;
   last_message?: string | null;
   last_message_at?: string | null;
+  sla_due_at?: string | null;
+  first_response_at?: string | null;
+  resolved_at?: string | null;
+  sla_state?: string;
+  sla_remaining_minutes?: number | null;
+  sla_target_hours?: number;
   messages?: Message[];
 };
 
@@ -34,7 +40,40 @@ type Message = {
 type Summary = {
   counts: Record<string, number>;
   urgent_open: number;
+  sla: {
+    overdue: number;
+    due_soon: number;
+    breached_resolved: number;
+    avg_first_response_minutes: number;
+    avg_resolution_minutes: number;
+    targets_hours: Record<string, number>;
+  };
 };
+
+const SLA_TONE: Record<string, string> = {
+  overdue: "bg-red-100 text-red-700",
+  due_soon: "bg-amber-100 text-amber-800",
+  on_track: "bg-emerald-100 text-emerald-800",
+  met: "bg-emerald-100 text-emerald-800",
+  breached: "bg-red-100 text-red-700",
+  closed: "bg-gray-200 text-gray-600",
+  no_target: "bg-gray-100 text-gray-500",
+};
+
+function slaLabel(ticket: Ticket): string {
+  if (ticket.sla_state === "overdue") {
+    const minutes = Math.abs(ticket.sla_remaining_minutes || 0);
+    return `Overdue ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+  if (ticket.sla_state === "due_soon") {
+    const minutes = Math.max(ticket.sla_remaining_minutes || 0, 0);
+    return `Due soon ${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+  if (ticket.sla_state === "met" || ticket.sla_state === "breached") {
+    return ticket.sla_state === "met" ? "SLA met" : "SLA breached";
+  }
+  return ticket.sla_state === "on_track" ? "On track" : "";
+}
 
 const STATUS_TONE: Record<string, string> = {
   open: "bg-amber-100 text-amber-800",
@@ -177,6 +216,38 @@ export default function SupportInboxPage() {
         </p>
       )}
 
+      <section
+        data-testid="support-sla-summary"
+        className="grid gap-3 rounded-2xl border border-gray-100 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5"
+      >
+        {[
+          ["Overdue", summary?.sla?.overdue || 0, "text-red-700"],
+          ["Due soon", summary?.sla?.due_soon || 0, "text-amber-700"],
+          [
+            "Avg first reply",
+            `${summary?.sla?.avg_first_response_minutes || 0}m`,
+            "text-gray-900",
+          ],
+          [
+            "Avg resolution",
+            `${summary?.sla?.avg_resolution_minutes || 0}m`,
+            "text-gray-900",
+          ],
+          ["Breached resolved", summary?.sla?.breached_resolved || 0, "text-red-700"],
+        ].map(([label, value, tone]) => (
+          <div key={String(label)}>
+            <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+              {label}
+            </p>
+            <p className={`mt-1 text-xl font-black ${tone}`}>{value}</p>
+          </div>
+        ))}
+        <p className="col-span-full text-[10px] font-semibold text-gray-400">
+          Targets: urgent 2h · high 8h · normal 24h · low 48h. First reply excludes internal
+          notes.
+        </p>
+      </section>
+
       <div className="grid gap-5 xl:grid-cols-[440px_1fr]">
         <section className="rounded-2xl border border-gray-100 bg-white p-4">
           <div className="flex items-center justify-between">
@@ -217,6 +288,16 @@ export default function SupportInboxPage() {
                   <p className="mt-1 text-[10px] font-semibold text-gray-500">
                     {ticket.customer_name} · {ticket.category} · {ticket.priority}
                   </p>
+                  {ticket.sla_state && ticket.sla_state !== "closed" && (
+                    <span
+                      data-testid={`support-sla-${ticket.id}`}
+                      className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-widest ${
+                        SLA_TONE[ticket.sla_state] || "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {slaLabel(ticket)}
+                    </span>
+                  )}
                   {ticket.last_message && (
                     <p className="mt-1 line-clamp-2 text-[10px] font-medium text-gray-400">
                       {ticket.last_message}
@@ -245,6 +326,30 @@ export default function SupportInboxPage() {
                     {selected.phone ? ` · ${selected.phone}` : ""}
                     {selected.order_id ? ` · order #${selected.order_id}` : ""}
                   </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] font-bold text-gray-500">
+                    <span
+                      className={`rounded-full px-2 py-0.5 uppercase tracking-widest ${
+                        SLA_TONE[selected.sla_state || "no_target"]
+                      }`}
+                    >
+                      {selected.sla_state || "no target"}
+                    </span>
+                    {selected.sla_due_at && (
+                      <span>
+                        Target{" "}
+                        {new Date(selected.sla_due_at).toLocaleString("en-IN", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </span>
+                    )}
+                    {selected.first_response_at && (
+                      <span>
+                        First reply{" "}
+                        {new Date(selected.first_response_at).toLocaleTimeString("en-IN")}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <select

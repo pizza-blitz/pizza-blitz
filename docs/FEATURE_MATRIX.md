@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **422 API endpoints**, **73 routes/pages** (57 portal,
-1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **236 backend
+1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **239 backend
 tests**, **93 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -146,7 +146,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, points redemption at checkout (10 points = ₹1, 100-point minimum), account card and transactions | Built | Points, tiers, rewards, referrals | Redemption is checkout-only; no gift catalog |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
 | Feedback / NPS / reviews | Post-order star rating, 0–10 NPS, tags and comments; admin NPS/average/response-rate dashboard with low-rating follow-up | Built | Post-order feedback, review routing | Public review-site routing missing |
-| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee and open/pending/resolved/closed inbox | Built | Guest support inbox | Email notifications, SLA timers and knowledge base later |
+| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee, open/pending/resolved/closed inbox, and priority-based first-response/resolution SLAs with overdue, due-soon and breach reporting | Built | Guest support inbox | Email notifications, configurable policies and knowledge base later |
 | Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id; saved addresses scoped by customer token | Built | OTP login, saved sessions | Saved payment methods missing |
 
 ## 9. Marketing, communications, social, ads

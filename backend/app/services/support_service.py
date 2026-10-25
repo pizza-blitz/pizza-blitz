@@ -1,7 +1,7 @@
 """Guest/staff support tickets with a secure public conversation token."""
 
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -12,6 +12,42 @@ from app.models.domain import RestaurantOrder, SupportMessage, SupportTicket
 CATEGORIES = ("order", "delivery", "payment", "account", "other")
 PRIORITIES = ("low", "normal", "high", "urgent")
 STATUSES = ("open", "pending", "resolved", "closed")
+SLA_HOURS = {"urgent": 2, "high": 8, "normal": 24, "low": 48}
+DUE_SOON_MINUTES = 240
+
+
+def sla_state(row: SupportTicket, now: datetime | None = None) -> str:
+    now = now or datetime.utcnow()
+    if row.resolved_at and row.sla_due_at:
+        return "met" if row.resolved_at <= row.sla_due_at else "breached"
+    if row.status in {"resolved", "closed"}:
+        return "closed"
+    if row.sla_due_at is None:
+        return "no_target"
+    if row.sla_due_at < now:
+        return "overdue"
+    if row.sla_due_at - now <= timedelta(minutes=DUE_SOON_MINUTES):
+        return "due_soon"
+    return "on_track"
+
+
+def _sla_payload(row: SupportTicket) -> dict:
+    now = datetime.utcnow()
+    remaining = (
+        int((row.sla_due_at - now).total_seconds() // 60)
+        if row.sla_due_at
+        else None
+    )
+    return {
+        "sla_due_at": row.sla_due_at.isoformat() if row.sla_due_at else None,
+        "first_response_at": row.first_response_at.isoformat()
+        if row.first_response_at
+        else None,
+        "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+        "sla_state": sla_state(row, now),
+        "sla_remaining_minutes": remaining,
+        "sla_target_hours": SLA_HOURS.get(row.priority, 24),
+    }
 
 
 def serialize_message(row: SupportMessage) -> dict:
@@ -50,6 +86,7 @@ def serialize_ticket(
         else None,
         "message_count": len(messages),
         "last_message": visible[-1].body[:160] if visible else None,
+        **_sla_payload(row),
     }
     if detail:
         payload["token"] = row.token
@@ -118,6 +155,7 @@ def create_ticket(
         priority=priority,
         status="open",
         order_id=order_id,
+        sla_due_at=datetime.utcnow() + timedelta(hours=SLA_HOURS[priority]),
     )
     db.add(row)
     db.flush()
@@ -160,8 +198,12 @@ def add_message(
     row.last_message_at = datetime.utcnow()
     if author_type == "customer":
         row.status = "open"
-    elif author_type == "staff" and row.status == "open":
-        row.status = "pending"
+        row.resolved_at = None
+    elif author_type == "staff":
+        if not internal and row.first_response_at is None:
+            row.first_response_at = datetime.utcnow()
+        if row.status == "open":
+            row.status = "pending"
     db.commit()
     db.refresh(row)
     return row
@@ -180,6 +222,11 @@ def update_ticket(
         if status not in STATUSES:
             raise ValueError("Unknown ticket status.")
         row.status = status
+        if status in {"resolved", "closed"}:
+            if row.resolved_at is None:
+                row.resolved_at = datetime.utcnow()
+        else:
+            row.resolved_at = None
     if priority is not None:
         if priority not in PRIORITIES:
             raise ValueError("Unknown ticket priority.")
@@ -239,4 +286,58 @@ def support_summary(db: Session) -> dict:
         .scalar()
         or 0
     )
-    return {"counts": counts, "urgent_open": urgent}
+    now = datetime.utcnow()
+    active = (
+        db.query(SupportTicket)
+        .filter(SupportTicket.status.in_(["open", "pending"]))
+        .all()
+    )
+    overdue = sum(1 for row in active if sla_state(row, now) == "overdue")
+    due_soon = sum(1 for row in active if sla_state(row, now) == "due_soon")
+    responded = [row for row in active if row.first_response_at and row.created_at]
+    avg_first_response = (
+        round(
+            sum(
+                (row.first_response_at - row.created_at).total_seconds() / 60
+                for row in responded
+            )
+            / len(responded),
+            1,
+        )
+        if responded
+        else 0.0
+    )
+    resolved = (
+        db.query(SupportTicket)
+        .filter(SupportTicket.resolved_at.isnot(None), SupportTicket.created_at.isnot(None))
+        .all()
+    )
+    avg_resolution = (
+        round(
+            sum(
+                (row.resolved_at - row.created_at).total_seconds() / 60
+                for row in resolved
+            )
+            / len(resolved),
+            1,
+        )
+        if resolved
+        else 0.0
+    )
+    breached = sum(
+        1
+        for row in resolved
+        if row.sla_due_at and row.resolved_at > row.sla_due_at
+    )
+    return {
+        "counts": counts,
+        "urgent_open": urgent,
+        "sla": {
+            "overdue": overdue,
+            "due_soon": due_soon,
+            "breached_resolved": breached,
+            "avg_first_response_minutes": avg_first_response,
+            "avg_resolution_minutes": avg_resolution,
+            "targets_hours": SLA_HOURS,
+        },
+    }

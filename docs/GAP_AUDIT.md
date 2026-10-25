@@ -128,6 +128,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 97 | Multi-step offer approvals | Jobs could generate offers immediately; there was no way to require People/Finance sign-off or show an approval audit trail. | Hiring-control gap. | Added a per-job `offer_approvals_required` flag and `offer_approvals` table, request/decide endpoints, application serialization of steps/readiness, a UI approval chain with approve/reject, and a hard block in offer generation until every step is approved. Rejections require a note. Three backend tests and the extended offer-letter proof. Role-specific approver permissions, email/Slack notifications and conditional chains remain. |
 | 98 | Person-level attribution | Attribution was campaign-level linear channel credit; it could not say which customer received which touch or compare first/last/linear models. | Marketing-measurement gap. | Added a person-level attribution service that matches sent `CampaignDelivery` rows to customer phones and coupon orders within 30 days, computes first-touch, last-touch and linear revenue/conversion credit, falls back to the coupon channel for unmatched orders, and exposes the models in the campaign performance panel. Two backend tests and extended campaign-attribution proof. Holdouts, clicks/views, longer windows, identity merging and journey touches remain. |
 | 99 | Campaign holdout experiments | Campaign performance could not separate campaign lift from the customers who would have ordered anyway. | Incrementality gap. | Added `holdout_percent` (0–50) with deterministic SHA-256 assignment, holdout pseudo-deliveries that are excluded from sends, treated/holdout conversion and revenue-per-customer, lift and incremental revenue, plus a holdout experiment panel and delivery status/filter. Three backend tests and extended campaign-attribution proof. Statistical significance, power sizing, stratified assignment and click/view outcomes remain. |
+| 100 | Support SLAs | Support tickets had status and priority but no response/resolution targets, first-response clock or breach reporting. | Service-level gap. | Added `sla_due_at`, `first_response_at` and `resolved_at`, priority targets (urgent 2h, high 8h, normal 24h, low 48h), due-soon/overdue/met/breached states, first non-internal staff reply tracking, reopen reset, a summary with averages and breach counts, and SLA badges/targets in the inbox and public ticket. Three backend tests and the extended support proof. Notifications, configurable per-channel policies and business-hour calendars remain. |
 
 ## Still open
 
@@ -142,7 +143,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 236 tests, all pass (in a clean venv built from
+- Backend unit suite: 239 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

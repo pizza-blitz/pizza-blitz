@@ -68,6 +68,10 @@ async function main() {
       publicText.toLowerCase().includes("arrived cold"),
       "Public ticket message missing."
     );
+    assert(
+      publicText.toLowerCase().includes("reply target"),
+      "Public SLA target missing."
+    );
 
     const portalLogin = await fetch(`${baseURL}/api/admin-session`, {
       method: "POST",
@@ -102,6 +106,13 @@ async function main() {
     );
     await inbox.getByTestId("support-inbox-send").click();
     await inbox.getByText("Reply saved.", { exact: false }).waitFor({ timeout: 30000 });
+    await inbox.getByTestId("support-sla-summary").waitFor({ timeout: 20000 });
+    const slaText = await inbox.getByTestId("support-sla-summary").innerText();
+    assert(slaText.toLowerCase().includes("overdue"), "SLA summary missing overdue count.");
+    assert(
+      slaText.toLowerCase().includes("avg first reply"),
+      "SLA summary missing first-reply average."
+    );
 
     const statusUpdate = inbox.waitForResponse(
       (response) =>

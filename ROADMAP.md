@@ -210,6 +210,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Optional multi-step offer approvals that gate letter generation.
 - [x] Person-level first/last/linear campaign attribution.
 - [x] Deterministic holdout experiments with incremental revenue.
+- [x] Priority-based support SLAs with breach reporting.
 - [ ] Statistical significance, click/view tracking, video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
