@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **389 API endpoints**, **68 routes/pages** (55 portal,
-1 KDS, 12 public), **159 browser proof scripts** plus portal smoke, **191 backend
+Numbers in this snapshot: **390 API endpoints**, **69 routes/pages** (56 portal,
+1 KDS, 12 public), **160 browser proof scripts** plus portal smoke, **193 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -157,7 +157,8 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
 | Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay + send steps, templates, durable runner, enrollment/event history, pause/activate | Built | Automated lifecycle journeys | Branching, A/B, frequency caps and revenue attribution later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
-| Social publishing | Post creation, delivery logs, auto-publish gated | Built | Multi-platform scheduling, media | Reels/shorts video missing |
+| Social publishing | Image, video and Instagram reel posts, delivery logs, auto-publish gated, real Instagram REELS/VIDEO container flow | Built | Multi-platform scheduling, media | Facebook video/reels and video transcoding missing |
+| Marketing Hub | Month calendar aggregating social posts, reels, campaigns and ads; filters, upcoming list, shortcuts and a schedule-content composer | Built | Unified content calendar | Approvals, drag/drop rescheduling and revenue attribution later |
 | Ad campaigns | Create, launch, pause, budgets, metrics, ROI | Built | Provider sync depth, attribution | Attribution partial |
 | Templates | Message text fields | Partial | Rich template editor with variables/preview | Later |
 | Reputation / reviews | — | Missing | Review collection and response | Later |

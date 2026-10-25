@@ -27,6 +27,9 @@ type SocialPost = {
   message: string;
   link_url?: string | null;
   image_url?: string | null;
+  video_url?: string | null;
+  cover_image_url?: string | null;
+  media_type?: "image" | "video" | "reel";
   platforms: PlatformKey[];
   status: SocialStatus;
   scheduled_at?: string | null;
@@ -219,6 +222,9 @@ type SocialForm = {
   message: string;
   link_url: string;
   image_url: string;
+  video_url: string;
+  cover_image_url: string;
+  media_type: "image" | "video" | "reel";
   platforms: PlatformKey[];
   status: SocialStatus;
   scheduled_at: string;
@@ -229,6 +235,9 @@ const emptyForm: SocialForm = {
   message: "",
   link_url: "",
   image_url: "",
+  video_url: "",
+  cover_image_url: "",
+  media_type: "image",
   platforms: ["facebook", "instagram"],
   status: "ready",
   scheduled_at: "",
@@ -415,6 +424,9 @@ export default function SocialPublishingPage() {
         ...formData,
         link_url: formData.link_url || null,
         image_url: formData.image_url || null,
+        video_url: formData.video_url || null,
+        cover_image_url: formData.cover_image_url || null,
+        media_type: formData.media_type,
         scheduled_at: formData.scheduled_at ? new Date(formData.scheduled_at).toISOString() : null,
       }),
     });
@@ -1122,12 +1134,46 @@ export default function SocialPublishingPage() {
                 value={formData.link_url}
                 onChange={(value) => setFormData({ ...formData, link_url: value })}
               />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-black uppercase tracking-widest text-gray-500">
+                  Media type
+                  <select
+                    value={formData.media_type}
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        media_type: event.target.value as SocialForm["media_type"],
+                      })
+                    }
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-gray-200"
+                  >
+                    <option value="image">Image</option>
+                    <option value="video">Video</option>
+                    <option value="reel">Reel</option>
+                  </select>
+                </label>
+                <Input
+                  label="Video URL"
+                  value={formData.video_url}
+                  onChange={(value) => setFormData({ ...formData, video_url: value })}
+                />
+              </div>
               <MediaPicker
-                label="Image"
-                value={formData.image_url}
-                onChange={(value) => setFormData({ ...formData, image_url: value })}
+                label={formData.media_type === "image" ? "Image" : "Cover image"}
+                value={
+                  formData.media_type === "image"
+                    ? formData.image_url
+                    : formData.cover_image_url
+                }
+                onChange={(value) =>
+                  setFormData(
+                    formData.media_type === "image"
+                      ? { ...formData, image_url: value }
+                      : { ...formData, cover_image_url: value }
+                  )
+                }
                 testId="social-image-picker"
-                helpText="Instagram needs a public image. Pick a library image or upload a new one."
+                helpText="Instagram needs an image or video. Pick a library image or upload a new one."
               />
               <Input
                 label="Schedule"

@@ -25,6 +25,9 @@ class SocialPostCreate(BaseModel):
     message: str = Field(..., min_length=1)
     link_url: Optional[str] = None
     image_url: Optional[str] = None
+    video_url: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    media_type: str = Field(default="image", pattern="^(image|video|reel)$")
     platforms: list[str] = Field(default_factory=lambda: ["facebook", "instagram"])
     status: str = "draft"
     scheduled_at: Optional[str] = None
@@ -84,6 +87,9 @@ def _social_post_dict(post: SocialPost) -> dict:
         "message": post.message,
         "link_url": post.link_url,
         "image_url": post.image_url,
+        "video_url": post.video_url,
+        "cover_image_url": post.cover_image_url,
+        "media_type": post.media_type or "image",
         "platforms": post.platforms or [],
         "status": post.status,
         "scheduled_at": post.scheduled_at.isoformat() if post.scheduled_at else None,
@@ -319,12 +325,21 @@ def _publish_delivery_for_platform(post: SocialPost, platform: str, *, dry_run: 
         "attempted_at": datetime.utcnow(),
     }
 
-    if platform == "instagram" and not post.image_url:
+    if platform == "instagram" and not post.image_url and not post.video_url:
         return SocialPostDelivery(
             **delivery_kwargs,
             provider=provider_status["provider"],
             status="skipped",
-            error="Instagram publishing requires an image_url.",
+            error="Instagram publishing requires an image_url or video_url.",
+            dry_run=dry_run,
+            response_payload={"provider_status": provider_status},
+        )
+    if platform == "facebook" and post.media_type in {"video", "reel"}:
+        return SocialPostDelivery(
+            **delivery_kwargs,
+            provider=provider_status["provider"],
+            status="skipped",
+            error="Facebook video/reel publishing is not wired. Publish this creative to Instagram.",
             dry_run=dry_run,
             response_payload={"provider_status": provider_status},
         )
@@ -342,6 +357,9 @@ def _publish_delivery_for_platform(post: SocialPost, platform: str, *, dry_run: 
         message=post.message,
         link_url=post.link_url,
         image_url=post.image_url,
+        video_url=post.video_url,
+        cover_image_url=post.cover_image_url,
+        media_type=post.media_type or "image",
     )
     return SocialPostDelivery(
         **delivery_kwargs,
@@ -526,11 +544,20 @@ def create_social_post(
     db: Session = Depends(get_db),
     session: dict = Depends(require_roles("admin")),
 ):
+    video_url = (payload.video_url or "").strip() or None
+    if payload.media_type in {"video", "reel"} and not video_url:
+        raise HTTPException(
+            status_code=422,
+            detail="Video and reel posts require a public video_url.",
+        )
     post = SocialPost(
         title=payload.title.strip(),
         message=payload.message.strip(),
         link_url=(payload.link_url or "").strip() or None,
         image_url=(payload.image_url or "").strip() or None,
+        video_url=video_url,
+        cover_image_url=(payload.cover_image_url or "").strip() or None,
+        media_type=payload.media_type,
         platforms=_normalize_platforms(payload.platforms),
         status=_validate_status(payload.status),
         scheduled_at=_parse_optional_datetime(payload.scheduled_at),

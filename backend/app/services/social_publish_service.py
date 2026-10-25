@@ -58,6 +58,9 @@ def publish_social_post(
     message: str,
     link_url: Optional[str] = None,
     image_url: Optional[str] = None,
+    video_url: Optional[str] = None,
+    cover_image_url: Optional[str] = None,
+    media_type: str = "image",
     db=None,
 ) -> SocialPublishResult:
     platform = platform.lower()
@@ -72,6 +75,13 @@ def publish_social_post(
 
     config = effective_config("social", db)["values"]
     if platform == "facebook":
+        if media_type in {"video", "reel"}:
+            return SocialPublishResult(
+                provider="meta-facebook",
+                status="skipped",
+                error="Facebook video/reel publishing is not wired. Publish this creative to Instagram.",
+                response_payload={"provider_status": status},
+            )
         return _publish_facebook_page(
             message=message,
             link_url=link_url,
@@ -80,7 +90,12 @@ def publish_social_post(
         )
     if platform == "instagram":
         return _publish_instagram_media(
-            message=message, image_url=image_url, config=config
+            message=message,
+            image_url=image_url,
+            video_url=video_url,
+            cover_image_url=cover_image_url,
+            media_type=media_type,
+            config=config,
         )
 
     return SocialPublishResult(
@@ -124,9 +139,21 @@ def _publish_facebook_page(
 
 
 def _publish_instagram_media(
-    *, message: str, image_url: Optional[str], config: dict
+    *,
+    message: str,
+    image_url: Optional[str],
+    video_url: Optional[str] = None,
+    cover_image_url: Optional[str] = None,
+    media_type: str = "image",
+    config: dict,
 ) -> SocialPublishResult:
-    if not image_url:
+    if media_type in {"video", "reel"} and not video_url:
+        return SocialPublishResult(
+            provider="meta-instagram",
+            status="skipped",
+            error="Instagram video/reel publishing requires a video_url.",
+        )
+    if media_type == "image" and not image_url:
         return SocialPublishResult(
             provider="meta-instagram",
             status="skipped",
@@ -135,16 +162,24 @@ def _publish_instagram_media(
 
     graph = config.get("META_GRAPH_VERSION") or "v25.0"
     instagram_id = config.get("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
-    create_response = _post_form(
-        (
-            f"https://graph.facebook.com/{graph}/"
-            f"{instagram_id}/media"
-        ),
-        {
+    if media_type in {"video", "reel"}:
+        payload = {
+            "access_token": config.get("INSTAGRAM_ACCESS_TOKEN", ""),
+            "media_type": "REELS" if media_type == "reel" else "VIDEO",
+            "video_url": video_url,
+            "caption": message,
+        }
+        if cover_image_url:
+            payload["cover_url"] = cover_image_url
+    else:
+        payload = {
             "access_token": config.get("INSTAGRAM_ACCESS_TOKEN", ""),
             "image_url": image_url,
             "caption": message,
-        },
+        }
+    create_response = _post_form(
+        f"https://graph.facebook.com/{graph}/{instagram_id}/media",
+        payload,
     )
     create_status, create_body, create_error = create_response
     if not 200 <= create_status < 300 or create_error:

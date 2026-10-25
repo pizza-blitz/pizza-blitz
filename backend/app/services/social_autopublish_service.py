@@ -27,8 +27,10 @@ def _platform_blockers(post: SocialPost, provider_status: dict[str, dict]) -> li
         status = provider_status.get(platform) or social_provider_status(platform)
         if not status.get("configured"):
             blockers.extend(status.get("missing_settings") or [f"{platform} provider setup"])
-        if platform == "instagram" and not post.image_url:
-            blockers.append("Instagram image_url")
+        if platform == "instagram" and not post.image_url and not post.video_url:
+            blockers.append("Instagram image_url or video_url")
+        if platform == "facebook" and post.media_type in {"video", "reel"}:
+            blockers.append("Facebook video/reel publishing is not wired")
     return sorted(set(blockers))
 
 
@@ -114,6 +116,9 @@ def publish_due_social_posts(limit: int = 20, db: Optional[Session] = None) -> d
                     message=post.message,
                     link_url=post.link_url,
                     image_url=post.image_url,
+                    video_url=post.video_url,
+                    cover_image_url=post.cover_image_url,
+                    media_type=post.media_type or "image",
                 )
                 delivery = SocialPostDelivery(
                     social_post_id=post.id,
