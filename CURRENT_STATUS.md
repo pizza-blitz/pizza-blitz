@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 228 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 231 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -245,8 +245,9 @@ Wave 4 (in progress):
 - Offer letters are live: admins generate a PDF letter at the offer stage, choose reusable
   defaultable offer templates, and candidates use a secure `/offer/{token}` link with the
   template terms, PDF download and electronic accept/decline; acceptance marks the candidate
-  hired with an onboarding handoff. Offers can be emailed through Resend, countersigned by the
-  company, and receive automatic expiry reminders.
+  hired with an onboarding handoff. Jobs can require a People lead + Finance approval chain,
+  and generation stays blocked until every step is approved. Offers can be emailed through
+  Resend, countersigned by the company, and receive automatic expiry reminders.
 - Public careers is live: `/careers` lists open roles and `/careers/{id}` accepts applications
   straight into the recruitment pipeline; new `verify:careers` proof and one backend test.
 - Marketing Hub is live: a month calendar for social posts/reels/campaigns/ads with filters,
@@ -267,12 +268,11 @@ Wave 4 (in progress):
   conversation link, and admin/staff triage them at `/support-inbox` with internal notes,
   priority, assignment and resolution status; new `verify:support-tickets` proof and three
   backend tests.
-- Next: person-level multi-touch attribution, holdout experiments, video editing and
-  multi-step offer approvals.
+- Next: person-level multi-touch attribution, holdout experiments and video editing.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 228 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 231 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

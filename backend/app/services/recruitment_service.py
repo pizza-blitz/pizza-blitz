@@ -11,7 +11,11 @@ from app.models.domain import (
     RecruitmentStageEvent,
 )
 from app.services.hr_onboarding_service import create_candidate
-from app.services.offer_service import serialize_offer
+from app.services.offer_service import (
+    offer_approvals_ready,
+    serialize_offer,
+    serialize_offer_approval,
+)
 from app.services.resume_service import delete_resume, save_resume
 
 JOB_STATUSES = {"draft", "open", "paused", "closed"}
@@ -92,6 +96,14 @@ def serialize_application(row: RecruitmentApplication, *, detail: bool = False) 
             else None,
         },
         "offer": serialize_offer(row),
+        "offer_approval_required": bool(
+            row.job and row.job.offer_approvals_required
+        ),
+        "offer_approvals": [
+            serialize_offer_approval(item)
+            for item in sorted(row.offer_approvals, key=lambda step: step.step_index)
+        ],
+        "offer_approvals_ready": offer_approvals_ready(row),
         "applied_at": row.applied_at.isoformat() if row.applied_at else None,
         "stage_changed_at": row.stage_changed_at.isoformat() if row.stage_changed_at else None,
         "hired_at": row.hired_at.isoformat() if row.hired_at else None,
@@ -141,6 +153,7 @@ def create_job(db: Session, payload: dict) -> dict:
         salary_max=payload.get("salary_max"),
         openings=max(1, int(payload.get("openings") or 1)),
         status=status,
+        offer_approvals_required=bool(payload.get("offer_approvals_required")),
     )
     if not row.title:
         raise ValueError("Job title is required.")
@@ -167,6 +180,8 @@ def update_job(db: Session, row: RecruitmentJob, payload: dict) -> dict:
             setattr(row, field, payload[field])
     if "openings" in payload:
         row.openings = max(1, int(payload["openings"] or 1))
+    if "offer_approvals_required" in payload:
+        row.offer_approvals_required = bool(payload["offer_approvals_required"])
     db.commit()
     db.refresh(row)
     return serialize_job(row)

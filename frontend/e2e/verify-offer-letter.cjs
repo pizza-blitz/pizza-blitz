@@ -59,6 +59,7 @@ async function main() {
       department: "Kitchen",
       location: "Kolkata",
       status: "open",
+      offer_approvals_required: true,
     }),
   }).then((response) => response.json());
   const template = await fetch(
@@ -147,6 +148,29 @@ async function main() {
       .waitFor({ timeout: 30000 });
     await page.getByTestId(`recruitment-job-${job.job.id}`).click();
     await page.getByTestId(`recruitment-candidate-${applicationId}`).click();
+    const approvalRequest = page.waitForResponse(
+      (response) =>
+        response.url().includes("/offer/approvals") &&
+        response.request().method() === "POST" &&
+        response.status() === 200,
+      { timeout: 20000 }
+    );
+    await page.getByTestId("recruitment-request-approvals").click();
+    await approvalRequest;
+    await page.getByTestId("recruitment-offer-approvals").waitFor({ timeout: 20000 });
+    const approvalDetail = await fetch(
+      `${apiURL}/api/v1/restaurant/hr/recruitment/applications/${applicationId}`,
+      { headers }
+    ).then((response) => response.json());
+    const approvals = approvalDetail.application.offer_approvals || [];
+    assert(approvals.length === 2, "Two approval steps were not created.");
+    for (const approval of approvals) {
+      page.once("dialog", (dialog) => void dialog.accept("Approved in proof"));
+      await page.getByTestId(`recruitment-approve-${approval.id}`).click();
+      await page.getByText("Approval step approved", { exact: false }).waitFor({
+        timeout: 20000,
+      });
+    }
     await page
       .getByTestId("recruitment-offer-template")
       .selectOption(String(template.template.id));

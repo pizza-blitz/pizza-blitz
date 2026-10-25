@@ -125,6 +125,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 94 | Guest support tickets | Customers had feedback and messaging, but no guest-accessible support case with a private thread, internal notes or a triage inbox. | Customer-support gap. | Added support ticket/message tables, a public `/support` form and tokenized `/support/ticket/{token}` thread, staff `/support-inbox` with internal notes, priority, assignment and status, plus public/admin reply endpoints, summary counts and rate limits. Three backend tests and `verify:support-tickets`. Email notifications, SLA timers and knowledge base remain. |
 | 95 | In-app reel capture | Owners had to record reels elsewhere and upload a file; Media Studio had no camera workflow. | Video-capture gap. | Added a Record reel modal using getUserMedia + MediaRecorder with live preview, timer, clip name and direct upload into the existing WebM -> H.264/poster pipeline. Handles permission/browser errors and stops camera tracks on close. `verify:reel-recorder` stubs a canvas stream in CI and verifies the real MediaRecorder/upload/transcode path. Trimming, captions, filters and multi-clip editing remain. |
 | 96 | Video captions | Videos could be uploaded and recorded but had no caption file, player track or language metadata. | Accessibility gap. | Added `caption_url`/`caption_language` (migration), VTT/SRT upload with UTF-8/size/timed-cue validation, SRT-to-WebVTT timestamp conversion, local/S3 caption storage, caption delete-with-asset, a CC upload/remove control and a default `<track>` on the Media Studio player. Two backend tests and the extended Media Studio proof. Editing, caption styling, translations and burn-in remain. |
+| 97 | Multi-step offer approvals | Jobs could generate offers immediately; there was no way to require People/Finance sign-off or show an approval audit trail. | Hiring-control gap. | Added a per-job `offer_approvals_required` flag and `offer_approvals` table, request/decide endpoints, application serialization of steps/readiness, a UI approval chain with approve/reject, and a hard block in offer generation until every step is approved. Rejections require a note. Three backend tests and the extended offer-letter proof. Role-specific approver permissions, email/Slack notifications and conditional chains remain. |
 
 ## Still open
 
@@ -139,7 +140,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 228 tests, all pass (in a clean venv built from
+- Backend unit suite: 231 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

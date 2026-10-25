@@ -1437,6 +1437,7 @@ class RecruitmentJob(Base):
     salary_max = Column(Float, nullable=True)
     openings = Column(Integer, nullable=False, default=1)
     status = Column(String(30), nullable=False, default="draft", index=True)
+    offer_approvals_required = Column(Boolean, nullable=False, default=False, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     applications = relationship(
@@ -1455,6 +1456,25 @@ class OfferTemplate(Base):
     is_default = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OfferApproval(Base):
+    """One step in a job's offer approval chain."""
+
+    __tablename__ = "offer_approvals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(
+        Integer, ForeignKey("recruitment_applications.id"), nullable=False, index=True
+    )
+    step_index = Column(Integer, nullable=False, default=0)
+    step_name = Column(String(120), nullable=False)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    approver = Column(String(120), nullable=True)
+    note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    decided_at = Column(DateTime, nullable=True)
+    application = relationship("RecruitmentApplication", back_populates="offer_approvals")
 
 
 class RecruitmentApplication(Base):
@@ -1508,6 +1528,9 @@ class RecruitmentApplication(Base):
     )
     stage_events = relationship(
         "RecruitmentStageEvent", back_populates="application", cascade="all, delete-orphan"
+    )
+    offer_approvals = relationship(
+        "OfferApproval", back_populates="application", cascade="all, delete-orphan"
     )
 
 

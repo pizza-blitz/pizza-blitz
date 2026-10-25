@@ -25,6 +25,7 @@ type Job = {
   description?: string | null;
   openings: number;
   status: string;
+  offer_approvals_required?: boolean;
   application_count: number;
   hired_count: number;
 };
@@ -86,6 +87,17 @@ type Application = {
     public_url?: string | null;
     pdf_url?: string | null;
   } | null;
+  offer_approval_required?: boolean;
+  offer_approvals_ready?: boolean;
+  offer_approvals?: {
+    id: number;
+    step_index: number;
+    step_name: string;
+    status: "pending" | "approved" | "rejected";
+    approver?: string | null;
+    note?: string | null;
+    decided_at?: string | null;
+  }[];
   interviews: {
     id: number;
     scheduled_at: string;
@@ -174,6 +186,7 @@ export default function HRRecruitmentPage() {
     openings: 1,
     status: "open",
     description: "",
+    offer_approvals_required: false,
   });
   const [candidateDraft, setCandidateDraft] = useState({
     candidate_name: "",
@@ -399,6 +412,63 @@ export default function HRRecruitmentPage() {
       setMessage(`Offer countersigned by ${signedBy}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Countersignature failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const requestApprovals = async () => {
+    if (!selected) return;
+    setBusy("request-approvals");
+    try {
+      const response = await fetch(
+        `${API}/applications/${selected.id}/offer/approvals`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ steps: ["People lead", "Finance lead"] }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Approval request failed.");
+      setSelected(data.application);
+      setMessage("Offer approval chain requested.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Approval request failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const decideApproval = async (approvalId: number, decision: "approve" | "reject") => {
+    if (!selected) return;
+    const note =
+      decision === "reject"
+        ? window.prompt("Why is this approval step rejected?", "")
+        : window.prompt("Approval note (optional)", "") || "";
+    if (decision === "reject" && note === null) return;
+    setBusy(`approval-${approvalId}`);
+    try {
+      const response = await fetch(
+        `${API}/applications/${selected.id}/offer/approvals/${approvalId}/decide`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, note: note || "" }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Approval failed.");
+      setSelected(data.application);
+      setMessage(
+        decision === "approve"
+          ? "Approval step approved."
+          : "Approval step rejected. Generation stays blocked."
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Approval failed.");
     } finally {
       setBusy("");
     }
@@ -913,6 +983,78 @@ export default function HRRecruitmentPage() {
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">
+                      {selected.offer_approval_required && (
+                        <div
+                          data-testid="recruitment-offer-approvals"
+                          className="rounded-lg border border-amber-200 bg-white p-2"
+                        >
+                          <p className="text-[9px] font-black uppercase tracking-widest text-amber-800">
+                            Offer approvals
+                          </p>
+                          {!selected.offer_approvals?.length ? (
+                            <button
+                              type="button"
+                              data-testid="recruitment-request-approvals"
+                              onClick={() => void requestApprovals()}
+                              disabled={busy === "request-approvals"}
+                              className="mt-2 rounded-lg bg-amber-900 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                            >
+                              Request People lead + Finance approval
+                            </button>
+                          ) : (
+                            <div className="mt-2 space-y-1.5">
+                              {selected.offer_approvals.map((approval) => (
+                                <div
+                                  key={approval.id}
+                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-2 py-1.5"
+                                >
+                                  <div>
+                                    <p className="text-[10px] font-black text-amber-900">
+                                      {approval.step_name} · {approval.status}
+                                    </p>
+                                    {approval.note && (
+                                      <p className="text-[9px] font-semibold text-amber-800">
+                                        {approval.note}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {approval.status === "pending" && (
+                                    <div className="flex gap-1">
+                                      <button
+                                        type="button"
+                                        data-testid={`recruitment-approve-${approval.id}`}
+                                        onClick={() =>
+                                          void decideApproval(approval.id, "approve")
+                                        }
+                                        disabled={busy === `approval-${approval.id}`}
+                                        className="rounded-lg bg-emerald-600 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        data-testid={`recruitment-reject-${approval.id}`}
+                                        onClick={() =>
+                                          void decideApproval(approval.id, "reject")
+                                        }
+                                        disabled={busy === `approval-${approval.id}`}
+                                        className="rounded-lg bg-red-600 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              {!selected.offer_approvals_ready && (
+                                <p className="text-[9px] font-bold text-red-700">
+                                  Every step must be approved before the letter can be generated.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <label className="block text-[9px] font-black uppercase tracking-widest text-amber-800">
                         Offer template
                         <select
@@ -967,7 +1109,12 @@ export default function HRRecruitmentPage() {
                           type="button"
                           data-testid="recruitment-generate-offer"
                           onClick={() => void generateOffer()}
-                          disabled={busy === "offer" || !offerSalary}
+                          disabled={
+                            busy === "offer" ||
+                            !offerSalary ||
+                            (Boolean(selected.offer_approval_required) &&
+                              !selected.offer_approvals_ready)
+                          }
                           className="rounded-lg bg-amber-900 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
                         >
                           {busy === "offer" ? "Generating..." : "Generate offer"}
@@ -1240,6 +1387,20 @@ export default function HRRecruitmentPage() {
                   }
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
                 />
+              </label>
+              <label className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-900">
+                <input
+                  data-testid="recruitment-job-approvals-required"
+                  type="checkbox"
+                  checked={jobDraft.offer_approvals_required}
+                  onChange={(event) =>
+                    setJobDraft({
+                      ...jobDraft,
+                      offer_approvals_required: event.target.checked,
+                    })
+                  }
+                />
+                Require People lead + Finance approval before generating offers
               </label>
               <button
                 type="button"

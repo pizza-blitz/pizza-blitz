@@ -12,7 +12,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.domain import OfferTemplate, RecruitmentApplication
+from app.models.domain import OfferApproval, OfferTemplate, RecruitmentApplication
 from app.services.campaign_dispatch_service import send_campaign_message
 from app.services.private_storage import private_root
 
@@ -134,6 +134,95 @@ def _resolve_template(
         .order_by(OfferTemplate.id.asc())
         .first()
     )
+
+
+def serialize_offer_approval(row: OfferApproval) -> dict:
+    return {
+        "id": row.id,
+        "step_index": row.step_index,
+        "step_name": row.step_name,
+        "status": row.status,
+        "approver": row.approver,
+        "note": row.note,
+        "decided_at": row.decided_at.isoformat() if row.decided_at else None,
+    }
+
+
+def offer_approvals_ready(row: RecruitmentApplication) -> bool:
+    if not (row.job and row.job.offer_approvals_required):
+        return True
+    approvals = sorted(row.offer_approvals, key=lambda item: item.step_index)
+    return bool(approvals) and all(item.status == "approved" for item in approvals)
+
+
+def request_offer_approvals(
+    db: Session, row: RecruitmentApplication, steps: list[str]
+) -> dict:
+    if row.stage != "offer":
+        raise ValueError("Move the candidate to the offer stage first.")
+    if not (row.job and row.job.offer_approvals_required):
+        raise ValueError("This job does not require offer approvals.")
+    names = [
+        str(name).strip()[:120]
+        for name in (steps or ["People lead", "Finance lead"])
+        if str(name).strip()
+    ][:5]
+    if not names:
+        raise ValueError("Add at least one approval step.")
+    for existing in list(row.offer_approvals):
+        db.delete(existing)
+    db.flush()
+    for index, name in enumerate(names):
+        db.add(
+            OfferApproval(
+                application_id=row.id,
+                step_index=index,
+                step_name=name,
+                status="pending",
+            )
+        )
+    db.commit()
+    db.refresh(row)
+    from app.services.recruitment_service import serialize_application
+
+    return serialize_application(row, detail=True)
+
+
+def decide_offer_approval(
+    db: Session,
+    row: RecruitmentApplication,
+    approval_id: int,
+    *,
+    decision: str,
+    approver: str,
+    note: str = "",
+) -> dict:
+    approval = (
+        db.query(OfferApproval)
+        .filter(
+            OfferApproval.id == approval_id,
+            OfferApproval.application_id == row.id,
+        )
+        .first()
+    )
+    if approval is None:
+        raise ValueError("Approval step not found.")
+    if approval.status != "pending":
+        raise ValueError("This approval step is already decided.")
+    decision = decision.strip().lower()
+    if decision not in {"approve", "reject"}:
+        raise ValueError("Decision must be approve or reject.")
+    if decision == "reject" and not note.strip():
+        raise ValueError("Add a rejection note.")
+    approval.status = "approved" if decision == "approve" else "rejected"
+    approval.approver = approver.strip()[:120] or "admin"
+    approval.note = note.strip()[:500] or None
+    approval.decided_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    from app.services.recruitment_service import serialize_application
+
+    return serialize_application(row, detail=True)
 
 
 def serialize_offer(row: RecruitmentApplication) -> dict | None:
@@ -298,6 +387,8 @@ def generate_offer(
         row.joining_date = joining_date
     if row.offered_salary is None:
         raise ValueError("Add the offered salary before generating a letter.")
+    if not offer_approvals_ready(row):
+        raise ValueError("Complete every offer approval step before generating the letter.")
     template = _resolve_template(db, template_id)
     row.offer_template_id = template.id if template else None
     row.offer_template_name = template.name if template else None

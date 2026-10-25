@@ -28,10 +28,12 @@ from app.services.resume_service import resume_path
 from app.services.offer_service import (
     countersign_offer,
     create_offer_template,
+    decide_offer_approval,
     delete_offer_template,
     generate_offer,
     list_offer_templates,
     offer_path,
+    request_offer_approvals,
     run_offer_reminders,
     send_offer_notification,
     update_offer_template,
@@ -51,6 +53,7 @@ class JobCreate(BaseModel):
     salary_max: Optional[float] = Field(default=None, ge=0)
     openings: int = Field(default=1, ge=1, le=100)
     status: str = Field(default="draft", max_length=20)
+    offer_approvals_required: bool = False
 
 
 class JobUpdate(BaseModel):
@@ -64,6 +67,7 @@ class JobUpdate(BaseModel):
     salary_max: Optional[float] = Field(default=None, ge=0)
     openings: Optional[int] = Field(default=None, ge=1, le=100)
     status: Optional[str] = Field(default=None, max_length=20)
+    offer_approvals_required: Optional[bool] = None
 
 
 class ApplicationCreate(BaseModel):
@@ -109,6 +113,18 @@ class OfferTemplateUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=2, max_length=160)
     body: Optional[str] = Field(default=None, min_length=20, max_length=4000)
     is_default: Optional[bool] = None
+
+
+class OfferApprovalRequest(BaseModel):
+    steps: list[str] = Field(
+        default_factory=lambda: ["People lead", "Finance lead"],
+        max_length=5,
+    )
+
+
+class OfferApprovalDecision(BaseModel):
+    decision: str = Field(min_length=6, max_length=7)
+    note: str = Field(default="", max_length=500)
 
 
 class OfferCountersign(BaseModel):
@@ -301,6 +317,44 @@ def download_offer_letter(
         media_type="application/pdf",
         filename=f"offer-{row.candidate_name.replace(' ', '-').lower()}.pdf",
     )
+
+
+@router.post("/applications/{application_id}/offer/approvals")
+def request_offer_approval_chain(
+    application_id: int,
+    payload: OfferApprovalRequest,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    try:
+        return {"application": request_offer_approvals(db, row, payload.steps)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/applications/{application_id}/offer/approvals/{approval_id}/decide")
+def decide_offer_approval_step(
+    application_id: int,
+    approval_id: int,
+    payload: OfferApprovalDecision,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    try:
+        return {
+            "application": decide_offer_approval(
+                db,
+                row,
+                approval_id,
+                decision=payload.decision,
+                approver=str(session.get("subject") or "admin"),
+                note=payload.note,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/applications/{application_id}/offer/send")
