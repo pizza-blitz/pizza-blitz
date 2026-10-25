@@ -62,6 +62,8 @@ async function main() {
       description: "Proof sequence triggered by a completed order.",
       trigger: "order_completed",
       status: "active",
+      max_sends_per_customer: 5,
+      frequency_window_hours: 24,
       steps: [
         { type: "delay", hours: 0 },
         {
@@ -73,7 +75,14 @@ async function main() {
         {
           type: "send",
           channel: "whatsapp",
-          body: "Thanks for your order! Tell us how it went.",
+          variant: "A",
+          body: "Variant A: thanks for your order! Tell us how it went.",
+        },
+        {
+          type: "send",
+          channel: "whatsapp",
+          variant: "B",
+          body: "Variant B: thanks for your order! Tell us how it went.",
         },
       ],
     }),
@@ -192,6 +201,14 @@ async function main() {
     assert(
       pageText.toLowerCase().includes("attributed"),
       "Journey revenue attribution missing from UI."
+    );
+    assert(
+      pageText.toLowerCase().includes("variant"),
+      "A/B variant results missing from UI."
+    );
+    assert(
+      pageText.toLowerCase().includes("cap 5/24h"),
+      "Frequency cap badge missing from UI."
     );
     await page.screenshot({
       path: path.join(artifactsDir, "visible-journeys.png"),

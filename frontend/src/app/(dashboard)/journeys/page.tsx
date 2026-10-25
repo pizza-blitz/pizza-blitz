@@ -27,6 +27,7 @@ type Step = {
   field?: string;
   operator?: string;
   value?: number;
+  variant?: string;
 };
 type EnrollmentEvent = {
   id: number;
@@ -58,13 +59,21 @@ type Journey = {
   completed_count: number;
   attributed_revenue: number;
   revenue_per_enrollment: number;
+  max_sends_per_customer: number;
+  frequency_window_hours: number;
+  variants: {
+    variant: string;
+    enrollments: number;
+    completed: number;
+    revenue: number;
+  }[];
   recent_enrollments: Enrollment[];
 };
 type Template = { id: number; name: string; channel: string; body: string; subject?: string | null };
 
 const defaultSteps = (): Step[] => [
   { type: "delay", hours: 0, channel: "whatsapp", subject: "", body: "" },
-  { type: "send", hours: 0, channel: "whatsapp", subject: "", body: "" },
+  { type: "send", hours: 0, channel: "whatsapp", subject: "", body: "", variant: "" },
 ];
 
 const statusTone = (status: string) => {
@@ -89,6 +98,8 @@ export default function JourneysPage() {
     trigger: "order_completed",
     status: "draft",
     steps: defaultSteps(),
+    max_sends_per_customer: 0,
+    frequency_window_hours: 24,
   });
 
   const load = async () => {
@@ -147,6 +158,8 @@ export default function JourneysPage() {
         trigger: "order_completed",
         status: "draft",
         steps: defaultSteps(),
+        max_sends_per_customer: 0,
+        frequency_window_hours: 24,
       });
       await load();
       setMessage(`Journey ${data.journey.name} saved.`);
@@ -295,6 +308,42 @@ export default function JourneysPage() {
                 className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
               />
             </label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Max sends per customer
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={draft.max_sends_per_customer}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    max_sends_per_customer: Number(event.target.value),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+              />
+            </label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Within hours
+              <input
+                type="number"
+                min={1}
+                max={720}
+                value={draft.frequency_window_hours}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    frequency_window_hours: Number(event.target.value),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+              />
+            </label>
+            <p className="text-[10px] font-semibold text-gray-400 md:col-span-2">
+              0 = no cap. Caps count successful journey sends across all journeys for the same
+              customer. Use variant A/B on send steps for a 50/50 creative test.
+            </p>
           </div>
 
           <div className="mt-4 space-y-2">
@@ -378,7 +427,7 @@ export default function JourneysPage() {
                     </label>
                   </div>
                 ) : (
-                  <div className="mt-2 grid gap-2 md:grid-cols-[150px_1fr]">
+                  <div className="mt-2 grid gap-2 md:grid-cols-[130px_130px_1fr]">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
                       Channel
                       <select
@@ -392,6 +441,20 @@ export default function JourneysPage() {
                         <option value="sms">SMS</option>
                         <option value="email">Email</option>
                         <option value="instagram">Instagram</option>
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      Variant
+                      <select
+                        value={step.variant || ""}
+                        onChange={(event) =>
+                          updateStep(index, { variant: event.target.value })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+                      >
+                        <option value="">All contacts</option>
+                        <option value="A">A</option>
+                        <option value="B">B</option>
                       </select>
                     </label>
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -555,7 +618,28 @@ export default function JourneysPage() {
                   <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
                     {journey.enrollment_count} enrolled · {journey.completed_count} completed ·{" "}
                     Rs {Number(journey.attributed_revenue || 0).toLocaleString("en-IN")} attributed
+                    {journey.max_sends_per_customer
+                      ? ` · cap ${journey.max_sends_per_customer}/${journey.frequency_window_hours}h`
+                      : ""}
                   </p>
+                  {journey.variants.length > 0 && (
+                    <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                      {journey.variants.map((variant) => (
+                        <div
+                          key={variant.variant}
+                          className="rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-1.5"
+                        >
+                          <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                            Variant {variant.variant}
+                          </p>
+                          <p className="text-[10px] font-bold text-gray-600">
+                            {variant.enrollments} enrolled · {variant.completed} completed · Rs{" "}
+                            {Number(variant.revenue || 0).toLocaleString("en-IN")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-1.5">
                   {journey.status === "active" ? (
@@ -597,7 +681,7 @@ export default function JourneysPage() {
                       ? `Wait ${step.hours}h`
                       : step.type === "condition"
                         ? `If ${step.field || "order_total"} ${step.operator || ">="} ${step.value ?? 0}`
-                        : `Send ${step.channel}`}
+                        : `Send ${step.channel}${step.variant ? ` · ${step.variant}` : ""}`}
                   </span>
                 ))}
               </div>

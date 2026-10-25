@@ -1,5 +1,6 @@
 """Trigger-based marketing journeys with durable enrollment steps."""
 
+import secrets
 from datetime import datetime, timedelta
 
 from sqlalchemy import func
@@ -52,6 +53,28 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         .filter(JourneyEnrollment.journey_id == row.id)
         .all()
     )
+    variant_stats: dict[str, dict] = {}
+    for item in all_enrollments:
+        variant = (item.context or {}).get("variant")
+        if variant not in {"A", "B"}:
+            continue
+        bucket = variant_stats.setdefault(
+            variant, {"variant": variant, "enrollments": 0, "completed": 0, "revenue": 0.0}
+        )
+        bucket["enrollments"] += 1
+        if item.status == "completed":
+            bucket["completed"] += 1
+        order_id = (item.context or {}).get("order_id")
+        if order_id:
+            order = (
+                db.query(RestaurantOrder)
+                .filter(RestaurantOrder.id == int(order_id))
+                .first()
+            )
+            if order is not None:
+                bucket["revenue"] = round(
+                    bucket["revenue"] + float(order.total_amount or 0), 2
+                )
     order_ids = {
         int(item.context["order_id"])
         for item in all_enrollments
@@ -78,6 +101,9 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         "steps": row.steps or [],
         "enrollment_count": enrollments,
         "completed_count": completed,
+        "max_sends_per_customer": row.max_sends_per_customer or 0,
+        "frequency_window_hours": row.frequency_window_hours or 24,
+        "variants": [variant_stats[key] for key in sorted(variant_stats)],
         "attributed_revenue": attributed_revenue,
         "revenue_per_enrollment": round(attributed_revenue / enrollments, 2)
         if enrollments
@@ -145,6 +171,9 @@ def validate_steps(steps: list) -> list[dict]:
                     "subject": str(raw.get("subject") or "").strip()[:255],
                     "body": body,
                     "template_id": int(template_id) if template_id else None,
+                    "variant": str(raw.get("variant") or "").strip().upper()
+                    if str(raw.get("variant") or "").strip().upper() in {"A", "B"}
+                    else None,
                 }
             )
         elif step_type == "condition":
@@ -194,6 +223,8 @@ def create_journey(
     trigger: str,
     steps: list,
     status: str = "draft",
+    max_sends_per_customer: int = 0,
+    frequency_window_hours: int = 24,
 ) -> dict:
     if trigger not in TRIGGERS:
         raise ValueError("Unknown journey trigger.")
@@ -203,6 +234,8 @@ def create_journey(
         trigger=trigger,
         status=status if status in {"draft", "active", "paused"} else "draft",
         steps=validate_steps(steps),
+        max_sends_per_customer=max(0, min(int(max_sends_per_customer), 50)),
+        frequency_window_hours=max(1, min(int(frequency_window_hours), 720)),
     )
     db.add(row)
     db.commit()
@@ -219,6 +252,8 @@ def update_journey(
     trigger: str | None = None,
     steps: list | None = None,
     status: str | None = None,
+    max_sends_per_customer: int | None = None,
+    frequency_window_hours: int | None = None,
 ) -> dict:
     if name is not None:
         row.name = name.strip()[:160]
@@ -234,6 +269,10 @@ def update_journey(
         if status not in {"draft", "active", "paused"}:
             raise ValueError("Journey status must be draft, active or paused.")
         row.status = status
+    if max_sends_per_customer is not None:
+        row.max_sends_per_customer = max(0, min(int(max_sends_per_customer), 50))
+    if frequency_window_hours is not None:
+        row.frequency_window_hours = max(1, min(int(frequency_window_hours), 720))
     db.commit()
     db.refresh(row)
     return serialize_journey(db, row)
@@ -288,6 +327,54 @@ def _condition_passes(step: dict, context: dict) -> tuple[bool, str]:
     return passed, f"{field} {actual:g} {operator} {expected:g} is {str(passed).lower()}."
 
 
+def _pick_variant(journey: MarketingJourney) -> str | None:
+    has_variants = any(
+        step.get("type") == "send" and step.get("variant")
+        for step in (journey.steps or [])
+    )
+    if not has_variants:
+        return None
+    return secrets.choice(("A", "B"))
+
+
+def _frequency_capped(db: Session, enrollment: JourneyEnrollment) -> bool:
+    journey = enrollment.journey
+    limit = int(journey.max_sends_per_customer or 0)
+    if limit <= 0 or not enrollment.customer_id:
+        return False
+    window_hours = int(journey.frequency_window_hours or 24)
+    since = datetime.utcnow() - timedelta(hours=window_hours)
+    sent = (
+        db.query(func.count(JourneyEvent.id))
+        .join(
+            JourneyEnrollment,
+            JourneyEvent.enrollment_id == JourneyEnrollment.id,
+        )
+        .filter(
+            JourneyEnrollment.customer_id == enrollment.customer_id,
+            JourneyEvent.step_type == "send",
+            JourneyEvent.status == "sent",
+            JourneyEvent.created_at >= since,
+        )
+        .scalar()
+        or 0
+    )
+    customer_enrollment_ids = {
+        row[0]
+        for row in db.query(JourneyEnrollment.id)
+        .filter(JourneyEnrollment.customer_id == enrollment.customer_id)
+        .all()
+    }
+    pending_sent = sum(
+        1
+        for item in db.new
+        if isinstance(item, JourneyEvent)
+        and item.status == "sent"
+        and item.enrollment_id in customer_enrollment_ids
+    )
+    return int(sent) + pending_sent >= limit
+
+
 def _advance(db: Session, enrollment: JourneyEnrollment) -> None:
     journey = enrollment.journey
     steps = journey.steps or []
@@ -340,51 +427,80 @@ def _advance(db: Session, enrollment: JourneyEnrollment) -> None:
         else:
             channel = str(step.get("channel") or "whatsapp").lower()
             body = str(step.get("body") or "").strip()
-            template_id = step.get("template_id")
-            if template_id:
-                template = (
-                    db.query(MessageTemplate)
-                    .filter(MessageTemplate.id == int(template_id))
-                    .first()
-                )
-                if template is not None:
-                    body = body or template.body
-                    step = {**step, "subject": step.get("subject") or template.subject or ""}
-            customer = enrollment.customer
-            destination = _destination_for(channel, customer, enrollment.context or {})
-            if not body:
+            assigned_variant = (enrollment.context or {}).get("variant")
+            step_variant = step.get("variant")
+            if step_variant and assigned_variant and step_variant != assigned_variant:
                 _log(
                     db,
                     enrollment,
                     step_index=index,
                     step_type="send",
                     status="skipped",
-                    detail="No message body or template.",
+                    detail=f"Step is variant {step_variant}; contact is variant {assigned_variant}.",
                 )
-            elif not destination:
+            elif _frequency_capped(db, enrollment):
                 _log(
                     db,
                     enrollment,
                     step_index=index,
                     step_type="send",
                     status="skipped",
-                    detail=f"No {channel} destination on file.",
+                    detail=(
+                        f"Frequency cap reached: {enrollment.journey.max_sends_per_customer} "
+                        f"send(s) per {enrollment.journey.frequency_window_hours}h."
+                    ),
                 )
             else:
-                result = send_campaign_message(
-                    channel=channel,
-                    destination=destination,
-                    message=body,
-                    subject=str(step.get("subject") or ""),
+                template_id = step.get("template_id")
+                if template_id:
+                    template = (
+                        db.query(MessageTemplate)
+                        .filter(MessageTemplate.id == int(template_id))
+                        .first()
+                    )
+                    if template is not None:
+                        body = body or template.body
+                        step = {
+                            **step,
+                            "subject": step.get("subject") or template.subject or "",
+                        }
+                customer = enrollment.customer
+                destination = _destination_for(
+                    channel, customer, enrollment.context or {}
                 )
-                _log(
-                    db,
-                    enrollment,
-                    step_index=index,
-                    step_type="send",
-                    status=result.status,
-                    detail=result.error or f"Sent via {result.provider}.",
-                )
+                if not body:
+                    _log(
+                        db,
+                        enrollment,
+                        step_index=index,
+                        step_type="send",
+                        status="skipped",
+                        detail="No message body or template.",
+                    )
+                elif not destination:
+                    _log(
+                        db,
+                        enrollment,
+                        step_index=index,
+                        step_type="send",
+                        status="skipped",
+                        detail=f"No {channel} destination on file.",
+                    )
+                else:
+                    result = send_campaign_message(
+                        channel=channel,
+                        destination=destination,
+                        message=body,
+                        subject=str(step.get("subject") or ""),
+                    )
+                    _log(
+                        db,
+                        enrollment,
+                        step_index=index,
+                        step_type="send",
+                        status=result.status,
+                        detail=result.error or f"Sent via {result.provider}.",
+                    )
             enrollment.current_step = index + 1
             if enrollment.current_step >= len(steps):
                 enrollment.status = "completed"
@@ -441,7 +557,12 @@ def enroll_manual(
     )
     if existing:
         return serialize_enrollment(existing)
-    context = {"name": name.strip(), "phone": destination.strip(), "email": email.strip()}
+    context = {
+        "name": name.strip(),
+        "phone": destination.strip(),
+        "email": email.strip(),
+        "variant": _pick_variant(journey),
+    }
     customer = (
         db.query(Customer).filter(Customer.id == customer_id).first()
         if customer_id
@@ -507,6 +628,7 @@ def enroll_order_trigger(db: Session, trigger: str, order: RestaurantOrder) -> i
                     "order_id": order.id,
                     "total": order.total_amount,
                     "order_total": order.total_amount,
+                    "variant": _pick_variant(journey),
                 },
             )
         )

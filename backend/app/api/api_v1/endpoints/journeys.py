@@ -27,6 +27,7 @@ class JourneyStep(BaseModel):
     field: Optional[str] = Field(default=None, max_length=40)
     operator: Optional[str] = Field(default=None, max_length=4)
     value: Optional[float] = None
+    variant: Optional[str] = Field(default=None, max_length=2)
 
 
 class JourneyCreate(BaseModel):
@@ -35,6 +36,8 @@ class JourneyCreate(BaseModel):
     trigger: str = Field(min_length=3, max_length=50)
     steps: List[JourneyStep] = Field(min_length=1, max_length=20)
     status: str = Field(default="draft", max_length=20)
+    max_sends_per_customer: int = Field(default=0, ge=0, le=50)
+    frequency_window_hours: int = Field(default=24, ge=1, le=720)
 
 
 class JourneyUpdate(BaseModel):
@@ -43,6 +46,8 @@ class JourneyUpdate(BaseModel):
     trigger: Optional[str] = Field(default=None, min_length=3, max_length=50)
     steps: Optional[List[JourneyStep]] = Field(default=None, max_length=20)
     status: Optional[str] = Field(default=None, max_length=20)
+    max_sends_per_customer: Optional[int] = Field(default=None, ge=0, le=50)
+    frequency_window_hours: Optional[int] = Field(default=None, ge=1, le=720)
 
 
 class ManualEnroll(BaseModel):
@@ -95,6 +100,8 @@ def save_journey(
                 trigger=payload.trigger,
                 steps=_steps(payload) or [],
                 status=payload.status,
+                max_sends_per_customer=payload.max_sends_per_customer,
+                frequency_window_hours=payload.frequency_window_hours,
             )
         }
     except ValueError as exc:
@@ -135,6 +142,8 @@ def edit_journey(
                 trigger=payload.trigger,
                 steps=_steps(payload),
                 status=payload.status,
+                max_sends_per_customer=payload.max_sends_per_customer,
+                frequency_window_hours=payload.frequency_window_hours,
             )
         }
     except ValueError as exc:

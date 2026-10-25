@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 207 backend tests, 163 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 209 backend tests, 163 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -227,8 +227,8 @@ Wave 4 (in progress):
   `verify:messaging-inbox` proof and three backend tests.
 - Marketing journeys are live: completed/delivered order, low-feedback and manual triggers;
   delay/condition/send steps, templates, durable runner, enrollment/event history,
-  pause/activate and attributed revenue at `/journeys`; new `verify:marketing-journeys`
-  proof and two backend tests.
+  pause/activate and attributed revenue at `/journeys`; send steps support 50/50 A/B variants
+  with variant-level results, and journeys enforce per-customer send caps across all sends.
 - HR recruitment is live: jobs, applicant board, stage moves, interviews, offers and automatic
   onboarding handoff at `/departments/hr/recruitment`; new `verify:recruitment` proof and two
   backend tests.
@@ -252,11 +252,12 @@ Wave 4 (in progress):
   `verify:payment-providers` proof and two backend tests.
 - Active payment routing is admin-selectable in Tax & billing; new payment sessions and
   checkout status follow it, while existing orders keep their recorded provider.
-- Next: journey branching/attribution, resume parsing/scorecards, video transcoding.
+- Next: marketing approvals, offer reminders/countersignature, multi-path journeys and
+  campaign-level attribution.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 207 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 209 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

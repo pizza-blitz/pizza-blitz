@@ -1369,6 +1369,8 @@ class MarketingJourney(Base):
     trigger = Column(String(50), nullable=False, index=True)
     status = Column(String(30), nullable=False, default="draft", index=True)
     steps = Column(JSON, default=list)
+    max_sends_per_customer = Column(Integer, nullable=False, default=0)
+    frequency_window_hours = Column(Integer, nullable=False, default=24)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
