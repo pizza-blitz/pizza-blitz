@@ -26,6 +26,7 @@ from app.services.campaign_dispatch_service import (
     send_campaign_message,
 )
 from app.services.campaign_schedule_service import activate_due_scheduled_campaigns
+from app.services.attribution_service import person_level_attribution
 from app.services.billing_settings_service import calculate_charges
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -1773,9 +1774,11 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
             ),
             "note": (
                 "Coupon revenue is split equally across channels active in this campaign. "
-                "This is campaign-level channel credit, not person-level multi-touch."
+                "This section is campaign-level channel credit; person-level first/last/linear "
+                "models are shown below."
             ),
         },
+        "person_attribution": person_level_attribution(db, promo, coupon_orders),
     }
 
 

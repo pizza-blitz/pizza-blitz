@@ -208,6 +208,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] In-browser reel recording through the media transcode pipeline.
 - [x] VTT/SRT video captions with SRT-to-WebVTT conversion.
 - [x] Optional multi-step offer approvals that gate letter generation.
-- [ ] Person-level multi-touch attribution, holdouts, video editing.
+- [x] Person-level first/last/linear campaign attribution.
+- [ ] Incrementality holdouts, longer attribution windows, video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

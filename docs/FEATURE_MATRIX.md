@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **422 API endpoints**, **73 routes/pages** (57 portal,
-1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **231 backend
+1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **233 backend
 tests**, **93 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -156,7 +156,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons / flash sales | Builder, audience, channel, schedule | Built | Same + auto-apply | — |
 | Campaign dispatch | WhatsApp/SMS/email, logs, retries, suppression | Built | Drip journeys, A/B tests | Journeys/A-B missing |
 | Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
-| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/branch/stop/send steps, templates, durable runner, enrollment/event history, pause/activate, attributed revenue, 50/50 A/B send variants with variant results and per-customer send caps | Built | Automated lifecycle journeys | Holdout groups, campaign-level multi-touch attribution and visual branch canvas later |
+| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/branch/stop/send steps, templates, durable runner, enrollment/event history, pause/activate, attributed revenue, 50/50 A/B send variants with variant results and per-customer send caps | Built | Automated lifecycle journeys | Holdout groups and visual branch canvas later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
 | Social publishing | Image, video and Instagram reel posts, delivery logs, auto-publish gated, real Instagram REELS/VIDEO container flow, optional admin approval with submit/approve/reject and publish blocking | Built | Multi-platform scheduling, media | Facebook video/reels and in-app capture/editing missing |
 | Marketing Hub | Month calendar aggregating social posts, reels, campaigns and ads; filters, upcoming list, shortcuts and a schedule-content composer | Built | Unified content calendar | Drag/drop rescheduling and content templates later |
@@ -172,7 +172,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Sales analytics | Daily/monthly/lifetime, weekday, forecast, trends | Built | Drill-through to orders | Drill-through missing |
 | Product/channel | Movers, category, channel, payment mix | Built | Margin by channel | Partial |
 | Customer analytics | Segments, retention, value leaders | Built | Cohort curves, LTV | LTV/cohorts partial |
-| Marketing analytics | Campaign ROI, conversion, budget pacing, coupon revenue, linear channel credit and lift versus the prior 30-day baseline | Built | Campaign attribution | Person-level multi-touch and incrementality testing later |
+| Marketing analytics | Campaign ROI, conversion, budget pacing, coupon revenue, linear channel credit, lift versus the prior 30-day baseline, and person-level first/last/linear attribution matching sent campaign touches to coupon orders by phone | Built | Campaign attribution | Incrementality holdouts and longer multi-touch windows later |
 | Breakeven | Fixed costs, daily target, gap | Built | Scenario modelling | Partial |
 | Exports | CSV for sales/customers/campaigns; saved-report CSV download; scheduled email delivery via the provider layer | Built | Scheduled reports, email delivery | Provider credentials required for delivery |
 | Custom reports | Report builder for revenue/orders/AOV/tax/discount/tips/refunds grouped by day/order type/payment/status; saved views with schedule, recipients, run/export/send | Built | Report builder, saved views | Joins/cohorts and embedded charts missing |

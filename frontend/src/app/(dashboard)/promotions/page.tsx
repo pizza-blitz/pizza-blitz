@@ -587,6 +587,27 @@ type CampaignPerformance = {
     attributed_revenue: number;
     note: string;
   };
+  person_attribution: {
+    model: string;
+    lookback_days: number;
+    converted_customers: number;
+    touch_count: number;
+    orders_attributed: number;
+    unmatched_orders: number;
+    first_touch: PersonAttributionModel;
+    last_touch: PersonAttributionModel;
+    linear: PersonAttributionModel;
+    note: string;
+  };
+};
+
+type PersonAttributionModel = {
+  channels: {
+    channel: string;
+    credit_revenue: number;
+    conversions: number;
+  }[];
+  attributed_revenue: number;
 };
 
 type CampaignPerformanceRow = CampaignPerformance & {
@@ -3158,6 +3179,86 @@ export default function PromotionsPage() {
                     <p className="mt-3 text-[10px] font-semibold text-gray-500">
                       {performance.attribution.note}
                     </p>
+
+                    <div
+                      data-testid="campaign-person-attribution"
+                      className="mt-4 rounded-xl border border-emerald-500/15 bg-black/30 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                            Person-level multi-touch
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-gray-400">
+                            Last {performance.person_attribution.lookback_days} days of sends,
+                            matched by phone to coupon orders.
+                          </p>
+                        </div>
+                        <div className="flex gap-4 text-right">
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                              Customers
+                            </p>
+                            <p className="text-lg font-black text-white">
+                              {performance.person_attribution.converted_customers}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                              Touches
+                            </p>
+                            <p className="text-lg font-black text-white">
+                              {performance.person_attribution.touch_count}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        {(
+                          [
+                            ["First touch", performance.person_attribution.first_touch],
+                            ["Last touch", performance.person_attribution.last_touch],
+                            ["Linear", performance.person_attribution.linear],
+                          ] as const
+                        ).map(([label, model]) => (
+                          <div
+                            key={label}
+                            className="rounded-lg bg-black/30 p-3"
+                          >
+                            <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                              {label}
+                            </p>
+                            <p className="mt-1 text-sm font-black text-white">
+                              {formatRupees(model.attributed_revenue)}
+                            </p>
+                            <div className="mt-2 space-y-1">
+                              {model.channels.length === 0 ? (
+                                <p className="text-[10px] font-semibold text-gray-500">
+                                  No matched sends.
+                                </p>
+                              ) : (
+                                model.channels.map((channel) => (
+                                  <div
+                                    key={channel.channel}
+                                    className="flex items-center justify-between gap-2 text-[10px] font-bold"
+                                  >
+                                    <span className="text-gray-400">
+                                      {channel.channel}
+                                    </span>
+                                    <span className="text-white">
+                                      {formatRupees(channel.credit_revenue)}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[10px] font-semibold text-gray-500">
+                        {performance.person_attribution.note}
+                      </p>
+                    </div>
                   </section>
                 )}
 
