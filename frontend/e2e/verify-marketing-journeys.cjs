@@ -65,6 +65,12 @@ async function main() {
       steps: [
         { type: "delay", hours: 0 },
         {
+          type: "condition",
+          field: "order_total",
+          operator: ">=",
+          value: 100,
+        },
+        {
           type: "send",
           channel: "whatsapp",
           body: "Thanks for your order! Tell us how it went.",
@@ -123,8 +129,18 @@ async function main() {
     "Delay step was not recorded."
   );
   assert(
+    enrollment.events.some(
+      (event) => event.step_type === "condition" && event.status === "passed"
+    ),
+    "Condition step was not passed."
+  );
+  assert(
     enrollment.events.some((event) => event.step_type === "send"),
     "Send step was not recorded."
+  );
+  assert(
+    journey.journey.attributed_revenue > 0,
+    "Journey revenue attribution is empty."
   );
 
   const portalLogin = await fetch(`${baseURL}/api/admin-session`, {
@@ -166,8 +182,17 @@ async function main() {
     const enrollmentCard = page.getByTestId(`journey-enrollment-${enrollment.id}`);
     await enrollmentCard.waitFor({ timeout: 20000 });
     const enrollmentText = await enrollmentCard.innerText();
+    const pageText = await page.getByTestId("journeys-page").innerText();
     assert(enrollmentText.includes("completed"), "Enrollment status missing from UI.");
-    assert(enrollmentText.includes("send"), "Send step missing from enrollment history.");
+    assert(enrollmentText.toLowerCase().includes("send"), "Send step missing from enrollment history.");
+    assert(
+      enrollmentText.toLowerCase().includes("condition"),
+      "Condition step missing from enrollment history."
+    );
+    assert(
+      pageText.toLowerCase().includes("attributed"),
+      "Journey revenue attribution missing from UI."
+    );
     await page.screenshot({
       path: path.join(artifactsDir, "visible-journeys.png"),
       fullPage: false,

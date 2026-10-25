@@ -47,6 +47,27 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         .limit(8)
         .all()
     )
+    all_enrollments = (
+        db.query(JourneyEnrollment)
+        .filter(JourneyEnrollment.journey_id == row.id)
+        .all()
+    )
+    order_ids = {
+        int(item.context["order_id"])
+        for item in all_enrollments
+        if (item.context or {}).get("order_id")
+    }
+    attributed_revenue = 0.0
+    if order_ids:
+        attributed_revenue = round(
+            float(
+                db.query(func.coalesce(func.sum(RestaurantOrder.total_amount), 0.0))
+                .filter(RestaurantOrder.id.in_(order_ids))
+                .scalar()
+                or 0.0
+            ),
+            2,
+        )
     return {
         "id": row.id,
         "name": row.name,
@@ -57,6 +78,10 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         "steps": row.steps or [],
         "enrollment_count": enrollments,
         "completed_count": completed,
+        "attributed_revenue": attributed_revenue,
+        "revenue_per_enrollment": round(attributed_revenue / enrollments, 2)
+        if enrollments
+        else 0.0,
         "recent_enrollments": [serialize_enrollment(item) for item in recent],
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -122,8 +147,25 @@ def validate_steps(steps: list) -> list[dict]:
                     "template_id": int(template_id) if template_id else None,
                 }
             )
+        elif step_type == "condition":
+            field = str(raw.get("field") or "order_total").strip()[:40]
+            operator = str(raw.get("operator") or ">=").strip()
+            if operator not in {">=", ">", "<=", "<", "==", "!="}:
+                raise ValueError("Condition operator must be >=, >, <=, <, == or !=.")
+            try:
+                value = float(raw.get("value"))
+            except (TypeError, ValueError):
+                raise ValueError("Condition value must be a number.") from None
+            cleaned.append(
+                {
+                    "type": "condition",
+                    "field": field,
+                    "operator": operator,
+                    "value": value,
+                }
+            )
         else:
-            raise ValueError("Journey steps must be delay or send.")
+            raise ValueError("Journey steps must be delay, condition or send.")
     if not cleaned:
         raise ValueError("Add at least one journey step.")
     if not any(step["type"] == "send" for step in cleaned):
@@ -223,6 +265,29 @@ def _log(
     )
 
 
+def _condition_passes(step: dict, context: dict) -> tuple[bool, str]:
+    field = str(step.get("field") or "order_total")
+    raw_value = context.get(field)
+    if raw_value is None:
+        return False, f"No {field} in enrollment context."
+    try:
+        actual = float(raw_value)
+        expected = float(step.get("value"))
+    except (TypeError, ValueError):
+        return False, f"{field} is not numeric."
+    operator = step.get("operator") or ">="
+    checks = {
+        ">=": actual >= expected,
+        ">": actual > expected,
+        "<=": actual <= expected,
+        "<": actual < expected,
+        "==": actual == expected,
+        "!=": actual != expected,
+    }
+    passed = checks.get(operator, False)
+    return passed, f"{field} {actual:g} {operator} {expected:g} is {str(passed).lower()}."
+
+
 def _advance(db: Session, enrollment: JourneyEnrollment) -> None:
     journey = enrollment.journey
     steps = journey.steps or []
@@ -234,7 +299,27 @@ def _advance(db: Session, enrollment: JourneyEnrollment) -> None:
     ):
         index = enrollment.current_step
         step = steps[index]
-        if step.get("type") == "delay":
+        if step.get("type") == "condition":
+            passed, detail = _condition_passes(step, enrollment.context or {})
+            _log(
+                db,
+                enrollment,
+                step_index=index,
+                step_type="condition",
+                status="passed" if passed else "stopped",
+                detail=detail,
+            )
+            enrollment.current_step = index + 1
+            if not passed:
+                enrollment.status = "stopped"
+                enrollment.next_run_at = None
+                break
+            if enrollment.current_step >= len(steps):
+                enrollment.status = "completed"
+                enrollment.next_run_at = None
+            else:
+                enrollment.next_run_at = datetime.utcnow()
+        elif step.get("type") == "delay":
             hours = float(step.get("hours") or 0)
             _log(
                 db,
@@ -421,6 +506,7 @@ def enroll_order_trigger(db: Session, trigger: str, order: RestaurantOrder) -> i
                     "phone": phone,
                     "order_id": order.id,
                     "total": order.total_amount,
+                    "order_total": order.total_amount,
                 },
             )
         )

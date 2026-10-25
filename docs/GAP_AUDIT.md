@@ -109,6 +109,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 78 | Marketing calendar and reels | Social, campaigns and ads were separate pages with no month view; social only supported static images, so reels/shorts could not be scheduled or published. | Marketing-hub gap. | Added `video_url`, `cover_image_url` and `media_type` on social posts (migration), Instagram REELS/VIDEO container publishing, `/restaurant/marketing/calendar` aggregation and `/marketing` with a month grid, filters, upcoming list, shortcuts and a schedule-content composer. Social page now accepts video/reel creative. Two backend tests and `verify:marketing-hub`. Facebook video/reels, video transcoding, approvals and drag/drop rescheduling remain. |
 | 79 | Payment credentials | Cashfree, Razorpay and direct-bank credentials still came from environment variables; the provider registry stopped at messaging/social/ads, so owners could not rotate payment credentials from the portal. | Payment-config gap. | Added Cashfree, Razorpay and direct-bank provider cards, encrypted fields and validation to the registry, a merged `payment_values()` resolver, and wired checkout status, payment sessions, direct-bank instructions, Cashfree/Razorpay request credentials and webhook secrets to it. Two backend tests and `verify:payment-providers`. Active-provider routing UI and live provider verification remain. |
 | 80 | Payment routing | The active payment provider was still environment-only, so switching from manual/cash to Cashfree, Razorpay or direct bank required a deploy and could disagree with the credential registry. | Payment-routing gap. | Added nullable `billing_settings.payment_provider` (migration), active-provider resolution with env fallback, admin selector in `/settings/billing`, public settings exposure, and switched checkout status and new payment sessions to the stored provider. Existing orders keep their provider. One backend test plus the extended payment-provider proof. Live provider verification remains. |
+| 81 | Journey conditions and revenue | Journeys ran every step linearly and reported only counts; there was no way to branch on order value or see revenue influenced by a journey. | Journey targeting/attribution gap. | Added numeric condition steps (`order_total` and operators), a `stopped` enrollment outcome, condition events and per-journey attributed revenue/per-enrollment revenue. `/journeys` builds conditions and shows revenue. Two backend tests plus condition/revenue assertions in the browser proof. A/B tests, frequency caps and multi-path branching remain. |
 
 ## Still open
 
@@ -123,7 +124,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 196 tests, all pass (in a clean venv built from
+- Backend unit suite: 197 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

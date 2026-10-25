@@ -19,11 +19,14 @@ const API = getApiUrl("/api/v1/restaurant/journeys");
 const TEMPLATES_API = getApiUrl("/api/v1/restaurant/messaging/templates");
 
 type Step = {
-  type: "delay" | "send";
+  type: "delay" | "condition" | "send";
   hours: number;
   channel: string;
   subject: string;
   body: string;
+  field?: string;
+  operator?: string;
+  value?: number;
 };
 type EnrollmentEvent = {
   id: number;
@@ -53,6 +56,8 @@ type Journey = {
   steps: Step[];
   enrollment_count: number;
   completed_count: number;
+  attributed_revenue: number;
+  revenue_per_enrollment: number;
   recent_enrollments: Enrollment[];
 };
 type Template = { id: number; name: string; channel: string; body: string; subject?: string | null };
@@ -330,6 +335,48 @@ export default function JourneysPage() {
                       className="mt-1 w-32 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
                     />
                   </label>
+                ) : step.type === "condition" ? (
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_100px_100px]">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      Field
+                      <select
+                        value={step.field || "order_total"}
+                        onChange={(event) =>
+                          updateStep(index, { field: event.target.value })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+                      >
+                        <option value="order_total">Order total</option>
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      Operator
+                      <select
+                        value={step.operator || ">="}
+                        onChange={(event) =>
+                          updateStep(index, { operator: event.target.value })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-800"
+                      >
+                        {[">=", ">", "<=", "<", "==", "!="].map((operator) => (
+                          <option key={operator} value={operator}>
+                            {operator}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                      Value
+                      <input
+                        type="number"
+                        value={step.value ?? 0}
+                        onChange={(event) =>
+                          updateStep(index, { value: Number(event.target.value) })
+                        }
+                        className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm font-semibold text-gray-800"
+                      />
+                    </label>
+                  </div>
                 ) : (
                   <div className="mt-2 grid gap-2 md:grid-cols-[150px_1fr]">
                     <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">
@@ -416,6 +463,30 @@ export default function JourneysPage() {
                   ...draft,
                   steps: [
                     ...draft.steps,
+                    {
+                      type: "condition",
+                      hours: 0,
+                      channel: "whatsapp",
+                      subject: "",
+                      body: "",
+                      field: "order_total",
+                      operator: ">=",
+                      value: 500,
+                    },
+                  ],
+                })
+              }
+              className="rounded-lg border border-gray-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-600"
+            >
+              + Condition
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setDraft({
+                  ...draft,
+                  steps: [
+                    ...draft.steps,
                     { type: "send", hours: 0, channel: "whatsapp", subject: "", body: "" },
                   ],
                 })
@@ -482,7 +553,8 @@ export default function JourneysPage() {
                     <p className="mt-1 text-xs font-semibold text-gray-500">{journey.description}</p>
                   )}
                   <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                    {journey.enrollment_count} enrolled · {journey.completed_count} completed
+                    {journey.enrollment_count} enrolled · {journey.completed_count} completed ·{" "}
+                    Rs {Number(journey.attributed_revenue || 0).toLocaleString("en-IN")} attributed
                   </p>
                 </div>
                 <div className="flex gap-1.5">
@@ -523,7 +595,9 @@ export default function JourneysPage() {
                   >
                     {step.type === "delay"
                       ? `Wait ${step.hours}h`
-                      : `Send ${step.channel}`}
+                      : step.type === "condition"
+                        ? `If ${step.field || "order_total"} ${step.operator || ">="} ${step.value ?? 0}`
+                        : `Send ${step.channel}`}
                   </span>
                 ))}
               </div>

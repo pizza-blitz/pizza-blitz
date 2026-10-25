@@ -56,6 +56,12 @@ class MarketingJourneyTest(unittest.TestCase):
                 "steps": [
                     {"type": "delay", "hours": 0},
                     {
+                        "type": "condition",
+                        "field": "order_total",
+                        "operator": ">=",
+                        "value": 100,
+                    },
+                    {
                         "type": "send",
                         "channel": "whatsapp",
                         "body": "Thanks for ordering from Pizza Blitz!",
@@ -67,7 +73,7 @@ class MarketingJourneyTest(unittest.TestCase):
         self.assertEqual(created.status_code, 201, created.text)
         journey = created.json()["journey"]
         self.assertEqual(journey["trigger"], "order_completed")
-        self.assertEqual(len(journey["steps"]), 2)
+        self.assertEqual(len(journey["steps"]), 3)
 
         order_id = self.create_order(phone)
         ready = self.client.patch(
@@ -117,7 +123,73 @@ class MarketingJourneyTest(unittest.TestCase):
         self.assertTrue(
             any(event["step_type"] == "send" and event["status"] == "sent" for event in enrollment["events"])
         )
+        self.assertTrue(
+            any(
+                event["step_type"] == "condition" and event["status"] == "passed"
+                for event in enrollment["events"]
+            )
+        )
         self.assertGreaterEqual(after["completed_count"], 1)
+        self.assertAlmostEqual(after["attributed_revenue"], 124.95, places=2)
+
+    def test_condition_stops_enrollment_when_order_is_below_threshold(self):
+        phone = f"9193{str(id(self))[-8:]}"
+        created = self.client.post(
+            "/api/v1/restaurant/journeys",
+            json={
+                "name": "High value only proof",
+                "trigger": "order_completed",
+                "status": "active",
+                "steps": [
+                    {
+                        "type": "condition",
+                        "field": "order_total",
+                        "operator": ">=",
+                        "value": 1000,
+                    },
+                    {
+                        "type": "send",
+                        "channel": "whatsapp",
+                        "body": "This should not send for a small order.",
+                    },
+                ],
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        journey = created.json()["journey"]
+        order_id = self.create_order(phone)
+        self.client.patch(
+            f"/api/v1/restaurant/orders/{order_id}/status",
+            json={"status": "ready"},
+            headers=self.headers,
+        )
+        self.client.patch(
+            f"/api/v1/restaurant/orders/{order_id}/close",
+            headers=self.headers,
+        )
+        run = self.client.post(
+            "/api/v1/restaurant/journeys/run-due", headers=self.headers
+        )
+        self.assertEqual(run.status_code, 200, run.text)
+        after = self.client.get(
+            f"/api/v1/restaurant/journeys/{journey['id']}", headers=self.headers
+        ).json()["journey"]
+        enrollment = next(
+            item
+            for item in after["recent_enrollments"]
+            if item["trigger_ref"] == f"order:{order_id}:order_completed"
+        )
+        self.assertEqual(enrollment["status"], "stopped")
+        self.assertTrue(
+            any(
+                event["step_type"] == "condition" and event["status"] == "stopped"
+                for event in enrollment["events"]
+            )
+        )
+        self.assertFalse(
+            any(event["step_type"] == "send" for event in enrollment["events"])
+        )
 
     def test_manual_enrollment_rejects_draft_journey(self):
         created = self.client.post(

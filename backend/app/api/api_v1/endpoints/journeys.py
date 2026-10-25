@@ -24,6 +24,9 @@ class JourneyStep(BaseModel):
     subject: Optional[str] = Field(default=None, max_length=255)
     body: Optional[str] = Field(default=None, max_length=4000)
     template_id: Optional[int] = None
+    field: Optional[str] = Field(default=None, max_length=40)
+    operator: Optional[str] = Field(default=None, max_length=4)
+    value: Optional[float] = None
 
 
 class JourneyCreate(BaseModel):
