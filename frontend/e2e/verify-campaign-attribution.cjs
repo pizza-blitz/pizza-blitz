@@ -127,6 +127,10 @@ async function main() {
     assert(text.includes("first touch"), "First-touch model missing.");
     assert(text.includes("last touch"), "Last-touch model missing.");
     assert(text.includes("holdout experiment"), "Holdout experiment panel missing.");
+    assert(
+      text.includes("significance") || text.includes("not enough data"),
+      "Holdout significance readout missing."
+    );
     await panel.screenshot({
       path: path.join(artifactsDir, "visible-campaign-attribution.png"),
     });

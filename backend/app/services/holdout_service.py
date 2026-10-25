@@ -1,6 +1,7 @@
 """Deterministic campaign holdouts and treated-vs-holdout experiment reporting."""
 
 import hashlib
+import math
 from datetime import datetime, time
 
 from sqlalchemy.orm import Session
@@ -32,8 +33,83 @@ def select_holdout_ids(
     }
 
 
+def _normal_cdf(value: float) -> float:
+    return 0.5 * (1 + math.erf(value / math.sqrt(2)))
+
+
 def _rate(converted: int, customers: int) -> float:
     return round((converted / customers) * 100, 2) if customers else 0.0
+
+
+def two_proportion_test(
+    treated_converted: int,
+    treated_total: int,
+    holdout_converted: int,
+    holdout_total: int,
+) -> dict:
+    if treated_total <= 0 or holdout_total <= 0:
+        return {
+            "available": False,
+            "reason": "Both groups need at least one assigned customer.",
+            "p_value": None,
+            "significant_95": False,
+            "confidence_interval_95_pp": None,
+            "required_per_group_80_power": None,
+        }
+    treated_rate = treated_converted / treated_total
+    holdout_rate = holdout_converted / holdout_total
+    pooled = (treated_converted + holdout_converted) / (treated_total + holdout_total)
+    standard_error = math.sqrt(
+        pooled * (1 - pooled) * (1 / treated_total + 1 / holdout_total)
+    )
+    difference = treated_rate - holdout_rate
+    if standard_error == 0:
+        z_score = 0.0
+        p_value = 1.0
+    else:
+        z_score = difference / standard_error
+        p_value = max(0.0, min(1.0, 2 * (1 - _normal_cdf(abs(z_score)))))
+    unpooled_se = math.sqrt(
+        treated_rate * (1 - treated_rate) / treated_total
+        + holdout_rate * (1 - holdout_rate) / holdout_total
+    )
+    margin = 1.96 * unpooled_se
+    ci_low = (difference - margin) * 100
+    ci_high = (difference + margin) * 100
+    required = None
+    if 0 < holdout_rate < 1:
+        target = min(holdout_rate * 1.2, 0.999)
+        delta = target - holdout_rate
+        pooled_target = (target + holdout_rate) / 2
+        if delta > 0:
+            required = math.ceil(
+                2
+                * (1.96 + 0.84) ** 2
+                * pooled_target
+                * (1 - pooled_target)
+                / (delta**2)
+            )
+    return {
+        "available": True,
+        "treated_rate_percent": round(treated_rate * 100, 2),
+        "holdout_rate_percent": round(holdout_rate * 100, 2),
+        "absolute_lift_pp": round(difference * 100, 2),
+        "relative_lift_percent": round(difference / holdout_rate * 100, 2)
+        if holdout_rate
+        else None,
+        "z_score": round(z_score, 3),
+        "p_value": round(p_value, 6),
+        "significant_95": p_value < 0.05,
+        "confidence_interval_95_pp": [round(ci_low, 2), round(ci_high, 2)],
+        "relative_confidence_interval_95_percent": [
+            round(ci_low / (holdout_rate * 100) * 100, 2),
+            round(ci_high / (holdout_rate * 100) * 100, 2),
+        ]
+        if holdout_rate
+        else None,
+        "required_per_group_80_power": required,
+        "assumption": "Two-sided two-proportion z-test at 95% confidence; 20% relative MDE.",
+    }
 
 
 def experiment_summary(
@@ -60,6 +136,7 @@ def experiment_summary(
             "holdout": {"customers": 0, "converted": 0, "conversion_rate": 0.0, "revenue": 0.0},
             "lift_percent": 0.0,
             "incremental_revenue": 0.0,
+            "significance": two_proportion_test(0, 0, 0, 0),
             "note": "No treated or holdout audience has been recorded yet.",
         }
 
@@ -118,6 +195,12 @@ def experiment_summary(
         treated["revenue"] - (holdout["revenue_per_customer"] * treated["customers"]),
         2,
     )
+    significance = two_proportion_test(
+        treated["converted"],
+        treated["customers"],
+        holdout["converted"],
+        holdout["customers"],
+    )
     return {
         "enabled": bool(promo.holdout_percent),
         "holdout_percent": float(promo.holdout_percent or 0),
@@ -125,6 +208,7 @@ def experiment_summary(
         "holdout": holdout,
         "lift_percent": lift,
         "incremental_revenue": incremental,
+        "significance": significance,
         "note": (
             "Holdout customers receive no campaign send. Conversion uses coupon orders in the "
             "campaign window; treated and holdout revenue-per-customer drive the incremental "

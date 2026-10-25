@@ -607,6 +607,19 @@ type CampaignPerformance = {
     holdout: HoldoutGroup;
     lift_percent: number;
     incremental_revenue: number;
+    significance: {
+      available: boolean;
+      reason?: string;
+      p_value: number | null;
+      significant_95: boolean;
+      confidence_interval_95_pp: [number, number] | null;
+      required_per_group_80_power: number | null;
+      absolute_lift_pp?: number;
+      relative_lift_percent?: number | null;
+      z_score?: number;
+      relative_confidence_interval_95_percent?: [number, number] | null;
+      assumption?: string;
+    };
     note: string;
   };
 };
@@ -3314,6 +3327,53 @@ export default function PromotionsPage() {
                             <p className="mt-1 text-lg font-black text-white">{value}</p>
                           </div>
                         ))}
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold text-gray-400">
+                        {performance.holdout_experiment.significance.available ? (
+                          <>
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-black uppercase tracking-widest ${
+                                performance.holdout_experiment.significance.significant_95
+                                  ? "bg-emerald-500/15 text-emerald-300"
+                                  : "bg-gray-500/15 text-gray-400"
+                              }`}
+                            >
+                              {performance.holdout_experiment.significance.significant_95
+                                ? "Significant at 95%"
+                                : "Not significant at 95%"}
+                            </span>
+                            <span>
+                              p = {performance.holdout_experiment.significance.p_value}
+                            </span>
+                            {performance.holdout_experiment.significance
+                              .confidence_interval_95_pp && (
+                              <span>
+                                95% CI{" "}
+                                {performance.holdout_experiment.significance.confidence_interval_95_pp[0]}{" "}
+                                to{" "}
+                                {performance.holdout_experiment.significance.confidence_interval_95_pp[1]}{" "}
+                                pp
+                              </span>
+                            )}
+                            {performance.holdout_experiment.significance
+                              .required_per_group_80_power && (
+                              <span>
+                                Needs ~
+                                {
+                                  performance.holdout_experiment.significance
+                                    .required_per_group_80_power
+                                }{" "}
+                                per group for 20% MDE
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span>
+                            Significance:{" "}
+                            {performance.holdout_experiment.significance.reason ||
+                              "Not enough data."}
+                          </span>
+                        )}
                       </div>
                       <p className="mt-2 text-[10px] font-semibold text-gray-500">
                         {performance.holdout_experiment.note}
