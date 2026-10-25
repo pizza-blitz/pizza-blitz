@@ -3,7 +3,7 @@
 **Status:** delivered for local/staging evaluation; production launch depends on the
 provider and deployment gates below.
 **Master access:** `admin` / `admin123` at `/login` (development defaults).
-**Verification:** 223 backend tests, 166 browser proofs + portal smoke, full audit green,
+**Verification:** 226 backend tests, 167 browser proofs + portal smoke, full audit green,
 production build green with the API offline.
 
 ---
@@ -22,8 +22,8 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Owner/admin portal | 56 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing hub, journeys, reports, stores, departments/HR including recruitment, Media Studio, landing CMS, tax/billing, providers, messaging inbox, hardware, integrations, deployment, feedback |
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
-**Current inventory:** 390 API endpoints, 69 frontend routes (56 portal, 1 KDS,
-12 public), 90 database tables, 223 backend tests, 166 browser proof scripts.
+**Current inventory:** 418 API endpoints, 73 frontend routes (57 portal, 1 KDS,
+15 public), 92 database tables, 226 backend tests, 167 browser proof scripts.
 
 ### Core capabilities
 
@@ -106,7 +106,7 @@ Run from the repository root:
 
 ```powershell
 cd backend
-python -W error::FutureWarning -m unittest discover -s tests -v   # 223 tests
+python -W error::FutureWarning -m unittest discover -s tests -v   # 226 tests
 alembic upgrade head
 alembic check                                                      # no pending operations
 ruff check .
@@ -115,13 +115,13 @@ cd ..\frontend
 npm run typecheck
 npm run lint
 npm run build                                                      # API offline
-npm run verify:audit                                               # 166 proofs + audit
+npm run verify:audit                                               # 167 proofs + audit
 npm run test:e2e                                                   # portal smoke
 ```
 
 Latest recorded results:
 
-- backend suite: **223 passed**;
+- backend suite: **226 passed**;
 - audit: **green** (surface, inventory, action hygiene and all 32 proof groups);
 - production build: **compiled successfully** with the backend stopped;
 - migrations: fresh upgrade + `alembic check` clean;

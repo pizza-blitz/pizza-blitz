@@ -122,6 +122,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 91 | Campaign attribution and lift | Campaign reporting counted coupon revenue and ad ROAS but did not show which channels earned credit or whether the campaign beat the prior baseline. | Marketing-measurement gap. | Added a prior-30-day baseline, incremental revenue/lift percent, and linear channel credit across outreach/social/ads/coupon to the campaign performance payload. The promotions page shows the lift cards and channel-credit bars; tests assert the attribution model/channels and proof covers the UI. This is campaign-level channel credit, not person-level multi-touch. |
 | 92 | Media object storage | Public media was local-disk only, so multi-instance deploys needed a shared volume and had no CDN path. | Deployment-storage gap. | Added an S3-compatible storage adapter (`MEDIA_STORAGE_BACKEND=s3`, bucket/credentials/prefix/public base URL), CDN URL generation, upload/delete for images, videos and posters, startup validation of missing settings, safe storage-status endpoint and a Media Studio storage badge. Local disk remains the default fallback. Four mocked-S3 tests and the extended Media Studio proof. No live bucket is configured in this environment. |
 | 93 | Offer templates | Every offer used the same hardcoded legal paragraph; HR could not maintain standardized terms for roles or snapshot what the candidate received. | Offer-template gap. | Added an `offer_templates` table with defaultable name/terms, CRUD endpoints, template selection in the recruitment drawer, and snapshot columns on applications so later template edits never rewrite an issued offer. PDF and public offer page render the snapshot. Three backend tests and the extended offer proof. Multi-step approvals and role-specific template permissions remain. |
+| 94 | Guest support tickets | Customers had feedback and messaging, but no guest-accessible support case with a private thread, internal notes or a triage inbox. | Customer-support gap. | Added support ticket/message tables, a public `/support` form and tokenized `/support/ticket/{token}` thread, staff `/support-inbox` with internal notes, priority, assignment and status, plus public/admin reply endpoints, summary counts and rate limits. Three backend tests and `verify:support-tickets`. Email notifications, SLA timers and knowledge base remain. |
 
 ## Still open
 
@@ -136,7 +137,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 223 tests, all pass (in a clean venv built from
+- Backend unit suite: 226 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

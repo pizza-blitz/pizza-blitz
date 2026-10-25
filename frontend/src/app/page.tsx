@@ -1022,6 +1022,7 @@ export default async function PublicHomePage() {
             <p className="text-xs font-black uppercase tracking-[0.2em] text-white/50">Business</p>
             <ul className="mt-4 space-y-2 text-sm font-semibold text-white/80">
               <li><Link href="/careers" className="hover:text-white">Careers</Link></li>
+              <li><Link href="/support" className="hover:text-white">Support</Link></li>
               <li><Link href="/login" className="hover:text-white">Admin &amp; staff login</Link></li>
               <li><Link href="/order" className="hover:text-white">Bulk orders</Link></li>
               {storeEmail ? (

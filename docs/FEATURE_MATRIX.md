@@ -13,9 +13,9 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **410 API endpoints**, **70 routes/pages** (56 portal,
-1 KDS, 13 public), **166 browser proof scripts** plus portal smoke, **223 backend
-tests**, **90 database tables**, **19 integration points**.
+Numbers in this snapshot: **418 API endpoints**, **73 routes/pages** (57 portal,
+1 KDS, 15 public), **167 browser proof scripts** plus portal smoke, **226 backend
+tests**, **92 database tables**, **19 integration points**.
 
 ## Benchmark set
 
@@ -146,6 +146,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, points redemption at checkout (10 points = ₹1, 100-point minimum), account card and transactions | Built | Points, tiers, rewards, referrals | Redemption is checkout-only; no gift catalog |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
 | Feedback / NPS / reviews | Post-order star rating, 0–10 NPS, tags and comments; admin NPS/average/response-rate dashboard with low-rating follow-up | Built | Post-order feedback, review routing | Public review-site routing missing |
+| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee and open/pending/resolved/closed inbox | Built | Guest support inbox | Email notifications, SLA timers and knowledge base later |
 | Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id; saved addresses scoped by customer token | Built | OTP login, saved sessions | Saved payment methods missing |
 
 ## 9. Marketing, communications, social, ads

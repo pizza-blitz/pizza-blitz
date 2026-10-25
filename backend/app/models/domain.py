@@ -1543,3 +1543,42 @@ class RecruitmentStageEvent(Base):
     note = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     application = relationship("RecruitmentApplication", back_populates="stage_events")
+
+
+class SupportTicket(Base):
+    """Guest/staff support conversation for orders, delivery or account issues."""
+
+    __tablename__ = "support_tickets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(80), unique=True, index=True, nullable=False)
+    customer_name = Column(String(160), nullable=False)
+    email = Column(String(200), nullable=True)
+    phone = Column(String(30), nullable=True)
+    subject = Column(String(200), nullable=False)
+    category = Column(String(40), nullable=False, default="other", index=True)
+    priority = Column(String(20), nullable=False, default="normal", index=True)
+    status = Column(String(20), nullable=False, default="open", index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=True, index=True)
+    assigned_to = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_message_at = Column(DateTime, default=datetime.utcnow, index=True)
+    messages = relationship(
+        "SupportMessage", back_populates="ticket", cascade="all, delete-orphan"
+    )
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(
+        Integer, ForeignKey("support_tickets.id"), nullable=False, index=True
+    )
+    author_type = Column(String(20), nullable=False, default="customer")
+    author_name = Column(String(160), nullable=True)
+    body = Column(Text, nullable=False)
+    internal = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    ticket = relationship("SupportTicket", back_populates="messages")
