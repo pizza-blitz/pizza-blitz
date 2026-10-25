@@ -23,6 +23,8 @@ def _post_platforms(post: SocialPost) -> list[str]:
 
 def _platform_blockers(post: SocialPost, provider_status: dict[str, dict]) -> list[str]:
     blockers: list[str] = []
+    if post.approval_status in {"pending", "rejected"}:
+        blockers.append(f"Approval {post.approval_status}")
     for platform in _post_platforms(post):
         status = provider_status.get(platform) or social_provider_status(platform)
         if not status.get("configured"):
@@ -67,6 +69,7 @@ def social_auto_publish_status(db: Session, limit: int = 20) -> dict:
                 "id": post.id,
                 "title": post.title,
                 "status": post.status,
+                "approval_status": post.approval_status or "not_required",
                 "scheduled_at": post.scheduled_at.isoformat() if post.scheduled_at else None,
                 "platforms": _post_platforms(post),
                 "eligible": eligible,

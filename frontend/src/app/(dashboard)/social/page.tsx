@@ -12,6 +12,8 @@ import {
   RefreshCw,
   Send,
   Share2,
+  ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 import MediaPicker from "@/components/media-picker";
@@ -30,6 +32,11 @@ type SocialPost = {
   video_url?: string | null;
   cover_image_url?: string | null;
   media_type?: "image" | "video" | "reel";
+  approval_status?: "not_required" | "pending" | "approved" | "rejected";
+  approval_note?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  submitted_at?: string | null;
   platforms: PlatformKey[];
   status: SocialStatus;
   scheduled_at?: string | null;
@@ -228,6 +235,7 @@ type SocialForm = {
   platforms: PlatformKey[];
   status: SocialStatus;
   scheduled_at: string;
+  requires_approval: boolean;
 };
 
 const emptyForm: SocialForm = {
@@ -241,6 +249,7 @@ const emptyForm: SocialForm = {
   platforms: ["facebook", "instagram"],
   status: "ready",
   scheduled_at: "",
+  requires_approval: false,
 };
 
 const platformLabels: Record<PlatformKey, string> = {
@@ -440,6 +449,44 @@ export default function SocialPublishingPage() {
     setFormData(emptyForm);
     await fetchSocial();
     selectPost(data.post.id);
+  };
+
+  const approvalPost = async (
+    action: "submit-approval" | "approve" | "reject"
+  ) => {
+    if (!selectedPost) return;
+    const note = window.prompt(
+      action === "reject"
+        ? "Why is this post rejected?"
+        : action === "approve"
+          ? "Approval note (optional)"
+          : "Submission note (optional)",
+      ""
+    );
+    if (note === null) return;
+    const response = await fetch(
+      `${SOCIAL_API}/posts/${selectedPost.id}/${action}`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || "Approval action failed.");
+      return;
+    }
+    setMessage(
+      action === "reject"
+        ? "Post rejected. The author can revise and resubmit."
+        : action === "approve"
+          ? "Post approved for publishing."
+          : "Post submitted for approval."
+    );
+    await fetchSocial();
+    await selectPost(selectedPost.id);
   };
 
   const publishPost = async (dryRun: boolean) => {
@@ -961,6 +1008,15 @@ export default function SocialPublishingPage() {
                     <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${statusClass(post.status)}`}>
                       {post.status}
                     </span>
+                    {post.approval_status && post.approval_status !== "not_required" && (
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${approvalClass(
+                          post.approval_status
+                        )}`}
+                      >
+                        {post.approval_status}
+                      </span>
+                    )}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs text-gray-400">
                     {post.platforms.map((platform) => (
@@ -994,6 +1050,35 @@ export default function SocialPublishingPage() {
                     <p className="mt-3 text-sm leading-6 text-gray-300">{selectedPost.message}</p>
                   </div>
                   <div className="flex flex-wrap gap-3">
+                    {selectedPost.approval_status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          data-testid="social-approve"
+                          onClick={() => void approvalPost("approve")}
+                          className="flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 font-bold text-white hover:bg-emerald-400"
+                        >
+                          <CheckCircle2 className="h-4 w-4" /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="social-reject"
+                          onClick={() => void approvalPost("reject")}
+                          className="flex items-center gap-2 rounded-xl bg-red-500/80 px-5 py-3 font-bold text-white hover:bg-red-500"
+                        >
+                          <XCircle className="h-4 w-4" /> Reject
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid="social-submit-approval"
+                        onClick={() => void approvalPost("submit-approval")}
+                        className="flex items-center gap-2 rounded-xl bg-amber-500/20 px-5 py-3 font-bold text-amber-200 hover:bg-amber-500/30"
+                      >
+                        <ShieldCheck className="h-4 w-4" /> Submit for approval
+                      </button>
+                    )}
                     <button
                       onClick={() => publishPost(true)}
                       disabled={publishing !== null}
@@ -1021,12 +1106,21 @@ export default function SocialPublishingPage() {
                   </div>
                 </div>
 
-                <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
                   <Detail label="Status" value={selectedPost.status} />
+                  <Detail
+                    label="Approval"
+                    value={selectedPost.approval_status || "not required"}
+                  />
                   <Detail label="Platforms" value={`${selectedPost.platforms.length}`} />
                   <Detail label="Published" value={`${history?.published_count || 0}`} />
                   <Detail label="Failed" value={`${history?.failed_count || 0}`} />
                 </div>
+                {selectedPost.approval_note && (
+                  <p className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs font-semibold text-amber-200">
+                    Approval note: {selectedPost.approval_note}
+                  </p>
+                )}
 
                 <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
                   <AutoMetric label="Attempts" value={history?.attempted_count || 0} icon={Send} />
@@ -1181,6 +1275,20 @@ export default function SocialPublishingPage() {
                 value={formData.scheduled_at}
                 onChange={(value) => setFormData({ ...formData, scheduled_at: value })}
               />
+              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold text-gray-300">
+                <input
+                  data-testid="social-requires-approval"
+                  type="checkbox"
+                  checked={formData.requires_approval}
+                  onChange={(event) =>
+                    setFormData({
+                      ...formData,
+                      requires_approval: event.target.checked,
+                    })
+                  }
+                />
+                Require admin approval before publishing
+              </label>
               <div className="space-y-2">
                 <span className="text-xs font-black uppercase tracking-widest text-gray-500">Platforms</span>
                 <div className="flex flex-wrap gap-3">
@@ -1424,6 +1532,13 @@ function statusClass(status: SocialStatus) {
   if (status === "scheduled") return "bg-blue-500/15 text-blue-300";
   if (status === "ready") return "bg-orange-500/15 text-orange-300";
   return "bg-white/10 text-gray-300";
+}
+
+function approvalClass(status?: string) {
+  if (status === "approved") return "bg-emerald-500/15 text-emerald-300";
+  if (status === "pending") return "bg-amber-500/15 text-amber-300";
+  if (status === "rejected") return "bg-red-500/15 text-red-300";
+  return "bg-white/10 text-gray-400";
 }
 
 function deliveryStatusClass(status: SocialDelivery["status"]) {

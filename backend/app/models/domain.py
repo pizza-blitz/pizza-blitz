@@ -318,6 +318,13 @@ class SocialPost(Base):
     video_url = Column(String, nullable=True)
     cover_image_url = Column(String, nullable=True)
     media_type = Column(String(20), nullable=False, default="image", server_default="image")
+    approval_status = Column(
+        String(30), nullable=False, default="not_required", server_default="not_required"
+    )
+    approval_note = Column(Text, nullable=True)
+    approved_by = Column(String(120), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
     platforms = Column(JSON, default=list)
     status = Column(String(40), default="draft", index=True)
     scheduled_at = Column(DateTime, nullable=True, index=True)

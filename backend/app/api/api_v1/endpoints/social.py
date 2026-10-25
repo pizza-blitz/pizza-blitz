@@ -31,6 +31,11 @@ class SocialPostCreate(BaseModel):
     platforms: list[str] = Field(default_factory=lambda: ["facebook", "instagram"])
     status: str = "draft"
     scheduled_at: Optional[str] = None
+    requires_approval: bool = False
+
+
+class SocialApprovalRequest(BaseModel):
+    note: str = Field(default="", max_length=1000)
 
 
 class SocialPublishRequest(BaseModel):
@@ -90,6 +95,11 @@ def _social_post_dict(post: SocialPost) -> dict:
         "video_url": post.video_url,
         "cover_image_url": post.cover_image_url,
         "media_type": post.media_type or "image",
+        "approval_status": post.approval_status or "not_required",
+        "approval_note": post.approval_note,
+        "approved_by": post.approved_by,
+        "approved_at": post.approved_at.isoformat() if post.approved_at else None,
+        "submitted_at": post.submitted_at.isoformat() if post.submitted_at else None,
         "platforms": post.platforms or [],
         "status": post.status,
         "scheduled_at": post.scheduled_at.isoformat() if post.scheduled_at else None,
@@ -542,7 +552,7 @@ def run_social_auto_publish(
 def create_social_post(
     payload: SocialPostCreate,
     db: Session = Depends(get_db),
-    session: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_roles("admin", "staff")),
 ):
     video_url = (payload.video_url or "").strip() or None
     if payload.media_type in {"video", "reel"} and not video_url:
@@ -561,6 +571,8 @@ def create_social_post(
         platforms=_normalize_platforms(payload.platforms),
         status=_validate_status(payload.status),
         scheduled_at=_parse_optional_datetime(payload.scheduled_at),
+        approval_status="pending" if payload.requires_approval else "not_required",
+        submitted_at=datetime.utcnow() if payload.requires_approval else None,
     )
     db.add(post)
     db.commit()
@@ -611,6 +623,91 @@ def social_post_deliveries(
     }
 
 
+@router.get("/approvals")
+def social_approval_queue(
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    posts = (
+        db.query(SocialPost)
+        .filter(SocialPost.approval_status == "pending")
+        .order_by(SocialPost.submitted_at.asc(), SocialPost.id.asc())
+        .limit(100)
+        .all()
+    )
+    return {"posts": [_social_post_dict(post) for post in posts]}
+
+
+@router.post("/posts/{post_id}/submit-approval")
+def submit_social_post_for_approval(
+    post_id: int,
+    payload: SocialApprovalRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin", "staff")),
+):
+    post = db.get(SocialPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Social post not found")
+    if post.status == "published":
+        raise HTTPException(status_code=409, detail="Published posts cannot be resubmitted.")
+    post.approval_status = "pending"
+    post.approval_note = payload.note.strip()[:1000] or None
+    post.submitted_at = datetime.utcnow()
+    post.approved_by = None
+    post.approved_at = None
+    db.commit()
+    db.refresh(post)
+    return {"post": _social_post_dict(post)}
+
+
+@router.post("/posts/{post_id}/approve")
+def approve_social_post(
+    post_id: int,
+    payload: SocialApprovalRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    post = db.get(SocialPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Social post not found")
+    if post.approval_status != "pending":
+        raise HTTPException(
+            status_code=409, detail="Only pending posts can be approved."
+        )
+    post.approval_status = "approved"
+    post.approval_note = payload.note.strip()[:1000] or None
+    post.approved_by = str(session.get("subject") or "admin")[:120]
+    post.approved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(post)
+    return {"post": _social_post_dict(post)}
+
+
+@router.post("/posts/{post_id}/reject")
+def reject_social_post(
+    post_id: int,
+    payload: SocialApprovalRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    post = db.get(SocialPost, post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Social post not found")
+    if post.approval_status != "pending":
+        raise HTTPException(
+            status_code=409, detail="Only pending posts can be rejected."
+        )
+    if not payload.note.strip():
+        raise HTTPException(status_code=422, detail="Add a rejection note.")
+    post.approval_status = "rejected"
+    post.approval_note = payload.note.strip()[:1000]
+    post.approved_by = str(session.get("subject") or "admin")[:120]
+    post.approved_at = datetime.utcnow()
+    db.commit()
+    db.refresh(post)
+    return {"post": _social_post_dict(post)}
+
+
 @router.post("/posts/{post_id}/publish")
 def publish_post(
     post_id: int,
@@ -623,6 +720,11 @@ def publish_post(
         raise HTTPException(status_code=404, detail="Social post not found")
     if post.status == "published" and not payload.force_repost and not payload.dry_run:
         raise HTTPException(status_code=409, detail="Post is already marked as published.")
+    if not payload.dry_run and post.approval_status in {"pending", "rejected"}:
+        raise HTTPException(
+            status_code=409,
+            detail="This post needs approval before it can be published.",
+        )
 
     platforms = _normalize_platforms(payload.platforms or post.platforms or [])
     deliveries: list[SocialPostDelivery] = []

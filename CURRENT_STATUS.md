@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 209 backend tests, 163 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 212 backend tests, 164 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -247,17 +247,20 @@ Wave 4 (in progress):
 - Marketing Hub is live: a month calendar for social posts/reels/campaigns/ads with filters,
   upcoming list and a schedule-content composer; Instagram video/reel publishing is wired;
   new `verify:marketing-hub` proof and two backend tests.
+- Social/reel approvals are live: staff can submit posts for review, admins approve or reject
+  with a note, and pending/rejected posts are blocked from live publishing and auto-publish;
+  new `verify:social-approvals` proof and three backend tests.
 - Payment provider credentials are in the encrypted registry: Cashfree, Razorpay and direct
   bank now drive checkout status, session credentials and webhook secrets; new
   `verify:payment-providers` proof and two backend tests.
 - Active payment routing is admin-selectable in Tax & billing; new payment sessions and
   checkout status follow it, while existing orders keep their recorded provider.
-- Next: marketing approvals, offer reminders/countersignature, multi-path journeys and
-  campaign-level attribution.
+- Next: offer reminders/countersignature, multi-path journeys, campaign-level attribution and
+  object storage/CDN.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 209 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 212 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the

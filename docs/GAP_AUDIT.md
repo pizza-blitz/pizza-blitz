@@ -116,6 +116,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 85 | Video media | Media Studio accepted only images, while reels/shorts required a pre-hosted public URL; there was no transcoding, poster or duration metadata. | Video-media gap. | Added MP4/MOV/WebM validation up to 100 MB/180 s, ffmpeg H.264 1080p transcode with faststart, poster extraction, duration/dimension probe, `media_type`/poster/duration metadata (migration), a video preview with reel badge and usage guards. Two backend tests (one ffmpeg-gated) and the extended Media Studio proof. Object storage, captions and in-app editing remain. |
 | 86 | Private documents | Resumes and offer letters were stored under the statically mounted `media` directory, so a leaked filename could bypass HR authorization. | Document-privacy gap. | Moved both to `PRIVATE_MEDIA_ROOT` (`backend/private_media` by default), outside the `/media` mount; downloads still go through authenticated HR endpoints or the offer token. Added a unit assertion that the roots are separate and ignored the private directory in git. |
 | 87 | Journey experiments and caps | Journeys had one creative path and could message the same customer repeatedly; there was no A/B result breakdown or send-frequency control. | Marketing-governance gap. | Added optional A/B variants on send steps with 50/50 assignment, variant matching, variant-level enrollment/completion/revenue results, and per-journey `max_sends_per_customer`/`frequency_window_hours` enforced across all journeys (migration). The builder exposes variant selectors, caps and result cards. Two backend tests and extended journey proof. Multi-path branches, holdouts and campaign-level attribution remain. |
+| 88 | Social content approvals | Social/reel posts went from draft straight to scheduling/publishing; there was no reviewer queue, rejection reason, or guard against unapproved content. | Content-governance gap. | Added `approval_status`/note/approver/timestamps (migration), staff submission, admin approve/reject, an approval queue, publish blocking for pending/rejected posts and auto-publish blockers. Social UI shows approval badges and review actions; the composer can request approval. Three backend tests and `verify:social-approvals`. Multi-step approvals, role-based reviewers and scheduled approval reminders remain. |
 
 ## Still open
 
@@ -130,7 +131,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 209 tests, all pass (in a clean venv built from
+- Backend unit suite: 212 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
