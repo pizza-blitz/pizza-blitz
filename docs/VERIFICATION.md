@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 193 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library, storefront landing content, configurable tax/billing, provider credentials, messaging inbox/webhooks/templates, marketing journeys, marketing calendar/reels, HR recruitment, public careers, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 195 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library, storefront landing content, configurable tax/billing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys, marketing calendar/reels, HR recruitment, public careers, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -581,6 +581,15 @@ kind filters and an upcoming list. The composer schedules image, video or reel p
 require a public `video_url` and optional cover image. Instagram reels publish through the
 Graph `REELS` container flow; Facebook video/reels are explicitly skipped. Covered by
 `backend/tests/test_marketing_hub.py` and `frontend/e2e/verify-marketing-hub.cjs`.
+
+## Payment provider credentials
+
+Cashfree, Razorpay and direct-bank cards join the encrypted provider registry. A merged
+`payment_values()` resolver feeds checkout status, session creation, direct-bank instructions,
+Cashfree/Razorpay request credentials and webhook signature secrets. Stored values override
+environment field by field; direct bank accepts either UPI or complete bank account details.
+Covered by `backend/tests/test_payment_provider_registry.py` and
+`frontend/e2e/verify-payment-providers.cjs`.
 
 ## Item-level KDS
 

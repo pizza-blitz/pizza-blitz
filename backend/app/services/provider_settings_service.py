@@ -137,6 +137,75 @@ PROVIDERS = {
             {"key": "META_GRAPH_VERSION", "label": "Graph version", "secret": False, "required": False},
         ],
     },
+    "cashfree": {
+        "label": "Cashfree",
+        "group": "Payments",
+        "description": "Cashfree checkout and payment webhooks.",
+        "enabled_env": "PAYMENT_PROVIDER",
+        "env_enabled": lambda: True,
+        "fields": [
+            {"key": "CASHFREE_APP_ID", "label": "App ID", "secret": False, "required": True},
+            {"key": "CASHFREE_SECRET_KEY", "label": "Secret key", "secret": True, "required": True},
+            {
+                "key": "CASHFREE_WEBHOOK_SECRET",
+                "label": "Webhook secret",
+                "secret": True,
+                "required": False,
+            },
+            {
+                "key": "CASHFREE_ENVIRONMENT",
+                "label": "Environment",
+                "secret": False,
+                "required": False,
+            },
+        ],
+    },
+    "razorpay": {
+        "label": "Razorpay",
+        "group": "Payments",
+        "description": "Razorpay checkout, signature verification and webhooks.",
+        "enabled_env": "PAYMENT_PROVIDER",
+        "env_enabled": lambda: True,
+        "fields": [
+            {"key": "RAZORPAY_KEY_ID", "label": "Key ID", "secret": False, "required": True},
+            {"key": "RAZORPAY_KEY_SECRET", "label": "Key secret", "secret": True, "required": True},
+            {
+                "key": "RAZORPAY_WEBHOOK_SECRET",
+                "label": "Webhook secret",
+                "secret": True,
+                "required": False,
+            },
+        ],
+    },
+    "direct_bank": {
+        "label": "Direct bank / UPI",
+        "group": "Payments",
+        "description": "UPI ID or bank account details shown at checkout.",
+        "enabled_env": "PAYMENT_PROVIDER",
+        "env_enabled": lambda: True,
+        "fields": [
+            {"key": "DIRECT_BANK_UPI_ID", "label": "UPI ID", "secret": False, "required": False},
+            {
+                "key": "DIRECT_BANK_ACCOUNT_NAME",
+                "label": "Account name",
+                "secret": False,
+                "required": False,
+            },
+            {
+                "key": "DIRECT_BANK_ACCOUNT_NUMBER",
+                "label": "Account number",
+                "secret": True,
+                "required": False,
+            },
+            {"key": "DIRECT_BANK_IFSC", "label": "IFSC", "secret": False, "required": False},
+            {
+                "key": "DIRECT_BANK_QR_URL",
+                "label": "QR image URL",
+                "secret": False,
+                "required": False,
+            },
+        ],
+    },
 }
 
 
@@ -212,6 +281,15 @@ def _missing(provider: str, values: dict[str, str]) -> list[str]:
         or values.get("INSTAGRAM_BUSINESS_ACCOUNT_ID")
     ):
         missing.append("FACEBOOK_PAGE_ID or INSTAGRAM_BUSINESS_ACCOUNT_ID")
+    if provider == "direct_bank":
+        has_upi = bool(values.get("DIRECT_BANK_UPI_ID"))
+        has_account = bool(
+            values.get("DIRECT_BANK_ACCOUNT_NAME")
+            and values.get("DIRECT_BANK_ACCOUNT_NUMBER")
+            and values.get("DIRECT_BANK_IFSC")
+        )
+        if not has_upi and not has_account:
+            missing.append("DIRECT_BANK_UPI_ID or bank account fields")
     return missing
 
 
@@ -247,6 +325,20 @@ def provider_summary(provider: str, db: Session | None = None) -> dict[str, Any]
 
 def list_provider_summaries(db: Session) -> list[dict]:
     return [provider_summary(key, db) for key in PROVIDERS]
+
+
+def payment_values(db: Session | None = None) -> dict[str, str]:
+    """Merged Cashfree/Razorpay/direct-bank values for checkout and webhooks."""
+    opened = db is None
+    session = db or SessionLocal()
+    try:
+        values: dict[str, str] = {}
+        for provider in ("cashfree", "razorpay", "direct_bank"):
+            values.update(effective_config(provider, session)["values"])
+        return values
+    finally:
+        if opened:
+            session.close()
 
 
 def save_provider(

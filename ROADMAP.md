@@ -190,6 +190,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] HR recruitment pipeline and onboarding handoff.
 - [x] Public careers page with online applications.
 - [x] Marketing Hub calendar and Instagram reel/video publishing.
+- [x] Encrypted payment provider credentials (Cashfree, Razorpay, direct bank).
 - [ ] Journey branching/attribution, resume parsing/scorecards, video transcoding.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

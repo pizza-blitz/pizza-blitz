@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.core.config import settings
+from app.services.provider_settings_service import payment_values
 
 
 SUPPORTED_PAYMENT_PROVIDERS = {"manual", "direct_bank", "cashfree", "razorpay"}
@@ -37,20 +38,21 @@ class PaymentWebhookError(ValueError):
 
 
 def _configured(provider: str) -> bool:
+    values = payment_values()
     if provider == "manual":
         return True
     if provider == "direct_bank":
-        has_upi = bool(settings.DIRECT_BANK_UPI_ID)
+        has_upi = bool(values.get("DIRECT_BANK_UPI_ID"))
         has_bank_account = bool(
-            settings.DIRECT_BANK_ACCOUNT_NAME
-            and settings.DIRECT_BANK_ACCOUNT_NUMBER
-            and settings.DIRECT_BANK_IFSC
+            values.get("DIRECT_BANK_ACCOUNT_NAME")
+            and values.get("DIRECT_BANK_ACCOUNT_NUMBER")
+            and values.get("DIRECT_BANK_IFSC")
         )
         return has_upi or has_bank_account
     if provider == "cashfree":
-        return bool(settings.CASHFREE_APP_ID and settings.CASHFREE_SECRET_KEY)
+        return bool(values.get("CASHFREE_APP_ID") and values.get("CASHFREE_SECRET_KEY"))
     if provider == "razorpay":
-        return bool(settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET)
+        return bool(values.get("RAZORPAY_KEY_ID") and values.get("RAZORPAY_KEY_SECRET"))
     return False
 
 
@@ -71,17 +73,18 @@ def payment_provider_status(provider: Optional[str] = None) -> dict[str, Any]:
         "cashfree": ["CASHFREE_WEBHOOK_SECRET"],
         "razorpay": ["RAZORPAY_WEBHOOK_SECRET"],
     }[selected_provider]
+    stored_values = payment_values()
     values = {
-        "CASHFREE_APP_ID": settings.CASHFREE_APP_ID,
-        "CASHFREE_SECRET_KEY": settings.CASHFREE_SECRET_KEY,
-        "CASHFREE_WEBHOOK_SECRET": settings.CASHFREE_WEBHOOK_SECRET,
-        "RAZORPAY_KEY_ID": settings.RAZORPAY_KEY_ID,
-        "RAZORPAY_KEY_SECRET": settings.RAZORPAY_KEY_SECRET,
-        "RAZORPAY_WEBHOOK_SECRET": settings.RAZORPAY_WEBHOOK_SECRET,
-        "DIRECT_BANK_UPI_ID": settings.DIRECT_BANK_UPI_ID,
-        "DIRECT_BANK_ACCOUNT_NAME": settings.DIRECT_BANK_ACCOUNT_NAME,
-        "DIRECT_BANK_ACCOUNT_NUMBER": settings.DIRECT_BANK_ACCOUNT_NUMBER,
-        "DIRECT_BANK_IFSC": settings.DIRECT_BANK_IFSC,
+        "CASHFREE_APP_ID": stored_values.get("CASHFREE_APP_ID"),
+        "CASHFREE_SECRET_KEY": stored_values.get("CASHFREE_SECRET_KEY"),
+        "CASHFREE_WEBHOOK_SECRET": stored_values.get("CASHFREE_WEBHOOK_SECRET"),
+        "RAZORPAY_KEY_ID": stored_values.get("RAZORPAY_KEY_ID"),
+        "RAZORPAY_KEY_SECRET": stored_values.get("RAZORPAY_KEY_SECRET"),
+        "RAZORPAY_WEBHOOK_SECRET": stored_values.get("RAZORPAY_WEBHOOK_SECRET"),
+        "DIRECT_BANK_UPI_ID": stored_values.get("DIRECT_BANK_UPI_ID"),
+        "DIRECT_BANK_ACCOUNT_NAME": stored_values.get("DIRECT_BANK_ACCOUNT_NAME"),
+        "DIRECT_BANK_ACCOUNT_NUMBER": stored_values.get("DIRECT_BANK_ACCOUNT_NUMBER"),
+        "DIRECT_BANK_IFSC": stored_values.get("DIRECT_BANK_IFSC"),
     }
     if selected_provider == "direct_bank":
         has_upi = bool(values["DIRECT_BANK_UPI_ID"])
@@ -154,8 +157,9 @@ def public_payment_checkout_status(provider: Optional[str] = None) -> dict[str, 
 
 
 def provider_environment(provider: str) -> str:
+    values = payment_values()
     if provider == "cashfree":
-        return (settings.CASHFREE_ENVIRONMENT or "sandbox").strip().lower()
+        return (values.get("CASHFREE_ENVIRONMENT") or "sandbox").strip().lower()
     if provider == "razorpay":
         return "live_or_test_key"
     if provider == "direct_bank":
@@ -188,7 +192,8 @@ def _json_payload(raw_body: bytes) -> dict[str, Any]:
 
 
 def _cashfree_webhook_secret() -> Optional[str]:
-    return settings.CASHFREE_WEBHOOK_SECRET or settings.CASHFREE_SECRET_KEY
+    values = payment_values()
+    return values.get("CASHFREE_WEBHOOK_SECRET") or values.get("CASHFREE_SECRET_KEY")
 
 
 def _verify_cashfree_signature(raw_body: bytes, headers: Mapping[str, str]) -> None:
@@ -210,7 +215,7 @@ def _verify_cashfree_signature(raw_body: bytes, headers: Mapping[str, str]) -> N
 
 
 def _verify_razorpay_signature(raw_body: bytes, headers: Mapping[str, str]) -> None:
-    secret = settings.RAZORPAY_WEBHOOK_SECRET
+    secret = payment_values().get("RAZORPAY_WEBHOOK_SECRET")
     if not secret:
         raise PaymentWebhookError("Razorpay webhook secret is not configured.")
 
@@ -457,7 +462,7 @@ def _cashfree_base_url() -> str:
     configured_url = (settings.CASHFREE_BASE_URL or "").strip().rstrip("/")
     if configured_url:
         return configured_url
-    environment = (settings.CASHFREE_ENVIRONMENT or "sandbox").strip().lower()
+    environment = (payment_values().get("CASHFREE_ENVIRONMENT") or "sandbox").strip().lower()
     if environment == "production":
         return "https://api.cashfree.com/pg"
     return "https://sandbox.cashfree.com/pg"
@@ -573,6 +578,7 @@ def _create_direct_bank_session(
     return_url: Optional[str],
 ) -> dict[str, Any]:
     session_id = _safe_provider_order_id("BANK", order_id, created_at)
+    values = payment_values()
     session = _base_session(
         provider="direct_bank",
         order_id=order_id,
@@ -589,11 +595,11 @@ def _create_direct_bank_session(
             "checkout_payload": {
                 "provider": "direct_bank",
                 "mode": "staff_verified_bank_transfer",
-                "upi_id": settings.DIRECT_BANK_UPI_ID,
-                "account_name": settings.DIRECT_BANK_ACCOUNT_NAME,
-                "account_number": settings.DIRECT_BANK_ACCOUNT_NUMBER,
-                "ifsc": settings.DIRECT_BANK_IFSC,
-                "qr_url": settings.DIRECT_BANK_QR_URL,
+                "upi_id": values.get("DIRECT_BANK_UPI_ID"),
+                "account_name": values.get("DIRECT_BANK_ACCOUNT_NAME"),
+                "account_number": values.get("DIRECT_BANK_ACCOUNT_NUMBER"),
+                "ifsc": values.get("DIRECT_BANK_IFSC"),
+                "qr_url": values.get("DIRECT_BANK_QR_URL"),
                 "instructions": (
                     "Pay by UPI or bank transfer, then share the reference with the counter team. "
                     "The order is marked paid only after staff verification."
@@ -615,6 +621,7 @@ def _create_cashfree_session(
     return_url: Optional[str],
 ) -> dict[str, Any]:
     provider_order_id = _safe_provider_order_id("PB", order_id, created_at)
+    values = payment_values()
     payload: dict[str, Any] = {
         "order_id": provider_order_id,
         "order_amount": round(float(amount or 0), 2),
@@ -640,8 +647,8 @@ def _create_cashfree_session(
         payload,
         {
             "x-api-version": settings.CASHFREE_API_VERSION,
-            "x-client-id": settings.CASHFREE_APP_ID or "",
-            "x-client-secret": settings.CASHFREE_SECRET_KEY or "",
+            "x-client-id": values.get("CASHFREE_APP_ID", ""),
+            "x-client-secret": values.get("CASHFREE_SECRET_KEY", ""),
         },
     )
     if not (200 <= status_code < 300) or not isinstance(response_payload, dict):
@@ -706,6 +713,7 @@ def _create_razorpay_session(
     created_at: datetime,
 ) -> dict[str, Any]:
     currency = settings.PAYMENT_CURRENCY
+    values = payment_values()
     amount_subunits = _amount_in_subunits(amount, currency)
     receipt = _safe_provider_order_id("PB", order_id, created_at)
     payload: dict[str, Any] = {
@@ -719,7 +727,7 @@ def _create_razorpay_session(
         },
     }
     auth_token = base64.b64encode(
-        f"{settings.RAZORPAY_KEY_ID}:{settings.RAZORPAY_KEY_SECRET}".encode("utf-8")
+        f"{values.get('RAZORPAY_KEY_ID', '')}:{values.get('RAZORPAY_KEY_SECRET', '')}".encode("utf-8")
     ).decode("utf-8")
     base_url = (settings.RAZORPAY_BASE_URL or "https://api.razorpay.com").rstrip("/")
     status_code, response_payload = _post_json(
@@ -771,7 +779,7 @@ def _create_razorpay_session(
             "checkout_url": None,
             "checkout_payload": {
                 "provider": "razorpay",
-                "key": settings.RAZORPAY_KEY_ID,
+                "key": values.get("RAZORPAY_KEY_ID"),
                 "amount": response_payload.get("amount") or amount_subunits,
                 "currency": response_payload.get("currency") or currency,
                 "name": "Pizza Blitz",
@@ -794,11 +802,13 @@ def verify_razorpay_checkout_signature(
     provider_payment_id: str,
     provider_signature: str,
 ) -> bool:
-    if not settings.RAZORPAY_KEY_SECRET:
+    values = payment_values()
+    secret = values.get("RAZORPAY_KEY_SECRET")
+    if not secret:
         return False
     signed_value = f"{provider_order_id}|{provider_payment_id}"
     expected = hmac.new(
-        settings.RAZORPAY_KEY_SECRET.encode("utf-8"),
+        secret.encode("utf-8"),
         signed_value.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()

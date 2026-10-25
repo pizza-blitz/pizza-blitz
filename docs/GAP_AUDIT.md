@@ -13,7 +13,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 - Walked all 207 API endpoints in `backend/app/api/api_v1/endpoints/` with a
   static scanner that flags endpoints without an auth dependency, then checked
   each hit by hand against the router-level guards and the frontend callers.
-- Listed all 69 frontend routes, the 160 browser proof scripts plus portal smoke in
+- Listed all 69 frontend routes, the 161 browser proof scripts plus portal smoke in
   `frontend/e2e/`, and the 43 backend tests.
 - Ran every gate the project claims: backend unit suite, ESLint, TypeScript,
   the production build, the local-server audit suite (link health, control
@@ -107,6 +107,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 76 | Recruitment pipeline | HR started at onboarding; there was no job requisition, applicant board, interview scheduling, offer stage or clean handoff from hired candidate to onboarding. | Hiring gap. | Added `recruitment_jobs`, `recruitment_applications`, `recruitment_interviews` and `recruitment_stage_events` (migration), `/restaurant/hr/recruitment` APIs, the `/departments/hr/recruitment` board, stage transition rules, interview scheduling, offer salary/joining date, stage history and automatic onboarding candidate creation on hire. Added the `recruitment` HR module and `hr.recruitment` permission. Two backend tests and `verify:recruitment`. Public careers page, resume parsing and scorecards remain. |
 | 77 | Public careers | Recruitment lived entirely behind admin login; there was no public role list or application form, so candidates could not enter the pipeline without HR data entry. | Careers-page gap. | Added public `/restaurant/careers` job/detail/application APIs with rate limiting and no auth, `/careers` and `/careers/{id}` pages, a footer link and application intake that writes to the recruitment pipeline with source `Careers page`. One backend test and `verify:careers`. Resume upload, parsing and structured scorecards remain. |
 | 78 | Marketing calendar and reels | Social, campaigns and ads were separate pages with no month view; social only supported static images, so reels/shorts could not be scheduled or published. | Marketing-hub gap. | Added `video_url`, `cover_image_url` and `media_type` on social posts (migration), Instagram REELS/VIDEO container publishing, `/restaurant/marketing/calendar` aggregation and `/marketing` with a month grid, filters, upcoming list, shortcuts and a schedule-content composer. Social page now accepts video/reel creative. Two backend tests and `verify:marketing-hub`. Facebook video/reels, video transcoding, approvals and drag/drop rescheduling remain. |
+| 79 | Payment credentials | Cashfree, Razorpay and direct-bank credentials still came from environment variables; the provider registry stopped at messaging/social/ads, so owners could not rotate payment credentials from the portal. | Payment-config gap. | Added Cashfree, Razorpay and direct-bank provider cards, encrypted fields and validation to the registry, a merged `payment_values()` resolver, and wired checkout status, payment sessions, direct-bank instructions, Cashfree/Razorpay request credentials and webhook secrets to it. Two backend tests and `verify:payment-providers`. Active-provider routing UI and live provider verification remain. |
 
 ## Still open
 
@@ -121,7 +122,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 193 tests, all pass (in a clean venv built from
+- Backend unit suite: 195 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

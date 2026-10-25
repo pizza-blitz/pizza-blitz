@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 193 backend tests, 160 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 195 backend tests, 161 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -232,11 +232,14 @@ Wave 4 (in progress):
 - Marketing Hub is live: a month calendar for social posts/reels/campaigns/ads with filters,
   upcoming list and a schedule-content composer; Instagram video/reel publishing is wired;
   new `verify:marketing-hub` proof and two backend tests.
+- Payment provider credentials are in the encrypted registry: Cashfree, Razorpay and direct
+  bank now drive checkout status, session credentials and webhook secrets; new
+  `verify:payment-providers` proof and two backend tests.
 - Next: journey branching/attribution, resume parsing/scorecards, video transcoding.
 
 ## Verified State (2026-10-22)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 193 tests
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: 195 tests
   pass, including a clean-venv run installed from `requirements-dev.txt`.
 - `ruff check .`: zero findings across the backend.
 - `npm run lint`: passes with zero `no-explicit-any` findings; only the
