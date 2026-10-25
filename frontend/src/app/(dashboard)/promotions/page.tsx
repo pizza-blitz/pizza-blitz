@@ -565,6 +565,28 @@ type CampaignPerformance = {
     latest_campaign_id?: number | null;
     latest_campaign?: AdCampaignSummary | null;
   };
+  lift: {
+    baseline_days: number;
+    baseline_avg_daily_sale: number;
+    baseline_total_sale: number;
+    during_avg_daily_sale: number;
+    elapsed_days: number;
+    incremental_revenue: number;
+    lift_percent: number;
+    has_baseline: boolean;
+  };
+  attribution: {
+    model: string;
+    window: string;
+    channels: {
+      channel: string;
+      credit_revenue: number;
+      share_percent: number;
+      model: string;
+    }[];
+    attributed_revenue: number;
+    note: string;
+  };
 };
 
 type CampaignPerformanceRow = CampaignPerformance & {
@@ -3044,6 +3066,100 @@ export default function PromotionsPage() {
                     ))}
                   </div>
                 </section>
+
+                {performance && (
+                  <section
+                    data-testid="campaign-attribution"
+                    className="mb-6 rounded-xl border border-emerald-500/10 bg-black/25 p-5"
+                  >
+                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-emerald-300">
+                          Attribution &amp; lift
+                        </p>
+                        <h3 className="mt-1 text-lg font-black">
+                          What the campaign actually contributed
+                        </h3>
+                        <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-gray-500">
+                          Coupon revenue is split across the channels active in this campaign;
+                          lift compares the campaign window with the prior 30 days.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-black uppercase text-emerald-300">
+                        {performance.attribution.model.replaceAll("_", " ")}
+                      </span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-xl bg-black/30 p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                          Incremental revenue
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {formatRupees(performance.lift.incremental_revenue)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-black/30 p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                          Lift vs baseline
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {performance.lift.has_baseline
+                            ? `${performance.lift.lift_percent > 0 ? "+" : ""}${performance.lift.lift_percent}%`
+                            : "No baseline"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-black/30 p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                          Baseline / day
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {formatRupees(performance.lift.baseline_avg_daily_sale)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-black/30 p-3">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                          During / day
+                        </p>
+                        <p className="mt-1 text-xl font-black text-white">
+                          {formatRupees(performance.lift.during_avg_daily_sale)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {performance.attribution.channels.length === 0 ? (
+                        <p className="text-sm font-semibold text-gray-500">
+                          No active channels or coupon revenue yet.
+                        </p>
+                      ) : (
+                        performance.attribution.channels.map((channel) => (
+                          <div
+                            key={channel.channel}
+                            className="flex items-center gap-3 rounded-xl bg-black/30 px-3 py-2"
+                          >
+                            <span className="w-24 text-[10px] font-black uppercase tracking-widest text-gray-300">
+                              {channel.channel}
+                            </span>
+                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                              <div
+                                className="h-full rounded-full bg-emerald-400"
+                                style={{ width: `${channel.share_percent}%` }}
+                              />
+                            </div>
+                            <span className="w-24 text-right text-xs font-bold text-white">
+                              {formatRupees(channel.credit_revenue)}
+                            </span>
+                            <span className="w-14 text-right text-[10px] font-bold text-gray-500">
+                              {channel.share_percent}%
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <p className="mt-3 text-[10px] font-semibold text-gray-500">
+                      {performance.attribution.note}
+                    </p>
+                  </section>
+                )}
 
                 <section
                   data-testid="campaign-schedule-panel"

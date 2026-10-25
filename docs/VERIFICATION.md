@@ -592,6 +592,15 @@ require a public `video_url` and optional cover image. Instagram reels publish t
 Graph `REELS` container flow; Facebook video/reels are explicitly skipped. Covered by
 `backend/tests/test_marketing_hub.py` and `frontend/e2e/verify-marketing-hub.cjs`.
 
+## Campaign attribution and lift
+
+Promotion performance compares the campaign window with the prior 30-day baseline and reports
+incremental revenue/lift. Coupon revenue is split linearly across channels active in the
+campaign (outreach, social, ads, coupon), and `/promotions` shows the channel-credit bars.
+This is campaign-level channel credit, not person-level multi-touch. Covered by
+`backend/tests/test_promotion_performance_reporting.py` and
+`frontend/e2e/verify-campaign-attribution.cjs`.
+
 ## Payment provider credentials
 
 Cashfree, Razorpay and direct-bank cards join the encrypted provider registry. A merged

@@ -201,6 +201,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Social/reel approval workflow with publish blocking.
 - [x] Offer email delivery, expiry reminders and company countersignature.
 - [x] Multi-path journey branching with explicit stop paths.
-- [ ] Campaign-level attribution, holdout experiments, object storage/CDN.
+- [x] Campaign lift and linear channel attribution.
+- [ ] Person-level multi-touch attribution, holdout experiments, object storage/CDN.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

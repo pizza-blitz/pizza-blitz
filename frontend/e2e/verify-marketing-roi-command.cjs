@@ -205,6 +205,22 @@ async function assertMarketingEndpoint(cookie, leader) {
     response.data.campaigns.some((row) => row.promotion_detail.id === leader.id && row.redemptions.count >= 2),
     "Marketing endpoint did not include the seeded winning campaign."
   );
+  const leaderRow = response.data.campaigns.find(
+    (row) => row.promotion_detail.id === leader.id
+  );
+  assert(leaderRow.attribution, "Campaign attribution block missing.");
+  assert(
+    leaderRow.attribution.model === "linear_channel_credit",
+    "Unexpected attribution model."
+  );
+  assert(
+    leaderRow.attribution.channels.some((item) => item.channel === "coupon"),
+    "Coupon channel credit missing."
+  );
+  assert(
+    typeof leaderRow.lift.incremental_revenue === "number",
+    "Campaign lift block missing."
+  );
 }
 
 async function proveReportsPanel(leader) {
@@ -254,6 +270,35 @@ async function proveReportsPanel(leader) {
   }
 }
 
+async function proveAttributionPanel(leader) {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    baseURL,
+    viewport: { width: 1440, height: 1200 },
+  });
+  const page = await context.newPage();
+  try {
+    const login = await context.request.post(`${baseURL}/api/admin-session`, {
+      data: { id: adminId, password: adminPassword, role: "admin" },
+    });
+    assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
+    await page.goto(`${baseURL}/promotions?campaign=${leader.id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    const panel = page.getByTestId("campaign-attribution");
+    await panel.waitFor({ timeout: 30000 });
+    const text = await panel.innerText();
+    assert(text.includes("Attribution & lift"), "Attribution heading missing.");
+    assert(text.includes("Incremental revenue"), "Incremental revenue metric missing.");
+    assert(text.includes("coupon"), "Coupon channel credit missing from UI.");
+    await panel.screenshot({
+      path: path.join(artifactsDir, "visible-campaign-attribution.png"),
+    });
+  } finally {
+    await browser.close();
+  }
+}
+
 async function main() {
   fs.mkdirSync(artifactsDir, { recursive: true });
   await waitForHttp(`${apiURL}/health`, "restaurant API");
@@ -263,6 +308,7 @@ async function main() {
   const { leader } = await seedProofData(cookie);
   await assertMarketingEndpoint(cookie, leader);
   await proveReportsPanel(leader);
+  await proveAttributionPanel(leader);
 
   console.log(`Marketing ROI command proof passed for campaign #${leader.id}.`);
 }

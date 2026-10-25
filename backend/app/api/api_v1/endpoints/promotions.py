@@ -1667,6 +1667,44 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
         sum(float(campaign.daily_budget or campaign.lifetime_budget or 0) for campaign in ad_campaigns),
         2,
     )
+    baseline_start = promo.start_date - timedelta(days=30)
+    baseline_end = promo.start_date - timedelta(days=1)
+    baseline_avg, baseline_total = (
+        db.query(func.avg(DailySales.total_sale), func.sum(DailySales.total_sale))
+        .filter(DailySales.date.between(baseline_start, baseline_end))
+        .one()
+    )
+    during_avg = float(avg_sale or 0)
+    baseline_avg = float(baseline_avg or 0)
+    elapsed_days = max(_promotion_window(promo)["elapsed_days"], 1)
+    incremental_revenue = round((during_avg - baseline_avg) * elapsed_days, 2)
+    lift_percent = (
+        round(((during_avg - baseline_avg) / baseline_avg) * 100, 2)
+        if baseline_avg
+        else 0.0
+    )
+    channel_names: list[str] = []
+    if delivery_counts["sent_count"]:
+        channel_names.append(promo.channel or "campaign")
+    if social_posts:
+        channel_names.append("social")
+    if ad_campaigns:
+        channel_names.append("ads")
+    if coupon_orders:
+        channel_names.append("coupon")
+    unique_channels = list(dict.fromkeys(channel_names))
+    channel_share = (
+        round(redemption_revenue / len(unique_channels), 2) if unique_channels else 0
+    )
+    attribution_channels = [
+        {
+            "channel": channel,
+            "credit_revenue": channel_share,
+            "share_percent": round(100 / len(unique_channels), 2),
+            "model": "linear_channel_credit",
+        }
+        for channel in unique_channels
+    ]
 
     return {
         "promotion": promo.name,
@@ -1715,6 +1753,28 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
             "launch_count": len(ad_launches),
             "latest_campaign_id": max(ad_campaign_ids, default=None),
             "latest_campaign": _ad_campaign_dict(latest_ad_campaign) if latest_ad_campaign else None,
+        },
+        "lift": {
+            "baseline_days": 30,
+            "baseline_avg_daily_sale": round(baseline_avg, 2),
+            "baseline_total_sale": round(float(baseline_total or 0), 2),
+            "during_avg_daily_sale": round(during_avg, 2),
+            "elapsed_days": elapsed_days,
+            "incremental_revenue": incremental_revenue,
+            "lift_percent": lift_percent,
+            "has_baseline": baseline_avg > 0,
+        },
+        "attribution": {
+            "model": "linear_channel_credit",
+            "window": "campaign_window",
+            "channels": attribution_channels,
+            "attributed_revenue": round(
+                sum(item["credit_revenue"] for item in attribution_channels), 2
+            ),
+            "note": (
+                "Coupon revenue is split equally across channels active in this campaign. "
+                "This is campaign-level channel credit, not person-level multi-touch."
+            ),
         },
     }
 

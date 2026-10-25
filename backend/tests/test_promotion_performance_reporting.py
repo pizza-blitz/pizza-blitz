@@ -104,6 +104,19 @@ class PromotionPerformanceReportingTest(unittest.TestCase):
                 self.assertEqual(payload["ads"]["latest_campaign"]["status"], "ready")
                 self.assertEqual(payload["ads"]["planned_budget"], 600)
                 self.assertEqual(payload["campaign_window"]["phase"], "live")
+                attribution = payload["attribution"]
+                self.assertEqual(attribution["model"], "linear_channel_credit")
+                self.assertEqual(
+                    {item["channel"] for item in attribution["channels"]},
+                    {"social", "ads", "coupon"},
+                )
+                self.assertAlmostEqual(
+                    attribution["attributed_revenue"], 342.68, places=1
+                )
+                for item in attribution["channels"]:
+                    self.assertAlmostEqual(item["share_percent"], 33.33, places=2)
+                self.assertEqual(payload["lift"]["baseline_days"], 30)
+                self.assertIn("incremental_revenue", payload["lift"])
 
                 rollup = client.get("/api/v1/restaurant/promotions/performance?limit=50")
                 self.assertEqual(rollup.status_code, 200)

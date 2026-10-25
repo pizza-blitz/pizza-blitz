@@ -114,7 +114,9 @@ async function main() {
       `${apiURL}/api/v1/restaurant/marketing/calendar?year=${today.getFullYear()}&month=${today.getMonth() + 1}`,
       { headers }
     ).then((response) => response.json());
-    const calendarItem = calendar.items.find((row) => row.reference_id === post.id);
+    const calendarItem = calendar.items.find(
+      (row) => row.id === `social-${post.id}`
+    );
     assert(calendarItem, "Reel did not appear in the marketing calendar.");
     assert(calendarItem.media_type === "reel", "Calendar item media type mismatch.");
 
