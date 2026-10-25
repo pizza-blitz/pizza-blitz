@@ -205,6 +205,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] S3-compatible media storage with CDN URLs and local fallback.
 - [x] Reusable offer templates with snapshot terms.
 - [x] Guest support tickets with private threads and staff inbox.
-- [ ] Person-level multi-touch attribution, holdout experiments, in-app video capture.
+- [x] In-browser reel recording through the media transcode pipeline.
+- [ ] Person-level multi-touch attribution, holdouts, video captions/editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

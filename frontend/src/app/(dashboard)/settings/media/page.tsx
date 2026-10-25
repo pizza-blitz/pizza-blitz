@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
+  Circle,
   Copy,
   Image as ImageIcon,
   Loader2,
   Search,
+  Square,
   Trash2,
   Upload,
+  Video,
+  X,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 
@@ -59,7 +63,18 @@ export default function MediaStudioPage() {
     public_base_url?: string | null;
     cdn_enabled: boolean;
   } | null>(null);
+  const [recorderOpen, setRecorderOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [recordReady, setRecordReady] = useState<File | null>(null);
+  const [recordBusy, setRecordBusy] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [recordName, setRecordName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
 
   const fetchAssets = useCallback(async (search: string) => {
     setLoading(true);
@@ -98,6 +113,137 @@ export default function MediaStudioPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      recorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(
+      () => setRecordSeconds((value) => value + 1),
+      1000
+    );
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (previewRef.current) previewRef.current.srcObject = null;
+  };
+
+  const closeRecorder = () => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+    stopCamera();
+    setRecorderOpen(false);
+    setRecording(false);
+    setRecordReady(null);
+    setRecordSeconds(0);
+    setCameraError("");
+    setRecordName("");
+  };
+
+  const openRecorder = async () => {
+    setRecorderOpen(true);
+    setRecordReady(null);
+    setRecordSeconds(0);
+    setCameraError("");
+    setRecordName(`Reel ${new Date().toLocaleDateString("en-IN")}`);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("This browser does not support camera recording.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: true,
+      });
+      streamRef.current = stream;
+      if (previewRef.current) {
+        previewRef.current.srcObject = stream;
+        await previewRef.current.play().catch(() => undefined);
+      }
+    } catch {
+      setCameraError(
+        "Camera/microphone permission was denied. Allow access and try again."
+      );
+    }
+  };
+
+  const startRecording = () => {
+    const stream = streamRef.current;
+    if (!stream) {
+      setCameraError("Start the camera first.");
+      return;
+    }
+    const mimeType =
+      ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
+        (type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)
+      ) || "";
+    const recorder = new MediaRecorder(
+      stream,
+      mimeType ? { mimeType } : undefined
+    );
+    chunksRef.current = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, {
+        type: mimeType || "video/webm",
+      });
+      if (blob.size > 0) {
+        setRecordReady(
+          new File([blob], `reel-${Date.now()}.webm`, { type: "video/webm" })
+        );
+      }
+      setRecording(false);
+    };
+    recorderRef.current = recorder;
+    recorder.start(250);
+    setRecordSeconds(0);
+    setRecording(true);
+  };
+
+  const stopRecording = () => {
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  };
+
+  const uploadRecording = async () => {
+    if (!recordReady) return;
+    setRecordBusy(true);
+    setCameraError("");
+    try {
+      const body = new FormData();
+      body.append("file", recordReady);
+      body.append("name", recordName.trim() || "Recorded reel");
+      body.append("tags", "studio,reel,recorded");
+      const response = await fetch(API, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Recorded reel upload failed.");
+      setMessage(`Recorded ${data.asset.name} and added it to the library.`);
+      await fetchAssets(query);
+      closeRecorder();
+    } catch (error) {
+      setCameraError(
+        error instanceof Error ? error.message : "Recorded reel upload failed."
+      );
+    } finally {
+      setRecordBusy(false);
+    }
+  };
 
   const upload = async (file: File | null) => {
     if (!file) return;
@@ -176,6 +322,15 @@ export default function MediaStudioPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="media-record-open"
+            onClick={() => void openRecorder()}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-widest text-gray-700 hover:border-orange-300 disabled:opacity-50"
+          >
+            <Video className="h-4 w-4" /> Record reel
+          </button>
           <input
             ref={fileRef}
             type="file"
@@ -326,6 +481,115 @@ export default function MediaStudioPage() {
               </div>
             </article>
           ))}
+        </div>
+      )}
+
+      {recorderOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <div
+            data-testid="media-record-modal"
+            className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">
+                  In-browser capture
+                </p>
+                <h2 className="text-2xl font-black text-gray-950">Record a reel</h2>
+                <p className="mt-1 text-xs font-semibold text-gray-500">
+                  Record a short clip, then upload it for MP4 transcode and poster extraction.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close reel recorder"
+                onClick={closeRecorder}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl bg-gray-950">
+              <video
+                ref={previewRef}
+                data-testid="media-record-preview"
+                autoPlay
+                muted
+                playsInline
+                className="aspect-video w-full object-cover"
+              />
+            </div>
+
+            {cameraError && (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                {cameraError}
+              </p>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {!recording && !recordReady && (
+                <button
+                  type="button"
+                  data-testid="media-record-start"
+                  onClick={startRecording}
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white"
+                >
+                  <Circle className="h-3.5 w-3.5 fill-current" /> Start recording
+                </button>
+              )}
+              {recording && (
+                <>
+                  <span className="inline-flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-700">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" />
+                    Recording {formatDuration(recordSeconds)}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="media-record-stop"
+                    onClick={stopRecording}
+                    className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white"
+                  >
+                    <Square className="h-3.5 w-3.5" /> Stop
+                  </button>
+                </>
+              )}
+              {recordReady && (
+                <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-800">
+                    Clip ready · {formatBytes(recordReady.size)}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="media-record-upload"
+                    onClick={() => void uploadRecording()}
+                    disabled={recordBusy}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                  >
+                    {recordBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    Upload clip
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-gray-500">
+              Clip name
+              <input
+                data-testid="media-record-name"
+                value={recordName}
+                onChange={(event) => setRecordName(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+              />
+            </label>
+            <p className="mt-2 text-[10px] font-semibold text-gray-400">
+              Camera frames stay in the browser until you press Upload clip.
+            </p>
+          </div>
         </div>
       )}
     </div>

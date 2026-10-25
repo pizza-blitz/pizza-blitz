@@ -510,12 +510,14 @@ the command center with module links. Covered by `backend/tests/test_hr_analytic
 
 `/settings/media` is the shared image/video library. Image uploads are validated by magic
 bytes (JPEG, PNG, WebP; 5 MB); video uploads accept MP4/MOV/WebM up to 100 MB and 180 seconds,
-transcode to H.264 MP4 with faststart, extract a poster and probe duration/dimensions. Files
-are stored under `media/library`, searchable by name/tag and guarded against deletion while a
-menu item, social post or ad campaign uses the URL. Menu uploads register automatically, and
-one picker is reused in menu, social and ad forms. Covered by
-`backend/tests/test_media_library.py`, `backend/tests/test_media_video.py` and
-`frontend/e2e/verify-media-studio.cjs`.
+transcode to H.264 MP4 with faststart, extract a poster and probe duration/dimensions. The
+**Record reel** modal captures camera/mic with getUserMedia + MediaRecorder, previews live,
+then uploads the WebM through the same pipeline. Files are stored under `media/library`, or
+S3/CDN when configured, searchable by name/tag and guarded against deletion while a menu item,
+social post or ad campaign uses the URL. Menu uploads register automatically, and one picker
+is reused in menu, social and ad forms. Covered by
+`backend/tests/test_media_library.py`, `backend/tests/test_media_video.py`,
+`frontend/e2e/verify-media-studio.cjs` and `frontend/e2e/verify-reel-recorder.cjs`.
 
 ## Media object storage
 

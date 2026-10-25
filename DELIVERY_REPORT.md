@@ -3,7 +3,7 @@
 **Status:** delivered for local/staging evaluation; production launch depends on the
 provider and deployment gates below.
 **Master access:** `admin` / `admin123` at `/login` (development defaults).
-**Verification:** 226 backend tests, 167 browser proofs + portal smoke, full audit green,
+**Verification:** 226 backend tests, 168 browser proofs + portal smoke, full audit green,
 production build green with the API offline.
 
 ---
@@ -23,7 +23,7 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
 **Current inventory:** 418 API endpoints, 73 frontend routes (57 portal, 1 KDS,
-15 public), 92 database tables, 226 backend tests, 167 browser proof scripts.
+15 public), 92 database tables, 226 backend tests, 168 browser proof scripts.
 
 ### Core capabilities
 
@@ -115,7 +115,7 @@ cd ..\frontend
 npm run typecheck
 npm run lint
 npm run build                                                      # API offline
-npm run verify:audit                                               # 167 proofs + audit
+npm run verify:audit                                               # 168 proofs + audit
 npm run test:e2e                                                   # portal smoke
 ```
 

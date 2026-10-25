@@ -209,8 +209,9 @@ Wave 4 (in progress):
 - Media Studio is live: a shared image/video library at `/settings/media`, uploads with
   search/tags, usage-guarded delete, menu uploads registering automatically, one picker reused
   in menu, social and ad forms; reels are transcoded to H.264 MP4 with an extracted poster and
-  duration metadata. A storage-status badge reports local disk or S3/CDN; S3-compatible
-  uploads/deletes use CDN URLs with local fallback.
+  duration metadata. A Record reel modal captures camera/mic in the browser and pushes the
+  WebM through the same transcode pipeline. A storage-status badge reports local disk or
+  S3/CDN; S3-compatible uploads/deletes use CDN URLs with local fallback.
 - Private recruitment documents (resumes and offer letters) now live outside the public
   `/media` mount under `PRIVATE_MEDIA_ROOT`; only authenticated HR routes or offer tokens can
   read them.
@@ -265,7 +266,7 @@ Wave 4 (in progress):
   conversation link, and admin/staff triage them at `/support-inbox` with internal notes,
   priority, assignment and resolution status; new `verify:support-tickets` proof and three
   backend tests.
-- Next: person-level multi-touch attribution, holdout experiments, in-app video capture and
+- Next: person-level multi-touch attribution, holdout experiments, video captions/editing and
   multi-step offer approvals.
 
 ## Verified State (2026-10-22)
