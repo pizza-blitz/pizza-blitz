@@ -14,6 +14,8 @@ import tempfile
 from pathlib import Path
 from uuid import uuid4
 
+from app.services.media_storage import delete_url, is_s3, upload_bytes
+
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_VIDEO_BYTES = 100 * 1024 * 1024
 PUBLIC_PREFIX = "/media/menu/"
@@ -25,6 +27,7 @@ VIDEO_SUBDIR = "library/videos"
 POSTER_PREFIX = "/media/library/posters/"
 POSTER_SUBDIR = "library/posters"
 VIDEO_MAX_SECONDS = 180
+IMAGE_MIME = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
 
 
 def media_root() -> Path:
@@ -57,9 +60,13 @@ def validate_image(data: bytes) -> str:
 
 def save_menu_image(item_id: int, data: bytes) -> str:
     extension = validate_image(data)
+    filename = f"item-{item_id}-{uuid4().hex[:12]}.{extension}"
+    if is_s3():
+        return upload_bytes(
+            f"{MENU_SUBDIR}/{filename}", data, IMAGE_MIME[extension]
+        )
     target_dir = media_root() / MENU_SUBDIR
     target_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"item-{item_id}-{uuid4().hex[:12]}.{extension}"
     (target_dir / filename).write_bytes(data)
     return f"{PUBLIC_PREFIX}{filename}"
 
@@ -73,12 +80,19 @@ def save_library_image(data: bytes, original_name: str = "") -> tuple[str, str, 
     target_dir = media_root() / LIBRARY_SUBDIR
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{stem}-{uuid4().hex[:12]}.{extension}"
+    if is_s3():
+        url = upload_bytes(
+            f"{LIBRARY_SUBDIR}/{filename}", data, IMAGE_MIME[extension]
+        )
+        return url, filename, IMAGE_MIME[extension]
     (target_dir / filename).write_bytes(data)
-    mime = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}[extension]
+    mime = IMAGE_MIME[extension]
     return f"{LIBRARY_PREFIX}{filename}", filename, mime
 
 
 def delete_library_image(image_url: str | None) -> None:
+    if delete_url(image_url or ""):
+        return
     if not image_url or not image_url.startswith(LIBRARY_PREFIX):
         return
     filename = image_url[len(LIBRARY_PREFIX):]
@@ -232,12 +246,27 @@ def save_library_video(data: bytes, original_name: str = "") -> dict:
         raise ValueError(f"Videos must be {VIDEO_MAX_SECONDS} seconds or shorter.")
     if not target.exists() or target.stat().st_size == 0:
         raise ValueError("That video could not be processed.")
+    video_url = f"{VIDEO_PREFIX}{filename}"
+    poster_url = f"{POSTER_PREFIX}{poster_name}" if poster_target.exists() else None
+    video_size = target.stat().st_size
+    if is_s3():
+        video_url = upload_bytes(
+            f"{VIDEO_SUBDIR}/{filename}", target.read_bytes(), "video/mp4"
+        )
+        if poster_target.exists():
+            poster_url = upload_bytes(
+                f"{POSTER_SUBDIR}/{poster_name}",
+                poster_target.read_bytes(),
+                "image/jpeg",
+            )
+        target.unlink(missing_ok=True)
+        poster_target.unlink(missing_ok=True)
     return {
-        "url": f"{VIDEO_PREFIX}{filename}",
-        "poster_url": f"{POSTER_PREFIX}{poster_name}" if poster_target.exists() else None,
+        "url": video_url,
+        "poster_url": poster_url,
         "file_name": filename,
         "mime_type": "video/mp4",
-        "size_bytes": target.stat().st_size,
+        "size_bytes": video_size,
         "media_type": "video",
         "duration_seconds": duration or None,
         "width": meta.get("width") or None,
@@ -246,6 +275,12 @@ def save_library_video(data: bytes, original_name: str = "") -> dict:
 
 
 def delete_library_video(video_url: str | None, poster_url: str | None = None) -> None:
+    if is_s3():
+        removed = delete_url(video_url or "")
+        if delete_url(poster_url or ""):
+            removed = True
+        if removed:
+            return
     for url, prefix, subdir in (
         (video_url, VIDEO_PREFIX, VIDEO_SUBDIR),
         (poster_url, POSTER_PREFIX, POSTER_SUBDIR),
@@ -263,6 +298,8 @@ def delete_library_video(video_url: str | None, poster_url: str | None = None) -
 
 
 def delete_menu_image(image_url: str | None) -> None:
+    if delete_url(image_url or ""):
+        return
     if not image_url or not image_url.startswith(PUBLIC_PREFIX):
         return
     filename = image_url[len(PUBLIC_PREFIX):]

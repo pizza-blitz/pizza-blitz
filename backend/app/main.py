@@ -21,6 +21,7 @@ from app.services.store_service import ensure_default_store
 from app.services.department_service import ensure_departments
 from app.services.hr_leave_service import ensure_leave_types
 from app.services.media_service import media_root
+from app.services.media_storage import validate_media_storage
 
 from contextlib import asynccontextmanager
 from app.core.scheduler import start_scheduler
@@ -256,6 +257,7 @@ async def monitor_requests(request: Request, call_next):
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 media_root().mkdir(parents=True, exist_ok=True)
+validate_media_storage()
 app.mount("/media", StaticFiles(directory=str(media_root())), name="media")
 
 @app.get("/health")

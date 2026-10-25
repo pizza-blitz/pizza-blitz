@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **405 API endpoints**, **70 routes/pages** (56 portal,
-1 KDS, 13 public), **166 browser proof scripts** plus portal smoke, **216 backend
+Numbers in this snapshot: **406 API endpoints**, **70 routes/pages** (56 portal,
+1 KDS, 13 public), **166 browser proof scripts** plus portal smoke, **220 backend
 tests**, **89 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -108,7 +108,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
-| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata | Built | One media library + picker | Stock/AI search, auto-crops, subtitles and object storage later |
+| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata; optional S3-compatible storage + CDN URLs with local fallback | Built | One media library + picker | Stock/AI search, auto-crops and subtitles later |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | Per-channel price/availability/visibility for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | — |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |

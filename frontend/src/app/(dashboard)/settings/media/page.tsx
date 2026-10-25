@@ -30,6 +30,7 @@ type MediaAsset = {
 };
 
 const API = getApiUrl("/api/v1/restaurant/media/assets");
+const STORAGE_API = getApiUrl("/api/v1/restaurant/media/storage-status");
 
 const formatBytes = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
@@ -50,6 +51,14 @@ export default function MediaStudioPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState<number | null>(null);
+  const [storage, setStorage] = useState<{
+    backend: string;
+    configured: boolean;
+    missing_settings: string[];
+    bucket?: string | null;
+    public_base_url?: string | null;
+    cdn_enabled: boolean;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchAssets = useCallback(async (search: string) => {
@@ -73,6 +82,22 @@ export default function MediaStudioPage() {
     const timer = window.setTimeout(() => void fetchAssets(query), 180);
     return () => window.clearTimeout(timer);
   }, [fetchAssets, query]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch(STORAGE_API, {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        setStorage(data.storage);
+      } catch {
+        setStorage(null);
+      }
+    })();
+  }, []);
 
   const upload = async (file: File | null) => {
     if (!file) return;
@@ -175,6 +200,27 @@ export default function MediaStudioPage() {
         <p className="rounded-xl border border-gray-100 bg-white px-4 py-3 text-xs font-bold text-gray-700">
           {message}
         </p>
+      )}
+
+      {storage && (
+        <div
+          data-testid="media-storage-status"
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-white px-4 py-3 text-[10px] font-bold text-gray-500"
+        >
+          <span className="uppercase tracking-widest">Storage</span>
+          <span className="rounded-full bg-gray-950 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white">
+            {storage.backend === "s3" ? "S3 / CDN" : "Local disk"}
+          </span>
+          {storage.backend === "s3" && (
+            <span>
+              {storage.configured ? "configured" : `missing ${storage.missing_settings.join(", ")}`}
+              {storage.public_base_url ? ` · ${storage.public_base_url}` : ""}
+            </span>
+          )}
+          {storage.backend === "local" && (
+            <span>Files are served from `/media`; set MEDIA_STORAGE_BACKEND=s3 for CDN delivery.</span>
+          )}
+        </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-100 bg-white p-3">

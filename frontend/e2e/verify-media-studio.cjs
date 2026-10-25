@@ -76,6 +76,12 @@ async function main() {
     await page
       .locator('[data-testid="media-library-page"][data-hydrated="true"]')
       .waitFor({ timeout: 30000 });
+    const storageBadge = page.getByTestId("media-storage-status");
+    await storageBadge.waitFor({ timeout: 20000 });
+    assert(
+      (await storageBadge.innerText()).toLowerCase().includes("local disk"),
+      "Media storage badge did not report local mode."
+    );
 
     const uploadResponse = page.waitForResponse(
       (response) =>

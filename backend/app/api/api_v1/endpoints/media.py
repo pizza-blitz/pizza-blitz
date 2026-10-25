@@ -9,8 +9,16 @@ from app.services.media_library_service import (
     delete_asset,
     list_assets,
 )
+from app.services.media_storage import storage_status
 
 router = APIRouter()
+
+
+@router.get("/storage-status")
+def media_storage_status(
+    _: dict = Depends(require_roles("admin")),
+):
+    return {"storage": storage_status()}
 
 
 @router.get("/assets")
