@@ -26,8 +26,11 @@ from app.services.recruitment_service import (
 )
 from app.services.resume_service import resume_path
 from app.services.offer_service import (
+    countersign_offer,
     generate_offer,
     offer_path,
+    run_offer_reminders,
+    send_offer_notification,
 )
 
 router = APIRouter()
@@ -89,6 +92,10 @@ class OfferCreate(BaseModel):
     expires_in_days: int = Field(default=7, ge=1, le=30)
     offered_salary: Optional[float] = Field(default=None, ge=0)
     joining_date: Optional[date] = None
+
+
+class OfferCountersign(BaseModel):
+    signed_by: str = Field(min_length=2, max_length=160)
 
 
 class InterviewUpdate(BaseModel):
@@ -276,6 +283,41 @@ def download_offer_letter(
         media_type="application/pdf",
         filename=f"offer-{row.candidate_name.replace(' ', '-').lower()}.pdf",
     )
+
+
+@router.post("/applications/{application_id}/offer/send")
+def send_offer(
+    application_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    try:
+        return send_offer_notification(db, row)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/applications/{application_id}/offer/countersign")
+def countersign(
+    application_id: int,
+    payload: OfferCountersign,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    row = _application_or_404(db, application_id)
+    try:
+        return {"application": countersign_offer(db, row, signed_by=payload.signed_by)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/offers/run-reminders")
+def offer_reminders(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_hr_permission("hr.recruitment")),
+):
+    return run_offer_reminders(db)
 
 
 @router.patch("/applications/{application_id}/stage")

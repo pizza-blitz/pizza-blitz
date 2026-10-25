@@ -141,6 +141,16 @@ async function main() {
     const offerUrl = await link.getAttribute("href");
     assert(offerUrl && offerUrl.includes("/offer/"), "Offer link was not generated.");
 
+    page.once("dialog", (dialog) => void dialog.accept("People Lead"));
+    await page.getByTestId("recruitment-countersign-offer").click();
+    await page.getByText("Offer countersigned by People Lead", { exact: false }).waitFor({
+      timeout: 30000,
+    });
+    await page.getByTestId("recruitment-send-offer").click();
+    await page.getByText("Email not sent", { exact: false }).waitFor({
+      timeout: 30000,
+    });
+
     const offerPage = await context.newPage();
     await offerPage.goto(offerUrl, { waitUntil: "domcontentloaded" });
     await offerPage.getByTestId("public-offer").waitFor({ timeout: 30000 });
@@ -151,6 +161,10 @@ async function main() {
     );
     assert(offerText.includes("Ananya Offer"), "Candidate name missing.");
     assert(offerText.includes("38,000"), "Offered salary missing.");
+    assert(
+      offerText.includes("Countersigned for Pizza Blitz by People Lead"),
+      "Countersignature missing from public offer."
+    );
     await offerPage.screenshot({
       path: path.join(artifactsDir, "visible-offer-letter.png"),
       fullPage: false,

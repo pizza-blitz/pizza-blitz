@@ -199,6 +199,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Video media library with transcode/posters and private recruitment documents.
 - [x] Journey A/B variants, variant results and per-customer frequency caps.
 - [x] Social/reel approval workflow with publish blocking.
-- [ ] Offer reminders/countersignature, multi-path branching, object storage/CDN.
+- [x] Offer email delivery, expiry reminders and company countersignature.
+- [ ] Multi-path journey branching, campaign-level attribution, object storage/CDN.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

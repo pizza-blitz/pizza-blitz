@@ -3,6 +3,7 @@
 import os
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
@@ -12,6 +13,8 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.domain import RecruitmentApplication
+from app.services.campaign_dispatch_service import CampaignProviderResult
+from app.services.offer_service import run_offer_reminders
 
 
 class RecruitmentOfferTest(unittest.TestCase):
@@ -167,6 +170,86 @@ class RecruitmentOfferTest(unittest.TestCase):
             json={"decision": "accept", "signed_name": "Expired Candidate"},
         )
         self.assertEqual(blocked.status_code, 409, blocked.text)
+
+    def test_offer_email_countersign_and_reminder(self):
+        application = self._application("Email Candidate")
+        generated = self._generate(application["id"])
+        token = generated["offer"]["public_url"].rsplit("/", 1)[-1]
+
+        with patch(
+            "app.services.offer_service.send_campaign_message",
+            return_value=CampaignProviderResult(
+                provider="resend", status="sent", external_id="email-proof"
+            ),
+        ):
+            sent = self.client.post(
+                f"/api/v1/restaurant/hr/recruitment/applications/{application['id']}/offer/send",
+                headers=self.headers,
+            )
+        self.assertEqual(sent.status_code, 200, sent.text)
+        self.assertEqual(sent.json()["delivery"]["status"], "sent")
+        self.assertEqual(
+            sent.json()["application"]["offer"]["delivery"]["status"], "sent"
+        )
+
+        countersigned = self.client.post(
+            f"/api/v1/restaurant/hr/recruitment/applications/{application['id']}/offer/countersign",
+            json={"signed_by": "People Lead"},
+            headers=self.headers,
+        )
+        self.assertEqual(countersigned.status_code, 200, countersigned.text)
+        self.assertEqual(
+            countersigned.json()["application"]["offer"]["countersigned"]["by"],
+            "People Lead",
+        )
+        public = self.client.get(f"/api/v1/restaurant/careers/offers/{token}")
+        self.assertEqual(public.json()["offer"]["countersigned_by"], "People Lead")
+
+        session = SessionLocal()
+        try:
+            row = (
+                session.query(RecruitmentApplication)
+                .filter(RecruitmentApplication.id == application["id"])
+                .first()
+            )
+            row.offer_expires_at = datetime.utcnow() + timedelta(days=2)
+            row.offer_reminder_count = 0
+            row.offer_reminder_sent_at = None
+            session.commit()
+        finally:
+            session.close()
+        with patch(
+            "app.services.offer_service.send_campaign_message",
+            return_value=CampaignProviderResult(
+                provider="resend", status="sent", external_id="reminder-proof"
+            ),
+        ):
+            summary = run_offer_reminders()
+        self.assertGreaterEqual(summary["sent"], 1)
+        detail = self.client.get(
+            f"/api/v1/restaurant/hr/recruitment/applications/{application['id']}",
+            headers=self.headers,
+        ).json()["application"]
+        self.assertGreaterEqual(detail["offer"]["delivery"]["reminder_count"], 1)
+
+    def test_offer_email_reports_provider_gap_without_crashing(self):
+        application = self._application("Provider Gap Candidate")
+        self._generate(application["id"])
+        with patch(
+            "app.services.offer_service.send_campaign_message",
+            return_value=CampaignProviderResult(
+                provider="resend",
+                status="skipped",
+                error="Provider not configured: RESEND_API_KEY",
+            ),
+        ):
+            response = self.client.post(
+                f"/api/v1/restaurant/hr/recruitment/applications/{application['id']}/offer/send",
+                headers=self.headers,
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["delivery"]["status"], "skipped")
+        self.assertIn("RESEND_API_KEY", response.json()["delivery"]["error"])
 
     def test_offer_requires_offer_stage(self):
         application = self.client.post(

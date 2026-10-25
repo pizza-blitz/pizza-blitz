@@ -65,6 +65,17 @@ type Application = {
     responded_at?: string | null;
     signed_name?: string | null;
     response_note?: string | null;
+    delivery?: {
+      status: string;
+      error?: string | null;
+      last_sent_at?: string | null;
+      reminder_sent_at?: string | null;
+      reminder_count: number;
+    };
+    countersigned?: {
+      by?: string | null;
+      at?: string | null;
+    };
     public_url?: string | null;
     pdf_url?: string | null;
   } | null;
@@ -262,6 +273,57 @@ export default function HRRecruitmentPage() {
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Stage move failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const sendOffer = async () => {
+    if (!selected) return;
+    setBusy("send-offer");
+    setMessage("");
+    try {
+      const response = await fetch(`${API}/applications/${selected.id}/offer/send`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Offer email failed.");
+      setSelected(data.application);
+      const delivery = data.delivery;
+      setMessage(
+        delivery.status === "sent"
+          ? "Offer emailed to the candidate."
+          : `Email not sent (${delivery.status}): ${delivery.error || "provider not configured"}`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Offer email failed.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const countersignOffer = async () => {
+    if (!selected) return;
+    const signedBy = window.prompt("Who is countersigning for Pizza Blitz?", "");
+    if (!signedBy) return;
+    setBusy("countersign");
+    try {
+      const response = await fetch(
+        `${API}/applications/${selected.id}/offer/countersign`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signed_by: signedBy }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Countersignature failed.");
+      setSelected(data.application);
+      setMessage(`Offer countersigned by ${signedBy}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Countersignature failed.");
     } finally {
       setBusy("");
     }
@@ -707,12 +769,63 @@ export default function HRRecruitmentPage() {
                         >
                           Download PDF
                         </a>
+                        <button
+                          type="button"
+                          data-testid="recruitment-send-offer"
+                          onClick={() => void sendOffer()}
+                          disabled={busy === "send-offer"}
+                          className="rounded-lg border border-teal-200 bg-white px-2 py-1 text-[9px] font-black uppercase tracking-widest text-teal-800 disabled:opacity-50"
+                        >
+                          {busy === "send-offer" ? "Sending..." : "Email offer"}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="recruitment-countersign-offer"
+                          onClick={() => void countersignOffer()}
+                          disabled={busy === "countersign"}
+                          className="rounded-lg border border-amber-300 bg-amber-100 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-amber-900 disabled:opacity-50"
+                        >
+                          Countersign
+                        </button>
                         {selected.offer.status === "accepted" && (
                           <span className="rounded-lg bg-emerald-100 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-800">
                             Signed by {selected.offer.signed_name || selected.candidate_name}
                           </span>
                         )}
                       </div>
+                      <p className="text-[10px] font-semibold text-amber-900">
+                        Delivery: {selected.offer.delivery?.status || "not_sent"}
+                        {selected.offer.delivery?.last_sent_at
+                          ? ` · ${new Date(selected.offer.delivery.last_sent_at).toLocaleString("en-IN")}`
+                          : ""}
+                        {selected.offer.delivery?.reminder_count
+                          ? ` · ${selected.offer.delivery.reminder_count} reminder(s)`
+                          : ""}
+                      </p>
+                      {selected.offer.delivery?.error && (
+                        <p className="rounded-lg bg-white/70 px-2 py-1 text-[9px] font-semibold text-red-700">
+                          {selected.offer.delivery.error}
+                        </p>
+                      )}
+                      {selected.offer.delivery?.status !== "sent" && selected.email && (
+                        <a
+                          href={`mailto:${selected.email}?subject=${encodeURIComponent(
+                            "Your Pizza Blitz offer"
+                          )}&body=${encodeURIComponent(
+                            `Hi ${selected.candidate_name}, please review your offer: ${
+                              selected.offer.public_url || ""
+                            }`
+                          )}`}
+                          className="text-[9px] font-black uppercase tracking-widest text-teal-800 underline"
+                        >
+                          Open in mail app
+                        </a>
+                      )}
+                      {selected.offer.countersigned?.by && (
+                        <p className="text-[9px] font-bold text-amber-900">
+                          Countersigned by {selected.offer.countersigned.by}
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">

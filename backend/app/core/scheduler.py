@@ -116,6 +116,21 @@ def journey_runner_job():
         session.close()
 
 
+def offer_reminder_job():
+    from app.db.session import SessionLocal
+    from app.services.offer_service import run_offer_reminders
+
+    session = SessionLocal()
+    try:
+        summary = run_offer_reminders(session)
+        if summary["sent"] or summary["skipped"]:
+            logger.info("Offer reminder summary: %s", summary)
+    except Exception:
+        logger.exception("Offer reminder job failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -151,6 +166,13 @@ scheduler.add_job(
     "interval",
     minutes=1,
     id="marketing_journey_runner",
+    replace_existing=True,
+)
+scheduler.add_job(
+    offer_reminder_job,
+    "interval",
+    hours=6,
+    id="offer_reminders",
     replace_existing=True,
 )
 

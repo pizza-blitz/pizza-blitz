@@ -16,6 +16,8 @@ type Offer = {
   status: "sent" | "accepted" | "declined" | "expired";
   expires_at?: string | null;
   signed_name?: string | null;
+  countersigned_by?: string | null;
+  countersigned_at?: string | null;
 };
 
 const money = (value: number | null | undefined) =>
@@ -193,6 +195,16 @@ export default function PublicOfferPage() {
               Blitz people policies shared during onboarding.
             </p>
           </div>
+
+          {offer.countersigned_by && (
+            <p className="mt-4 rounded-xl border border-[#17130f]/10 bg-[#faf6ef] px-3 py-2 text-[11px] font-bold text-[#4c4138]">
+              Countersigned for Pizza Blitz by {offer.countersigned_by}
+              {offer.countersigned_at
+                ? ` on ${new Date(offer.countersigned_at).toLocaleDateString("en-IN")}`
+                : ""}
+              .
+            </p>
+          )}
 
           {message && (
             <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
