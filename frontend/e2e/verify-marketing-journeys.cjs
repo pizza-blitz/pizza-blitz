@@ -193,6 +193,9 @@ async function main() {
       (await attribution.innerText()).toLowerCase().includes("sends"),
       "Journey attribution line missing."
     );
+    await page.getByTestId(`journey-step-models-${journeyId}`).waitFor({
+      timeout: 20000,
+    });
     await card.getByText("View runs", { exact: true }).click();
     const enrollmentCard = page.getByTestId(`journey-enrollment-${enrollment.id}`);
     await enrollmentCard.waitFor({ timeout: 20000 });

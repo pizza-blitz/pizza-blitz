@@ -89,6 +89,8 @@ def journey_attribution(
             "open_rate_percent": 0.0,
         },
         "steps": [],
+        "step_models": {"first_touch": [], "last_touch": [], "linear": []},
+        "best_step": None,
         "note": "No successful journey sends yet.",
     }
     if not events:
@@ -177,6 +179,7 @@ def journey_attribution(
     opened_touches = [touch for touch in touches if (touch.open_count or 0) > 0]
     step_stats: dict[int, dict] = {}
     first_step_by_customer: dict[int, int] = {}
+    touches_by_customer: dict[int, list[JourneyTouch]] = {}
     for touch in touches:
         enrollment = enrollment_by_id.get(touch.enrollment_id)
         bucket = step_stats.setdefault(
@@ -196,6 +199,7 @@ def journey_attribution(
         bucket["opens"] += int(touch.open_count or 0)
         if enrollment and enrollment.customer_id is not None:
             first_step_by_customer.setdefault(enrollment.customer_id, touch.step_index)
+            touches_by_customer.setdefault(enrollment.customer_id, []).append(touch)
     for customer_id in revenue_by_customer:
         step_index = first_step_by_customer.get(customer_id)
         if step_index in step_stats:
@@ -203,6 +207,56 @@ def journey_attribution(
             step_stats[step_index]["revenue"] = round(
                 step_stats[step_index]["revenue"] + revenue_by_customer[customer_id], 2
             )
+
+    step_models: dict[str, dict[tuple[int, str], dict]] = {
+        "first_touch": {},
+        "last_touch": {},
+        "linear": {},
+    }
+
+    def credit(model: str, touch: JourneyTouch, revenue: float) -> None:
+        key = (touch.step_index, touch.channel)
+        bucket = step_models[model].setdefault(
+            key,
+            {
+                "step_index": touch.step_index,
+                "channel": touch.channel,
+                "credit_revenue": 0.0,
+                "conversions": 0,
+            },
+        )
+        bucket["credit_revenue"] += revenue
+        bucket["conversions"] += 1
+
+    for customer_id, revenue_value in revenue_by_customer.items():
+        customer_touches = sorted(
+            touches_by_customer.get(customer_id, []),
+            key=lambda touch: (touch.created_at or datetime.min, touch.id),
+        )
+        if not customer_touches:
+            continue
+        credit("first_touch", customer_touches[0], revenue_value)
+        credit("last_touch", customer_touches[-1], revenue_value)
+        share = revenue_value / len(customer_touches)
+        for touch in customer_touches:
+            credit("linear", touch, share)
+
+    step_model_payload = {
+        model: sorted(
+            (
+                {
+                    "step_index": row["step_index"],
+                    "channel": row["channel"],
+                    "credit_revenue": round(row["credit_revenue"], 2),
+                    "conversions": row["conversions"],
+                }
+                for row in rows.values()
+            ),
+            key=lambda item: (-item["credit_revenue"], item["step_index"]),
+        )
+        for model, rows in step_models.items()
+    }
+    best_step = step_model_payload["linear"][0] if step_model_payload["linear"] else None
 
     return {
         "model": "journey_send_attribution",
@@ -235,6 +289,8 @@ def journey_attribution(
             else 0.0,
         },
         "steps": [step_stats[index] for index in sorted(step_stats)],
+        "step_models": step_model_payload,
+        "best_step": best_step,
         "note": (
             "Orders are matched by customer phone after the first successful send and within "
             f"{window_days} days. This is journey-level send attribution, not incremental lift."

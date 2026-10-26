@@ -140,6 +140,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 109 | Multi-clip video merge | Clips could be trimmed but not combined; multi-scene reels had to be edited elsewhere. | Media-editing gap. | Added `POST /media/assets/merge` for 2–10 ordered clips, same-dimension/audio validation, concat stream-copy with re-encode fallback, total-duration enforcement, new-asset transcode/poster pipeline, a merge modal with ordered selection, two ffmpeg tests and an extended Media Studio proof. Mixed-resolution merge, transitions, filters, overlays, audio mixing and caption re-timing remain. |
 | 110 | SLA alert delivery | SLA alerts existed only inside the portal; nobody was notified outside it. | Notification-delivery gap. | Added provider-gated Slack webhook (`SUPPORT_SLACK_WEBHOOK_URL`) and Resend email (`SUPPORT_ALERT_EMAIL`) delivery for new alerts, delivery status/channels/error/timestamp columns, honest `skipped` when unconfigured, UI delivery badges, and mocked Slack + skipped tests. Pager/on-call escalation, retries, per-assignee routing and delivery audit remain. |
 | 111 | Video filter presets | Media Studio could trim/merge but not apply a look; reels needed external editing for basic colour treatment. | Media-effects gap. | Added `POST /media/assets/{id}/filter` for grayscale, sepia, warm, cool, brighten and vignette, ffmpeg rendering with audio copy, new-asset pipeline, an FX modal with preset buttons, two ffmpeg tests and an extended Media Studio proof. Transitions, LUTs, intensity controls, overlays and caption re-timing remain. |
+| 112 | Journey step credit | Journey attribution credited first-touch steps only; there was no last-touch or linear step model to compare. | Step-attribution gap. | Added first-touch, last-touch and linear step/channel credit over ordered `JourneyTouch` rows, plus a best-step summary shown on journey cards. One focused test covers two-step first/last/linear credit and best-step selection. Journey holdouts, fractional conversion windows and multi-journey de-duplication remain. |
 
 ## Still open
 
@@ -154,7 +155,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 264 tests, all pass (in a clean venv built from
+- Backend unit suite: 265 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

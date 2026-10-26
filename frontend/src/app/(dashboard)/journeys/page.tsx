@@ -95,6 +95,12 @@ type Journey = {
       converted_customers: number;
       revenue: number;
     }[];
+    step_models: {
+      first_touch: StepCredit[];
+      last_touch: StepCredit[];
+      linear: StepCredit[];
+    };
+    best_step: StepCredit | null;
     note: string;
   };
   max_sends_per_customer: number;
@@ -108,6 +114,13 @@ type Journey = {
   recent_enrollments: Enrollment[];
 };
 type Template = { id: number; name: string; channel: string; body: string; subject?: string | null };
+
+type StepCredit = {
+  step_index: number;
+  channel: string;
+  credit_revenue: number;
+  conversions: number;
+};
 
 const defaultSteps = (): Step[] => [
   { type: "delay", hours: 0, channel: "whatsapp", subject: "", body: "" },
@@ -776,6 +789,20 @@ export default function JourneysPage() {
                     {journey.touch_attribution.conversion_rate_percent}%) · Rs{" "}
                     {Number(journey.touch_attribution.revenue || 0).toLocaleString("en-IN")} in
                     journey orders
+                  </p>
+                  <p
+                    data-testid={`journey-step-models-${journey.id}`}
+                    className="mt-1 text-[10px] font-bold text-gray-500"
+                  >
+                    {journey.touch_attribution.best_step
+                      ? `Best step ${journey.touch_attribution.best_step.step_index + 1} · ${
+                          journey.touch_attribution.best_step.channel
+                        } · Rs ${Number(
+                          journey.touch_attribution.best_step.credit_revenue || 0
+                        ).toLocaleString("en-IN")} · ${
+                          journey.touch_attribution.best_step.conversions
+                        } conversion(s)`
+                      : "No step credit yet"}
                   </p>
                   {journey.variants.length > 0 && (
                     <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
