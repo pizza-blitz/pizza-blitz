@@ -192,6 +192,9 @@ class JourneyHoldoutTest(unittest.TestCase):
         self.assertEqual(experiment["holdout"]["customers"], 1)
         self.assertEqual(experiment["holdout"]["converted"], 0)
         self.assertGreater(experiment["incremental_revenue"], 0)
+        self.assertTrue(experiment["significance"]["available"])
+        self.assertIsNotNone(experiment["significance"]["p_value"])
+        self.assertFalse(experiment["significance"]["significant_95"])
 
 
 if __name__ == "__main__":

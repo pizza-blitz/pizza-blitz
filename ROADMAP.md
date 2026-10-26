@@ -224,6 +224,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Video filter presets rendered as new assets.
 - [x] Journey first/last/linear step credit.
 - [x] Deterministic journey enrollment holdouts.
-- [ ] Transitions, multi-journey de-duplication, mixed-resolution merge.
+- [x] Journey significance and SLA alert delivery retry.
+- [ ] Transitions, pager escalation, multi-journey de-duplication.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

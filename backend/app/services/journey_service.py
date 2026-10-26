@@ -399,14 +399,12 @@ def journey_experiment(
         - (holdout_summary["revenue_per_customer"] * treated_summary["customers"]),
         2,
     )
-    significance = None
-    if treated_summary["customers"] and holdout_summary["customers"]:
-        significance = two_proportion_test(
-            treated_summary["converted"],
-            treated_summary["customers"],
-            holdout_summary["converted"],
-            holdout_summary["customers"],
-        )
+    significance = two_proportion_test(
+        treated_summary["converted"],
+        treated_summary["customers"],
+        holdout_summary["converted"],
+        holdout_summary["customers"],
+    )
     return {
         "enabled": bool(row.holdout_percent),
         "holdout_percent": float(row.holdout_percent or 0),

@@ -801,7 +801,8 @@ Journeys accept `holdout_percent` from 0–100. Enrollment assignment is determi
 SHA-256 of journey and customer IDs; holdout enrollments never run and have no next run. Journey
 detail reports treated/holdout customers, conversions, conversion rates, revenue, lift and
 incremental revenue from orders after enrollment. A 100% holdout is allowed for exclusion/QA.
-Covered by `backend/tests/test_journey_holdout.py` and the extended journeys proof.
+The experiment also reports a two-proportion p-value/significance flag when both groups have
+contacts. Covered by `backend/tests/test_journey_holdout.py` and the extended journeys proof.
 
 ## Support tickets
 
@@ -834,8 +835,9 @@ reopened by the customer. The inbox shows unread alerts and a manual run check. 
 When `SUPPORT_SLACK_WEBHOOK_URL` is set, new alerts POST a JSON message to Slack. When
 `SUPPORT_ALERT_EMAIL` is set, new alerts send through the configured Resend provider. Each
 notification records `delivery_status`, channels, error and delivery time; with neither
-configured the alert remains in-app and is marked `skipped`. Covered by
-`backend/tests/test_support_alert_delivery.py` (mocked Slack and skipped paths).
+configured the alert remains in-app and is marked `skipped`. Admins can retry delivery at
+`POST /support/notifications/{id}/retry` (or from the inbox) after fixing credentials. Covered
+by `backend/tests/test_support_alert_delivery.py` (mocked Slack, skipped and retry paths).
 
 ## Item-level KDS
 

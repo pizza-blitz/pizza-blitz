@@ -242,7 +242,8 @@ Wave 4 (in progress):
   first-touch, last-touch and linear credit is also returned, with the best step surfaced on
   each card. New `verify:journey-branches` proof and five tests. Journeys can reserve a
   deterministic 0–100% enrollment holdout; holdouts receive no sends and treated-vs-holdout
-  conversion, lift and incremental revenue appear on the journey card.
+  conversion, lift and incremental revenue appear on the journey card, with a two-proportion
+  p-value/significance readout.
 - HR recruitment is live: jobs, applicant board, stage moves, interviews, offers and automatic
   onboarding handoff at `/departments/hr/recruitment`; new `verify:recruitment` proof and two
   backend tests.
@@ -291,8 +292,9 @@ Wave 4 (in progress):
   deduplicated in-app SLA alerts (resolution overdue, first reply overdue, due soon), with
   unread counts, mark-read and a manual run check. Alerts are also delivered to Slack when
   `SUPPORT_SLACK_WEBHOOK_URL` is set and to `SUPPORT_ALERT_EMAIL` through Resend when
-  configured; otherwise the notification records an honest `skipped` delivery status. New
-  `verify:support-tickets` proof and thirteen backend tests.
+  configured; otherwise the notification records an honest `skipped` delivery status and an
+  admin can retry delivery from the inbox. New `verify:support-tickets` proof and thirteen
+  backend tests.
 - Next: per-clip video transitions/filters, journey step-level models and pager escalation.
 
 ## Verified State (2026-10-22)

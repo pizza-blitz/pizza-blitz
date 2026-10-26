@@ -125,6 +125,11 @@ type Journey = {
     };
     lift_percent: number;
     incremental_revenue: number;
+    significance: {
+      available: boolean;
+      p_value: number | null;
+      significant_95: boolean;
+    } | null;
     note: string;
   };
   variants: {
@@ -831,6 +836,13 @@ export default function JourneysPage() {
                       {Number(
                         journey.holdout_experiment.incremental_revenue || 0
                       ).toLocaleString("en-IN")}
+                      {journey.holdout_experiment.significance?.available
+                        ? ` · p=${journey.holdout_experiment.significance.p_value} (${
+                            journey.holdout_experiment.significance.significant_95
+                              ? "95% significant"
+                              : "not significant"
+                          })`
+                        : " · not enough data for significance"}
                     </p>
                   )}
                   <p

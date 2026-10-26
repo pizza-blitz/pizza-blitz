@@ -130,6 +130,23 @@ class SupportAlertDeliveryTest(unittest.TestCase):
         self.assertEqual(alert["delivery_status"], "skipped")
         self.assertIsNone(alert["delivery_channels"])
 
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "https://hooks.slack.test/services/retry",
+                "SUPPORT_ALERT_EMAIL": "",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            return_value=FakeSlackResponse(),
+        ):
+            retried = self.client.post(
+                f"{BASE}/notifications/{alert['id']}/retry", headers=self.headers
+            )
+        self.assertEqual(retried.status_code, 200, retried.text)
+        self.assertEqual(retried.json()["notification"]["delivery_status"], "sent")
+        self.assertIn("slack", retried.json()["notification"]["delivery_channels"])
+
 
 if __name__ == "__main__":
     unittest.main()

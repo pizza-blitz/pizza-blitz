@@ -484,6 +484,24 @@ def mark_support_notification_read(db: Session, notification_id: int) -> dict:
     return serialize_notification(row, ticket)
 
 
+def retry_support_notification(db: Session, notification_id: int) -> dict:
+    row = (
+        db.query(SupportNotification)
+        .filter(SupportNotification.id == notification_id)
+        .first()
+    )
+    if row is None:
+        raise ValueError("Notification not found.")
+    ticket = db.query(SupportTicket).filter(SupportTicket.id == row.ticket_id).first()
+    if ticket is None:
+        raise ValueError("Ticket not found.")
+    row.delivery_status = "pending"
+    row.delivery_error = None
+    db.commit()
+    deliver_alert(db, row, ticket)
+    return serialize_notification(row, ticket)
+
+
 def support_summary(db: Session) -> dict:
     counts = {
         status: db.query(func.count(SupportTicket.id))

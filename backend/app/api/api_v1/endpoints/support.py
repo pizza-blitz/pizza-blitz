@@ -15,6 +15,7 @@ from app.services.support_service import (
     list_tickets,
     mark_support_notification_read,
     public_payload,
+    retry_support_notification,
     run_sla_notifications,
     serialize_sla_policy,
     serialize_ticket,
@@ -151,6 +152,20 @@ def read_support_notification(
     try:
         return {
             "notification": mark_support_notification_read(db, notification_id)
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/notifications/{notification_id}/retry")
+def retry_support_alert(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    try:
+        return {
+            "notification": retry_support_notification(db, notification_id)
         }
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

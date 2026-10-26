@@ -13,7 +13,7 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **434 API endpoints**, **73 routes/pages** (57 portal,
+Numbers in this snapshot: **435 API endpoints**, **73 routes/pages** (57 portal,
 1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **267 backend
 tests**, **96 database tables**, **19 integration points**.
 
@@ -146,7 +146,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, points redemption at checkout (10 points = ₹1, 100-point minimum), account card and transactions | Built | Points, tiers, rewards, referrals | Redemption is checkout-only; no gift catalog |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
 | Feedback / NPS / reviews | Post-order star rating, 0–10 NPS, tags and comments; admin NPS/average/response-rate dashboard with low-rating follow-up | Built | Post-order feedback, review routing | Public review-site routing missing |
-| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee, open/pending/resolved/closed inbox, editable first-response/resolution SLA policies, overdue/due-soon/breach reporting, deduplicated in-app SLA alerts with read state, and provider-gated Slack/email delivery | Built | Guest support inbox | Pager/escalation, business-hour calendars and knowledge base later |
+| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee, open/pending/resolved/closed inbox, editable first-response/resolution SLA policies, overdue/due-soon/breach reporting, deduplicated in-app SLA alerts with read state, provider-gated Slack/email delivery and manual delivery retry | Built | Guest support inbox | Pager/escalation, business-hour calendars and knowledge base later |
 | Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id; saved addresses scoped by customer token | Built | OTP login, saved sessions | Saved payment methods missing |
 
 ## 9. Marketing, communications, social, ads
@@ -156,7 +156,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Coupons / flash sales | Builder, audience, channel, schedule | Built | Same + auto-apply | — |
 | Campaign dispatch | WhatsApp/SMS/email, logs, retries, suppression | Built | Drip journeys, A/B tests | Journeys/A-B missing |
 | Messaging inbox | Shared WhatsApp/SMS/email/Instagram threads, inbound webhooks (Meta/Twilio/form/JSON), replies with delivery status, read/close/pending, templates and channel readiness | Built | Unified conversation inbox + templates | Journeys, media messages and provider delivery receipts later |
-| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/branch/stop/send steps, templates, durable runner, enrollment/event history, pause/activate, attributed revenue, 50/50 A/B send variants with variant results, per-customer send caps, journey-level send attribution, tracked click links/open pixels, per-step sends/clicks/opens/conversions, first/last/linear step credit and deterministic 0–100% holdout experiments | Built | Automated lifecycle journeys | Visual branch canvas, multi-journey de-duplication and fractional multi-touch later |
+| Marketing journeys | Trigger-based sequences for order completed/delivered, low feedback or manual enrollment; delay/condition/branch/stop/send steps, templates, durable runner, enrollment/event history, pause/activate, attributed revenue, 50/50 A/B send variants with variant results, per-customer send caps, journey-level send attribution, tracked click links/open pixels, per-step sends/clicks/opens/conversions, first/last/linear step credit, deterministic 0–100% holdout experiments and two-proportion significance | Built | Automated lifecycle journeys | Visual branch canvas, multi-journey de-duplication and fractional multi-touch later |
 | Segment campaigns | One-click per segment with cleanup guard | Built | Same | — |
 | Social publishing | Image, video and Instagram reel posts, delivery logs, auto-publish gated, real Instagram REELS/VIDEO container flow, optional admin approval with submit/approve/reject and publish blocking | Built | Multi-platform scheduling, media | Facebook video/reels and in-app capture/editing missing |
 | Marketing Hub | Month calendar aggregating social posts, reels, campaigns and ads; filters, upcoming list, shortcuts and a schedule-content composer | Built | Unified content calendar | Drag/drop rescheduling and content templates later |

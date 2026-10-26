@@ -208,6 +208,19 @@ export default function SupportInboxPage() {
     }
   };
 
+  const retryAlert = async (id: number) => {
+    setAlertsBusy(true);
+    try {
+      await fetch(`${API}/notifications/${id}/retry`, {
+        method: "POST",
+        credentials: "include",
+      });
+      await load();
+    } finally {
+      setAlertsBusy(false);
+    }
+  };
+
   const runSlaCheck = async () => {
     setAlertsBusy(true);
     try {
@@ -362,15 +375,28 @@ export default function SupportInboxPage() {
                       : "in-app only"}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  data-testid={`support-alert-read-${alert.id}`}
-                  onClick={() => void markAlertRead(alert.id)}
-                  disabled={alertsBusy}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600 disabled:opacity-50"
-                >
-                  Mark read
-                </button>
+                <div className="flex gap-1.5">
+                  {alert.delivery_status !== "sent" && (
+                    <button
+                      type="button"
+                      data-testid={`support-alert-retry-${alert.id}`}
+                      onClick={() => void retryAlert(alert.id)}
+                      disabled={alertsBusy}
+                      className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-amber-800 disabled:opacity-50"
+                    >
+                      Retry delivery
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-testid={`support-alert-read-${alert.id}`}
+                    onClick={() => void markAlertRead(alert.id)}
+                    disabled={alertsBusy}
+                    className="rounded-lg border border-gray-200 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600 disabled:opacity-50"
+                  >
+                    Mark read
+                  </button>
+                </div>
               </div>
             ))}
           </div>
