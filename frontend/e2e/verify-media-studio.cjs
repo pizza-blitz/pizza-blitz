@@ -221,6 +221,7 @@ async function main() {
       merged.duration_seconds > 2.5 && merged.duration_seconds < 4.5,
       "Merged clip duration was not the sum of the selected clips."
     );
+    assert(merged.caption_url, "Merged clip did not combine source captions.");
 
     await page.getByTestId(`media-filter-${merged.id}`).click();
     await page.getByTestId("media-filter-modal").waitFor({ timeout: 20000 });

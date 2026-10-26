@@ -14,6 +14,7 @@ from app.services.media_library_service import (
 from app.services.media_storage import storage_status
 from app.services.caption_service import (
     clip_captions,
+    combine_captions,
     delete_caption,
     load_caption,
     save_caption,
@@ -113,6 +114,35 @@ def merge_media_assets(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    caption_parts: list[tuple[str, float]] = []
+    offset = 0.0
+    for row in ordered:
+        if row.caption_url:
+            text = load_caption(row.caption_url)
+            if text:
+                caption_parts.append((text, offset))
+        offset += float(row.duration_seconds or 0)
+    if caption_parts:
+        combined = combine_captions(caption_parts)
+        if " --> " in combined:
+            merged_row = (
+                db.query(MediaAsset).filter(MediaAsset.id == created["id"]).first()
+            )
+            if merged_row is not None:
+                try:
+                    caption_url, language = save_caption(
+                        merged_row,
+                        combined.encode("utf-8"),
+                        "merged.vtt",
+                        "en",
+                    )
+                    merged_row.caption_url = caption_url
+                    merged_row.caption_language = language
+                    db.commit()
+                    db.refresh(merged_row)
+                    created = serialize_asset(merged_row)
+                except ValueError:
+                    pass
     return {"asset": created}
 
 

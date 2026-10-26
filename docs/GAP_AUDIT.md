@@ -145,6 +145,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 114 | Journey significance and alert retry | Journey holdouts had no significance readout, and skipped/failed SLA deliveries could not be retried. | Experimentation/ops polish. | Added two-proportion significance to journey experiments with p-value/significance on cards, plus `POST /support/notifications/{id}/retry` and an inbox retry action for non-sent alerts. Extended tests cover p-value availability and skipped→sent Slack retry. Pager escalation, automatic retry/backoff and journey de-duplication remain. |
 | 115 | Automatic alert retries | Failed Slack/email alert delivery relied on a human pressing retry. | Delivery-reliability gap. | Added attempt counters, last-attempt/next-retry timestamps, 5/15-minute backoff up to three attempts, `retrying`/`failed` statuses, a 5-minute scheduler job and inbox attempt/next-retry text. One mocked test covers failure → scheduled retry → success. Pager escalation, jitter, dead-letter queues and per-channel backoff remain. |
 | 116 | Caption re-timing on trim | Trimming a captioned clip produced a new asset with no captions; cues no longer matched the shorter timeline. | Accessibility/edit gap. | Added VTT cue parsing and clipping, overlap-safe timestamp shifting, source-caption loading, automatic caption save onto trimmed assets, error-tolerant fallback, a focused test and an extended Media Studio proof that trims a captioned clip. Merge caption offsets, SRT nuance, burned-in captions and caption styling remain. |
+| 117 | Merge caption offsets | Merged clips dropped all source captions; cues needed cumulative offsets for the stitched timeline. | Accessibility/edit gap. | Added caption concatenation with per-clip duration offsets, automatic caption save onto merged assets, a source-order test with two captioned clips and an extended Media Studio proof asserting merged captions. Caption styling/position, S3 captions and transitions remain. |
 
 ## Still open
 
@@ -159,7 +160,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 269 tests, all pass (in a clean venv built from
+- Backend unit suite: 270 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

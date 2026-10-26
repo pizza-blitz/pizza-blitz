@@ -227,6 +227,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Journey significance and SLA alert delivery retry.
 - [x] Automatic SLA delivery retries with backoff.
 - [x] Caption re-timing on trimmed clips.
-- [ ] Transitions, pager escalation, merge caption re-timing.
+- [x] Offset captions for merged clips.
+- [ ] Transitions, pager escalation, mixed-resolution merge.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

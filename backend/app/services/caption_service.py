@@ -81,6 +81,29 @@ def parse_cues(text: str) -> list[dict]:
     return cues
 
 
+def offset_captions(text: str, offset_seconds: float) -> list[dict]:
+    offset = max(0.0, float(offset_seconds))
+    return [
+        {
+            "start": cue["start"] + offset,
+            "end": cue["end"] + offset,
+            "text": cue["text"],
+        }
+        for cue in parse_cues(text)
+    ]
+
+
+def combine_captions(parts: list[tuple[str, float]]) -> str:
+    blocks: list[str] = []
+    for text, offset in parts:
+        for cue in offset_captions(text, offset):
+            blocks.append(
+                f"{_format_timestamp(cue['start'])} --> "
+                f"{_format_timestamp(cue['end'])}\n{cue['text']}"
+            )
+    return "WEBVTT\n\n" + "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
 def clip_captions(text: str, start_seconds: float, end_seconds: float) -> str:
     start = max(0.0, float(start_seconds))
     end = float(end_seconds)

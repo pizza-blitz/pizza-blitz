@@ -103,6 +103,35 @@ class MediaMergeTest(unittest.TestCase):
         streamed = self.client.get(merged["url"])
         self.assertEqual(streamed.status_code, 200, streamed.text)
 
+    def test_merge_offsets_source_captions(self):
+        first = self._upload("Caption one")
+        second = self._upload("Caption two")
+        for asset, text in (
+            (first, b"WEBVTT\n\n00:00:00.200 --> 00:00:00.600\nFirst caption\n"),
+            (second, b"WEBVTT\n\n00:00:00.100 --> 00:00:00.400\nSecond caption\n"),
+        ):
+            caption = self.client.post(
+                f"/api/v1/restaurant/media/assets/{asset['id']}/caption",
+                files={"file": ("clip.vtt", text, "text/vtt")},
+                headers=self.headers,
+            )
+            self.assertEqual(caption.status_code, 201, caption.text)
+
+        response = self.client.post(
+            "/api/v1/restaurant/media/assets/merge",
+            json={"asset_ids": [first["id"], second["id"]], "name": "Captioned merge"},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        merged = response.json()["asset"]
+        self.asset_ids.append(merged["id"])
+        self.assertTrue(merged["caption_url"])
+        body = self.client.get(merged["caption_url"]).text
+        self.assertIn("First caption", body)
+        self.assertIn("Second caption", body)
+        self.assertIn("00:00:00.200 --> 00:00:00.600", body)
+        self.assertRegex(body, r"00:00:01\.\d{3} --> 00:00:01\.\d{3}")
+
     def test_merge_rejects_mismatched_or_duplicate_clips(self):
         first = self._upload("Wide clip", "320x240")
         second = self._upload("Tall clip", "240x320")
