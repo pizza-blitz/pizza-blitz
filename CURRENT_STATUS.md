@@ -236,8 +236,8 @@ Wave 4 (in progress):
   journeys enforce per-customer send caps. Journey cards also show send-level attribution:
   successful sends, unique customers, orders after first send, conversion rate and revenue by
   channel. Journey sends now carry tracked click links and email open pixels, with clicks,
-  opens and per-step conversions shown alongside. New `verify:journey-branches` proof and four
-  tests.
+  opens and per-step conversions in the API (cards show aggregate engagement). New
+  `verify:journey-branches` proof and four tests.
 - HR recruitment is live: jobs, applicant board, stage moves, interviews, offers and automatic
   onboarding handoff at `/departments/hr/recruitment`; new `verify:recruitment` proof and two
   backend tests.

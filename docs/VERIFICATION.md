@@ -773,7 +773,7 @@ Each successful journey send creates a `journey_touches` row with a tracked clic
 separate open token. Journey messages append the tracked order link; email sends also embed the
 open pixel. `/journeys/track/{token}` records clicks and redirects with UTM/touch parameters;
 `/journeys/open/{token}.png` records opens and returns a no-store GIF. Journey cards show
-sends/clicks/opens and per-step engagement. Covered by
+sends/clicks/opens; the API also returns per-step sends/clicks/opens/conversions. Covered by
 `backend/tests/test_journey_tracking.py` and the extended journeys proof.
 
 ## Support tickets
