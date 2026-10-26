@@ -131,6 +131,21 @@ def offer_reminder_job():
         session.close()
 
 
+def support_sla_job():
+    from app.db.session import SessionLocal
+    from app.services.support_service import run_sla_notifications
+
+    session = SessionLocal()
+    try:
+        summary = run_sla_notifications(session)
+        if summary["created"]:
+            logger.info("Support SLA notification summary: %s", summary)
+    except Exception:
+        logger.exception("Support SLA notification job failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -166,6 +181,13 @@ scheduler.add_job(
     "interval",
     minutes=1,
     id="marketing_journey_runner",
+    replace_existing=True,
+)
+scheduler.add_job(
+    support_sla_job,
+    "interval",
+    minutes=15,
+    id="support_sla_notifications",
     replace_existing=True,
 )
 scheduler.add_job(

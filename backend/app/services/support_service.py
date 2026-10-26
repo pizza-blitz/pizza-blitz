@@ -7,7 +7,13 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.domain import RestaurantOrder, SupportMessage, SupportSlaPolicy, SupportTicket
+from app.models.domain import (
+    RestaurantOrder,
+    SupportMessage,
+    SupportNotification,
+    SupportSlaPolicy,
+    SupportTicket,
+)
 
 CATEGORIES = ("order", "delivery", "payment", "account", "other")
 PRIORITIES = ("low", "normal", "high", "urgent")
@@ -285,6 +291,9 @@ def add_message(
     if author_type == "customer":
         row.status = "open"
         row.resolved_at = None
+        db.query(SupportNotification).filter(
+            SupportNotification.ticket_id == row.id
+        ).delete(synchronize_session=False)
     elif author_type == "staff":
         if not internal and row.first_response_at is None:
             row.first_response_at = datetime.utcnow()
@@ -311,6 +320,9 @@ def update_ticket(
         if status in {"resolved", "closed"}:
             if row.resolved_at is None:
                 row.resolved_at = datetime.utcnow()
+            db.query(SupportNotification).filter(
+                SupportNotification.ticket_id == row.id
+            ).delete(synchronize_session=False)
         else:
             row.resolved_at = None
     if priority is not None:
@@ -353,6 +365,101 @@ def list_tickets(
         .all()
     )
     return [serialize_ticket(row) for row in ordered]
+
+
+def serialize_notification(row: SupportNotification, ticket: SupportTicket) -> dict:
+    return {
+        "id": row.id,
+        "ticket_id": row.ticket_id,
+        "kind": row.kind,
+        "message": row.message,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "read_at": row.read_at.isoformat() if row.read_at else None,
+        "ticket_subject": ticket.subject,
+        "ticket_priority": ticket.priority,
+        "ticket_status": ticket.status,
+    }
+
+
+def run_sla_notifications(db: Session) -> dict:
+    active = (
+        db.query(SupportTicket)
+        .filter(SupportTicket.status.in_(["open", "pending"]))
+        .all()
+    )
+    existing = {
+        (row.ticket_id, row.kind)
+        for row in db.query(SupportNotification).all()
+    }
+    now = datetime.utcnow()
+    created: list[str] = []
+    for row in active:
+        alerts: list[tuple[str, str]] = []
+        if sla_state(row, now) == "overdue":
+            alerts.append(
+                (
+                    "resolution_overdue",
+                    f"Resolution target missed for “{row.subject}” ({row.priority}).",
+                )
+            )
+        elif sla_state(row, now) == "due_soon":
+            alerts.append(
+                (
+                    "due_soon",
+                    f"Resolution target is due soon for “{row.subject}” ({row.priority}).",
+                )
+            )
+        if response_state(row, now) == "overdue":
+            alerts.append(
+                (
+                    "first_response_overdue",
+                    f"First reply target missed for “{row.subject}” ({row.priority}).",
+                )
+            )
+        for kind, message in alerts:
+            if (row.id, kind) in existing:
+                continue
+            db.add(
+                SupportNotification(ticket_id=row.id, kind=kind, message=message)
+            )
+            existing.add((row.id, kind))
+            created.append(kind)
+    db.commit()
+    unread = (
+        db.query(func.count(SupportNotification.id))
+        .filter(SupportNotification.read_at.is_(None))
+        .scalar()
+        or 0
+    )
+    return {"created": len(created), "kinds": created, "unread": unread}
+
+
+def list_support_notifications(db: Session, unread_only: bool = False) -> list[dict]:
+    query = db.query(SupportNotification, SupportTicket).join(
+        SupportTicket, SupportNotification.ticket_id == SupportTicket.id
+    )
+    if unread_only:
+        query = query.filter(SupportNotification.read_at.is_(None))
+    rows = (
+        query.order_by(SupportNotification.created_at.desc(), SupportNotification.id.desc())
+        .limit(100)
+        .all()
+    )
+    return [serialize_notification(row, ticket) for row, ticket in rows]
+
+
+def mark_support_notification_read(db: Session, notification_id: int) -> dict:
+    row = (
+        db.query(SupportNotification)
+        .filter(SupportNotification.id == notification_id)
+        .first()
+    )
+    if row is None:
+        raise ValueError("Notification not found.")
+    row.read_at = row.read_at or datetime.utcnow()
+    db.commit()
+    ticket = db.query(SupportTicket).filter(SupportTicket.id == row.ticket_id).first()
+    return serialize_notification(row, ticket)
 
 
 def support_summary(db: Session) -> dict:
@@ -419,9 +526,16 @@ def support_summary(db: Session) -> dict:
         if row.sla_due_at and row.resolved_at > row.sla_due_at
     )
     policies = get_sla_policies(db)
+    unread_notifications = (
+        db.query(func.count(SupportNotification.id))
+        .filter(SupportNotification.read_at.is_(None))
+        .scalar()
+        or 0
+    )
     return {
         "counts": counts,
         "urgent_open": urgent,
+        "notifications_unread": unread_notifications,
         "sla": {
             "overdue": overdue,
             "due_soon": due_soon,

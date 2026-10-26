@@ -1640,6 +1640,24 @@ class SupportSlaPolicy(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SupportNotification(Base):
+    """One in-app SLA alert per ticket and alert kind."""
+
+    __tablename__ = "support_notifications"
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "kind", name="uq_support_notification_ticket_kind"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticket_id = Column(
+        Integer, ForeignKey("support_tickets.id"), nullable=False, index=True
+    )
+    kind = Column(String(40), nullable=False, index=True)
+    message = Column(String(500), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True, index=True)
+
+
 class SupportMessage(Base):
     __tablename__ = "support_messages"
     id = Column(Integer, primary_key=True, index=True)

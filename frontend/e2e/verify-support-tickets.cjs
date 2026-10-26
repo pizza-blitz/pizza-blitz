@@ -107,6 +107,8 @@ async function main() {
     await inbox.getByTestId("support-inbox-send").click();
     await inbox.getByText("Reply saved.", { exact: false }).waitFor({ timeout: 30000 });
     await inbox.getByTestId("support-sla-summary").waitFor({ timeout: 20000 });
+    await inbox.getByTestId("support-run-sla-check").click();
+    await inbox.waitForTimeout(800);
     const slaText = await inbox.getByTestId("support-sla-summary").innerText();
     assert(slaText.toLowerCase().includes("overdue"), "SLA summary missing overdue count.");
     assert(

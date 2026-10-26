@@ -11,8 +11,11 @@ from app.services.support_service import (
     create_ticket,
     find_by_token,
     get_sla_policies,
+    list_support_notifications,
     list_tickets,
+    mark_support_notification_read,
     public_payload,
+    run_sla_notifications,
     serialize_sla_policy,
     serialize_ticket,
     support_summary,
@@ -118,6 +121,39 @@ def public_ticket_reply(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"ticket": public_payload(row)}
+
+
+@router.get("/notifications")
+def support_notifications(
+    unread_only: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin", "staff")),
+):
+    return {
+        "notifications": list_support_notifications(db, unread_only=unread_only)
+    }
+
+
+@router.post("/notifications/run")
+def run_support_notifications(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin")),
+):
+    return run_sla_notifications(db)
+
+
+@router.post("/notifications/{notification_id}/read")
+def read_support_notification(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_roles("admin", "staff")),
+):
+    try:
+        return {
+            "notification": mark_support_notification_read(db, notification_id)
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/sla-policy")

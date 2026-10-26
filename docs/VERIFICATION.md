@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 256 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions/trimming and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching/send attribution/click-open tracking, social approval workflow, marketing calendar/reels, campaign lift/channel attribution/person-level attribution/holdout experiments/significance/click and open tracking, HR recruitment, offer templates, offer approvals, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets/SLAs/policies, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 258 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions/trimming and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching/send attribution/click-open tracking, social approval workflow, marketing calendar/reels, campaign lift/channel attribution/person-level attribution/holdout experiments/significance/click and open tracking, HR recruitment, offer templates, offer approvals, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets/SLAs/policies/alerts, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -789,8 +789,18 @@ priority from the inbox or `PUT /support/sla-policy/{priority}` with separate re
 resolution minutes (5–10080, response ≤ resolution). The inbox shows overdue/due-soon/first-
 response-overdue counts, averages and breaches, and the public ticket shows its reply target.
 Covered by `backend/tests/test_support_tickets.py`, `backend/tests/test_support_sla.py`,
-`backend/tests/test_support_sla_policy.py` and
+`backend/tests/test_support_sla_policy.py`,
+`backend/tests/test_support_notifications.py` and
 `frontend/e2e/verify-support-tickets.cjs`.
+
+## Support SLA alerts
+
+A 15-minute scheduler job (and `POST /support/notifications/run`) scans open/pending tickets and
+creates at most one alert per ticket/kind: `resolution_overdue`, `first_response_overdue` or
+`due_soon`. Alerts are listed at `GET /support/notifications`, marked read at
+`POST /support/notifications/{id}/read`, and cleared when a ticket is resolved/closed or
+reopened by the customer. The inbox shows unread alerts and a manual run check. Covered by
+`backend/tests/test_support_notifications.py`.
 
 ## Item-level KDS
 

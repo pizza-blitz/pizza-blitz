@@ -218,6 +218,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Email open pixels with open-rate reporting.
 - [x] Journey-level send attribution with channel revenue.
 - [x] Journey click/open tracking with per-step engagement.
-- [ ] Views/video engagement, sequential testing, multi-clip video editing.
+- [x] In-app deduplicated SLA alerts on a 15-minute job.
+- [ ] Email/pager alerts, business calendars, multi-clip editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

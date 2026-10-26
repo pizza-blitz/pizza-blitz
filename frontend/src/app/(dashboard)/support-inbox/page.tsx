@@ -47,9 +47,22 @@ type SlaPolicy = {
   resolution_hours: number;
 };
 
+type SupportAlert = {
+  id: number;
+  ticket_id: number;
+  kind: string;
+  message: string;
+  created_at?: string | null;
+  read_at?: string | null;
+  ticket_subject: string;
+  ticket_priority: string;
+  ticket_status: string;
+};
+
 type Summary = {
   counts: Record<string, number>;
   urgent_open: number;
+  notifications_unread: number;
   sla: {
     overdue: number;
     due_soon: number;
@@ -108,20 +121,28 @@ export default function SupportInboxPage() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [policyDraft, setPolicyDraft] = useState<SlaPolicy[]>([]);
   const [policyBusy, setPolicyBusy] = useState(false);
+  const [alerts, setAlerts] = useState<SupportAlert[]>([]);
+  const [alertsBusy, setAlertsBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [listRes, summaryRes] = await Promise.all([
+    const [listRes, summaryRes, alertRes] = await Promise.all([
       fetch(`${API}/tickets?status=${encodeURIComponent(filter)}`, {
         credentials: "include",
         cache: "no-store",
       }),
       fetch(`${API}/summary`, { credentials: "include", cache: "no-store" }),
+      fetch(`${API}/notifications?unread_only=true`, {
+        credentials: "include",
+        cache: "no-store",
+      }),
     ]);
     const listData = await listRes.json();
     const summaryData = await summaryRes.json();
+    const alertData = await alertRes.json();
     if (!listRes.ok) throw new Error(listData.detail || "Support inbox failed to load.");
     setTickets(listData.tickets || []);
     setSummary(summaryRes.ok ? summaryData : null);
+    setAlerts(alertRes.ok ? alertData.notifications || [] : []);
   }, [filter]);
 
   useEffect(() => {
@@ -167,6 +188,32 @@ export default function SupportInboxPage() {
       setMessage(error instanceof Error ? error.message : "Reply failed.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const markAlertRead = async (id: number) => {
+    setAlertsBusy(true);
+    try {
+      await fetch(`${API}/notifications/${id}/read`, {
+        method: "POST",
+        credentials: "include",
+      });
+      await load();
+    } finally {
+      setAlertsBusy(false);
+    }
+  };
+
+  const runSlaCheck = async () => {
+    setAlertsBusy(true);
+    try {
+      await fetch(`${API}/notifications/run`, {
+        method: "POST",
+        credentials: "include",
+      });
+      await load();
+    } finally {
+      setAlertsBusy(false);
     }
   };
 
@@ -245,6 +292,15 @@ export default function SupportInboxPage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            data-testid="support-run-sla-check"
+            onClick={() => void runSlaCheck()}
+            disabled={alertsBusy}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600 disabled:opacity-50"
+          >
+            {alertsBusy ? "Checking..." : "Run SLA check"}
+          </button>
+          <button
+            type="button"
             data-testid="support-sla-policy-button"
             onClick={openPolicy}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600"
@@ -272,6 +328,46 @@ export default function SupportInboxPage() {
         <p className="rounded-xl border border-gray-100 bg-white px-4 py-3 text-xs font-bold text-gray-700">
           {message}
         </p>
+      )}
+
+      {alerts.length > 0 && (
+        <section
+          data-testid="support-sla-alerts"
+          className="rounded-2xl border border-red-100 bg-red-50 p-4"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-widest text-red-700">
+              {summary?.notifications_unread || alerts.length} unread SLA alerts
+            </p>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-red-500">
+              Auto-checked every 15 minutes
+            </span>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {alerts.slice(0, 6).map((alert) => (
+              <div
+                key={alert.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2"
+              >
+                <div>
+                  <p className="text-xs font-bold text-gray-800">{alert.message}</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">
+                    {alert.kind.replaceAll("_", " ")} · {alert.ticket_priority}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid={`support-alert-read-${alert.id}`}
+                  onClick={() => void markAlertRead(alert.id)}
+                  disabled={alertsBusy}
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600 disabled:opacity-50"
+                >
+                  Mark read
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       <section
