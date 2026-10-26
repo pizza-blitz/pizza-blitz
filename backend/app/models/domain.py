@@ -1654,6 +1654,10 @@ class SupportNotification(Base):
     )
     kind = Column(String(40), nullable=False, index=True)
     message = Column(String(500), nullable=False)
+    delivery_status = Column(String(40), nullable=False, default="pending")
+    delivery_channels = Column(String(120), nullable=True)
+    delivery_error = Column(String(500), nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     read_at = Column(DateTime, nullable=True, index=True)
 

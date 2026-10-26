@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 260 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 262 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -285,9 +285,11 @@ Wave 4 (in progress):
   and resolution time, and breach counts. SLA policies are editable per priority from the
   inbox (response and resolution minutes) and apply to new tickets. A 15-minute job creates
   deduplicated in-app SLA alerts (resolution overdue, first reply overdue, due soon), with
-  unread counts, mark-read and a manual run check. New `verify:support-tickets` proof and
-  eleven backend tests.
-- Next: multi-clip video editing, journey step-level models and email/pager SLA alerts.
+  unread counts, mark-read and a manual run check. Alerts are also delivered to Slack when
+  `SUPPORT_SLACK_WEBHOOK_URL` is set and to `SUPPORT_ALERT_EMAIL` through Resend when
+  configured; otherwise the notification records an honest `skipped` delivery status. New
+  `verify:support-tickets` proof and thirteen backend tests.
+- Next: per-clip video transitions/filters, journey step-level models and pager escalation.
 
 ## Verified State (2026-10-22)
 

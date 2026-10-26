@@ -52,6 +52,10 @@ type SupportAlert = {
   ticket_id: number;
   kind: string;
   message: string;
+  delivery_status?: string;
+  delivery_channels?: string | null;
+  delivery_error?: string | null;
+  delivered_at?: string | null;
   created_at?: string | null;
   read_at?: string | null;
   ticket_subject: string;
@@ -352,7 +356,10 @@ export default function SupportInboxPage() {
                 <div>
                   <p className="text-xs font-bold text-gray-800">{alert.message}</p>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400">
-                    {alert.kind.replaceAll("_", " ")} · {alert.ticket_priority}
+                    {alert.kind.replaceAll("_", " ")} · {alert.ticket_priority} ·{" "}
+                    {alert.delivery_status === "sent"
+                      ? `sent via ${alert.delivery_channels}`
+                      : "in-app only"}
                   </p>
                 </div>
                 <button

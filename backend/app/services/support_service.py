@@ -14,6 +14,7 @@ from app.models.domain import (
     SupportSlaPolicy,
     SupportTicket,
 )
+from app.services.support_alert_delivery import deliver_alert
 
 CATEGORIES = ("order", "delivery", "payment", "account", "other")
 PRIORITIES = ("low", "normal", "high", "urgent")
@@ -373,6 +374,10 @@ def serialize_notification(row: SupportNotification, ticket: SupportTicket) -> d
         "ticket_id": row.ticket_id,
         "kind": row.kind,
         "message": row.message,
+        "delivery_status": row.delivery_status,
+        "delivery_channels": row.delivery_channels,
+        "delivery_error": row.delivery_error,
+        "delivered_at": row.delivered_at.isoformat() if row.delivered_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "read_at": row.read_at.isoformat() if row.read_at else None,
         "ticket_subject": ticket.subject,
@@ -393,6 +398,7 @@ def run_sla_notifications(db: Session) -> dict:
     }
     now = datetime.utcnow()
     created: list[str] = []
+    new_alerts: list[tuple[SupportNotification, SupportTicket]] = []
     for row in active:
         alerts: list[tuple[str, str]] = []
         if sla_state(row, now) == "overdue":
@@ -419,19 +425,35 @@ def run_sla_notifications(db: Session) -> dict:
         for kind, message in alerts:
             if (row.id, kind) in existing:
                 continue
-            db.add(
-                SupportNotification(ticket_id=row.id, kind=kind, message=message)
+            notification = SupportNotification(
+                ticket_id=row.id, kind=kind, message=message
             )
+            db.add(notification)
+            new_alerts.append((notification, row))
             existing.add((row.id, kind))
             created.append(kind)
     db.commit()
+    delivered = 0
+    skipped = 0
+    for notification, ticket in new_alerts:
+        result = deliver_alert(db, notification, ticket)
+        if result["status"] == "sent":
+            delivered += 1
+        else:
+            skipped += 1
     unread = (
         db.query(func.count(SupportNotification.id))
         .filter(SupportNotification.read_at.is_(None))
         .scalar()
         or 0
     )
-    return {"created": len(created), "kinds": created, "unread": unread}
+    return {
+        "created": len(created),
+        "kinds": created,
+        "unread": unread,
+        "delivered": delivered,
+        "delivery_skipped": skipped,
+    }
 
 
 def list_support_notifications(db: Session, unread_only: bool = False) -> list[dict]:

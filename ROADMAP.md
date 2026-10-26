@@ -220,6 +220,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Journey click/open tracking with per-step engagement.
 - [x] In-app deduplicated SLA alerts on a 15-minute job.
 - [x] Ordered multi-clip video merging.
-- [ ] Transitions/filters, mixed-resolution merge, business calendars.
+- [x] Provider-gated Slack/email delivery for SLA alerts.
+- [ ] Transitions/filters, pager escalation, business calendars.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
