@@ -23,6 +23,11 @@ class TrimRequest(BaseModel):
     name: str = Field(default="", max_length=160)
 
 
+class MergeRequest(BaseModel):
+    asset_ids: list[int] = Field(min_length=2, max_length=10)
+    name: str = Field(default="", max_length=160)
+
+
 @router.get("/storage-status")
 def media_storage_status(
     _: dict = Depends(require_roles("admin")),
@@ -60,6 +65,45 @@ async def upload_media_asset(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"asset": asset}
+
+
+@router.post("/assets/merge", status_code=201)
+def merge_media_assets(
+    payload: MergeRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    from app.models.domain import MediaAsset
+
+    if len(set(payload.asset_ids)) != len(payload.asset_ids):
+        raise HTTPException(status_code=422, detail="Select each clip once.")
+    rows = (
+        db.query(MediaAsset)
+        .filter(MediaAsset.id.in_(payload.asset_ids))
+        .all()
+    )
+    by_id = {row.id: row for row in rows}
+    if len(by_id) != len(payload.asset_ids):
+        raise HTTPException(status_code=404, detail="One or more clips were not found.")
+    ordered = [by_id[asset_id] for asset_id in payload.asset_ids]
+    if any(row.media_type != "video" for row in ordered):
+        raise HTTPException(status_code=422, detail="Only videos can be merged.")
+    try:
+        created = create_asset(
+            db,
+            data=b"",
+            name=(payload.name or "Merged clip").strip()[:160],
+            uploaded_by=str(session.get("subject") or ""),
+            tags=list(
+                dict.fromkeys(
+                    [tag for row in ordered for tag in (row.tags or [])] + ["merged"]
+                )
+            ),
+            merge_source={"urls": [row.url for row in ordered]},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"asset": created}
 
 
 @router.post("/assets/{asset_id}/trim", status_code=201)

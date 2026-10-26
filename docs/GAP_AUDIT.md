@@ -137,6 +137,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 106 | Journey send attribution | Journeys reported revenue from the triggering order but not sends, unique contacts, or orders after the first touch. | Lifecycle-measurement gap. | Added a derived journey attribution model over `JourneyEvent` sends: successful send count, unique customers, orders matched by phone after the first send within 30 days, conversion rate, revenue and revenue by first-touch channel. Journey cards and detail include the figures. Two backend tests and the extended journeys proof. Incremental holdouts, multi-touch weighting, per-step conversion and provider-level delivery data remain. |
 | 107 | Journey engagement tracking | Journey sends had no tracked links, open pixels or per-step engagement, so click/open behavior was invisible. | Journey-engagement gap. | Added a `journey_touches` table, per-send tracked link/open pixel tokens, `/journeys/track/{token}` redirect and `/journeys/open/{token}.png` pixel, tracked links embedded in journey messages plus Resend HTML pixels, and engagement/per-step stats (sends, clicks, opens, conversions, revenue) on journey cards. Two backend tests and the extended journeys proof. Multi-touch weighting, per-message link analytics and journey holdouts remain. |
 | 108 | SLA breach alerts | SLA states were visible only when someone opened the inbox; nobody was told when a ticket breached or was about to. | Alerting gap. | Added a `support_notifications` table with one alert per ticket/kind, a 15-minute scheduler job plus manual run endpoint, resolution-overdue/first-reply-overdue/due-soon alerts, unread counts, mark-read, resolve/reopen cleanup, and an inbox alert panel. Two backend tests and the extended support proof. Email/Slack/pager delivery, business calendars, escalation and assignee routing remain. |
+| 109 | Multi-clip video merge | Clips could be trimmed but not combined; multi-scene reels had to be edited elsewhere. | Media-editing gap. | Added `POST /media/assets/merge` for 2–10 ordered clips, same-dimension/audio validation, concat stream-copy with re-encode fallback, total-duration enforcement, new-asset transcode/poster pipeline, a merge modal with ordered selection, two ffmpeg tests and an extended Media Studio proof. Mixed-resolution merge, transitions, filters, overlays, audio mixing and caption re-timing remain. |
 
 ## Still open
 
@@ -151,7 +152,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 258 tests, all pass (in a clean venv built from
+- Backend unit suite: 260 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

@@ -199,6 +199,28 @@ async function main() {
       .getByTestId(`media-library-asset-${trimmed.id}`)
       .waitFor({ timeout: 30000 });
 
+    await page.getByTestId("media-merge-open").click();
+    await page.getByTestId("media-merge-modal").waitFor({ timeout: 20000 });
+    await page.getByTestId(`media-merge-select-${videoAsset.id}`).click();
+    await page.getByTestId(`media-merge-select-${trimmed.id}`).click();
+    await page.getByTestId("media-merge-name").fill("Merged reel proof");
+    const mergeResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/media/assets/merge") &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
+      { timeout: 180000 }
+    );
+    await page.getByTestId("media-merge-submit").click();
+    const merged = (await (await mergeResponse).json()).asset;
+    await page
+      .getByTestId(`media-library-asset-${merged.id}`)
+      .waitFor({ timeout: 30000 });
+    assert(
+      merged.duration_seconds > 2.5 && merged.duration_seconds < 4.5,
+      "Merged clip duration was not the sum of the selected clips."
+    );
+
     await page.screenshot({
       path: path.join(artifactsDir, "visible-media-studio.png"),
       fullPage: false,

@@ -6,6 +6,7 @@ import {
   Circle,
   Copy,
   Image as ImageIcon,
+  Layers,
   Loader2,
   Search,
   Square,
@@ -78,6 +79,11 @@ export default function MediaStudioPage() {
   const [trimName, setTrimName] = useState("");
   const [trimBusy, setTrimBusy] = useState(false);
   const [trimError, setTrimError] = useState("");
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeIds, setMergeIds] = useState<number[]>([]);
+  const [mergeName, setMergeName] = useState("");
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeError, setMergeError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -288,6 +294,44 @@ export default function MediaStudioPage() {
     }
   };
 
+  const toggleMergeClip = (id: number) => {
+    setMergeIds((current) =>
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : [...current, id]
+    );
+  };
+
+  const submitMerge = async () => {
+    if (mergeIds.length < 2) {
+      setMergeError("Select at least two clips.");
+      return;
+    }
+    setMergeBusy(true);
+    setMergeError("");
+    try {
+      const response = await fetch(`${API}/merge`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset_ids: mergeIds,
+          name: mergeName.trim() || "Merged clip",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Clip merge failed.");
+      setMessage(`Merged ${mergeIds.length} clips into ${data.asset.name}.`);
+      setMergeOpen(false);
+      setMergeIds([]);
+      await fetchAssets(query);
+    } catch (error) {
+      setMergeError(error instanceof Error ? error.message : "Clip merge failed.");
+    } finally {
+      setMergeBusy(false);
+    }
+  };
+
   const uploadCaption = async (asset: MediaAsset, file: File | null) => {
     if (!file) return;
     setBusy(true);
@@ -406,6 +450,19 @@ export default function MediaStudioPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="media-merge-open"
+            onClick={() => {
+              setMergeIds([]);
+              setMergeName("");
+              setMergeError("");
+              setMergeOpen(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-widest text-gray-700 hover:border-orange-300 disabled:opacity-50"
+          >
+            <Layers className="h-4 w-4" /> Merge clips
+          </button>
           <button
             type="button"
             data-testid="media-record-open"
@@ -729,6 +786,90 @@ export default function MediaStudioPage() {
           </div>
         </div>
       )}
+      {mergeOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <div
+            data-testid="media-merge-modal"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5"
+          >
+            <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">
+              Multi-clip
+            </p>
+            <h2 className="text-xl font-black text-gray-950">Merge clips</h2>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              Select clips in playback order. Clips must share width, height and audio
+              presence.
+            </p>
+            <div className="mt-3 space-y-1.5">
+              {assets
+                .filter((asset) => asset.media_type === "video")
+                .map((asset) => {
+                  const index = mergeIds.indexOf(asset.id);
+                  return (
+                    <button
+                      type="button"
+                      key={asset.id}
+                      data-testid={`media-merge-select-${asset.id}`}
+                      onClick={() => toggleMergeClip(asset.id)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left ${
+                        index >= 0
+                          ? "border-orange-300 bg-orange-50"
+                          : "border-gray-200"
+                      }`}
+                    >
+                      <span>
+                        <span className="block text-xs font-black text-gray-800">
+                          {asset.name}
+                        </span>
+                        <span className="text-[9px] font-semibold text-gray-400">
+                          {formatDuration(asset.duration_seconds)} ·{" "}
+                          {asset.width}×{asset.height}
+                        </span>
+                      </span>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black text-orange-700">
+                        {index >= 0 ? index + 1 : "Add"}
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
+            <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-gray-500">
+              Merged clip name
+              <input
+                data-testid="media-merge-name"
+                value={mergeName}
+                onChange={(event) => setMergeName(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
+                placeholder="Merged clip"
+              />
+            </label>
+            {mergeError && (
+              <p className="mt-2 rounded-lg bg-red-50 px-2 py-1 text-xs font-bold text-red-700">
+                {mergeError}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMergeOpen(false)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="media-merge-submit"
+                onClick={() => void submitMerge()}
+                disabled={mergeBusy || mergeIds.length < 2}
+                className="rounded-lg bg-gray-950 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {mergeBusy ? "Merging..." : `Merge ${mergeIds.length || ""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {trimAsset && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
           <div

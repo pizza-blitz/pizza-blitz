@@ -346,6 +346,128 @@ def trim_library_video(
         return target.read_bytes()
 
 
+def _has_audio(path: Path) -> bool:
+    ffprobe = _ffmpeg("ffprobe")
+    if not ffprobe:
+        return False
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return result.returncode == 0 and "audio" in (result.stdout or "")
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def merge_library_videos(video_urls: list[str]) -> bytes:
+    if len(video_urls) < 2 or len(video_urls) > 10:
+        raise ValueError("Select between 2 and 10 clips to merge.")
+    if is_s3():
+        raise ValueError("Merging currently requires local media storage.")
+    sources: list[Path] = []
+    for url in video_urls:
+        if not url.startswith(VIDEO_PREFIX):
+            raise ValueError("Merge requires library videos.")
+        filename = url[len(VIDEO_PREFIX):]
+        if not filename or "/" in filename or "\\" in filename or ".." in filename:
+            raise ValueError("Invalid video path.")
+        source = (media_root() / VIDEO_SUBDIR / filename).resolve()
+        if media_root().resolve() not in source.parents or not source.exists():
+            raise ValueError("Source video not found.")
+        sources.append(source)
+    metas = [_probe_video(path) for path in sources]
+    dimensions = {(meta.get("width"), meta.get("height")) for meta in metas}
+    if len(dimensions) != 1:
+        raise ValueError("Merge clips must have the same width and height.")
+    audio_flags = {_has_audio(path) for path in sources}
+    if len(audio_flags) != 1:
+        raise ValueError("Merge clips must either all have audio or all be silent.")
+    total = sum(float(meta.get("duration_seconds") or 0) for meta in metas)
+    if total > VIDEO_MAX_SECONDS:
+        raise ValueError(f"Merged clips must be {VIDEO_MAX_SECONDS} seconds or shorter.")
+    ffmpeg = _ffmpeg("ffmpeg")
+    if not ffmpeg:
+        raise ValueError("ffmpeg is required to merge videos.")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        list_path = Path(temp_dir) / "concat.txt"
+        target = Path(temp_dir) / "merged.mp4"
+        list_path.write_text(
+            "\n".join(f"file '{str(path).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'" for path in sources),
+            encoding="utf-8",
+        )
+        try:
+            subprocess.run(  # noqa: S603
+                [
+                    ffmpeg,
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(list_path),
+                    "-c",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                    str(target),
+                ],
+                capture_output=True,
+                timeout=600,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            try:
+                subprocess.run(  # noqa: S603
+                    [
+                        ffmpeg,
+                        "-y",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        str(list_path),
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "23",
+                        "-c:a",
+                        "aac",
+                        "-movflags",
+                        "+faststart",
+                        str(target),
+                    ],
+                    capture_output=True,
+                    timeout=900,
+                    check=True,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError("Those clips could not be merged.") from exc
+        if not target.exists() or target.stat().st_size == 0:
+            raise ValueError("Those clips could not be merged.")
+        merged_meta = _probe_video(target)
+        if float(merged_meta.get("duration_seconds") or 0) > VIDEO_MAX_SECONDS + 1:
+            raise ValueError(f"Merged clips must be {VIDEO_MAX_SECONDS} seconds or shorter.")
+        return target.read_bytes()
+
+
 def delete_library_video(video_url: str | None, poster_url: str | None = None) -> None:
     if is_s3():
         removed = delete_url(video_url or "")
