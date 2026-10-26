@@ -149,6 +149,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 118 | Cross-journey suppression | The same customer could be enrolled into several active journeys at once and receive overlapping sends. | Journey de-duplication gap. | Added per-journey `suppression_hours` (0–720), an enrollment check across other recent journeys, `suppressed` enrollments that never run, suppression reasons, UI field/count and excluded suppressed rows from treated/holdout metrics. One backend test covers running → suppressed → no-suppression paths. Global caps, priority ordering and per-channel suppression remain. |
 | 119 | Pager escalation | Slack/email could be missed, and there was no paging path for urgent breaches. | Escalation gap. | Added a PagerDuty-compatible webhook (`SUPPORT_PAGER_WEBHOOK_URL` + optional routing key) for resolution breaches and first-reply breaches on high/urgent tickets, with `pager` recorded in delivery channels and included in retry/backoff. One mocked test covers high-priority paging. On-call schedules, acknowledgements and escalation policies remain provider-side. |
 | 120 | Two-clip crossfade | Merged clips were hard cuts, so reels looked abrupt between scenes. | Editing-polish gap. | Added optional `fade` transition for exactly two clips with ffmpeg xfade + acrossfade, 0.1–1.0s duration clamped by source lengths, caption offsets adjusted for the overlap, merge-modal control and proof usage. Two tests cover the shortened timeline and three-clip rejection. N-way transitions, wipes, audio ducking and transition-specific captions remain. |
+| 121 | Pager resolve events | Paged SLA alerts stayed open in the pager even after the ticket was resolved. | Alert-lifecycle gap. | Store a dedup key on the notification when a page succeeds, then send a PagerDuty `resolve` event for each paged alert when the ticket is resolved/closed before cleanup. One test asserts trigger and resolve share the dedup key. Acknowledgement sync and two-way status updates remain. |
 
 ## Still open
 
@@ -163,7 +164,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 274 tests, all pass (in a clean venv built from
+- Backend unit suite: 275 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

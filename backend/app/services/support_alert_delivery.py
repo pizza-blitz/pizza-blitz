@@ -55,9 +55,11 @@ def _pager_alert(
     webhook = os.getenv("SUPPORT_PAGER_WEBHOOK_URL", "").strip()
     if not webhook or not _pager_eligible(notification, ticket):
         return None
+    dedup_key = notification.pager_dedup_key or f"pizza-blitz-support-{notification.id}"
     payload = {
         "routing_key": os.getenv("SUPPORT_PAGER_ROUTING_KEY", "").strip(),
         "event_action": "trigger",
+        "dedup_key": dedup_key,
         "payload": {
             "summary": f"[{ticket.priority}] {ticket.subject}: {notification.message}",
             "source": "pizza-blitz-support",
@@ -80,10 +82,48 @@ def _pager_alert(
     try:
         with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
             if 200 <= response.status < 300:
+                notification.pager_dedup_key = dedup_key
                 return "pager"
     except OSError:
         return None
     return None
+
+
+def resolve_pager_for_ticket(db: Session, ticket_id: int) -> int:
+    webhook = os.getenv("SUPPORT_PAGER_WEBHOOK_URL", "").strip()
+    if not webhook:
+        return 0
+    notifications = (
+        db.query(SupportNotification)
+        .filter(
+            SupportNotification.ticket_id == ticket_id,
+            SupportNotification.pager_dedup_key.isnot(None),
+            SupportNotification.pager_resolved_at.is_(None),
+        )
+        .all()
+    )
+    resolved = 0
+    for notification in notifications:
+        payload = {
+            "routing_key": os.getenv("SUPPORT_PAGER_ROUTING_KEY", "").strip(),
+            "event_action": "resolve",
+            "dedup_key": notification.pager_dedup_key,
+        }
+        request = urllib.request.Request(
+            webhook,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+                if 200 <= response.status < 300:
+                    notification.pager_resolved_at = datetime.utcnow()
+                    resolved += 1
+        except OSError:
+            continue
+    db.commit()
+    return resolved
 
 
 def _email_alert(notification: SupportNotification, ticket: SupportTicket) -> str | None:

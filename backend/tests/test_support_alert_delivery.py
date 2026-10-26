@@ -1,6 +1,7 @@
 """SLA alert delivery to Slack/email with honest skipped status."""
 
 import os
+import json
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -174,6 +175,40 @@ class SupportAlertDeliveryTest(unittest.TestCase):
         alert = listed["notifications"][0]
         self.assertEqual(alert["delivery_status"], "sent")
         self.assertIn("pager", alert["delivery_channels"])
+
+    def test_resolving_ticket_sends_pager_resolve(self):
+        ticket_id = self._overdue_ticket()
+        calls: list[dict] = []
+
+        def fake_urlopen(request, timeout=10):
+            calls.append(json.loads(request.data.decode("utf-8")))
+            return FakeSlackResponse()
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "",
+                "SUPPORT_ALERT_EMAIL": "",
+                "SUPPORT_PAGER_WEBHOOK_URL": "https://events.pagerduty.test/v2/enqueue",
+                "SUPPORT_PAGER_ROUTING_KEY": "routing-proof",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            run = self.client.post(f"{BASE}/notifications/run", headers=self.headers)
+            self.assertEqual(run.status_code, 200, run.text)
+            resolved = self.client.patch(
+                f"{BASE}/tickets/{ticket_id}",
+                json={"status": "resolved"},
+                headers=self.headers,
+            )
+            self.assertEqual(resolved.status_code, 200, resolved.text)
+
+        self.assertGreaterEqual(len(calls), 2, calls)
+        self.assertEqual(calls[0]["event_action"], "trigger")
+        self.assertEqual(calls[1]["event_action"], "resolve")
+        self.assertEqual(calls[0]["dedup_key"], calls[1]["dedup_key"])
 
     def test_failed_delivery_schedules_retry_and_succeeds(self):
         self._overdue_ticket()

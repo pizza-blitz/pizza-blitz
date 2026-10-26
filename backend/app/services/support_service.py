@@ -14,7 +14,7 @@ from app.models.domain import (
     SupportSlaPolicy,
     SupportTicket,
 )
-from app.services.support_alert_delivery import deliver_alert
+from app.services.support_alert_delivery import deliver_alert, resolve_pager_for_ticket
 
 CATEGORIES = ("order", "delivery", "payment", "account", "other")
 PRIORITIES = ("low", "normal", "high", "urgent")
@@ -321,6 +321,7 @@ def update_ticket(
         if status in {"resolved", "closed"}:
             if row.resolved_at is None:
                 row.resolved_at = datetime.utcnow()
+            resolve_pager_for_ticket(db, row.id)
             db.query(SupportNotification).filter(
                 SupportNotification.ticket_id == row.id
             ).delete(synchronize_session=False)
@@ -380,6 +381,10 @@ def serialize_notification(row: SupportNotification, ticket: SupportTicket) -> d
         "delivery_attempts": row.delivery_attempts,
         "last_attempt_at": row.last_attempt_at.isoformat()
         if row.last_attempt_at
+        else None,
+        "pager_dedup_key": row.pager_dedup_key,
+        "pager_resolved_at": row.pager_resolved_at.isoformat()
+        if row.pager_resolved_at
         else None,
         "next_retry_at": row.next_retry_at.isoformat()
         if row.next_retry_at

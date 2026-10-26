@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 274 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 275 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -299,8 +299,9 @@ Wave 4 (in progress):
   configured; otherwise the notification records an honest `skipped` delivery status and an
   admin can retry delivery from the inbox. Failed sends schedule automatic retries with 5/15
   minute backoff (up to three attempts) on a 5-minute job. Resolution breaches (and first-reply
-  breaches on high/urgent tickets) also trigger a PagerDuty-compatible webhook when configured.
-  New `verify:support-tickets` proof and fifteen backend tests.
+  breaches on high/urgent tickets) also trigger a PagerDuty-compatible webhook when configured,
+  and resolving/closing the ticket sends a matching `resolve` event for each paged alert.
+  New `verify:support-tickets` proof and sixteen backend tests.
 - Next: per-clip video transitions/filters, journey step-level models and pager escalation.
 
 ## Verified State (2026-10-22)

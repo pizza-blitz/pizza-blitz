@@ -231,6 +231,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Cross-journey suppression windows.
 - [x] PagerDuty-compatible escalation for urgent SLA breaches.
 - [x] Two-clip crossfade with aligned captions.
-- [ ] N-way transitions, on-call schedules, mixed-resolution merge.
+- [x] Pager resolve events on ticket resolution.
+- [ ] N-way transitions, acknowledgement sync, mixed-resolution merge.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

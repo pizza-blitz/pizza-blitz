@@ -1662,6 +1662,8 @@ class SupportNotification(Base):
     delivery_attempts = Column(Integer, nullable=False, default=0, server_default="0")
     last_attempt_at = Column(DateTime, nullable=True)
     next_retry_at = Column(DateTime, nullable=True, index=True)
+    pager_dedup_key = Column(String(120), nullable=True)
+    pager_resolved_at = Column(DateTime, nullable=True)
     delivered_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     read_at = Column(DateTime, nullable=True, index=True)
