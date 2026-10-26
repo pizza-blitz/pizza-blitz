@@ -544,9 +544,9 @@ videos with identical width/height and matching audio presence; total duration m
 The service concatenates by stream copy with an H.264/AAC re-encode fallback, then saves the
 result through the normal transcode/poster pipeline as a new asset. The Media Studio merge
 modal appends selections in click order. Source captions are concatenated with cumulative
-clip-duration offsets and saved onto the merged asset; local captions only. Two-clip merges can
-request `transition: "fade"` (0.1–1.0s), rendered with ffmpeg xfade/acrossfade and caption
-offsets adjusted for the overlap; three or more clips require hard cuts. Covered by
+clip-duration offsets and saved onto the merged asset; local captions only. Crossfade requests
+(`transition: "fade"`, 0.1–1.0s) chain ffmpeg xfade/acrossfade across 2–10 clips, use one shared
+fade clamped by every source duration, and offset captions by one fade per boundary. Covered by
 `backend/tests/test_media_merge.py` and the extended Media Studio proof.
 
 ## Video filters

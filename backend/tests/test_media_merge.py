@@ -153,17 +153,23 @@ class MediaMergeTest(unittest.TestCase):
         streamed = self.client.get(merged["url"])
         self.assertEqual(streamed.status_code, 200, streamed.text)
 
-    def test_fade_rejects_three_clips(self):
-        clips = [self._upload(f"Fade extra {index}") for index in range(3)]
+    def test_fade_supports_three_clips(self):
+        clips = [self._upload(f"Fade chain {index}", seconds=1) for index in range(3)]
         response = self.client.post(
             "/api/v1/restaurant/media/assets/merge",
             json={
                 "asset_ids": [clip["id"] for clip in clips],
+                "name": "Three clip fade",
                 "transition": "fade",
+                "transition_seconds": 0.2,
             },
             headers=self.headers,
         )
-        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.status_code, 201, response.text)
+        merged = response.json()["asset"]
+        self.asset_ids.append(merged["id"])
+        self.assertGreater(merged["duration_seconds"], 2.3)
+        self.assertLess(merged["duration_seconds"], 3.0)
 
     def test_merge_rejects_mismatched_or_duplicate_clips(self):
         first = self._upload("Wide clip", "320x240")

@@ -121,16 +121,14 @@ def merge_media_assets(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     fade_seconds = 0.0
-    if payload.transition.strip().lower() == "fade" and len(ordered) == 2:
-        first_duration = float(ordered[0].duration_seconds or 0)
-        second_duration = float(ordered[1].duration_seconds or 0)
+    if payload.transition.strip().lower() == "fade" and len(ordered) >= 2:
+        durations = [float(row.duration_seconds or 0) for row in ordered]
         fade_seconds = max(
             0.1,
             min(
                 float(payload.transition_seconds),
                 1.0,
-                first_duration / 2,
-                second_duration / 2,
+                *[duration / 2 for duration in durations],
             ),
         )
     caption_parts: list[tuple[str, float]] = []
@@ -140,11 +138,9 @@ def merge_media_assets(
             text = load_caption(row.caption_url)
             if text:
                 caption_parts.append((text, offset))
-        duration = float(row.duration_seconds or 0)
-        if index == 0 and fade_seconds:
-            offset += max(0.0, duration - fade_seconds)
-        else:
-            offset += duration
+        offset += float(row.duration_seconds or 0)
+        if fade_seconds and index < len(ordered) - 1:
+            offset = max(0.0, offset - fade_seconds)
     if caption_parts:
         combined = combine_captions(caption_parts)
         if " --> " in combined:

@@ -215,10 +215,10 @@ Wave 4 (in progress):
   start/end range and saved as a new asset with its own poster/duration, carrying clipped and
   re-timed captions from the source; 2–10 ordered clips with matching dimensions/audio can be
   merged into one stitched clip whose source captions are offset onto the merged timeline;
-  two-clip merges can use a video/audio crossfade that shortens the result by the fade duration.
-  Filter presets (grayscale, sepia, warm, cool, brighten, vignette) render new assets. A
-  storage-status badge reports local disk or S3/CDN; S3-compatible uploads/deletes use CDN URLs
-  with local fallback.
+  two or more clips can use a chained video/audio crossfade that shortens the result by one
+  fade per boundary. Filter presets (grayscale, sepia, warm, cool, brighten, vignette) render
+  new assets. A storage-status badge reports local disk or S3/CDN; S3-compatible
+  uploads/deletes use CDN URLs with local fallback.
 - Private recruitment documents (resumes and offer letters) now live outside the public
   `/media` mount under `PRIVATE_MEDIA_ROOT`; only authenticated HR routes or offer tokens can
   read them.

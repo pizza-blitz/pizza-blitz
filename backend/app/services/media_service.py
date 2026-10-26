@@ -386,8 +386,6 @@ def merge_library_videos(
     transition = (transition or "none").strip().lower()
     if transition not in {"none", "fade"}:
         raise ValueError("Transition must be none or fade.")
-    if transition == "fade" and len(video_urls) != 2:
-        raise ValueError("A fade transition supports exactly two clips.")
     sources: list[Path] = []
     for url in video_urls:
         if not url.startswith(VIDEO_PREFIX):
@@ -419,35 +417,42 @@ def merge_library_videos(
         if transition == "fade":
             duration = max(
                 0.1,
-                min(float(transition_seconds), 1.0, durations[0] / 2, durations[1] / 2),
+                min(
+                    float(transition_seconds),
+                    1.0,
+                    *[clip_duration / 2 for clip_duration in durations],
+                ),
             )
-            offset = max(0.0, durations[0] - duration)
-            filter_parts = [
-                "[0:v]setsar=1[v0]",
-                "[1:v]setsar=1[v1]",
-                f"[v0][v1]xfade=transition=fade:duration={duration:.3f}:"
-                f"offset={offset:.3f}[v]",
-            ]
-            command = [
-                ffmpeg,
-                "-y",
-                "-i",
-                str(sources[0]),
-                "-i",
-                str(sources[1]),
-                "-filter_complex",
-            ]
+            filter_parts: list[str] = []
+            for index in range(len(sources)):
+                filter_parts.append(f"[{index}:v]setsar=1[v{index}]")
+            video_label = "v0"
+            offset = 0.0
+            for index in range(1, len(sources)):
+                offset += durations[index - 1] - duration
+                next_label = f"vx{index}"
+                filter_parts.append(
+                    f"[{video_label}][v{index}]xfade=transition=fade:"
+                    f"duration={duration:.3f}:offset={offset:.3f}[{next_label}]"
+                )
+                video_label = next_label
+            audio_label = None
             if has_audio:
-                filter_parts.append(f"[0:a][1:a]acrossfade=d={duration:.3f}[a]")
-            command.extend(
-                [
-                    ";".join(filter_parts),
-                    "-map",
-                    "[v]",
-                ]
-            )
-            if has_audio:
-                command.extend(["-map", "[a]", "-c:a", "aac"])
+                filter_parts.append("[0:a]anull[a0]")
+                audio_label = "a0"
+                for index in range(1, len(sources)):
+                    next_audio = f"ax{index}"
+                    filter_parts.append(
+                        f"[{audio_label}][{index}:a]acrossfade=d={duration:.3f}"
+                        f":c1=tri:c2=tri[{next_audio}]"
+                    )
+                    audio_label = next_audio
+            command = [ffmpeg, "-y"]
+            for source in sources:
+                command.extend(["-i", str(source)])
+            command.extend(["-filter_complex", ";".join(filter_parts), "-map", f"[{video_label}]"])
+            if audio_label:
+                command.extend(["-map", f"[{audio_label}]", "-c:a", "aac"])
             command.extend(
                 [
                     "-c:v",

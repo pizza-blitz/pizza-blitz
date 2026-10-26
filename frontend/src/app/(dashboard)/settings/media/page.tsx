@@ -897,7 +897,7 @@ export default function MediaStudioPage() {
                   className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
                 >
                   <option value="none">Hard cut</option>
-                  <option value="fade">Crossfade (2 clips)</option>
+                  <option value="fade">Crossfade</option>
                 </select>
               </label>
               <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
