@@ -187,6 +187,12 @@ async function main() {
     const card = page.getByTestId(`journey-${journeyId}`);
     await card.waitFor({ timeout: 20000 });
     assert((await card.innerText()).includes(journeyName), "Journey name missing from UI.");
+    const attribution = page.getByTestId(`journey-attribution-${journeyId}`);
+    await attribution.waitFor({ timeout: 20000 });
+    assert(
+      (await attribution.innerText()).toLowerCase().includes("sends"),
+      "Journey attribution line missing."
+    );
     await card.getByText("View runs", { exact: true }).click();
     const enrollmentCard = page.getByTestId(`journey-enrollment-${enrollment.id}`);
     await enrollmentCard.waitFor({ timeout: 20000 });

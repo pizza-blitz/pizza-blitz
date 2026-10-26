@@ -25,6 +25,133 @@ TRIGGERS = {
 CHANNELS = {"whatsapp", "sms", "email", "instagram"}
 
 
+def journey_attribution(
+    db: Session,
+    row: MarketingJourney,
+    enrollments: list[JourneyEnrollment],
+    *,
+    window_days: int = 30,
+) -> dict:
+    events = (
+        db.query(JourneyEvent)
+        .join(JourneyEnrollment, JourneyEvent.enrollment_id == JourneyEnrollment.id)
+        .filter(
+            JourneyEnrollment.journey_id == row.id,
+            JourneyEvent.step_type == "send",
+            JourneyEvent.status == "sent",
+        )
+        .order_by(JourneyEvent.created_at.asc())
+        .all()
+    )
+    empty = {
+        "model": "journey_send_attribution",
+        "window_days": window_days,
+        "sent_events": 0,
+        "unique_customers": 0,
+        "converted_customers": 0,
+        "conversion_rate_percent": 0.0,
+        "orders_attributed": 0,
+        "revenue": 0.0,
+        "revenue_per_customer": 0.0,
+        "channels": [],
+        "note": "No successful journey sends yet.",
+    }
+    if not events:
+        return empty
+
+    enrollment_by_id = {item.id: item for item in enrollments}
+    steps = row.steps or []
+    first_send_at: dict[int, datetime] = {}
+    sends_by_customer: dict[int, list[str]] = {}
+    for event in events:
+        enrollment = enrollment_by_id.get(event.enrollment_id)
+        if enrollment is None or enrollment.customer_id is None or not event.created_at:
+            continue
+        customer_id = enrollment.customer_id
+        first_send_at.setdefault(customer_id, event.created_at)
+        step = steps[event.step_index] if event.step_index < len(steps) else {}
+        channel = str(step.get("channel") or "unknown").lower()
+        sends_by_customer.setdefault(customer_id, []).append(channel)
+    if not first_send_at:
+        return empty
+
+    customers = {
+        customer.id: customer
+        for customer in db.query(Customer)
+        .filter(Customer.id.in_(list(first_send_at.keys())))
+        .all()
+    }
+    phones = {
+        (customer.phone or "").strip(): customer_id
+        for customer_id, customer in customers.items()
+        if (customer.phone or "").strip()
+    }
+    earliest = min(first_send_at.values())
+    latest = earliest + timedelta(days=window_days)
+    orders = (
+        db.query(RestaurantOrder)
+        .filter(
+            RestaurantOrder.customer_phone.in_(list(phones.keys())),
+            RestaurantOrder.created_at >= earliest,
+            RestaurantOrder.created_at <= latest,
+        )
+        .all()
+    )
+    revenue_by_customer: dict[int, float] = {}
+    orders_by_customer: dict[int, int] = {}
+    for order in orders:
+        customer_id = phones.get((order.customer_phone or "").strip())
+        if customer_id is None:
+            continue
+        if order.created_at and order.created_at < first_send_at.get(customer_id, earliest):
+            continue
+        revenue_by_customer[customer_id] = revenue_by_customer.get(customer_id, 0.0) + float(
+            order.total_amount or 0
+        )
+        orders_by_customer[customer_id] = orders_by_customer.get(customer_id, 0) + 1
+
+    channel_stats: dict[str, dict] = {}
+    for customer_id, channels in sends_by_customer.items():
+        converted = customer_id in revenue_by_customer
+        first_channel = channels[0] if channels else "unknown"
+        bucket = channel_stats.setdefault(
+            first_channel,
+            {"channel": first_channel, "sends": 0, "converted_customers": 0, "revenue": 0.0},
+        )
+        bucket["sends"] += len(channels)
+        if converted:
+            bucket["converted_customers"] += 1
+            bucket["revenue"] = round(
+                bucket["revenue"] + revenue_by_customer[customer_id], 2
+            )
+
+    converted = len(revenue_by_customer)
+    unique_customers = len(first_send_at)
+    revenue = round(sum(revenue_by_customer.values()), 2)
+    return {
+        "model": "journey_send_attribution",
+        "window_days": window_days,
+        "sent_events": len(events),
+        "unique_customers": unique_customers,
+        "converted_customers": converted,
+        "conversion_rate_percent": round((converted / unique_customers) * 100, 2)
+        if unique_customers
+        else 0.0,
+        "orders_attributed": sum(orders_by_customer.values()),
+        "revenue": revenue,
+        "revenue_per_customer": round(revenue / unique_customers, 2)
+        if unique_customers
+        else 0.0,
+        "channels": sorted(
+            channel_stats.values(), key=lambda item: (-item["revenue"], item["channel"])
+        ),
+        "note": (
+            "Orders are matched by customer phone after the first successful send and within "
+            f"{window_days} days. This is journey-level send attribution, not incremental lift."
+        ),
+    }
+
+
 def serialize_journey(db: Session, row: MarketingJourney) -> dict:
     enrollments = (
         db.query(func.count(JourneyEnrollment.id))
@@ -108,6 +235,7 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         "revenue_per_enrollment": round(attributed_revenue / enrollments, 2)
         if enrollments
         else 0.0,
+        "touch_attribution": journey_attribution(db, row, all_enrollments),
         "recent_enrollments": [serialize_enrollment(item) for item in recent],
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,

@@ -61,6 +61,24 @@ type Journey = {
   completed_count: number;
   attributed_revenue: number;
   revenue_per_enrollment: number;
+  touch_attribution: {
+    model: string;
+    window_days: number;
+    sent_events: number;
+    unique_customers: number;
+    converted_customers: number;
+    conversion_rate_percent: number;
+    orders_attributed: number;
+    revenue: number;
+    revenue_per_customer: number;
+    channels: {
+      channel: string;
+      sends: number;
+      converted_customers: number;
+      revenue: number;
+    }[];
+    note: string;
+  };
   max_sends_per_customer: number;
   frequency_window_hours: number;
   variants: {
@@ -727,6 +745,17 @@ export default function JourneysPage() {
                     {journey.max_sends_per_customer
                       ? ` · cap ${journey.max_sends_per_customer}/${journey.frequency_window_hours}h`
                       : ""}
+                  </p>
+                  <p
+                    data-testid={`journey-attribution-${journey.id}`}
+                    className="mt-1 text-[10px] font-bold uppercase tracking-widest text-emerald-700"
+                  >
+                    {journey.touch_attribution.sent_events} sends ·{" "}
+                    {journey.touch_attribution.converted_customers}/
+                    {journey.touch_attribution.unique_customers} converted (
+                    {journey.touch_attribution.conversion_rate_percent}%) · Rs{" "}
+                    {Number(journey.touch_attribution.revenue || 0).toLocaleString("en-IN")} in
+                    journey orders
                   </p>
                   {journey.variants.length > 0 && (
                     <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
