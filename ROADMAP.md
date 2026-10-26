@@ -221,6 +221,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] In-app deduplicated SLA alerts on a 15-minute job.
 - [x] Ordered multi-clip video merging.
 - [x] Provider-gated Slack/email delivery for SLA alerts.
-- [ ] Transitions/filters, pager escalation, business calendars.
+- [x] Video filter presets rendered as new assets.
+- [ ] Transitions, caption re-timing, mixed-resolution merge.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

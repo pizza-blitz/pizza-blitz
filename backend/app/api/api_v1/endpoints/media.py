@@ -28,6 +28,11 @@ class MergeRequest(BaseModel):
     name: str = Field(default="", max_length=160)
 
 
+class FilterRequest(BaseModel):
+    preset: str = Field(min_length=3, max_length=30)
+    name: str = Field(default="", max_length=160)
+
+
 @router.get("/storage-status")
 def media_storage_status(
     _: dict = Depends(require_roles("admin")),
@@ -100,6 +105,35 @@ def merge_media_assets(
                 )
             ),
             merge_source={"urls": [row.url for row in ordered]},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"asset": created}
+
+
+@router.post("/assets/{asset_id}/filter", status_code=201)
+def filter_media_asset(
+    asset_id: int,
+    payload: FilterRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    from app.models.domain import MediaAsset
+
+    asset = db.query(MediaAsset).filter(MediaAsset.id == asset_id).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+    if asset.media_type != "video":
+        raise HTTPException(status_code=422, detail="Only videos can be filtered.")
+    preset = payload.preset.strip().lower()
+    try:
+        created = create_asset(
+            db,
+            data=b"",
+            name=(payload.name or f"{asset.name} ({preset})").strip()[:160],
+            uploaded_by=str(session.get("subject") or ""),
+            tags=list(dict.fromkeys([*(asset.tags or []), "filtered", preset])),
+            filter_source={"url": asset.url, "preset": preset},
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

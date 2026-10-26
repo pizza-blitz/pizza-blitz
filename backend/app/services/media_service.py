@@ -468,6 +468,69 @@ def merge_library_videos(video_urls: list[str]) -> bytes:
         return target.read_bytes()
 
 
+VIDEO_FILTERS = {
+    "grayscale": "hue=s=0",
+    "sepia": (
+        "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131"
+    ),
+    "warm": "colorbalance=rs=.12:gs=.03:bs=-.12",
+    "cool": "colorbalance=rs=-.12:gs=0:bs=.12",
+    "brighten": "eq=brightness=0.08:contrast=1.05",
+    "vignette": "vignette=PI/4",
+}
+
+
+def filter_library_video(video_url: str, preset: str) -> bytes:
+    filter_name = (preset or "").strip().lower()
+    if filter_name not in VIDEO_FILTERS:
+        raise ValueError("Unknown video filter.")
+    if is_s3():
+        raise ValueError("Filtering currently requires local media storage.")
+    if not video_url.startswith(VIDEO_PREFIX):
+        raise ValueError("Filter requires a library video.")
+    filename = video_url[len(VIDEO_PREFIX):]
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        raise ValueError("Invalid video path.")
+    source = (media_root() / VIDEO_SUBDIR / filename).resolve()
+    if media_root().resolve() not in source.parents or not source.exists():
+        raise ValueError("Source video not found.")
+    ffmpeg = _ffmpeg("ffmpeg")
+    if not ffmpeg:
+        raise ValueError("ffmpeg is required to filter videos.")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "filtered.mp4"
+        try:
+            subprocess.run(  # noqa: S603
+                [
+                    ffmpeg,
+                    "-y",
+                    "-i",
+                    str(source),
+                    "-vf",
+                    VIDEO_FILTERS[filter_name],
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
+                    "-c:a",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                    str(target),
+                ],
+                capture_output=True,
+                timeout=600,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise ValueError("That video could not be filtered.") from exc
+        if not target.exists() or target.stat().st_size == 0:
+            raise ValueError("That video could not be filtered.")
+        return target.read_bytes()
+
+
 def delete_library_video(video_url: str | None, poster_url: str | None = None) -> None:
     if is_s3():
         removed = delete_url(video_url or "")

@@ -137,7 +137,15 @@ async function main() {
     );
     assert(exitRow, "Exit record was not created.");
     for (const task of exitRow.clearance) {
+      const clearanceResponse = page.waitForResponse(
+        (response) =>
+          response.url().includes(`/hr/exits/clearance/${task.id}`) &&
+          response.request().method() === "PATCH" &&
+          response.status() === 200,
+        { timeout: 20000 }
+      );
       await page.getByTestId(`exit-clearance-${task.id}`).click();
+      await clearanceResponse;
     }
 
     const settle = page.getByTestId("exit-settle");

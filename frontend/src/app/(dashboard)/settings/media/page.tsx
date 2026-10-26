@@ -84,6 +84,11 @@ export default function MediaStudioPage() {
   const [mergeName, setMergeName] = useState("");
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeError, setMergeError] = useState("");
+  const [filterAsset, setFilterAsset] = useState<MediaAsset | null>(null);
+  const [filterPreset, setFilterPreset] = useState("grayscale");
+  const [filterName, setFilterName] = useState("");
+  const [filterBusy, setFilterBusy] = useState(false);
+  const [filterError, setFilterError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -291,6 +296,39 @@ export default function MediaStudioPage() {
       setTrimError(error instanceof Error ? error.message : "Clip trim failed.");
     } finally {
       setTrimBusy(false);
+    }
+  };
+
+  const openFilter = (asset: MediaAsset) => {
+    setFilterAsset(asset);
+    setFilterPreset("grayscale");
+    setFilterName(`${asset.name} (grayscale)`);
+    setFilterError("");
+  };
+
+  const submitFilter = async () => {
+    if (!filterAsset) return;
+    setFilterBusy(true);
+    setFilterError("");
+    try {
+      const response = await fetch(`${API}/${filterAsset.id}/filter`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preset: filterPreset,
+          name: filterName.trim() || `${filterAsset.name} (${filterPreset})`,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Video filter failed.");
+      setMessage(`Applied ${filterPreset} to ${filterAsset.name}.`);
+      setFilterAsset(null);
+      await fetchAssets(query);
+    } catch (error) {
+      setFilterError(error instanceof Error ? error.message : "Video filter failed.");
+    } finally {
+      setFilterBusy(false);
     }
   };
 
@@ -615,6 +653,16 @@ export default function MediaStudioPage() {
                   {asset.media_type === "video" && (
                     <button
                       type="button"
+                      data-testid={`media-filter-${asset.id}`}
+                      onClick={() => openFilter(asset)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50"
+                    >
+                      FX
+                    </button>
+                  )}
+                  {asset.media_type === "video" && (
+                    <button
+                      type="button"
                       data-testid={`media-trim-${asset.id}`}
                       onClick={() => openTrim(asset)}
                       className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50"
@@ -864,6 +912,79 @@ export default function MediaStudioPage() {
                 className="rounded-lg bg-gray-950 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
               >
                 {mergeBusy ? "Merging..." : `Merge ${mergeIds.length || ""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {filterAsset && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <div
+            data-testid="media-filter-modal"
+            className="w-full max-w-md rounded-2xl bg-white p-5"
+          >
+            <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">
+              Video filter
+            </p>
+            <h2 className="text-xl font-black text-gray-950">{filterAsset.name}</h2>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[
+                ["grayscale", "Grayscale"],
+                ["sepia", "Sepia"],
+                ["warm", "Warm"],
+                ["cool", "Cool"],
+                ["brighten", "Brighten"],
+                ["vignette", "Vignette"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-testid={`media-filter-preset-${value}`}
+                  onClick={() => {
+                    setFilterPreset(value);
+                    setFilterName(`${filterAsset.name} (${value})`);
+                  }}
+                  className={`rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
+                    filterPreset === value
+                      ? "border-orange-300 bg-orange-50 text-orange-700"
+                      : "border-gray-200 text-gray-600"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-gray-500">
+              New clip name
+              <input
+                data-testid="media-filter-name"
+                value={filterName}
+                onChange={(event) => setFilterName(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
+              />
+            </label>
+            {filterError && (
+              <p className="mt-2 rounded-lg bg-red-50 px-2 py-1 text-xs font-bold text-red-700">
+                {filterError}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFilterAsset(null)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="media-filter-submit"
+                onClick={() => void submitFilter()}
+                disabled={filterBusy}
+                className="rounded-lg bg-gray-950 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {filterBusy ? "Filtering..." : "Apply filter"}
               </button>
             </div>
           </div>

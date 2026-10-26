@@ -221,6 +221,27 @@ async function main() {
       "Merged clip duration was not the sum of the selected clips."
     );
 
+    await page.getByTestId(`media-filter-${merged.id}`).click();
+    await page.getByTestId("media-filter-modal").waitFor({ timeout: 20000 });
+    await page.getByTestId("media-filter-preset-sepia").click();
+    await page.getByTestId("media-filter-name").fill("Sepia reel proof");
+    const filterResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/media/assets/${merged.id}/filter`) &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
+      { timeout: 180000 }
+    );
+    await page.getByTestId("media-filter-submit").click();
+    const filtered = (await (await filterResponse).json()).asset;
+    assert(
+      filtered.tags.includes("filtered") && filtered.tags.includes("sepia"),
+      "Filtered clip tags missing."
+    );
+    await page
+      .getByTestId(`media-library-asset-${filtered.id}`)
+      .waitFor({ timeout: 30000 });
+
     await page.screenshot({
       path: path.join(artifactsDir, "visible-media-studio.png"),
       fullPage: false,

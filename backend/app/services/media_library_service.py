@@ -8,6 +8,7 @@ from app.services.media_service import (
     _detect_video,
     delete_library_image,
     delete_library_video,
+    filter_library_video,
     merge_library_videos,
     save_library_image,
     save_library_video,
@@ -72,7 +73,28 @@ def create_asset(
     tags: list[str] | None = None,
     trim_source: dict | None = None,
     merge_source: dict | None = None,
+    filter_source: dict | None = None,
 ) -> dict:
+    if filter_source is not None:
+        filtered = filter_library_video(
+            filter_source["url"], filter_source["preset"]
+        )
+        saved = save_library_video(filtered, name)
+        return register_asset(
+            db,
+            url=saved["url"],
+            file_name=saved["file_name"],
+            mime_type=saved["mime_type"],
+            size_bytes=saved["size_bytes"],
+            name=name,
+            uploaded_by=uploaded_by,
+            tags=tags,
+            media_type="video",
+            poster_url=saved["poster_url"],
+            duration_seconds=saved["duration_seconds"],
+            width=saved["width"],
+            height=saved["height"],
+        )
     if merge_source is not None:
         merged = merge_library_videos(merge_source["urls"])
         saved = save_library_video(merged, name)
