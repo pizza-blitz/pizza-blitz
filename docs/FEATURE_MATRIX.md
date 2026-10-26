@@ -13,8 +13,8 @@ defines the build order. Status values:
 - **Partial** — a usable version exists but falls short of the enterprise bar.
 - **Missing** — not implemented.
 
-Numbers in this snapshot: **424 API endpoints**, **73 routes/pages** (57 portal,
-1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **245 backend
+Numbers in this snapshot: **425 API endpoints**, **73 routes/pages** (57 portal,
+1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **248 backend
 tests**, **94 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -172,7 +172,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Sales analytics | Daily/monthly/lifetime, weekday, forecast, trends | Built | Drill-through to orders | Drill-through missing |
 | Product/channel | Movers, category, channel, payment mix | Built | Margin by channel | Partial |
 | Customer analytics | Segments, retention, value leaders | Built | Cohort curves, LTV | LTV/cohorts partial |
-| Marketing analytics | Campaign ROI, conversion, budget pacing, coupon revenue, linear channel credit, lift versus the prior 30-day baseline, person-level first/last/linear attribution, deterministic holdout experiments, and two-proportion significance with 95% confidence intervals and required sample size | Built | Campaign attribution + incrementality | Click/view tracking and sequential testing later |
+| Marketing analytics | Campaign ROI, conversion, budget pacing, coupon revenue, linear channel credit, lift versus the prior 30-day baseline, person-level first/last/linear attribution, deterministic holdout experiments, two-proportion significance with 95% confidence intervals and sample sizing, and per-delivery tracked links with click counts/click-through rates | Built | Campaign attribution + incrementality + engagement | Opens/views, sequential testing and video engagement later |
 | Breakeven | Fixed costs, daily target, gap | Built | Scenario modelling | Partial |
 | Exports | CSV for sales/customers/campaigns; saved-report CSV download; scheduled email delivery via the provider layer | Built | Scheduled reports, email delivery | Provider credentials required for delivery |
 | Custom reports | Report builder for revenue/orders/AOV/tax/discount/tips/refunds grouped by day/order type/payment/status; saved views with schedule, recipients, run/export/send | Built | Report builder, saved views | Joins/cohorts and embedded charts missing |

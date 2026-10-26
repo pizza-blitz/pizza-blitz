@@ -120,6 +120,8 @@ async function main() {
     assert(text.includes("coupon"), "Coupon channel missing in UI.");
     await page.getByTestId("campaign-person-attribution").waitFor({ timeout: 20000 });
     await page.getByTestId("campaign-holdout-experiment").waitFor({ timeout: 20000 });
+    await page.getByTestId("campaign-engagement").waitFor({ timeout: 20000 });
+    assert(text.includes("tracked clicks"), "Click tracking panel missing.");
     assert(
       text.includes("person-level multi-touch"),
       "Person-level attribution panel missing."

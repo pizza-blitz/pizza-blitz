@@ -213,6 +213,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Priority-based support SLAs with breach reporting.
 - [x] Editable per-priority SLA policies with first-response targets.
 - [x] Holdout significance testing with confidence intervals and sample sizing.
-- [ ] Click/view tracking, sequential testing, video editing.
+- [x] Per-delivery tracked links with click-through reporting.
+- [ ] Opens/views, sequential testing, video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

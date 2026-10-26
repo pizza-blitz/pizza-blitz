@@ -444,6 +444,10 @@ type CampaignDelivery = {
   destination?: string | null;
   provider?: string | null;
   status: "sent" | "dry_run" | "failed" | "skipped" | "pending" | "holdout";
+  message?: string;
+  click_count?: number;
+  clicked_at?: string | null;
+  tracking_url?: string | null;
   external_id?: string | null;
   error?: string | null;
   dry_run: boolean;
@@ -547,7 +551,16 @@ type CampaignPerformance = {
     dry_run_count: number;
     failed_count: number;
     skipped_count: number;
+    holdout_count?: number;
+    clicked_count?: number;
+    click_count?: number;
     conversion_rate_percent: number;
+  };
+  engagement: {
+    sent: number;
+    clicked: number;
+    click_count: number;
+    click_rate_percent: number;
   };
   social: {
     post_count: number;
@@ -3180,7 +3193,28 @@ export default function PromotionsPage() {
                         </p>
                       </div>
                     </div>
-                    <div className="mt-4 space-y-2">
+                    <div
+                      data-testid="campaign-engagement"
+                      className="mt-4 grid gap-3 rounded-xl border border-emerald-500/10 bg-black/20 p-3 sm:grid-cols-3"
+                    >
+                      {[
+                        ["Tracked clicks", performance.engagement.click_count],
+                        ["Unique clickers", performance.engagement.clicked],
+                        ["Click rate", `${performance.engagement.click_rate_percent}%`],
+                      ].map(([label, value]) => (
+                        <div key={String(label)}>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                            {label}
+                          </p>
+                          <p className="mt-1 text-lg font-black text-white">{value}</p>
+                        </div>
+                      ))}
+                      <p className="col-span-full text-[10px] font-semibold text-gray-500">
+                        Clicks come from per-delivery tracked links embedded in campaign
+                        messages.
+                      </p>
+                    </div>
+                    <div className="mt-3 space-y-2">
                       {performance.attribution.channels.length === 0 ? (
                         <p className="text-sm font-semibold text-gray-500">
                           No active channels or coupon revenue yet.

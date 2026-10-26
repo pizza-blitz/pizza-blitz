@@ -1,9 +1,10 @@
 import csv
 import io
 import os
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.clock import business_today
@@ -371,6 +372,16 @@ def _order_offer_link(promo: Promotion) -> str:
     if promo.code:
         return f"{order_url}?coupon={quote(promo.code, safe='')}"
     return order_url
+
+
+def _tracking_url(token: str | None) -> str | None:
+    if not token:
+        return None
+    prefix = settings.PIZZA_BLITZ_PUBLIC_API_PREFIX.rstrip("/")
+    return (
+        f"{_public_site_url()}{prefix}/api/v1/restaurant/promotions/track/"
+        f"{quote(token, safe='')}"
+    )
 
 
 def _customer_dict(customer: Customer) -> dict:
@@ -1354,9 +1365,15 @@ def _delivery_dict(delivery: CampaignDelivery) -> dict:
         "customer": _customer_dict(customer) if customer else None,
         "channel": delivery.channel,
         "destination": delivery.destination,
+        "message": delivery.message,
         "provider": delivery.provider,
         "status": delivery.status,
         "external_id": delivery.external_id,
+        "click_count": delivery.click_count or 0,
+        "clicked_at": delivery.clicked_at.isoformat() if delivery.clicked_at else None,
+        "tracking_url": _tracking_url(delivery.tracking_token)
+        if delivery.tracking_token
+        else None,
         "error": delivery.error,
         "dry_run": delivery.dry_run,
         "retryable": delivery.status in {"failed", "skipped"},
@@ -1417,6 +1434,8 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
         "failed_count": sum(1 for delivery in deliveries if delivery.status == "failed"),
         "skipped_count": sum(1 for delivery in deliveries if delivery.status == "skipped"),
         "holdout_count": sum(1 for delivery in deliveries if delivery.status == "holdout"),
+        "clicked_count": sum(1 for delivery in deliveries if (delivery.click_count or 0) > 0),
+        "click_count": sum(int(delivery.click_count or 0) for delivery in deliveries),
         "needs_attention_count": sum(
             1 for delivery in deliveries if delivery.status in {"failed", "skipped"}
         ),
@@ -1541,12 +1560,18 @@ def _retry_delivery_for_customer(
         "retry_source_delivery_id": source_delivery.id,
         "retry_source_reason": _delivery_issue_reason(source_delivery),
     }
+    tracking_token = secrets.token_urlsafe(12)
+    tracked_url = _tracking_url(tracking_token)
+    message = contact["message"]
+    if tracked_url:
+        message = message.replace(_order_offer_link(promo), tracked_url)
     delivery_kwargs = {
         "promotion_id": promo.id,
         "customer_id": customer.id,
         "channel": promo.channel,
         "destination": destination or contact["destination"],
-        "message": contact["message"],
+        "message": message,
+        "tracking_token": tracking_token,
         "attempted_at": datetime.utcnow(),
     }
 
@@ -1667,6 +1692,18 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
         default=None,
     )
     delivery_counts = _delivery_counts(delivery_rows)
+    sent_deliveries = [row for row in delivery_rows if row.status == "sent"]
+    clicked_deliveries = [row for row in sent_deliveries if (row.click_count or 0) > 0]
+    engagement = {
+        "sent": len(sent_deliveries),
+        "clicked": len(clicked_deliveries),
+        "click_count": sum(int(row.click_count or 0) for row in sent_deliveries),
+        "click_rate_percent": round(
+            (len(clicked_deliveries) / len(sent_deliveries)) * 100, 2
+        )
+        if sent_deliveries
+        else 0.0,
+    }
     delivery_attempts = max(delivery_counts["sent_count"] + delivery_counts["dry_run_count"], 0)
     ad_spend = round(sum(float(campaign.spend or 0) for campaign in ad_campaigns), 2)
     ad_revenue = round(sum(float(campaign.revenue or 0) for campaign in ad_campaigns), 2)
@@ -1744,6 +1781,7 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
             if delivery_attempts
             else 0,
         },
+        "engagement": engagement,
         "social": {
             "post_count": len(social_posts),
             "ready_count": sum(1 for post in social_posts if post.status == "ready"),
@@ -1977,6 +2015,30 @@ def _campaign_performance_csv(payload: dict) -> str:
     writer.writerow(["Ads", "Reported Revenue", ads["reported_revenue"]])
     writer.writerow(["Ads", "ROAS", ads["roas"]])
     return output.getvalue()
+
+
+@router.get("/track/{token}")
+def track_campaign_click(token: str, db: Session = Depends(get_db)):
+    delivery = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.tracking_token == token)
+        .first()
+    )
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="Tracking link not found.")
+    promo = db.get(Promotion, delivery.promotion_id)
+    if promo is None:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+    delivery.click_count = (delivery.click_count or 0) + 1
+    delivery.clicked_at = delivery.clicked_at or datetime.utcnow()
+    db.commit()
+    target = _order_offer_link(promo)
+    separator = "&" if "?" in target else "?"
+    destination = (
+        f"{target}{separator}utm_source=campaign&utm_medium={quote(promo.channel or '')}"
+        f"&utm_campaign={quote(promo.name or '')}&delivery={delivery.id}"
+    )
+    return RedirectResponse(destination, status_code=307)
 
 
 @router.post("/")
@@ -2907,13 +2969,18 @@ def send_promotion_campaign(
     for customer in customers:
         contact = _dispatch_contact(customer, promo)
         destination = normalize_campaign_destination(promo.channel, contact["destination"])
+        tracking_token = secrets.token_urlsafe(12)
+        tracked_url = _tracking_url(tracking_token)
         message = contact["message"]
+        if tracked_url:
+            message = message.replace(_order_offer_link(promo), tracked_url)
         delivery_kwargs = {
             "promotion_id": promo.id,
             "customer_id": customer.id,
             "channel": promo.channel,
             "destination": destination or contact["destination"],
             "message": message,
+            "tracking_token": tracking_token,
             "attempted_at": datetime.utcnow(),
         }
 
