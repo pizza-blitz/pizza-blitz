@@ -228,6 +228,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Automatic SLA delivery retries with backoff.
 - [x] Caption re-timing on trimmed clips.
 - [x] Offset captions for merged clips.
+- [x] Cross-journey suppression windows.
 - [ ] Transitions, pager escalation, mixed-resolution merge.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

@@ -106,11 +106,14 @@ type Journey = {
   max_sends_per_customer: number;
   frequency_window_hours: number;
   holdout_percent: number;
+  suppression_hours: number;
   holdout_count: number;
+  suppressed_count: number;
   treated_count: number;
   holdout_experiment: {
     enabled: boolean;
     holdout_percent: number;
+    suppressed_count: number;
     treated: {
       customers: number;
       converted: number;
@@ -179,6 +182,7 @@ export default function JourneysPage() {
     max_sends_per_customer: 0,
     frequency_window_hours: 24,
     holdout_percent: 0,
+    suppression_hours: 0,
   });
 
   const load = async () => {
@@ -240,6 +244,7 @@ export default function JourneysPage() {
         max_sends_per_customer: 0,
         frequency_window_hours: 24,
         holdout_percent: 0,
+        suppression_hours: 0,
       });
       await load();
       setMessage(`Journey ${data.journey.name} saved.`);
@@ -433,6 +438,25 @@ export default function JourneysPage() {
                     holdout_percent: Math.max(
                       0,
                       Math.min(100, Number(event.target.value))
+                    ),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+              />
+            </label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Suppression hours
+              <input
+                type="number"
+                min={0}
+                max={720}
+                value={draft.suppression_hours}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    suppression_hours: Math.max(
+                      0,
+                      Math.min(720, Number(event.target.value))
                     ),
                   })
                 }
@@ -826,6 +850,9 @@ export default function JourneysPage() {
                       : ""}
                     {journey.holdout_percent
                       ? ` · ${journey.holdout_count} holdout / ${journey.treated_count} treated`
+                      : ""}
+                    {journey.suppressed_count
+                      ? ` · ${journey.suppressed_count} suppressed`
                       : ""}
                   </p>
                   {journey.holdout_percent > 0 && (

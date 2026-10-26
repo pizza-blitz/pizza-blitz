@@ -59,6 +59,29 @@ def journey_holdout(journey_id: int, customer_id: int | None, percent: float) ->
     return int(digest[:8], 16) % 100 < int(round(min(max(percent, 0), 100)))
 
 
+def journey_suppression(
+    db: Session, journey: MarketingJourney, customer_id: int | None
+) -> str | None:
+    hours = int(journey.suppression_hours or 0)
+    if not customer_id or hours <= 0:
+        return None
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    other = (
+        db.query(JourneyEnrollment)
+        .join(MarketingJourney, JourneyEnrollment.journey_id == MarketingJourney.id)
+        .filter(
+            JourneyEnrollment.customer_id == customer_id,
+            JourneyEnrollment.journey_id != journey.id,
+            JourneyEnrollment.created_at >= cutoff,
+            JourneyEnrollment.status.in_(["running", "completed", "stopped", "holdout"]),
+        )
+        .first()
+    )
+    if other is None:
+        return None
+    return f"Suppressed: enrolled in journey #{other.journey_id} within {hours}h."
+
+
 def journey_attribution(
     db: Session,
     row: MarketingJourney,
@@ -312,11 +335,17 @@ def journey_experiment(
     row: MarketingJourney,
     enrollments: list[JourneyEnrollment],
 ) -> dict:
-    treated = [item for item in enrollments if item.status != "holdout"]
+    treated = [
+        item
+        for item in enrollments
+        if item.status in {"running", "completed", "stopped"}
+    ]
     holdout = [item for item in enrollments if item.status == "holdout"]
+    suppressed = [item for item in enrollments if item.status == "suppressed"]
     empty = {
         "enabled": bool(row.holdout_percent),
         "holdout_percent": float(row.holdout_percent or 0),
+        "suppressed_count": len(suppressed),
         "treated": {"customers": 0, "converted": 0, "conversion_rate": 0.0, "revenue": 0.0},
         "holdout": {"customers": 0, "converted": 0, "conversion_rate": 0.0, "revenue": 0.0},
         "lift_percent": 0.0,
@@ -408,6 +437,7 @@ def journey_experiment(
     return {
         "enabled": bool(row.holdout_percent),
         "holdout_percent": float(row.holdout_percent or 0),
+        "suppressed_count": len(suppressed),
         "treated": treated_summary,
         "holdout": holdout_summary,
         "lift_percent": lift,
@@ -499,8 +529,16 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         "max_sends_per_customer": row.max_sends_per_customer or 0,
         "frequency_window_hours": row.frequency_window_hours or 24,
         "holdout_percent": float(row.holdout_percent or 0),
+        "suppression_hours": int(row.suppression_hours or 0),
         "holdout_count": sum(1 for item in all_enrollments if item.status == "holdout"),
-        "treated_count": sum(1 for item in all_enrollments if item.status != "holdout"),
+        "suppressed_count": sum(
+            1 for item in all_enrollments if item.status == "suppressed"
+        ),
+        "treated_count": sum(
+            1
+            for item in all_enrollments
+            if item.status in {"running", "completed", "stopped"}
+        ),
         "holdout_experiment": journey_experiment(db, row, all_enrollments),
         "variants": [variant_stats[key] for key in sorted(variant_stats)],
         "attributed_revenue": attributed_revenue,
@@ -662,6 +700,7 @@ def create_journey(
     max_sends_per_customer: int = 0,
     frequency_window_hours: int = 24,
     holdout_percent: float = 0,
+    suppression_hours: int = 0,
 ) -> dict:
     if trigger not in TRIGGERS:
         raise ValueError("Unknown journey trigger.")
@@ -674,6 +713,7 @@ def create_journey(
         max_sends_per_customer=max(0, min(int(max_sends_per_customer), 50)),
         frequency_window_hours=max(1, min(int(frequency_window_hours), 720)),
         holdout_percent=max(0.0, min(float(holdout_percent or 0), 100.0)),
+        suppression_hours=max(0, min(int(suppression_hours or 0), 720)),
     )
     db.add(row)
     db.commit()
@@ -693,6 +733,7 @@ def update_journey(
     max_sends_per_customer: int | None = None,
     frequency_window_hours: int | None = None,
     holdout_percent: float | None = None,
+    suppression_hours: int | None = None,
 ) -> dict:
     if name is not None:
         row.name = name.strip()[:160]
@@ -714,6 +755,8 @@ def update_journey(
         row.frequency_window_hours = max(1, min(int(frequency_window_hours), 720))
     if holdout_percent is not None:
         row.holdout_percent = max(0.0, min(float(holdout_percent), 100.0))
+    if suppression_hours is not None:
+        row.suppression_hours = max(0, min(int(suppression_hours), 720))
     db.commit()
     db.refresh(row)
     return serialize_journey(db, row)
@@ -1067,18 +1110,26 @@ def enroll_manual(
     holdout = journey_holdout(
         journey.id, customer.id if customer else None, journey.holdout_percent or 0
     )
+    suppression_reason = journey_suppression(
+        db, journey, customer.id if customer else None
+    )
+    status = "holdout" if holdout else "suppressed" if suppression_reason else "running"
     enrollment = JourneyEnrollment(
         journey_id=journey.id,
         customer_id=customer.id if customer else None,
         trigger_ref=ref,
-        status="holdout" if holdout else "running",
+        status=status,
         current_step=0,
-        next_run_at=None if holdout else datetime.utcnow(),
-        context={**context, "holdout": holdout},
+        next_run_at=None if status == "running" else datetime.utcnow(),
+        context={
+            **context,
+            "holdout": holdout,
+            "suppression_reason": suppression_reason,
+        },
     )
     db.add(enrollment)
     db.flush()
-    if holdout:
+    if status != "running":
         enrollment.next_run_at = None
     db.commit()
     db.refresh(enrollment)
@@ -1117,13 +1168,17 @@ def enroll_order_trigger(db: Session, trigger: str, order: RestaurantOrder) -> i
         holdout = journey_holdout(
             journey.id, customer.id if customer else None, journey.holdout_percent or 0
         )
+        suppression_reason = journey_suppression(
+            db, journey, customer.id if customer else None
+        )
+        status = "holdout" if holdout else "suppressed" if suppression_reason else "running"
         enrollment = JourneyEnrollment(
             journey_id=journey.id,
             customer_id=customer.id if customer else None,
             trigger_ref=ref,
-            status="holdout" if holdout else "running",
+            status=status,
             current_step=0,
-            next_run_at=None if holdout else datetime.utcnow(),
+            next_run_at=None if status == "running" else datetime.utcnow(),
             context={
                 "name": order.customer_name or "",
                 "phone": phone,
@@ -1132,11 +1187,12 @@ def enroll_order_trigger(db: Session, trigger: str, order: RestaurantOrder) -> i
                 "order_total": order.total_amount,
                 "variant": _pick_variant(journey),
                 "holdout": holdout,
+                "suppression_reason": suppression_reason,
             },
         )
         db.add(enrollment)
         db.flush()
-        if holdout:
+        if status != "running":
             enrollment.next_run_at = None
         enrolled += 1
     if enrolled:
