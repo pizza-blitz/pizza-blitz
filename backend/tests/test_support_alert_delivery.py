@@ -149,6 +149,32 @@ class SupportAlertDeliveryTest(unittest.TestCase):
         self.assertIn("slack", retried.json()["notification"]["delivery_channels"])
 
 
+    def test_pager_webhook_delivers_high_priority_alert(self):
+        self._overdue_ticket()
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "",
+                "SUPPORT_ALERT_EMAIL": "",
+                "SUPPORT_PAGER_WEBHOOK_URL": (
+                    "https://events.pagerduty.test/v2/enqueue"
+                ),
+                "SUPPORT_PAGER_ROUTING_KEY": "routing-proof",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            return_value=FakeSlackResponse(),
+        ):
+            response = self.client.post(
+                f"{BASE}/notifications/run", headers=self.headers
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertGreaterEqual(response.json()["delivered"], 1)
+        listed = self.client.get(f"{BASE}/notifications", headers=self.headers).json()
+        alert = listed["notifications"][0]
+        self.assertEqual(alert["delivery_status"], "sent")
+        self.assertIn("pager", alert["delivery_channels"])
+
     def test_failed_delivery_schedules_retry_and_succeeds(self):
         self._overdue_ticket()
         with patch.dict(

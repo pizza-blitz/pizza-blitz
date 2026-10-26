@@ -40,6 +40,52 @@ def _slack_alert(notification: SupportNotification, ticket: SupportTicket) -> st
     return None
 
 
+def _pager_eligible(notification: SupportNotification, ticket: SupportTicket) -> bool:
+    if notification.kind == "resolution_overdue":
+        return True
+    return (
+        notification.kind == "first_response_overdue"
+        and ticket.priority in {"urgent", "high"}
+    )
+
+
+def _pager_alert(
+    notification: SupportNotification, ticket: SupportTicket
+) -> str | None:
+    webhook = os.getenv("SUPPORT_PAGER_WEBHOOK_URL", "").strip()
+    if not webhook or not _pager_eligible(notification, ticket):
+        return None
+    payload = {
+        "routing_key": os.getenv("SUPPORT_PAGER_ROUTING_KEY", "").strip(),
+        "event_action": "trigger",
+        "payload": {
+            "summary": f"[{ticket.priority}] {ticket.subject}: {notification.message}",
+            "source": "pizza-blitz-support",
+            "severity": "critical" if ticket.priority == "urgent" else "error",
+            "custom_details": {
+                "ticket_id": ticket.id,
+                "priority": ticket.priority,
+                "status": ticket.status,
+                "customer": ticket.customer_name,
+                "kind": notification.kind,
+            },
+        },
+    }
+    request = urllib.request.Request(
+        webhook,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+            if 200 <= response.status < 300:
+                return "pager"
+    except OSError:
+        return None
+    return None
+
+
 def _email_alert(notification: SupportNotification, ticket: SupportTicket) -> str | None:
     recipient = os.getenv("SUPPORT_ALERT_EMAIL", "").strip()
     if not recipient:
@@ -62,9 +108,13 @@ def deliver_alert(
 ) -> dict:
     channels: list[str] = []
     errors: list[str] = []
+    pager_configured = bool(
+        os.getenv("SUPPORT_PAGER_WEBHOOK_URL", "").strip()
+    ) and _pager_eligible(notification, ticket)
     configured = bool(
         os.getenv("SUPPORT_SLACK_WEBHOOK_URL", "").strip()
         or os.getenv("SUPPORT_ALERT_EMAIL", "").strip()
+        or pager_configured
     )
     notification.delivery_attempts = (notification.delivery_attempts or 0) + 1
     notification.last_attempt_at = datetime.utcnow()
@@ -78,6 +128,11 @@ def deliver_alert(
         channels.append(email)
     elif os.getenv("SUPPORT_ALERT_EMAIL", "").strip():
         errors.append("email provider not configured or send failed")
+    pager = _pager_alert(notification, ticket)
+    if pager:
+        channels.append(pager)
+    elif pager_configured:
+        errors.append("pager webhook failed")
     if channels:
         notification.delivery_status = "sent"
         notification.delivery_channels = ",".join(channels)
