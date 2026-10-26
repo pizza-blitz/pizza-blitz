@@ -82,6 +82,8 @@ export default function MediaStudioPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeIds, setMergeIds] = useState<number[]>([]);
   const [mergeName, setMergeName] = useState("");
+  const [mergeTransition, setMergeTransition] = useState("none");
+  const [mergeFade, setMergeFade] = useState("0.5");
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeError, setMergeError] = useState("");
   const [filterAsset, setFilterAsset] = useState<MediaAsset | null>(null);
@@ -355,6 +357,8 @@ export default function MediaStudioPage() {
         body: JSON.stringify({
           asset_ids: mergeIds,
           name: mergeName.trim() || "Merged clip",
+          transition: mergeTransition,
+          transition_seconds: Number(mergeFade),
         }),
       });
       const data = await response.json();
@@ -494,6 +498,8 @@ export default function MediaStudioPage() {
             onClick={() => {
               setMergeIds([]);
               setMergeName("");
+              setMergeTransition("none");
+              setMergeFade("0.5");
               setMergeError("");
               setMergeOpen(true);
             }}
@@ -880,6 +886,34 @@ export default function MediaStudioPage() {
                     </button>
                   );
                 })}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                Transition
+                <select
+                  data-testid="media-merge-transition"
+                  value={mergeTransition}
+                  onChange={(event) => setMergeTransition(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
+                >
+                  <option value="none">Hard cut</option>
+                  <option value="fade">Crossfade (2 clips)</option>
+                </select>
+              </label>
+              <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                Fade seconds
+                <input
+                  data-testid="media-merge-fade"
+                  type="number"
+                  min={0.1}
+                  max={1}
+                  step={0.1}
+                  value={mergeFade}
+                  disabled={mergeTransition !== "fade"}
+                  onChange={(event) => setMergeFade(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold disabled:opacity-40"
+                />
+              </label>
             </div>
             <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-gray-500">
               Merged clip name

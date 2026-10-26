@@ -204,6 +204,8 @@ async function main() {
     await page.getByTestId("media-merge-modal").waitFor({ timeout: 20000 });
     await page.getByTestId(`media-merge-select-${videoAsset.id}`).click();
     await page.getByTestId(`media-merge-select-${trimmed.id}`).click();
+    await page.getByTestId("media-merge-transition").selectOption("fade");
+    await page.getByTestId("media-merge-fade").fill("0.3");
     await page.getByTestId("media-merge-name").fill("Merged reel proof");
     const mergeResponse = page.waitForResponse(
       (response) =>

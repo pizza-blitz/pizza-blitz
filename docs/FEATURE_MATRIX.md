@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **435 API endpoints**, **73 routes/pages** (57 portal,
-1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **272 backend
+1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **274 backend
 tests**, **96 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -108,7 +108,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
-| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata, in-browser camera reel recording, clip trimming with caption re-timing, ordered multi-clip merging with offset captions, grayscale/sepia/warm/cool/brighten/vignette filter presets, VTT/SRT captions with SRT conversion and player tracks, optional S3-compatible storage + CDN URLs with local fallback | Built | One media library + picker | Transitions, mixed-resolution merge, caption styling and AI search later |
+| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata, in-browser camera reel recording, clip trimming with caption re-timing, ordered multi-clip merging with offset captions and optional two-clip crossfade, grayscale/sepia/warm/cool/brighten/vignette filter presets, VTT/SRT captions with SRT conversion and player tracks, optional S3-compatible storage + CDN URLs with local fallback | Built | One media library + picker | N-way transitions, mixed-resolution merge, caption languages and AI search later |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | Per-channel price/availability/visibility for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | — |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |

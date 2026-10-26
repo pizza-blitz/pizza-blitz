@@ -32,6 +32,8 @@ class TrimRequest(BaseModel):
 class MergeRequest(BaseModel):
     asset_ids: list[int] = Field(min_length=2, max_length=10)
     name: str = Field(default="", max_length=160)
+    transition: str = Field(default="none", max_length=10)
+    transition_seconds: float = Field(default=0.5, ge=0.1, le=1.0)
 
 
 class FilterRequest(BaseModel):
@@ -110,18 +112,39 @@ def merge_media_assets(
                     [tag for row in ordered for tag in (row.tags or [])] + ["merged"]
                 )
             ),
-            merge_source={"urls": [row.url for row in ordered]},
+            merge_source={
+                "urls": [row.url for row in ordered],
+                "transition": payload.transition,
+                "transition_seconds": payload.transition_seconds,
+            },
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    fade_seconds = 0.0
+    if payload.transition.strip().lower() == "fade" and len(ordered) == 2:
+        first_duration = float(ordered[0].duration_seconds or 0)
+        second_duration = float(ordered[1].duration_seconds or 0)
+        fade_seconds = max(
+            0.1,
+            min(
+                float(payload.transition_seconds),
+                1.0,
+                first_duration / 2,
+                second_duration / 2,
+            ),
+        )
     caption_parts: list[tuple[str, float]] = []
     offset = 0.0
-    for row in ordered:
+    for index, row in enumerate(ordered):
         if row.caption_url:
             text = load_caption(row.caption_url)
             if text:
                 caption_parts.append((text, offset))
-        offset += float(row.duration_seconds or 0)
+        duration = float(row.duration_seconds or 0)
+        if index == 0 and fade_seconds:
+            offset += max(0.0, duration - fade_seconds)
+        else:
+            offset += duration
     if caption_parts:
         combined = combine_captions(caption_parts)
         if " --> " in combined:

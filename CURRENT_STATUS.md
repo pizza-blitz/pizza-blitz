@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 272 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 274 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -214,7 +214,8 @@ Wave 4 (in progress):
   SRT converted to WebVTT and a caption track on the player. Video clips can be trimmed to a
   start/end range and saved as a new asset with its own poster/duration, carrying clipped and
   re-timed captions from the source; 2–10 ordered clips with matching dimensions/audio can be
-  merged into one stitched clip whose source captions are offset onto the merged timeline.
+  merged into one stitched clip whose source captions are offset onto the merged timeline;
+  two-clip merges can use a video/audio crossfade that shortens the result by the fade duration.
   Filter presets (grayscale, sepia, warm, cool, brighten, vignette) render new assets. A
   storage-status badge reports local disk or S3/CDN; S3-compatible uploads/deletes use CDN URLs
   with local fallback.

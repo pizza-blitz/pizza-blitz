@@ -373,11 +373,21 @@ def _has_audio(path: Path) -> bool:
         return False
 
 
-def merge_library_videos(video_urls: list[str]) -> bytes:
+def merge_library_videos(
+    video_urls: list[str],
+    *,
+    transition: str = "none",
+    transition_seconds: float = 0.5,
+) -> bytes:
     if len(video_urls) < 2 or len(video_urls) > 10:
         raise ValueError("Select between 2 and 10 clips to merge.")
     if is_s3():
         raise ValueError("Merging currently requires local media storage.")
+    transition = (transition or "none").strip().lower()
+    if transition not in {"none", "fade"}:
+        raise ValueError("Transition must be none or fade.")
+    if transition == "fade" and len(video_urls) != 2:
+        raise ValueError("A fade transition supports exactly two clips.")
     sources: list[Path] = []
     for url in video_urls:
         if not url.startswith(VIDEO_PREFIX):
@@ -396,41 +406,74 @@ def merge_library_videos(video_urls: list[str]) -> bytes:
     audio_flags = {_has_audio(path) for path in sources}
     if len(audio_flags) != 1:
         raise ValueError("Merge clips must either all have audio or all be silent.")
-    total = sum(float(meta.get("duration_seconds") or 0) for meta in metas)
+    has_audio = audio_flags.pop()
+    durations = [float(meta.get("duration_seconds") or 0) for meta in metas]
+    total = sum(durations)
     if total > VIDEO_MAX_SECONDS:
         raise ValueError(f"Merged clips must be {VIDEO_MAX_SECONDS} seconds or shorter.")
     ffmpeg = _ffmpeg("ffmpeg")
     if not ffmpeg:
         raise ValueError("ffmpeg is required to merge videos.")
     with tempfile.TemporaryDirectory() as temp_dir:
-        list_path = Path(temp_dir) / "concat.txt"
         target = Path(temp_dir) / "merged.mp4"
-        list_path.write_text(
-            "\n".join(f"file '{str(path).replace(chr(39), chr(39) + chr(92) + chr(39) + chr(39))}'" for path in sources),
-            encoding="utf-8",
-        )
-        try:
-            subprocess.run(  # noqa: S603
+        if transition == "fade":
+            duration = max(
+                0.1,
+                min(float(transition_seconds), 1.0, durations[0] / 2, durations[1] / 2),
+            )
+            offset = max(0.0, durations[0] - duration)
+            filter_parts = [
+                "[0:v]setsar=1[v0]",
+                "[1:v]setsar=1[v1]",
+                f"[v0][v1]xfade=transition=fade:duration={duration:.3f}:"
+                f"offset={offset:.3f}[v]",
+            ]
+            command = [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(sources[0]),
+                "-i",
+                str(sources[1]),
+                "-filter_complex",
+            ]
+            if has_audio:
+                filter_parts.append(f"[0:a][1:a]acrossfade=d={duration:.3f}[a]")
+            command.extend(
                 [
-                    ffmpeg,
-                    "-y",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(list_path),
-                    "-c",
-                    "copy",
+                    ";".join(filter_parts),
+                    "-map",
+                    "[v]",
+                ]
+            )
+            if has_audio:
+                command.extend(["-map", "[a]", "-c:a", "aac"])
+            command.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
                     "-movflags",
                     "+faststart",
                     str(target),
-                ],
-                capture_output=True,
-                timeout=600,
-                check=True,
+                ]
             )
-        except (OSError, subprocess.SubprocessError):
+            try:
+                subprocess.run(  # noqa: S603
+                    command, capture_output=True, timeout=900, check=True
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError("That crossfade could not be rendered.") from exc
+        else:
+            list_path = Path(temp_dir) / "concat.txt"
+            entries = []
+            for path in sources:
+                escaped = str(path).replace("'", r"'\''")
+                entries.append(f"file '{escaped}'")
+            list_path.write_text("\n".join(entries), encoding="utf-8")
             try:
                 subprocess.run(  # noqa: S603
                     [
@@ -442,24 +485,46 @@ def merge_library_videos(video_urls: list[str]) -> bytes:
                         "0",
                         "-i",
                         str(list_path),
-                        "-c:v",
-                        "libx264",
-                        "-preset",
-                        "veryfast",
-                        "-crf",
-                        "23",
-                        "-c:a",
-                        "aac",
+                        "-c",
+                        "copy",
                         "-movflags",
                         "+faststart",
                         str(target),
                     ],
                     capture_output=True,
-                    timeout=900,
+                    timeout=600,
                     check=True,
                 )
-            except (OSError, subprocess.SubprocessError) as exc:
-                raise ValueError("Those clips could not be merged.") from exc
+            except (OSError, subprocess.SubprocessError):
+                try:
+                    subprocess.run(  # noqa: S603
+                        [
+                            ffmpeg,
+                            "-y",
+                            "-f",
+                            "concat",
+                            "-safe",
+                            "0",
+                            "-i",
+                            str(list_path),
+                            "-c:v",
+                            "libx264",
+                            "-preset",
+                            "veryfast",
+                            "-crf",
+                            "23",
+                            "-c:a",
+                            "aac",
+                            "-movflags",
+                            "+faststart",
+                            str(target),
+                        ],
+                        capture_output=True,
+                        timeout=900,
+                        check=True,
+                    )
+                except (OSError, subprocess.SubprocessError) as exc:
+                    raise ValueError("Those clips could not be merged.") from exc
         if not target.exists() or target.stat().st_size == 0:
             raise ValueError("Those clips could not be merged.")
         merged_meta = _probe_video(target)

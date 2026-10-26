@@ -68,10 +68,10 @@ class MediaMergeTest(unittest.TestCase):
             )
             return target.read_bytes()
 
-    def _upload(self, name: str, size: str = "320x240") -> dict:
+    def _upload(self, name: str, size: str = "320x240", seconds: int = 1) -> dict:
         response = self.client.post(
             "/api/v1/restaurant/media/assets",
-            files={"file": (f"{name}.mp4", self._sample(size), "video/mp4")},
+            files={"file": (f"{name}.mp4", self._sample(size, seconds), "video/mp4")},
             data={"name": name},
             headers=self.headers,
         )
@@ -131,6 +131,39 @@ class MediaMergeTest(unittest.TestCase):
         self.assertIn("Second caption", body)
         self.assertIn("00:00:00.200 --> 00:00:00.600", body)
         self.assertRegex(body, r"00:00:01\.\d{3} --> 00:00:01\.\d{3}")
+
+    def test_fade_transition_shortens_timeline(self):
+        first = self._upload("Fade first", seconds=2)
+        second = self._upload("Fade second", seconds=2)
+        response = self.client.post(
+            "/api/v1/restaurant/media/assets/merge",
+            json={
+                "asset_ids": [first["id"], second["id"]],
+                "name": "Faded proof",
+                "transition": "fade",
+                "transition_seconds": 0.5,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        merged = response.json()["asset"]
+        self.asset_ids.append(merged["id"])
+        self.assertGreater(merged["duration_seconds"], 3.0)
+        self.assertLess(merged["duration_seconds"], 4.0)
+        streamed = self.client.get(merged["url"])
+        self.assertEqual(streamed.status_code, 200, streamed.text)
+
+    def test_fade_rejects_three_clips(self):
+        clips = [self._upload(f"Fade extra {index}") for index in range(3)]
+        response = self.client.post(
+            "/api/v1/restaurant/media/assets/merge",
+            json={
+                "asset_ids": [clip["id"] for clip in clips],
+                "transition": "fade",
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 422, response.text)
 
     def test_merge_rejects_mismatched_or_duplicate_clips(self):
         first = self._upload("Wide clip", "320x240")

@@ -96,7 +96,11 @@ def create_asset(
             height=saved["height"],
         )
     if merge_source is not None:
-        merged = merge_library_videos(merge_source["urls"])
+        merged = merge_library_videos(
+            merge_source["urls"],
+            transition=merge_source.get("transition", "none"),
+            transition_seconds=merge_source.get("transition_seconds", 0.5),
+        )
         saved = save_library_video(merged, name)
         return register_asset(
             db,

@@ -230,6 +230,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Offset captions for merged clips.
 - [x] Cross-journey suppression windows.
 - [x] PagerDuty-compatible escalation for urgent SLA breaches.
-- [ ] Transitions, on-call schedules, mixed-resolution merge.
+- [x] Two-clip crossfade with aligned captions.
+- [ ] N-way transitions, on-call schedules, mixed-resolution merge.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
