@@ -146,6 +146,21 @@ def support_sla_job():
         session.close()
 
 
+def support_sla_retry_job():
+    from app.db.session import SessionLocal
+    from app.services.support_alert_delivery import retry_due_alerts
+
+    session = SessionLocal()
+    try:
+        summary = retry_due_alerts(session)
+        if summary["attempted"]:
+            logger.info("Support SLA retry summary: %s", summary)
+    except Exception:
+        logger.exception("Support SLA retry job failed")
+    finally:
+        session.close()
+
+
 # Run every 24 hours
 scheduler.add_job(sync_job, "interval", hours=24)
 scheduler.add_job(
@@ -188,6 +203,13 @@ scheduler.add_job(
     "interval",
     minutes=15,
     id="support_sla_notifications",
+    replace_existing=True,
+)
+scheduler.add_job(
+    support_sla_retry_job,
+    "interval",
+    minutes=5,
+    id="support_sla_retries",
     replace_existing=True,
 )
 scheduler.add_job(

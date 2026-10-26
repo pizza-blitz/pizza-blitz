@@ -16,6 +16,7 @@ from app.models.domain import (
     SupportSlaPolicy,
     SupportTicket,
 )
+from app.services.support_alert_delivery import retry_due_alerts
 
 BASE = "/api/v1/restaurant/support"
 
@@ -146,6 +147,62 @@ class SupportAlertDeliveryTest(unittest.TestCase):
         self.assertEqual(retried.status_code, 200, retried.text)
         self.assertEqual(retried.json()["notification"]["delivery_status"], "sent")
         self.assertIn("slack", retried.json()["notification"]["delivery_channels"])
+
+
+    def test_failed_delivery_schedules_retry_and_succeeds(self):
+        self._overdue_ticket()
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "https://hooks.slack.test/services/retry",
+                "SUPPORT_ALERT_EMAIL": "",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            side_effect=OSError("network down"),
+        ):
+            response = self.client.post(
+                f"{BASE}/notifications/run", headers=self.headers
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        listed = self.client.get(f"{BASE}/notifications", headers=self.headers).json()
+        alert = listed["notifications"][0]
+        self.assertEqual(alert["delivery_status"], "retrying")
+        self.assertEqual(alert["delivery_attempts"], 1)
+        self.assertIsNotNone(alert["next_retry_at"])
+
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(SupportNotification)
+                .filter(SupportNotification.id == alert["id"])
+                .first()
+            )
+            row.next_retry_at = datetime.utcnow() - timedelta(minutes=1)
+            db.commit()
+        finally:
+            db.close()
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "https://hooks.slack.test/services/retry",
+                "SUPPORT_ALERT_EMAIL": "",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            return_value=FakeSlackResponse(),
+        ):
+            db = SessionLocal()
+            try:
+                summary = retry_due_alerts(db)
+            finally:
+                db.close()
+        self.assertEqual(summary["sent"], 1, summary)
+        listed = self.client.get(f"{BASE}/notifications", headers=self.headers).json()
+        alert = listed["notifications"][0]
+        self.assertEqual(alert["delivery_status"], "sent")
+        self.assertEqual(alert["delivery_attempts"], 2)
 
 
 if __name__ == "__main__":

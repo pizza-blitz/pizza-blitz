@@ -55,6 +55,9 @@ type SupportAlert = {
   delivery_status?: string;
   delivery_channels?: string | null;
   delivery_error?: string | null;
+  delivery_attempts?: number;
+  next_retry_at?: string | null;
+  last_attempt_at?: string | null;
   delivered_at?: string | null;
   created_at?: string | null;
   read_at?: string | null;
@@ -372,7 +375,18 @@ export default function SupportInboxPage() {
                     {alert.kind.replaceAll("_", " ")} · {alert.ticket_priority} ·{" "}
                     {alert.delivery_status === "sent"
                       ? `sent via ${alert.delivery_channels}`
-                      : "in-app only"}
+                      : alert.delivery_status === "retrying"
+                        ? `retry ${alert.delivery_attempts || 1} · next ${
+                            alert.next_retry_at
+                              ? new Date(alert.next_retry_at).toLocaleTimeString(
+                                  "en-IN",
+                                  { hour: "2-digit", minute: "2-digit" }
+                                )
+                              : "soon"
+                          }`
+                        : alert.delivery_status === "failed"
+                          ? "delivery failed"
+                          : "in-app only"}
                   </p>
                 </div>
                 <div className="flex gap-1.5">

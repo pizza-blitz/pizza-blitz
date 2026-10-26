@@ -3,12 +3,15 @@
 import json
 import os
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.models.domain import SupportNotification, SupportTicket
 from app.services.campaign_dispatch_service import send_campaign_message
+
+MAX_DELIVERY_ATTEMPTS = 3
+RETRY_BACKOFF_MINUTES = {1: 5, 2: 15}
 
 
 def _slack_alert(notification: SupportNotification, ticket: SupportTicket) -> str | None:
@@ -59,6 +62,12 @@ def deliver_alert(
 ) -> dict:
     channels: list[str] = []
     errors: list[str] = []
+    configured = bool(
+        os.getenv("SUPPORT_SLACK_WEBHOOK_URL", "").strip()
+        or os.getenv("SUPPORT_ALERT_EMAIL", "").strip()
+    )
+    notification.delivery_attempts = (notification.delivery_attempts or 0) + 1
+    notification.last_attempt_at = datetime.utcnow()
     slack = _slack_alert(notification, ticket)
     if slack:
         channels.append(slack)
@@ -73,8 +82,17 @@ def deliver_alert(
         notification.delivery_status = "sent"
         notification.delivery_channels = ",".join(channels)
         notification.delivered_at = datetime.utcnow()
+        notification.next_retry_at = None
+    elif configured and notification.delivery_attempts < MAX_DELIVERY_ATTEMPTS:
+        notification.delivery_status = "retrying"
+        minutes = RETRY_BACKOFF_MINUTES.get(notification.delivery_attempts, 30)
+        notification.next_retry_at = datetime.utcnow() + timedelta(minutes=minutes)
+    elif configured:
+        notification.delivery_status = "failed"
+        notification.next_retry_at = None
     else:
         notification.delivery_status = "skipped"
+        notification.next_retry_at = None
     notification.delivery_error = "; ".join(errors) or None
     db.commit()
     return {
@@ -82,4 +100,41 @@ def deliver_alert(
         "status": notification.delivery_status,
         "channels": channels,
         "error": notification.delivery_error,
+        "attempts": notification.delivery_attempts,
+        "next_retry_at": notification.next_retry_at.isoformat()
+        if notification.next_retry_at
+        else None,
     }
+
+
+def retry_due_alerts(db: Session, limit: int = 50) -> dict:
+    due = (
+        db.query(SupportNotification)
+        .filter(
+            SupportNotification.delivery_status.in_(["pending", "retrying"]),
+            SupportNotification.next_retry_at.isnot(None),
+            SupportNotification.next_retry_at <= datetime.utcnow(),
+        )
+        .order_by(SupportNotification.next_retry_at.asc())
+        .limit(limit)
+        .all()
+    )
+    sent = 0
+    retrying = 0
+    failed = 0
+    for notification in due:
+        ticket = (
+            db.query(SupportTicket)
+            .filter(SupportTicket.id == notification.ticket_id)
+            .first()
+        )
+        if ticket is None:
+            continue
+        result = deliver_alert(db, notification, ticket)
+        if result["status"] == "sent":
+            sent += 1
+        elif result["status"] == "retrying":
+            retrying += 1
+        else:
+            failed += 1
+    return {"attempted": len(due), "sent": sent, "retrying": retrying, "failed": failed}

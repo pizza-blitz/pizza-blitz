@@ -377,6 +377,13 @@ def serialize_notification(row: SupportNotification, ticket: SupportTicket) -> d
         "delivery_status": row.delivery_status,
         "delivery_channels": row.delivery_channels,
         "delivery_error": row.delivery_error,
+        "delivery_attempts": row.delivery_attempts,
+        "last_attempt_at": row.last_attempt_at.isoformat()
+        if row.last_attempt_at
+        else None,
+        "next_retry_at": row.next_retry_at.isoformat()
+        if row.next_retry_at
+        else None,
         "delivered_at": row.delivered_at.isoformat() if row.delivered_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "read_at": row.read_at.isoformat() if row.read_at else None,
@@ -497,6 +504,7 @@ def retry_support_notification(db: Session, notification_id: int) -> dict:
         raise ValueError("Ticket not found.")
     row.delivery_status = "pending"
     row.delivery_error = None
+    row.next_retry_at = None
     db.commit()
     deliver_alert(db, row, ticket)
     return serialize_notification(row, ticket)

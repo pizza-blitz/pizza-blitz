@@ -143,6 +143,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 112 | Journey step credit | Journey attribution credited first-touch steps only; there was no last-touch or linear step model to compare. | Step-attribution gap. | Added first-touch, last-touch and linear step/channel credit over ordered `JourneyTouch` rows, plus a best-step summary shown on journey cards. One focused test covers two-step first/last/linear credit and best-step selection. Journey holdouts, fractional conversion windows and multi-journey de-duplication remain. |
 | 113 | Journey holdouts | Journeys had no control group, so attributed revenue could not be compared with contacts who received nothing. | Experimentation gap. | Added `holdout_percent` (0–100), deterministic SHA-256 enrollment assignment, holdout enrollments that never run, treated/holdout conversion and revenue, lift and incremental revenue, a journey-form control and card readout. Two backend tests cover full holdout and treated-vs-holdout reporting. Significance reuse, stratified assignment and multi-journey de-duplication remain. |
 | 114 | Journey significance and alert retry | Journey holdouts had no significance readout, and skipped/failed SLA deliveries could not be retried. | Experimentation/ops polish. | Added two-proportion significance to journey experiments with p-value/significance on cards, plus `POST /support/notifications/{id}/retry` and an inbox retry action for non-sent alerts. Extended tests cover p-value availability and skipped→sent Slack retry. Pager escalation, automatic retry/backoff and journey de-duplication remain. |
+| 115 | Automatic alert retries | Failed Slack/email alert delivery relied on a human pressing retry. | Delivery-reliability gap. | Added attempt counters, last-attempt/next-retry timestamps, 5/15-minute backoff up to three attempts, `retrying`/`failed` statuses, a 5-minute scheduler job and inbox attempt/next-retry text. One mocked test covers failure → scheduled retry → success. Pager escalation, jitter, dead-letter queues and per-channel backoff remain. |
 
 ## Still open
 
@@ -157,7 +158,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 267 tests, all pass (in a clean venv built from
+- Backend unit suite: 268 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
