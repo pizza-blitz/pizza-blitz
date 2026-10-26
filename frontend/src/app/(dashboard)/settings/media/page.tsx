@@ -851,8 +851,8 @@ export default function MediaStudioPage() {
             </p>
             <h2 className="text-xl font-black text-gray-950">Merge clips</h2>
             <p className="mt-1 text-xs font-semibold text-gray-500">
-              Select clips in playback order. Clips must share width, height and audio
-              presence.
+              Select clips in playback order. Mixed resolutions are scaled and padded to a
+              common canvas; audio presence must match.
             </p>
             <div className="mt-3 space-y-1.5">
               {assets

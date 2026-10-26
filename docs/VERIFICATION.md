@@ -546,7 +546,9 @@ result through the normal transcode/poster pipeline as a new asset. The Media St
 modal appends selections in click order. Source captions are concatenated with cumulative
 clip-duration offsets and saved onto the merged asset; local captions only. Crossfade requests
 (`transition: "fade"`, 0.1–1.0s) chain ffmpeg xfade/acrossfade across 2–10 clips, use one shared
-fade clamped by every source duration, and offset captions by one fade per boundary. Covered by
+fade clamped by every source duration, and offset captions by one fade per boundary. Mixed
+resolutions are scaled with aspect-preserving padding to the largest even canvas and normalized
+to 30fps before concat/fade; audio presence must still match. Covered by
 `backend/tests/test_media_merge.py` and the extended Media Studio proof.
 
 ## Video filters

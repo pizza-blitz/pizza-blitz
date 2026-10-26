@@ -171,15 +171,20 @@ class MediaMergeTest(unittest.TestCase):
         self.assertGreater(merged["duration_seconds"], 2.3)
         self.assertLess(merged["duration_seconds"], 3.0)
 
-    def test_merge_rejects_mismatched_or_duplicate_clips(self):
+    def test_mixed_resolution_merge_and_duplicate_rejection(self):
         first = self._upload("Wide clip", "320x240")
         second = self._upload("Tall clip", "240x320")
-        mismatch = self.client.post(
+        mixed = self.client.post(
             "/api/v1/restaurant/media/assets/merge",
-            json={"asset_ids": [first["id"], second["id"]]},
+            json={"asset_ids": [first["id"], second["id"]], "name": "Mixed merge"},
             headers=self.headers,
         )
-        self.assertEqual(mismatch.status_code, 422, mismatch.text)
+        self.assertEqual(mixed.status_code, 201, mixed.text)
+        merged = mixed.json()["asset"]
+        self.asset_ids.append(merged["id"])
+        self.assertEqual(merged["width"], 320)
+        self.assertEqual(merged["height"], 320)
+        self.assertGreater(merged["duration_seconds"], 1.5)
         duplicate = self.client.post(
             "/api/v1/restaurant/media/assets/merge",
             json={"asset_ids": [first["id"], first["id"]]},

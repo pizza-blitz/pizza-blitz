@@ -399,8 +399,11 @@ def merge_library_videos(
         sources.append(source)
     metas = [_probe_video(path) for path in sources]
     dimensions = {(meta.get("width"), meta.get("height")) for meta in metas}
-    if len(dimensions) != 1:
-        raise ValueError("Merge clips must have the same width and height.")
+    target_width = max(int(meta.get("width") or 0) for meta in metas) // 2 * 2
+    target_height = max(int(meta.get("height") or 0) for meta in metas) // 2 * 2
+    if target_width <= 0 or target_height <= 0:
+        raise ValueError("Merge clips need valid dimensions.")
+    needs_normalize = len(dimensions) != 1
     audio_flags = {_has_audio(path) for path in sources}
     if len(audio_flags) != 1:
         raise ValueError("Merge clips must either all have audio or all be silent.")
@@ -425,7 +428,12 @@ def merge_library_videos(
             )
             filter_parts: list[str] = []
             for index in range(len(sources)):
-                filter_parts.append(f"[{index}:v]setsar=1[v{index}]")
+                filter_parts.append(
+                    f"[{index}:v]scale={target_width}:{target_height}:"
+                    "force_original_aspect_ratio=decrease,"
+                    f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,"
+                    f"setsar=1,fps=30[v{index}]"
+                )
             video_label = "v0"
             offset = 0.0
             for index in range(1, len(sources)):
@@ -472,6 +480,57 @@ def merge_library_videos(
                 )
             except (OSError, subprocess.SubprocessError) as exc:
                 raise ValueError("That crossfade could not be rendered.") from exc
+        elif needs_normalize:
+            filter_parts = []
+            concat_inputs = []
+            for index in range(len(sources)):
+                filter_parts.append(
+                    f"[{index}:v]scale={target_width}:{target_height}:"
+                    "force_original_aspect_ratio=decrease,"
+                    f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,"
+                    f"setsar=1,fps=30[v{index}]"
+                )
+                concat_inputs.append(f"[v{index}]")
+                if has_audio:
+                    filter_parts.append(f"[{index}:a]aresample=44100[a{index}]")
+                    concat_inputs.append(f"[a{index}]")
+            filter_parts.append(
+                "".join(concat_inputs)
+                + f"concat=n={len(sources)}:v=1:a={1 if has_audio else 0}"
+                + ("[v][a]" if has_audio else "[v]")
+            )
+            command = [ffmpeg, "-y"]
+            for source in sources:
+                command.extend(["-i", str(source)])
+            command.extend(
+                [
+                    "-filter_complex",
+                    ";".join(filter_parts),
+                    "-map",
+                    "[v]",
+                ]
+            )
+            if has_audio:
+                command.extend(["-map", "[a]", "-c:a", "aac"])
+            command.extend(
+                [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "23",
+                    "-movflags",
+                    "+faststart",
+                    str(target),
+                ]
+            )
+            try:
+                subprocess.run(  # noqa: S603
+                    command, capture_output=True, timeout=900, check=True
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError("Those clips could not be normalized and merged.") from exc
         else:
             list_path = Path(temp_dir) / "concat.txt"
             entries = []

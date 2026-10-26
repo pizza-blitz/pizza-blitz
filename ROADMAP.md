@@ -233,6 +233,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Two-clip crossfade with aligned captions.
 - [x] Pager resolve events on ticket resolution.
 - [x] N-way chained crossfades with caption alignment.
-- [ ] Acknowledgement sync, mixed-resolution merge, caption languages.
+- [x] Mixed-resolution merge with common-canvas normalization.
+- [ ] Acknowledgement sync, caption languages, mixed-fps audio normalization.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.
