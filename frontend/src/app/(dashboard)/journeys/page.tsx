@@ -77,6 +77,24 @@ type Journey = {
       converted_customers: number;
       revenue: number;
     }[];
+    engagement: {
+      touches: number;
+      click_count: number;
+      clicked: number;
+      click_rate_percent: number;
+      open_count: number;
+      opened: number;
+      open_rate_percent: number;
+    };
+    steps: {
+      step_index: number;
+      channel: string;
+      sends: number;
+      clicks: number;
+      opens: number;
+      converted_customers: number;
+      revenue: number;
+    }[];
     note: string;
   };
   max_sends_per_customer: number;
@@ -751,6 +769,8 @@ export default function JourneysPage() {
                     className="mt-1 text-[10px] font-bold uppercase tracking-widest text-emerald-700"
                   >
                     {journey.touch_attribution.sent_events} sends ·{" "}
+                    {journey.touch_attribution.engagement.click_count} clicks ·{" "}
+                    {journey.touch_attribution.engagement.open_count} opens ·{" "}
                     {journey.touch_attribution.converted_customers}/
                     {journey.touch_attribution.unique_customers} converted (
                     {journey.touch_attribution.conversion_rate_percent}%) · Rs{" "}

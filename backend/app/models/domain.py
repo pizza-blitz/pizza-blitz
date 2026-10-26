@@ -1413,6 +1413,9 @@ class JourneyEnrollment(Base):
     events = relationship(
         "JourneyEvent", back_populates="enrollment", cascade="all, delete-orphan"
     )
+    touches = relationship(
+        "JourneyTouch", back_populates="enrollment", cascade="all, delete-orphan"
+    )
 
 
 class JourneyEvent(Base):
@@ -1427,6 +1430,26 @@ class JourneyEvent(Base):
     detail = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     enrollment = relationship("JourneyEnrollment", back_populates="events")
+
+
+class JourneyTouch(Base):
+    """A successful journey send with its own click/open tracking tokens."""
+
+    __tablename__ = "journey_touches"
+    id = Column(Integer, primary_key=True, index=True)
+    enrollment_id = Column(
+        Integer, ForeignKey("journey_enrollments.id"), nullable=False, index=True
+    )
+    step_index = Column(Integer, nullable=False, default=0)
+    channel = Column(String(50), nullable=False)
+    tracking_token = Column(String(80), unique=True, index=True, nullable=True)
+    open_token = Column(String(80), unique=True, index=True, nullable=True)
+    click_count = Column(Integer, nullable=False, default=0, server_default="0")
+    open_count = Column(Integer, nullable=False, default=0, server_default="0")
+    clicked_at = Column(DateTime, nullable=True)
+    opened_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    enrollment = relationship("JourneyEnrollment", back_populates="touches")
 
 
 class RecruitmentJob(Base):

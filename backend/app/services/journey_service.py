@@ -6,10 +6,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.domain import (
     Customer,
     JourneyEnrollment,
     JourneyEvent,
+    JourneyTouch,
     MarketingJourney,
     MessageTemplate,
     RestaurantOrder,
@@ -23,6 +25,29 @@ TRIGGERS = {
     "manual": "Manual enrollment",
 }
 CHANNELS = {"whatsapp", "sms", "email", "instagram"}
+
+
+def journey_public_url() -> str:
+    return settings.PIZZA_BLITZ_PUBLIC_URL.rstrip("/")
+
+
+def journey_track_url(token: str) -> str:
+    prefix = settings.PIZZA_BLITZ_PUBLIC_API_PREFIX.rstrip("/")
+    return f"{journey_public_url()}{prefix}/api/v1/restaurant/journeys/track/{token}"
+
+
+def journey_open_url(token: str) -> str:
+    prefix = settings.PIZZA_BLITZ_PUBLIC_API_PREFIX.rstrip("/")
+    return f"{journey_public_url()}{prefix}/api/v1/restaurant/journeys/open/{token}.png"
+
+
+def journey_order_url(row: MarketingJourney) -> str:
+    from urllib.parse import quote
+
+    return (
+        f"{journey_public_url()}/order?utm_source=journey"
+        f"&utm_campaign={quote(row.name or '')}"
+    )
 
 
 def journey_attribution(
@@ -54,6 +79,16 @@ def journey_attribution(
         "revenue": 0.0,
         "revenue_per_customer": 0.0,
         "channels": [],
+        "engagement": {
+            "touches": 0,
+            "click_count": 0,
+            "clicked": 0,
+            "click_rate_percent": 0.0,
+            "open_count": 0,
+            "opened": 0,
+            "open_rate_percent": 0.0,
+        },
+        "steps": [],
         "note": "No successful journey sends yet.",
     }
     if not events:
@@ -128,6 +163,47 @@ def journey_attribution(
     converted = len(revenue_by_customer)
     unique_customers = len(first_send_at)
     revenue = round(sum(revenue_by_customer.values()), 2)
+
+    touches = (
+        db.query(JourneyTouch)
+        .join(JourneyEnrollment, JourneyTouch.enrollment_id == JourneyEnrollment.id)
+        .filter(JourneyEnrollment.journey_id == row.id)
+        .order_by(JourneyTouch.created_at.asc())
+        .all()
+    )
+    click_count = sum(int(touch.click_count or 0) for touch in touches)
+    open_count = sum(int(touch.open_count or 0) for touch in touches)
+    clicked_touches = [touch for touch in touches if (touch.click_count or 0) > 0]
+    opened_touches = [touch for touch in touches if (touch.open_count or 0) > 0]
+    step_stats: dict[int, dict] = {}
+    first_step_by_customer: dict[int, int] = {}
+    for touch in touches:
+        enrollment = enrollment_by_id.get(touch.enrollment_id)
+        bucket = step_stats.setdefault(
+            touch.step_index,
+            {
+                "step_index": touch.step_index,
+                "channel": touch.channel,
+                "sends": 0,
+                "clicks": 0,
+                "opens": 0,
+                "converted_customers": 0,
+                "revenue": 0.0,
+            },
+        )
+        bucket["sends"] += 1
+        bucket["clicks"] += int(touch.click_count or 0)
+        bucket["opens"] += int(touch.open_count or 0)
+        if enrollment and enrollment.customer_id is not None:
+            first_step_by_customer.setdefault(enrollment.customer_id, touch.step_index)
+    for customer_id in revenue_by_customer:
+        step_index = first_step_by_customer.get(customer_id)
+        if step_index in step_stats:
+            step_stats[step_index]["converted_customers"] += 1
+            step_stats[step_index]["revenue"] = round(
+                step_stats[step_index]["revenue"] + revenue_by_customer[customer_id], 2
+            )
+
     return {
         "model": "journey_send_attribution",
         "window_days": window_days,
@@ -145,6 +221,20 @@ def journey_attribution(
         "channels": sorted(
             channel_stats.values(), key=lambda item: (-item["revenue"], item["channel"])
         ),
+        "engagement": {
+            "touches": len(touches),
+            "click_count": click_count,
+            "clicked": len(clicked_touches),
+            "click_rate_percent": round((len(clicked_touches) / len(touches)) * 100, 2)
+            if touches
+            else 0.0,
+            "open_count": open_count,
+            "opened": len(opened_touches),
+            "open_rate_percent": round((len(opened_touches) / len(touches)) * 100, 2)
+            if touches
+            else 0.0,
+        },
+        "steps": [step_stats[index] for index in sorted(step_stats)],
         "note": (
             "Orders are matched by customer phone after the first successful send and within "
             f"{window_days} days. This is journey-level send attribution, not incremental lift."
@@ -680,12 +770,36 @@ def _advance(db: Session, enrollment: JourneyEnrollment) -> None:
                         detail=f"No {channel} destination on file.",
                     )
                 else:
+                    tracking_token = secrets.token_urlsafe(12)
+                    open_token = secrets.token_urlsafe(12)
+                    tracked_url = journey_track_url(tracking_token)
+                    message = body
+                    if tracked_url not in message:
+                        message = f"{message}\nOrder here: {tracked_url}"
+                    open_url = journey_open_url(open_token)
+                    html_extra = (
+                        f'<img src="{open_url}" width="1" height="1" alt="" '
+                        'style="display:none" />'
+                        if channel == "email"
+                        else ""
+                    )
                     result = send_campaign_message(
                         channel=channel,
                         destination=destination,
-                        message=body,
+                        message=message,
                         subject=str(step.get("subject") or ""),
+                        html_extra=html_extra,
                     )
+                    if result.status == "sent":
+                        db.add(
+                            JourneyTouch(
+                                enrollment_id=enrollment.id,
+                                step_index=index,
+                                channel=channel,
+                                tracking_token=tracking_token,
+                                open_token=open_token,
+                            )
+                        )
                     _log(
                         db,
                         enrollment,

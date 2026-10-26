@@ -1,20 +1,30 @@
 from typing import List, Optional
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
+from app.models.domain import JourneyTouch
 from app.services.journey_service import (
     create_journey,
     enroll_manual,
     get_journey,
+    journey_order_url,
     list_journeys,
     process_due,
     update_journey,
 )
 
 router = APIRouter()
+
+_OPEN_PIXEL = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+    b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00"
+    b"\x00\x02\x02D\x01\x00;"
+)
 
 
 class JourneyStep(BaseModel):
@@ -70,6 +80,39 @@ def journeys(
     _: dict = Depends(require_roles("admin")),
 ):
     return {"journeys": list_journeys(db)}
+
+
+@router.get("/track/{token}")
+def journey_track_click(token: str, db: Session = Depends(get_db)):
+    touch = (
+        db.query(JourneyTouch).filter(JourneyTouch.tracking_token == token).first()
+    )
+    if touch is None:
+        raise HTTPException(status_code=404, detail="Journey link not found.")
+    touch.click_count = (touch.click_count or 0) + 1
+    touch.clicked_at = touch.clicked_at or datetime.utcnow()
+    db.commit()
+    journey = touch.enrollment.journey if touch.enrollment else None
+    if journey is None:
+        raise HTTPException(status_code=404, detail="Journey not found.")
+    return RedirectResponse(
+        f"{journey_order_url(journey)}&touch={touch.id}", status_code=307
+    )
+
+
+@router.get("/open/{token}.png")
+def journey_track_open(token: str, db: Session = Depends(get_db)):
+    touch = db.query(JourneyTouch).filter(JourneyTouch.open_token == token).first()
+    if touch is None:
+        raise HTTPException(status_code=404, detail="Open pixel not found.")
+    touch.open_count = (touch.open_count or 0) + 1
+    touch.opened_at = touch.opened_at or datetime.utcnow()
+    db.commit()
+    return Response(
+        content=_OPEN_PIXEL,
+        media_type="image/gif",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @router.get("/triggers")

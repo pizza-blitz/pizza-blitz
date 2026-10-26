@@ -135,6 +135,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 104 | Video trimming | Uploaded/recorded clips could not be cut; creators had to re-record or edit elsewhere. | Media-editing gap. | Added `POST /media/assets/{id}/trim` with start/end validation, stream-copy trim with re-encode fallback, a new asset through the normal transcode/poster pipeline, a Trim modal with duration-aware bounds, and a proof that trims a 2s clip to ~1s. Two backend tests and extended Media Studio proof. Multi-clip timelines, filters, audio mixing, captions re-timing and S3-source trimming remain. |
 | 105 | Email open tracking | Email campaigns had clicks but no open signal, so engagement reporting could not show open rate. | Email-engagement gap. | Added per-delivery `open_token`, a 1x1 `/open/{token}.png` pixel injected into Resend HTML (sends and retries), open counters/timestamps, no-store headers, and opens/open-rate/unique-opens in performance. The open pixel is email-only; SMS/WhatsApp show n/a. Two backend tests and extended attribution proof. Apple Mail Privacy-style prefetch, bot filtering, views/video plays and link-level analytics remain. |
 | 106 | Journey send attribution | Journeys reported revenue from the triggering order but not sends, unique contacts, or orders after the first touch. | Lifecycle-measurement gap. | Added a derived journey attribution model over `JourneyEvent` sends: successful send count, unique customers, orders matched by phone after the first send within 30 days, conversion rate, revenue and revenue by first-touch channel. Journey cards and detail include the figures. Two backend tests and the extended journeys proof. Incremental holdouts, multi-touch weighting, per-step conversion and provider-level delivery data remain. |
+| 107 | Journey engagement tracking | Journey sends had no tracked links, open pixels or per-step engagement, so click/open behavior was invisible. | Journey-engagement gap. | Added a `journey_touches` table, per-send tracked link/open pixel tokens, `/journeys/track/{token}` redirect and `/journeys/open/{token}.png` pixel, tracked links embedded in journey messages plus Resend HTML pixels, and engagement/per-step stats (sends, clicks, opens, conversions, revenue) on journey cards. Two backend tests and the extended journeys proof. Multi-touch weighting, per-message link analytics and journey holdouts remain. |
 
 ## Still open
 
@@ -149,7 +150,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 254 tests, all pass (in a clean venv built from
+- Backend unit suite: 256 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
