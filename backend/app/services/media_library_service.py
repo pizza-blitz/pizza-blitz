@@ -10,6 +10,7 @@ from app.services.media_service import (
     delete_library_video,
     save_library_image,
     save_library_video,
+    trim_library_video,
 )
 
 
@@ -68,7 +69,30 @@ def create_asset(
     name: str,
     uploaded_by: str = "",
     tags: list[str] | None = None,
+    trim_source: dict | None = None,
 ) -> dict:
+    if trim_source is not None:
+        trimmed = trim_library_video(
+            trim_source["url"],
+            start_seconds=trim_source["start_seconds"],
+            end_seconds=trim_source["end_seconds"],
+        )
+        saved = save_library_video(trimmed, name)
+        return register_asset(
+            db,
+            url=saved["url"],
+            file_name=saved["file_name"],
+            mime_type=saved["mime_type"],
+            size_bytes=saved["size_bytes"],
+            name=name,
+            uploaded_by=uploaded_by,
+            tags=tags,
+            media_type="video",
+            poster_url=saved["poster_url"],
+            duration_seconds=saved["duration_seconds"],
+            width=saved["width"],
+            height=saved["height"],
+        )
     if _detect_video(data):
         saved = save_library_video(data, name)
         return register_asset(

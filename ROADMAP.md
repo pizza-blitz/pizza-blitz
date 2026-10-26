@@ -214,6 +214,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Editable per-priority SLA policies with first-response targets.
 - [x] Holdout significance testing with confidence intervals and sample sizing.
 - [x] Per-delivery tracked links with click-through reporting.
-- [ ] Opens/views, sequential testing, video editing.
+- [x] Video clip trimming into new assets.
+- [ ] Opens/views, sequential testing, multi-clip video editing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

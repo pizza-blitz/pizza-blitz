@@ -176,6 +176,29 @@ async function main() {
       "Caption track missing from the video player."
     );
 
+    await page.getByTestId(`media-trim-${videoAsset.id}`).click();
+    await page.getByTestId("media-trim-modal").waitFor({ timeout: 20000 });
+    await page.getByTestId("media-trim-start").fill("0.2");
+    await page.getByTestId("media-trim-end").fill("1.2");
+    await page.getByTestId("media-trim-name").fill("Trimmed reel proof");
+    const trimResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/media/assets/${videoAsset.id}/trim`) &&
+        response.request().method() === "POST" &&
+        response.status() === 201,
+      { timeout: 120000 }
+    );
+    await page.getByTestId("media-trim-submit").click();
+    const trimmed = (await (await trimResponse).json()).asset;
+    assert(
+      trimmed.duration_seconds > 0.5 && trimmed.duration_seconds < 1.6,
+      "Trimmed clip duration was outside the requested range."
+    );
+    assert(trimmed.id !== videoAsset.id, "Trim replaced the source instead of adding a clip.");
+    await page
+      .getByTestId(`media-library-asset-${trimmed.id}`)
+      .waitFor({ timeout: 30000 });
+
     await page.screenshot({
       path: path.join(artifactsDir, "visible-media-studio.png"),
       fullPage: false,

@@ -274,6 +274,78 @@ def save_library_video(data: bytes, original_name: str = "") -> dict:
     }
 
 
+def trim_library_video(
+    video_url: str,
+    *,
+    start_seconds: float,
+    end_seconds: float,
+) -> bytes:
+    if is_s3():
+        raise ValueError("Trimming currently requires local media storage.")
+    if not video_url.startswith(VIDEO_PREFIX):
+        raise ValueError("Trim requires a library video.")
+    start = max(0.0, float(start_seconds))
+    end = float(end_seconds)
+    if end - start < 0.5:
+        raise ValueError("Trim must keep at least half a second.")
+    if end - start > VIDEO_MAX_SECONDS:
+        raise ValueError(f"Trimmed clips must be {VIDEO_MAX_SECONDS} seconds or shorter.")
+    filename = video_url[len(VIDEO_PREFIX):]
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        raise ValueError("Invalid video path.")
+    source = (media_root() / VIDEO_SUBDIR / filename).resolve()
+    if media_root().resolve() not in source.parents or not source.exists():
+        raise ValueError("Source video not found.")
+    ffmpeg = _ffmpeg("ffmpeg")
+    if not ffmpeg:
+        raise ValueError("ffmpeg is required to trim videos.")
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "trimmed.mp4"
+        base = [
+            ffmpeg,
+            "-y",
+            "-ss",
+            f"{start:.3f}",
+            "-t",
+            f"{end - start:.3f}",
+            "-i",
+            str(source),
+        ]
+        try:
+            subprocess.run(  # noqa: S603
+                [*base, "-c", "copy", "-avoid_negative_ts", "make_zero", str(target)],
+                capture_output=True,
+                timeout=180,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            try:
+                subprocess.run(  # noqa: S603
+                    [
+                        *base,
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "23",
+                        "-c:a",
+                        "aac",
+                        "-movflags",
+                        "+faststart",
+                        str(target),
+                    ],
+                    capture_output=True,
+                    timeout=600,
+                    check=True,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise ValueError("That clip could not be trimmed.") from exc
+        if not target.exists() or target.stat().st_size == 0:
+            raise ValueError("That clip could not be trimmed.")
+        return target.read_bytes()
+
+
 def delete_library_video(video_url: str | None, poster_url: str | None = None) -> None:
     if is_s3():
         removed = delete_url(video_url or "")

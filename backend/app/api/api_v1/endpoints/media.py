@@ -1,6 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
@@ -14,6 +15,12 @@ from app.services.media_storage import storage_status
 from app.services.caption_service import delete_caption, save_caption
 
 router = APIRouter()
+
+
+class TrimRequest(BaseModel):
+    start_seconds: float = Field(default=0, ge=0, le=180)
+    end_seconds: float = Field(gt=0, le=180)
+    name: str = Field(default="", max_length=160)
 
 
 @router.get("/storage-status")
@@ -53,6 +60,47 @@ async def upload_media_asset(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"asset": asset}
+
+
+@router.post("/assets/{asset_id}/trim", status_code=201)
+def trim_media_asset(
+    asset_id: int,
+    payload: TrimRequest,
+    db: Session = Depends(get_db),
+    session: dict = Depends(require_roles("admin")),
+):
+    from app.models.domain import MediaAsset
+
+    asset = db.query(MediaAsset).filter(MediaAsset.id == asset_id).first()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+    if asset.media_type != "video":
+        raise HTTPException(status_code=422, detail="Only videos can be trimmed.")
+    if payload.end_seconds <= payload.start_seconds:
+        raise HTTPException(
+            status_code=422, detail="End time must be after the start time."
+        )
+    if asset.duration_seconds and payload.end_seconds > asset.duration_seconds + 0.5:
+        raise HTTPException(
+            status_code=422,
+            detail=f"End time exceeds the {asset.duration_seconds:.1f}s clip.",
+        )
+    try:
+        created = create_asset(
+            db,
+            data=b"",
+            name=(payload.name or f"{asset.name} (trim)").strip()[:160],
+            uploaded_by=str(session.get("subject") or ""),
+            tags=list(dict.fromkeys([*(asset.tags or []), "trimmed"])),
+            trim_source={
+                "url": asset.url,
+                "start_seconds": payload.start_seconds,
+                "end_seconds": payload.end_seconds,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"asset": created}
 
 
 @router.post("/assets/{asset_id}/caption", status_code=201)

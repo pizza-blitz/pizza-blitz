@@ -72,6 +72,12 @@ export default function MediaStudioPage() {
   const [recordBusy, setRecordBusy] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [recordName, setRecordName] = useState("");
+  const [trimAsset, setTrimAsset] = useState<MediaAsset | null>(null);
+  const [trimStart, setTrimStart] = useState("0");
+  const [trimEnd, setTrimEnd] = useState("1");
+  const [trimName, setTrimName] = useState("");
+  const [trimBusy, setTrimBusy] = useState(false);
+  const [trimError, setTrimError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -244,6 +250,41 @@ export default function MediaStudioPage() {
       );
     } finally {
       setRecordBusy(false);
+    }
+  };
+
+  const openTrim = (asset: MediaAsset) => {
+    setTrimAsset(asset);
+    setTrimStart("0");
+    setTrimEnd(String(Math.min(asset.duration_seconds || 1, 180)));
+    setTrimName(`${asset.name} (trim)`);
+    setTrimError("");
+  };
+
+  const submitTrim = async () => {
+    if (!trimAsset) return;
+    setTrimBusy(true);
+    setTrimError("");
+    try {
+      const response = await fetch(`${API}/${trimAsset.id}/trim`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start_seconds: Number(trimStart),
+          end_seconds: Number(trimEnd),
+          name: trimName.trim(),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Clip trim failed.");
+      setMessage(`Trimmed ${data.asset.name} into a new clip.`);
+      setTrimAsset(null);
+      await fetchAssets(query);
+    } catch (error) {
+      setTrimError(error instanceof Error ? error.message : "Clip trim failed.");
+    } finally {
+      setTrimBusy(false);
     }
   };
 
@@ -515,6 +556,16 @@ export default function MediaStudioPage() {
                 </div>
                 <div className="flex gap-1.5">
                   {asset.media_type === "video" && (
+                    <button
+                      type="button"
+                      data-testid={`media-trim-${asset.id}`}
+                      onClick={() => openTrim(asset)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50"
+                    >
+                      Trim
+                    </button>
+                  )}
+                  {asset.media_type === "video" && (
                     <label
                       data-testid={`media-caption-button-${asset.id}`}
                       className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-600 hover:bg-gray-50"
@@ -675,6 +726,83 @@ export default function MediaStudioPage() {
             <p className="mt-2 text-[10px] font-semibold text-gray-400">
               Camera frames stay in the browser until you press Upload clip.
             </p>
+          </div>
+        </div>
+      )}
+      {trimAsset && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
+          <div
+            data-testid="media-trim-modal"
+            className="w-full max-w-md rounded-2xl bg-white p-5"
+          >
+            <p className="text-[9px] font-black uppercase tracking-widest text-orange-600">
+              Video trim
+            </p>
+            <h2 className="text-xl font-black text-gray-950">{trimAsset.name}</h2>
+            <p className="mt-1 text-xs font-semibold text-gray-500">
+              Keeps {(Number(trimEnd) - Number(trimStart)).toFixed(1)}s of the{" "}
+              {(trimAsset.duration_seconds || 0).toFixed(1)}s clip and saves a new asset.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                Start (s)
+                <input
+                  data-testid="media-trim-start"
+                  type="number"
+                  min={0}
+                  max={trimAsset.duration_seconds || 180}
+                  step="0.1"
+                  value={trimStart}
+                  onChange={(event) => setTrimStart(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold"
+                />
+              </label>
+              <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                End (s)
+                <input
+                  data-testid="media-trim-end"
+                  type="number"
+                  min={0.1}
+                  max={trimAsset.duration_seconds || 180}
+                  step="0.1"
+                  value={trimEnd}
+                  onChange={(event) => setTrimEnd(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold"
+                />
+              </label>
+            </div>
+            <label className="mt-3 block text-[9px] font-black uppercase tracking-widest text-gray-500">
+              New clip name
+              <input
+                data-testid="media-trim-name"
+                value={trimName}
+                onChange={(event) => setTrimName(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
+              />
+            </label>
+            {trimError && (
+              <p className="mt-2 rounded-lg bg-red-50 px-2 py-1 text-xs font-bold text-red-700">
+                {trimError}
+              </p>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTrimAsset(null)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="media-trim-submit"
+                onClick={() => void submitTrim()}
+                disabled={trimBusy}
+                className="rounded-lg bg-gray-950 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {trimBusy ? "Trimming..." : "Save trimmed clip"}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -132,6 +132,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 101 | Editable SLA policies | SLA targets were hardcoded and had no separate first-response goal. | Configuration gap. | Added a `support_sla_policies` table auto-seeded with sensible defaults, `first_response_due_at` per ticket, `GET /sla-policy` and `PUT /sla-policy/{priority}`, response/resolution validation, first-response overdue counts, and an inbox policy modal. Three backend tests and the extended support proof. Business calendars, channel/customer-tier policies and breach notifications remain. |
 | 102 | Holdout significance | Holdout experiments reported lift and incremental revenue but gave no confidence, p-value or sample-size guidance. | Experimentation rigor gap. | Added a two-proportion z-test with pooled standard error, p-value and 95% confidence interval for absolute lift, relative lift/CI, a significant-at-95% flag, and required per-group sample size for a 20% relative MDE. Surfaced in the holdout panel with a significance readout. Three unit tests and extended attribution proof. Sequential testing, Bayesian methods and stratified power calculations remain. |
 | 103 | Campaign click tracking | Campaign messages had no per-recipient engagement signal, so attribution only knew about sends and coupon orders. | Engagement-measurement gap. | Added per-delivery `tracking_token`, a public `/track/{token}` redirect that counts clicks and forwards to the coupon order page with UTM parameters, tracked links embedded in campaign messages/retries, click counts in delivery serialization, and click/click-rate/unique-clicker engagement reporting. Three backend tests and extended attribution proof. Opens/views, link-level analytics, bot filtering and multi-link tracking remain. |
+| 104 | Video trimming | Uploaded/recorded clips could not be cut; creators had to re-record or edit elsewhere. | Media-editing gap. | Added `POST /media/assets/{id}/trim` with start/end validation, stream-copy trim with re-encode fallback, a new asset through the normal transcode/poster pipeline, a Trim modal with duration-aware bounds, and a proof that trims a 2s clip to ~1s. Two backend tests and extended Media Studio proof. Multi-clip timelines, filters, audio mixing, captions re-timing and S3-source trimming remain. |
 
 ## Still open
 
@@ -146,7 +147,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 248 tests, all pass (in a clean venv built from
+- Backend unit suite: 250 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
