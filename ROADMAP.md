@@ -223,6 +223,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Provider-gated Slack/email delivery for SLA alerts.
 - [x] Video filter presets rendered as new assets.
 - [x] Journey first/last/linear step credit.
-- [ ] Transitions, journey holdouts, mixed-resolution merge.
+- [x] Deterministic journey enrollment holdouts.
+- [ ] Transitions, multi-journey de-duplication, mixed-resolution merge.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

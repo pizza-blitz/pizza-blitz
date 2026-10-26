@@ -105,6 +105,28 @@ type Journey = {
   };
   max_sends_per_customer: number;
   frequency_window_hours: number;
+  holdout_percent: number;
+  holdout_count: number;
+  treated_count: number;
+  holdout_experiment: {
+    enabled: boolean;
+    holdout_percent: number;
+    treated: {
+      customers: number;
+      converted: number;
+      conversion_rate: number;
+      revenue: number;
+    };
+    holdout: {
+      customers: number;
+      converted: number;
+      conversion_rate: number;
+      revenue: number;
+    };
+    lift_percent: number;
+    incremental_revenue: number;
+    note: string;
+  };
   variants: {
     variant: string;
     enrollments: number;
@@ -151,6 +173,7 @@ export default function JourneysPage() {
     steps: defaultSteps(),
     max_sends_per_customer: 0,
     frequency_window_hours: 24,
+    holdout_percent: 0,
   });
 
   const load = async () => {
@@ -211,6 +234,7 @@ export default function JourneysPage() {
         steps: defaultSteps(),
         max_sends_per_customer: 0,
         frequency_window_hours: 24,
+        holdout_percent: 0,
       });
       await load();
       setMessage(`Journey ${data.journey.name} saved.`);
@@ -386,6 +410,25 @@ export default function JourneysPage() {
                   setDraft({
                     ...draft,
                     frequency_window_hours: Number(event.target.value),
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
+              />
+            </label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500">
+              Holdout %
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={draft.holdout_percent}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    holdout_percent: Math.max(
+                      0,
+                      Math.min(100, Number(event.target.value))
+                    ),
                   })
                 }
                 className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-800"
@@ -776,7 +819,20 @@ export default function JourneysPage() {
                     {journey.max_sends_per_customer
                       ? ` · cap ${journey.max_sends_per_customer}/${journey.frequency_window_hours}h`
                       : ""}
+                    {journey.holdout_percent
+                      ? ` · ${journey.holdout_count} holdout / ${journey.treated_count} treated`
+                      : ""}
                   </p>
+                  {journey.holdout_percent > 0 && (
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-sky-700">
+                      Treated {journey.holdout_experiment.treated.conversion_rate}% vs holdout{" "}
+                      {journey.holdout_experiment.holdout.conversion_rate}% · lift{" "}
+                      {journey.holdout_experiment.lift_percent}% · incremental Rs{" "}
+                      {Number(
+                        journey.holdout_experiment.incremental_revenue || 0
+                      ).toLocaleString("en-IN")}
+                    </p>
+                  )}
                   <p
                     data-testid={`journey-attribution-${journey.id}`}
                     className="mt-1 text-[10px] font-bold uppercase tracking-widest text-emerald-700"

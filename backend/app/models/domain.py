@@ -1387,6 +1387,7 @@ class MarketingJourney(Base):
     steps = Column(JSON, default=list)
     max_sends_per_customer = Column(Integer, nullable=False, default=0)
     frequency_window_hours = Column(Integer, nullable=False, default=24)
+    holdout_percent = Column(Float, nullable=False, default=0.0, server_default="0")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

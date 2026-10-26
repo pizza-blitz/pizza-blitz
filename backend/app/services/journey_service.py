@@ -1,5 +1,6 @@
 """Trigger-based marketing journeys with durable enrollment steps."""
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta
 
@@ -17,6 +18,7 @@ from app.models.domain import (
     RestaurantOrder,
 )
 from app.services.campaign_dispatch_service import send_campaign_message
+from app.services.holdout_service import two_proportion_test
 
 TRIGGERS = {
     "order_completed": "Order completed",
@@ -48,6 +50,13 @@ def journey_order_url(row: MarketingJourney) -> str:
         f"{journey_public_url()}/order?utm_source=journey"
         f"&utm_campaign={quote(row.name or '')}"
     )
+
+
+def journey_holdout(journey_id: int, customer_id: int | None, percent: float) -> bool:
+    if not customer_id or not percent:
+        return False
+    digest = hashlib.sha256(f"journey:{journey_id}:{customer_id}".encode()).hexdigest()
+    return int(digest[:8], 16) % 100 < int(round(min(max(percent, 0), 100)))
 
 
 def journey_attribution(
@@ -298,6 +307,121 @@ def journey_attribution(
     }
 
 
+def journey_experiment(
+    db: Session,
+    row: MarketingJourney,
+    enrollments: list[JourneyEnrollment],
+) -> dict:
+    treated = [item for item in enrollments if item.status != "holdout"]
+    holdout = [item for item in enrollments if item.status == "holdout"]
+    empty = {
+        "enabled": bool(row.holdout_percent),
+        "holdout_percent": float(row.holdout_percent or 0),
+        "treated": {"customers": 0, "converted": 0, "conversion_rate": 0.0, "revenue": 0.0},
+        "holdout": {"customers": 0, "converted": 0, "conversion_rate": 0.0, "revenue": 0.0},
+        "lift_percent": 0.0,
+        "incremental_revenue": 0.0,
+        "significance": None,
+        "note": "No treated or holdout enrollments yet.",
+    }
+    if not treated and not holdout:
+        return empty
+
+    phones_by_group: dict[str, dict[str, datetime]] = {"treated": {}, "holdout": {}}
+    customer_ids = [item.customer_id for item in enrollments if item.customer_id]
+    customers = {
+        customer.id: customer
+        for customer in db.query(Customer).filter(Customer.id.in_(customer_ids)).all()
+    }
+    for group, rows in (("treated", treated), ("holdout", holdout)):
+        for item in rows:
+            customer = customers.get(item.customer_id)
+            phone = (
+                (customer.phone or "").strip()
+                if customer
+                else str((item.context or {}).get("phone") or "").strip()
+            )
+            if not phone:
+                continue
+            existing = phones_by_group[group].get(phone)
+            stamp = item.created_at or datetime.utcnow()
+            if existing is None or stamp < existing:
+                phones_by_group[group][phone] = stamp
+
+    all_phones = list(phones_by_group["treated"]) + list(phones_by_group["holdout"])
+    orders = (
+        db.query(RestaurantOrder)
+        .filter(RestaurantOrder.customer_phone.in_(all_phones))
+        .all()
+        if all_phones
+        else []
+    )
+
+    def summarize(group: str) -> dict:
+        converted = 0
+        revenue = 0.0
+        for phone, enrolled_at in phones_by_group[group].items():
+            matched = [
+                order
+                for order in orders
+                if (order.customer_phone or "").strip() == phone
+                and order.created_at
+                and order.created_at >= enrolled_at
+            ]
+            if matched:
+                converted += 1
+                revenue += sum(float(order.total_amount or 0) for order in matched)
+        count = len(phones_by_group[group])
+        return {
+            "customers": count,
+            "converted": converted,
+            "conversion_rate": round((converted / count) * 100, 2) if count else 0.0,
+            "revenue": round(revenue, 2),
+            "revenue_per_customer": round(revenue / count, 2) if count else 0.0,
+        }
+
+    treated_summary = summarize("treated")
+    holdout_summary = summarize("holdout")
+    lift = (
+        round(
+            (
+                (treated_summary["conversion_rate"] - holdout_summary["conversion_rate"])
+                / holdout_summary["conversion_rate"]
+            )
+            * 100,
+            2,
+        )
+        if holdout_summary["conversion_rate"]
+        else 0.0
+    )
+    incremental = round(
+        treated_summary["revenue"]
+        - (holdout_summary["revenue_per_customer"] * treated_summary["customers"]),
+        2,
+    )
+    significance = None
+    if treated_summary["customers"] and holdout_summary["customers"]:
+        significance = two_proportion_test(
+            treated_summary["converted"],
+            treated_summary["customers"],
+            holdout_summary["converted"],
+            holdout_summary["customers"],
+        )
+    return {
+        "enabled": bool(row.holdout_percent),
+        "holdout_percent": float(row.holdout_percent or 0),
+        "treated": treated_summary,
+        "holdout": holdout_summary,
+        "lift_percent": lift,
+        "incremental_revenue": incremental,
+        "significance": significance,
+        "note": (
+            "Holdout enrollments receive no journey sends. Orders after enrollment are matched "
+            "by phone. Small samples are directional, not proof of incrementality."
+        ),
+    }
+
+
 def serialize_journey(db: Session, row: MarketingJourney) -> dict:
     enrollments = (
         db.query(func.count(JourneyEnrollment.id))
@@ -376,6 +500,10 @@ def serialize_journey(db: Session, row: MarketingJourney) -> dict:
         "completed_count": completed,
         "max_sends_per_customer": row.max_sends_per_customer or 0,
         "frequency_window_hours": row.frequency_window_hours or 24,
+        "holdout_percent": float(row.holdout_percent or 0),
+        "holdout_count": sum(1 for item in all_enrollments if item.status == "holdout"),
+        "treated_count": sum(1 for item in all_enrollments if item.status != "holdout"),
+        "holdout_experiment": journey_experiment(db, row, all_enrollments),
         "variants": [variant_stats[key] for key in sorted(variant_stats)],
         "attributed_revenue": attributed_revenue,
         "revenue_per_enrollment": round(attributed_revenue / enrollments, 2)
@@ -535,6 +663,7 @@ def create_journey(
     status: str = "draft",
     max_sends_per_customer: int = 0,
     frequency_window_hours: int = 24,
+    holdout_percent: float = 0,
 ) -> dict:
     if trigger not in TRIGGERS:
         raise ValueError("Unknown journey trigger.")
@@ -546,6 +675,7 @@ def create_journey(
         steps=validate_steps(steps),
         max_sends_per_customer=max(0, min(int(max_sends_per_customer), 50)),
         frequency_window_hours=max(1, min(int(frequency_window_hours), 720)),
+        holdout_percent=max(0.0, min(float(holdout_percent or 0), 100.0)),
     )
     db.add(row)
     db.commit()
@@ -564,6 +694,7 @@ def update_journey(
     status: str | None = None,
     max_sends_per_customer: int | None = None,
     frequency_window_hours: int | None = None,
+    holdout_percent: float | None = None,
 ) -> dict:
     if name is not None:
         row.name = name.strip()[:160]
@@ -583,6 +714,8 @@ def update_journey(
         row.max_sends_per_customer = max(0, min(int(max_sends_per_customer), 50))
     if frequency_window_hours is not None:
         row.frequency_window_hours = max(1, min(int(frequency_window_hours), 720))
+    if holdout_percent is not None:
+        row.holdout_percent = max(0.0, min(float(holdout_percent), 100.0))
     db.commit()
     db.refresh(row)
     return serialize_journey(db, row)
@@ -933,16 +1066,22 @@ def enroll_manual(
     )
     if customer is None and destination.strip():
         customer = db.query(Customer).filter(Customer.phone == destination.strip()).first()
+    holdout = journey_holdout(
+        journey.id, customer.id if customer else None, journey.holdout_percent or 0
+    )
     enrollment = JourneyEnrollment(
         journey_id=journey.id,
         customer_id=customer.id if customer else None,
         trigger_ref=ref,
-        status="running",
+        status="holdout" if holdout else "running",
         current_step=0,
-        next_run_at=datetime.utcnow(),
-        context=context,
+        next_run_at=None if holdout else datetime.utcnow(),
+        context={**context, "holdout": holdout},
     )
     db.add(enrollment)
+    db.flush()
+    if holdout:
+        enrollment.next_run_at = None
     db.commit()
     db.refresh(enrollment)
     return serialize_enrollment(enrollment)
@@ -977,24 +1116,30 @@ def enroll_order_trigger(db: Session, trigger: str, order: RestaurantOrder) -> i
         if existing:
             continue
         customer = db.query(Customer).filter(Customer.phone == phone).first()
-        db.add(
-            JourneyEnrollment(
-                journey_id=journey.id,
-                customer_id=customer.id if customer else None,
-                trigger_ref=ref,
-                status="running",
-                current_step=0,
-                next_run_at=datetime.utcnow(),
-                context={
-                    "name": order.customer_name or "",
-                    "phone": phone,
-                    "order_id": order.id,
-                    "total": order.total_amount,
-                    "order_total": order.total_amount,
-                    "variant": _pick_variant(journey),
-                },
-            )
+        holdout = journey_holdout(
+            journey.id, customer.id if customer else None, journey.holdout_percent or 0
         )
+        enrollment = JourneyEnrollment(
+            journey_id=journey.id,
+            customer_id=customer.id if customer else None,
+            trigger_ref=ref,
+            status="holdout" if holdout else "running",
+            current_step=0,
+            next_run_at=None if holdout else datetime.utcnow(),
+            context={
+                "name": order.customer_name or "",
+                "phone": phone,
+                "order_id": order.id,
+                "total": order.total_amount,
+                "order_total": order.total_amount,
+                "variant": _pick_variant(journey),
+                "holdout": holdout,
+            },
+        )
+        db.add(enrollment)
+        db.flush()
+        if holdout:
+            enrollment.next_run_at = None
         enrolled += 1
     if enrolled:
         db.commit()

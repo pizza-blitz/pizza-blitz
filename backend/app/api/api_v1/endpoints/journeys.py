@@ -50,6 +50,7 @@ class JourneyCreate(BaseModel):
     status: str = Field(default="draft", max_length=20)
     max_sends_per_customer: int = Field(default=0, ge=0, le=50)
     frequency_window_hours: int = Field(default=24, ge=1, le=720)
+    holdout_percent: float = Field(default=0, ge=0, le=100)
 
 
 class JourneyUpdate(BaseModel):
@@ -60,6 +61,7 @@ class JourneyUpdate(BaseModel):
     status: Optional[str] = Field(default=None, max_length=20)
     max_sends_per_customer: Optional[int] = Field(default=None, ge=0, le=50)
     frequency_window_hours: Optional[int] = Field(default=None, ge=1, le=720)
+    holdout_percent: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 class ManualEnroll(BaseModel):
@@ -147,6 +149,7 @@ def save_journey(
                 status=payload.status,
                 max_sends_per_customer=payload.max_sends_per_customer,
                 frequency_window_hours=payload.frequency_window_hours,
+                holdout_percent=payload.holdout_percent,
             )
         }
     except ValueError as exc:
@@ -189,6 +192,7 @@ def edit_journey(
                 status=payload.status,
                 max_sends_per_customer=payload.max_sends_per_customer,
                 frequency_window_hours=payload.frequency_window_hours,
+                holdout_percent=payload.holdout_percent,
             )
         }
     except ValueError as exc:

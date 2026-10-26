@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 265 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 267 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -240,7 +240,9 @@ Wave 4 (in progress):
   channel. Journey sends now carry tracked click links and email open pixels, with clicks,
   opens and per-step conversions in the API (cards show aggregate engagement). Per-step
   first-touch, last-touch and linear credit is also returned, with the best step surfaced on
-  each card. New `verify:journey-branches` proof and five tests.
+  each card. New `verify:journey-branches` proof and five tests. Journeys can reserve a
+  deterministic 0–100% enrollment holdout; holdouts receive no sends and treated-vs-holdout
+  conversion, lift and incremental revenue appear on the journey card.
 - HR recruitment is live: jobs, applicant board, stage moves, interviews, offers and automatic
   onboarding handoff at `/departments/hr/recruitment`; new `verify:recruitment` proof and two
   backend tests.
