@@ -22,7 +22,7 @@ Pizza Blitz is a working multi-surface restaurant platform:
 | Owner/admin portal | 56 pages under `/dashboard`, `/departments`, `/menu`, `/inventory`, … | Sales, finance, inventory, purchasing, vendors, waste, recipes, workforce, CRM, marketing hub, journeys, reports, stores, departments/HR including recruitment, Media Studio, landing CMS, tax/billing, providers, messaging inbox, hardware, integrations, deployment, feedback |
 | Public operational pages | `/receipt/[id]`, `/customer-display`, `/login` | Receipts, second-screen display, portal login |
 
-**Current inventory:** 418 API endpoints, 73 frontend routes (57 portal, 1 KDS,
+**Current inventory:** 435 API endpoints, 73 frontend routes (57 portal, 1 KDS,
 15 public), 96 database tables, 267 backend tests, 168 browser proof scripts.
 
 ### Core capabilities
