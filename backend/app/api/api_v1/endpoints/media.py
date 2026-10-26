@@ -12,7 +12,12 @@ from app.services.media_library_service import (
     serialize_asset,
 )
 from app.services.media_storage import storage_status
-from app.services.caption_service import delete_caption, save_caption
+from app.services.caption_service import (
+    clip_captions,
+    delete_caption,
+    load_caption,
+    save_caption,
+)
 
 router = APIRouter()
 
@@ -178,6 +183,31 @@ def trim_media_asset(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if asset.caption_url:
+        source_captions = load_caption(asset.caption_url)
+        if source_captions:
+            clipped = clip_captions(
+                source_captions, payload.start_seconds, payload.end_seconds
+            )
+            if " --> " in clipped:
+                trimmed_row = (
+                    db.query(MediaAsset).filter(MediaAsset.id == created["id"]).first()
+                )
+                if trimmed_row is not None:
+                    try:
+                        caption_url, language = save_caption(
+                            trimmed_row,
+                            clipped.encode("utf-8"),
+                            "trimmed.vtt",
+                            asset.caption_language or "en",
+                        )
+                        trimmed_row.caption_url = caption_url
+                        trimmed_row.caption_language = language
+                        db.commit()
+                        db.refresh(trimmed_row)
+                        created = serialize_asset(trimmed_row)
+                    except ValueError:
+                        pass
     return {"asset": created}
 
 

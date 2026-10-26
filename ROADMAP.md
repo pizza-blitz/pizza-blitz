@@ -226,6 +226,7 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Deterministic journey enrollment holdouts.
 - [x] Journey significance and SLA alert delivery retry.
 - [x] Automatic SLA delivery retries with backoff.
-- [ ] Transitions, pager escalation, multi-journey de-duplication.
+- [x] Caption re-timing on trimmed clips.
+- [ ] Transitions, pager escalation, merge caption re-timing.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

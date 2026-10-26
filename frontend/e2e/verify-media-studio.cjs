@@ -195,6 +195,7 @@ async function main() {
       "Trimmed clip duration was outside the requested range."
     );
     assert(trimmed.id !== videoAsset.id, "Trim replaced the source instead of adding a clip.");
+    assert(trimmed.caption_url, "Trimmed clip did not carry re-timed captions.");
     await page
       .getByTestId(`media-library-asset-${trimmed.id}`)
       .waitFor({ timeout: 30000 });

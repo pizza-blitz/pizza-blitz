@@ -115,6 +115,42 @@ class MediaTrimTest(unittest.TestCase):
         )
         self.assertEqual(inverted.status_code, 422, inverted.text)
 
+    def test_trim_re_times_source_captions(self):
+        source = self._upload()
+        caption = self.client.post(
+            f"/api/v1/restaurant/media/assets/{source['id']}/caption",
+            files={
+                "file": (
+                    "source.vtt",
+                    b"WEBVTT\n\n"
+                    b"00:00:00.300 --> 00:00:00.900\nEarly line\n\n"
+                    b"00:00:01.000 --> 00:00:01.800\nMiddle line\n\n"
+                    b"00:00:02.200 --> 00:00:02.900\nLate line\n",
+                    "text/vtt",
+                )
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(caption.status_code, 201, caption.text)
+
+        trimmed = self.client.post(
+            f"/api/v1/restaurant/media/assets/{source['id']}/trim",
+            json={"start_seconds": 0.5, "end_seconds": 2.0, "name": "Captioned trim"},
+            headers=self.headers,
+        )
+        self.assertEqual(trimmed.status_code, 201, trimmed.text)
+        asset = trimmed.json()["asset"]
+        self.asset_ids.append(asset["id"])
+        self.assertTrue(asset["caption_url"])
+        served = self.client.get(asset["caption_url"])
+        self.assertEqual(served.status_code, 200, served.text)
+        body = served.text
+        self.assertIn("Early line", body)
+        self.assertIn("Middle line", body)
+        self.assertNotIn("Late line", body)
+        self.assertIn("00:00:00.000 --> 00:00:00.400", body)
+        self.assertIn("00:00:00.500 --> 00:00:01.300", body)
+
 
 if __name__ == "__main__":
     unittest.main()

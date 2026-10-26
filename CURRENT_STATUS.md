@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 268 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 269 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -212,10 +212,11 @@ Wave 4 (in progress):
   duration metadata. A Record reel modal captures camera/mic in the browser and pushes the
   WebM through the same transcode pipeline. VTT/SRT captions can be attached to videos, with
   SRT converted to WebVTT and a caption track on the player. Video clips can be trimmed to a
-  start/end range and saved as a new asset with its own poster/duration, or 2–10 ordered clips
-  with matching dimensions/audio can be merged into one stitched clip. Filter presets
-  (grayscale, sepia, warm, cool, brighten, vignette) render new assets. A storage-status badge
-  reports local disk or S3/CDN; S3-compatible uploads/deletes use CDN URLs with local fallback.
+  start/end range and saved as a new asset with its own poster/duration, carrying clipped and
+  re-timed captions from the source; 2–10 ordered clips with matching dimensions/audio can be
+  merged into one stitched clip. Filter presets (grayscale, sepia, warm, cool, brighten,
+  vignette) render new assets. A storage-status badge reports local disk or S3/CDN;
+  S3-compatible uploads/deletes use CDN URLs with local fallback.
 - Private recruitment documents (resumes and offer letters) now live outside the public
   `/media` mount under `PRIVATE_MEDIA_ROOT`; only authenticated HR routes or offer tokens can
   read them.

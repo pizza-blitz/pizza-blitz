@@ -32,6 +32,88 @@ def _convert(text: str) -> str:
     return f"WEBVTT\n\n{converted}\n"
 
 
+def _parse_timestamp(value: str) -> float:
+    clean = value.strip().replace(",", ".")
+    parts = clean.split(":")
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+    elif len(parts) == 2:
+        hours, minutes, seconds = "0", parts[0], parts[1]
+    else:
+        raise ValueError("Invalid caption timestamp.")
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def _format_timestamp(seconds: float) -> str:
+    value = max(0.0, seconds)
+    hours = int(value // 3600)
+    minutes = int((value % 3600) // 60)
+    whole = int(value % 60)
+    millis = int(round((value - int(value)) * 1000))
+    if millis == 1000:
+        whole += 1
+        millis = 0
+    return f"{hours:02d}:{minutes:02d}:{whole:02d}.{millis:03d}"
+
+
+def parse_cues(text: str) -> list[dict]:
+    clean = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+    cues: list[dict] = []
+    for block in re.split(r"\n\s*\n", clean.strip()):
+        lines = [line for line in block.split("\n") if line.strip()]
+        if not lines:
+            continue
+        timing_index = next(
+            (index for index, line in enumerate(lines) if "-->" in line), None
+        )
+        if timing_index is None:
+            continue
+        try:
+            start_raw, end_raw = lines[timing_index].split("-->", 1)
+            start = _parse_timestamp(start_raw)
+            end = _parse_timestamp(end_raw.strip().split(" ")[0])
+        except ValueError:
+            continue
+        body = "\n".join(lines[timing_index + 1 :]).strip()
+        if not body or end <= start:
+            continue
+        cues.append({"start": start, "end": end, "text": body})
+    return cues
+
+
+def clip_captions(text: str, start_seconds: float, end_seconds: float) -> str:
+    start = max(0.0, float(start_seconds))
+    end = float(end_seconds)
+    blocks: list[str] = []
+    for cue in parse_cues(text):
+        overlap_start = max(cue["start"], start)
+        overlap_end = min(cue["end"], end)
+        if overlap_end - overlap_start < 0.05:
+            continue
+        new_start = overlap_start - start
+        new_end = overlap_end - start
+        blocks.append(
+            f"{_format_timestamp(new_start)} --> {_format_timestamp(new_end)}\n"
+            f"{cue['text']}"
+        )
+    return "WEBVTT\n\n" + "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def load_caption(url: str | None) -> str | None:
+    if not url or is_s3() or not url.startswith(CAPTION_PREFIX):
+        return None
+    filename = url[len(CAPTION_PREFIX):]
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        return None
+    target = (caption_dir() / filename).resolve()
+    if caption_dir().resolve() not in target.parents or not target.exists():
+        return None
+    try:
+        return target.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 def save_caption(
     asset: MediaAsset, data: bytes, filename: str, language: str = "en"
 ) -> tuple[str, str]:
