@@ -4,7 +4,7 @@ import os
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.clock import business_today
@@ -382,6 +382,23 @@ def _tracking_url(token: str | None) -> str | None:
         f"{_public_site_url()}{prefix}/api/v1/restaurant/promotions/track/"
         f"{quote(token, safe='')}"
     )
+
+
+def _open_url(token: str | None) -> str | None:
+    if not token:
+        return None
+    prefix = settings.PIZZA_BLITZ_PUBLIC_API_PREFIX.rstrip("/")
+    return (
+        f"{_public_site_url()}{prefix}/api/v1/restaurant/promotions/open/"
+        f"{quote(token, safe='')}.png"
+    )
+
+
+_OPEN_PIXEL = (
+    b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!"
+    b"\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00"
+    b"\x00\x02\x02D\x01\x00;"
+)
 
 
 def _customer_dict(customer: Customer) -> dict:
@@ -1374,6 +1391,11 @@ def _delivery_dict(delivery: CampaignDelivery) -> dict:
         "tracking_url": _tracking_url(delivery.tracking_token)
         if delivery.tracking_token
         else None,
+        "open_count": delivery.open_count or 0,
+        "opened_at": delivery.opened_at.isoformat() if delivery.opened_at else None,
+        "open_pixel_url": _open_url(delivery.open_token)
+        if delivery.open_token
+        else None,
         "error": delivery.error,
         "dry_run": delivery.dry_run,
         "retryable": delivery.status in {"failed", "skipped"},
@@ -1436,6 +1458,8 @@ def _delivery_counts(deliveries: list[CampaignDelivery]) -> dict:
         "holdout_count": sum(1 for delivery in deliveries if delivery.status == "holdout"),
         "clicked_count": sum(1 for delivery in deliveries if (delivery.click_count or 0) > 0),
         "click_count": sum(int(delivery.click_count or 0) for delivery in deliveries),
+        "opened_count": sum(1 for delivery in deliveries if (delivery.open_count or 0) > 0),
+        "open_count": sum(int(delivery.open_count or 0) for delivery in deliveries),
         "needs_attention_count": sum(
             1 for delivery in deliveries if delivery.status in {"failed", "skipped"}
         ),
@@ -1561,10 +1585,17 @@ def _retry_delivery_for_customer(
         "retry_source_reason": _delivery_issue_reason(source_delivery),
     }
     tracking_token = secrets.token_urlsafe(12)
+    open_token = secrets.token_urlsafe(12)
     tracked_url = _tracking_url(tracking_token)
+    open_url = _open_url(open_token)
     message = contact["message"]
     if tracked_url:
         message = message.replace(_order_offer_link(promo), tracked_url)
+    html_extra = (
+        f'<img src="{open_url}" width="1" height="1" alt="" style="display:none" />'
+        if open_url and promo.channel == "email"
+        else ""
+    )
     delivery_kwargs = {
         "promotion_id": promo.id,
         "customer_id": customer.id,
@@ -1572,6 +1603,7 @@ def _retry_delivery_for_customer(
         "destination": destination or contact["destination"],
         "message": message,
         "tracking_token": tracking_token,
+        "open_token": open_token,
         "attempted_at": datetime.utcnow(),
     }
 
@@ -1596,8 +1628,9 @@ def _retry_delivery_for_customer(
     result = send_campaign_message(
         channel=promo.channel,
         destination=destination,
-        message=contact["message"],
+        message=message,
         subject=promo.name,
+        html_extra=html_extra,
     )
     return CampaignDelivery(
         **delivery_kwargs,
@@ -1694,12 +1727,20 @@ def _promotion_performance_payload(db: Session, promo: Promotion) -> dict:
     delivery_counts = _delivery_counts(delivery_rows)
     sent_deliveries = [row for row in delivery_rows if row.status == "sent"]
     clicked_deliveries = [row for row in sent_deliveries if (row.click_count or 0) > 0]
+    opened_deliveries = [row for row in sent_deliveries if (row.open_count or 0) > 0]
     engagement = {
         "sent": len(sent_deliveries),
         "clicked": len(clicked_deliveries),
         "click_count": sum(int(row.click_count or 0) for row in sent_deliveries),
         "click_rate_percent": round(
             (len(clicked_deliveries) / len(sent_deliveries)) * 100, 2
+        )
+        if sent_deliveries
+        else 0.0,
+        "opened": len(opened_deliveries),
+        "open_count": sum(int(row.open_count or 0) for row in sent_deliveries),
+        "open_rate_percent": round(
+            (len(opened_deliveries) / len(sent_deliveries)) * 100, 2
         )
         if sent_deliveries
         else 0.0,
@@ -2015,6 +2056,25 @@ def _campaign_performance_csv(payload: dict) -> str:
     writer.writerow(["Ads", "Reported Revenue", ads["reported_revenue"]])
     writer.writerow(["Ads", "ROAS", ads["roas"]])
     return output.getvalue()
+
+
+@router.get("/open/{token}.png")
+def track_campaign_open(token: str, db: Session = Depends(get_db)):
+    delivery = (
+        db.query(CampaignDelivery)
+        .filter(CampaignDelivery.open_token == token)
+        .first()
+    )
+    if delivery is None:
+        raise HTTPException(status_code=404, detail="Open pixel not found.")
+    delivery.open_count = (delivery.open_count or 0) + 1
+    delivery.opened_at = delivery.opened_at or datetime.utcnow()
+    db.commit()
+    return Response(
+        content=_OPEN_PIXEL,
+        media_type="image/gif",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @router.get("/track/{token}")
@@ -2970,10 +3030,18 @@ def send_promotion_campaign(
         contact = _dispatch_contact(customer, promo)
         destination = normalize_campaign_destination(promo.channel, contact["destination"])
         tracking_token = secrets.token_urlsafe(12)
+        open_token = secrets.token_urlsafe(12)
         tracked_url = _tracking_url(tracking_token)
+        open_url = _open_url(open_token)
         message = contact["message"]
         if tracked_url:
             message = message.replace(_order_offer_link(promo), tracked_url)
+        html_extra = (
+            f'<img src="{open_url}" width="1" height="1" alt="" '
+            'style="display:none" />'
+            if open_url and promo.channel == "email"
+            else ""
+        )
         delivery_kwargs = {
             "promotion_id": promo.id,
             "customer_id": customer.id,
@@ -2981,6 +3049,7 @@ def send_promotion_campaign(
             "destination": destination or contact["destination"],
             "message": message,
             "tracking_token": tracking_token,
+            "open_token": open_token,
             "attempted_at": datetime.utcnow(),
         }
 
@@ -3038,6 +3107,7 @@ def send_promotion_campaign(
                     destination=destination,
                     message=message,
                     subject=promo.name,
+                    html_extra=html_extra,
                 )
                 delivery = CampaignDelivery(
                     **delivery_kwargs,

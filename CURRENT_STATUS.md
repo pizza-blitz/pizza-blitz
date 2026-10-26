@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 250 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 252 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -263,7 +263,8 @@ Wave 4 (in progress):
   conversion, lift and incremental revenue, plus a two-proportion z-test, p-value, 95%
   confidence interval and required per-group sample size in the same panel. Each campaign
   delivery gets a tracked `/track/{token}` link; clicks redirect to the coupon order page with
-  UTM parameters and feed click counts and click-through rate in the performance panel.
+  UTM parameters and feed click counts and click-through rate in the performance panel. Email
+  sends also embed a per-delivery open pixel that records opens and open rate.
 - Social/reel approvals are live: staff can submit posts for review, admins approve or reject
   with a note, and pending/rejected posts are blocked from live publishing and auto-publish;
   new `verify:social-approvals` proof and three backend tests.

@@ -448,6 +448,9 @@ type CampaignDelivery = {
   click_count?: number;
   clicked_at?: string | null;
   tracking_url?: string | null;
+  open_count?: number;
+  opened_at?: string | null;
+  open_pixel_url?: string | null;
   external_id?: string | null;
   error?: string | null;
   dry_run: boolean;
@@ -561,6 +564,9 @@ type CampaignPerformance = {
     clicked: number;
     click_count: number;
     click_rate_percent: number;
+    opened: number;
+    open_count: number;
+    open_rate_percent: number;
   };
   social: {
     post_count: number;
@@ -3201,6 +3207,9 @@ export default function PromotionsPage() {
                         ["Tracked clicks", performance.engagement.click_count],
                         ["Unique clickers", performance.engagement.clicked],
                         ["Click rate", `${performance.engagement.click_rate_percent}%`],
+                        ["Opens", performance.engagement.open_count],
+                        ["Unique opens", performance.engagement.opened],
+                        ["Open rate", `${performance.engagement.open_rate_percent}%`],
                       ].map(([label, value]) => (
                         <div key={String(label)}>
                           <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
@@ -3210,8 +3219,8 @@ export default function PromotionsPage() {
                         </div>
                       ))}
                       <p className="col-span-full text-[10px] font-semibold text-gray-500">
-                        Clicks come from per-delivery tracked links embedded in campaign
-                        messages.
+                        Clicks come from per-delivery tracked links; opens come from the
+                        email pixel and are not available for SMS/WhatsApp.
                       </p>
                     </div>
                     <div className="mt-3 space-y-2">

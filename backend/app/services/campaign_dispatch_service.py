@@ -77,6 +77,7 @@ def send_campaign_message(
     message: str,
     subject: str,
     db=None,
+    html_extra: str = "",
 ) -> CampaignProviderResult:
     status = campaign_provider_status(channel, db)
     if not status["configured"]:
@@ -90,7 +91,11 @@ def send_campaign_message(
     config = effective_config(_provider_key(channel), db)["values"]
     if channel == "email":
         return _send_resend_email(
-            destination=destination, subject=subject, message=message, config=config
+            destination=destination,
+            subject=subject,
+            message=message,
+            config=config,
+            html_extra=html_extra,
         )
     if channel == "sms":
         return _send_twilio_sms(destination=destination, message=message, config=config)
@@ -140,13 +145,16 @@ def _send_resend_email(
     subject: str,
     message: str,
     config: dict,
+    html_extra: str = "",
 ) -> CampaignProviderResult:
     payload = {
         "from": config.get("RESEND_FROM_EMAIL"),
         "to": [destination],
         "subject": subject,
         "text": message,
-        "html": f"<p>{_html_escape(message).replace(chr(10), '<br />')}</p>",
+        "html": (
+            f"<p>{_html_escape(message).replace(chr(10), '<br />')}</p>{html_extra}"
+        ),
     }
     response = _post_json(
         "https://api.resend.com/emails",
