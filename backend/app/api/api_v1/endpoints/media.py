@@ -34,6 +34,7 @@ class MergeRequest(BaseModel):
     name: str = Field(default="", max_length=160)
     transition: str = Field(default="none", max_length=10)
     transition_seconds: float = Field(default=0.5, ge=0.1, le=1.0)
+    fit: str = Field(default="pad", max_length=10)
 
 
 class FilterRequest(BaseModel):
@@ -116,6 +117,7 @@ def merge_media_assets(
                 "urls": [row.url for row in ordered],
                 "transition": payload.transition,
                 "transition_seconds": payload.transition_seconds,
+                "fit": payload.fit,
             },
         )
     except ValueError as exc:

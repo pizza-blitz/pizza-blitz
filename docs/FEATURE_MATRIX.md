@@ -14,7 +14,7 @@ defines the build order. Status values:
 - **Missing** — not implemented.
 
 Numbers in this snapshot: **435 API endpoints**, **73 routes/pages** (57 portal,
-1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **275 backend
+1 KDS, 15 public), **168 browser proof scripts** plus portal smoke, **276 backend
 tests**, **96 database tables**, **19 integration points**.
 
 ## Benchmark set
@@ -108,7 +108,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Combos / quick builds | Combo groups, quick builds | Built | Same | — |
 | Profitability | Per-item margin/profitability view | Built | Margin by channel | Partial |
 | Menu media | Upload JPEG/PNG/WebP (≤5 MB, magic-byte validated), alt text, thumbnails in admin/order/landing, delete/replace, served at `/media` | Built | Images, alt text, thumbnails | No cropping/resizing variants; files live on local disk/volume |
-| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata, in-browser camera reel recording, clip trimming with caption re-timing, ordered multi-clip merging with offset captions, N-way crossfade and mixed-resolution normalization, grayscale/sepia/warm/cool/brighten/vignette filter presets, VTT/SRT captions with SRT conversion and player tracks, optional S3-compatible storage + CDN URLs with local fallback | Built | One media library + picker | Caption languages, mixed-fps audio normalization and AI search later |
+| Media Studio | Shared image/video library with upload, search/tags, copy URL, usage-guarded delete, menu uploads registered automatically, reusable picker in menu/social/ads/landing, MP4/MOV/WebM upload, H.264 transcode, poster generation and duration metadata, in-browser camera reel recording, clip trimming with caption re-timing, ordered multi-clip merging with offset captions, N-way crossfade and mixed-resolution pad/crop normalization, grayscale/sepia/warm/cool/brighten/vignette filter presets, VTT/SRT captions with SRT conversion and player tracks, optional S3-compatible storage + CDN URLs with local fallback | Built | One media library + picker | Caption languages, mixed-fps audio normalization and AI search later |
 | Scheduled availability | — | Missing | Breakfast/late-night/weekend menus | Later |
 | Channel pricing | Per-channel price/availability/visibility for dine-in, takeaway, delivery and aggregator; order pricing and customer menu follow the active channel | Built | Different price for delivery/aggregator | — |
 | Sold-out toggle | Availability flag exists | Partial | One-tap sold-out across channels | UI polish |
@@ -146,7 +146,7 @@ scheduled delivery, live tracking, store locator), not a template to copy.
 | Loyalty | Points ledger (1/₹ on completed orders), tiers, referral codes with two-sided bonuses, points redemption at checkout (10 points = ₹1, 100-point minimum), account card and transactions | Built | Points, tiers, rewards, referrals | Redemption is checkout-only; no gift catalog |
 | Store credit / gift cards | — | Missing | Issue/redeem/balance | Later |
 | Feedback / NPS / reviews | Post-order star rating, 0–10 NPS, tags and comments; admin NPS/average/response-rate dashboard with low-rating follow-up | Built | Post-order feedback, review routing | Public review-site routing missing |
-| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee, open/pending/resolved/closed inbox, editable first-response/resolution SLA policies, overdue/due-soon/breach reporting, deduplicated in-app SLA alerts with read state, provider-gated Slack/email/pager delivery, automatic retry with backoff, manual retry and pager resolve events on ticket resolution | Built | Guest support inbox | Acknowledgement sync, business-hour calendars and knowledge base later |
+| Support tickets | Guest support form with secure ticket link, threaded customer/staff replies, internal notes, category/priority, order reference, assignee, open/pending/resolved/closed inbox, editable first-response/resolution SLA policies, overdue/due-soon/breach reporting, deduplicated in-app SLA alerts with read state, provider-gated Slack/email/pager delivery, automatic retry with backoff, manual retry, pager resolve events on ticket resolution and a retry job for failed resolves | Built | Guest support inbox | Acknowledgement sync, business-hour calendars and knowledge base later |
 | Customer auth | Six-digit OTP (hashed, 5-minute expiry, attempt limit) or phone + recent order id; saved addresses scoped by customer token | Built | OTP login, saved sessions | Saved payment methods missing |
 
 ## 9. Marketing, communications, social, ads

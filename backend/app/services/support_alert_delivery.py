@@ -119,11 +119,34 @@ def resolve_pager_for_ticket(db: Session, ticket_id: int) -> int:
             with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
                 if 200 <= response.status < 300:
                     notification.pager_resolved_at = datetime.utcnow()
+                    notification.read_at = notification.read_at or datetime.utcnow()
                     resolved += 1
         except OSError:
             continue
     db.commit()
     return resolved
+
+
+def retry_pending_pager_resolutions(db: Session, limit: int = 50) -> dict:
+    if not os.getenv("SUPPORT_PAGER_WEBHOOK_URL", "").strip():
+        return {"pending": 0, "resolved": 0}
+    rows = (
+        db.query(SupportNotification.ticket_id)
+        .join(SupportTicket, SupportNotification.ticket_id == SupportTicket.id)
+        .filter(
+            SupportNotification.pager_dedup_key.isnot(None),
+            SupportNotification.pager_resolved_at.is_(None),
+            SupportTicket.status.in_(["resolved", "closed"]),
+        )
+        .distinct()
+        .limit(limit)
+        .all()
+    )
+    ticket_ids = [row[0] for row in rows]
+    resolved = 0
+    for ticket_id in ticket_ids:
+        resolved += resolve_pager_for_ticket(db, ticket_id)
+    return {"pending": len(ticket_ids), "resolved": resolved}
 
 
 def _email_alert(notification: SupportNotification, ticket: SupportTicket) -> str | None:

@@ -323,7 +323,11 @@ def update_ticket(
                 row.resolved_at = datetime.utcnow()
             resolve_pager_for_ticket(db, row.id)
             db.query(SupportNotification).filter(
-                SupportNotification.ticket_id == row.id
+                SupportNotification.ticket_id == row.id,
+                or_(
+                    SupportNotification.pager_dedup_key.is_(None),
+                    SupportNotification.pager_resolved_at.isnot(None),
+                ),
             ).delete(synchronize_session=False)
         else:
             row.resolved_at = None

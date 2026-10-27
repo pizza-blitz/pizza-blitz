@@ -31,7 +31,7 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 275 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions/trimming/merging/filters and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching/send attribution/click-open tracking/step credit/holdouts/suppression, social approval workflow, marketing calendar/reels, campaign lift/channel attribution/person-level attribution/holdout experiments/significance/click and open tracking, HR recruitment, offer templates, offer approvals, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets/SLAs/policies/alerts/delivery/retries/paging, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 276 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions/trimming/merging/filters and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching/send attribution/click-open tracking/step credit/holdouts/suppression, social approval workflow, marketing calendar/reels, campaign lift/channel attribution/person-level attribution/holdout experiments/significance/click and open tracking, HR recruitment, offer templates, offer approvals, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets/SLAs/policies/alerts/delivery/retries/paging, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
@@ -548,8 +548,9 @@ clip-duration offsets and saved onto the merged asset; local captions only. Cros
 (`transition: "fade"`, 0.1–1.0s) chain ffmpeg xfade/acrossfade across 2–10 clips, use one shared
 fade clamped by every source duration, and offset captions by one fade per boundary. Mixed
 resolutions are scaled with aspect-preserving padding to the largest even canvas and normalized
-to 30fps before concat/fade; audio presence must still match. Covered by
-`backend/tests/test_media_merge.py` and the extended Media Studio proof.
+to 30fps before concat/fade; `fit: "crop"` fills the canvas instead of letterboxing. Audio
+presence must still match. Covered by `backend/tests/test_media_merge.py` and the extended Media
+Studio proof.
 
 ## Video filters
 
@@ -862,8 +863,9 @@ alerts on high/urgent tickets POST a PagerDuty Events API v2 payload (`trigger`,
 severity, ticket details) using `SUPPORT_PAGER_ROUTING_KEY` when provided. A successful page is
 recorded as the `pager` delivery channel and participates in retry/backoff. Resolving/closing the
 ticket sends a PagerDuty `resolve` event using the stored dedup key before the alert rows are
-cleaned up. Covered by `backend/tests/test_support_alert_delivery.py` (mocked pager trigger and
-resolve). Acknowledgement sync and two-way pager status remain provider-side.
+cleaned up. If a resolve fails, the alert is retained and the five-minute support job retries it.
+Covered by `backend/tests/test_support_alert_delivery.py` (mocked trigger, resolve and retry).
+Acknowledgement sync and two-way pager status remain provider-side.
 
 ## Item-level KDS
 

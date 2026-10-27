@@ -17,7 +17,10 @@ from app.models.domain import (
     SupportSlaPolicy,
     SupportTicket,
 )
-from app.services.support_alert_delivery import retry_due_alerts
+from app.services.support_alert_delivery import (
+    retry_due_alerts,
+    retry_pending_pager_resolutions,
+)
 
 BASE = "/api/v1/restaurant/support"
 
@@ -209,6 +212,74 @@ class SupportAlertDeliveryTest(unittest.TestCase):
         self.assertEqual(calls[0]["event_action"], "trigger")
         self.assertEqual(calls[1]["event_action"], "resolve")
         self.assertEqual(calls[0]["dedup_key"], calls[1]["dedup_key"])
+
+    def test_failed_pager_resolve_is_retried_later(self):
+        ticket_id = self._overdue_ticket()
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "",
+                "SUPPORT_ALERT_EMAIL": "",
+                "SUPPORT_PAGER_WEBHOOK_URL": "https://events.pagerduty.test/v2/enqueue",
+                "SUPPORT_PAGER_ROUTING_KEY": "routing-proof",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            return_value=FakeSlackResponse(),
+        ):
+            run = self.client.post(f"{BASE}/notifications/run", headers=self.headers)
+            self.assertEqual(run.status_code, 200, run.text)
+        with patch.dict(
+            os.environ,
+            {
+                "SUPPORT_SLACK_WEBHOOK_URL": "",
+                "SUPPORT_ALERT_EMAIL": "",
+                "SUPPORT_PAGER_WEBHOOK_URL": "https://events.pagerduty.test/v2/enqueue",
+                "SUPPORT_PAGER_ROUTING_KEY": "routing-proof",
+            },
+        ), patch(
+            "app.services.support_alert_delivery.urllib.request.urlopen",
+            side_effect=OSError("pager down"),
+        ):
+            resolved = self.client.patch(
+                f"{BASE}/tickets/{ticket_id}",
+                json={"status": "resolved"},
+                headers=self.headers,
+            )
+            self.assertEqual(resolved.status_code, 200, resolved.text)
+
+        db = SessionLocal()
+        try:
+            pending = (
+                db.query(SupportNotification)
+                .filter(
+                    SupportNotification.ticket_id == ticket_id,
+                    SupportNotification.pager_dedup_key.isnot(None),
+                    SupportNotification.pager_resolved_at.is_(None),
+                )
+                .all()
+            )
+            self.assertGreaterEqual(len(pending), 1)
+            with patch.dict(
+                os.environ,
+                {
+                    "SUPPORT_PAGER_WEBHOOK_URL": (
+                        "https://events.pagerduty.test/v2/enqueue"
+                    ),
+                    "SUPPORT_PAGER_ROUTING_KEY": "routing-proof",
+                },
+            ), patch(
+                "app.services.support_alert_delivery.urllib.request.urlopen",
+                return_value=FakeSlackResponse(),
+            ):
+                summary = retry_pending_pager_resolutions(db)
+            self.assertGreaterEqual(summary["resolved"], 1)
+            for row in pending:
+                db.refresh(row)
+                self.assertIsNotNone(row.pager_resolved_at)
+                self.assertIsNotNone(row.read_at)
+        finally:
+            db.close()
 
     def test_failed_delivery_schedules_retry_and_succeeds(self):
         self._overdue_ticket()

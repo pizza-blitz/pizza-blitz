@@ -23,7 +23,7 @@ The standalone copy excludes generated dependency and build folders
   operations, reports, marketing, ops readiness, settings).
 - Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
   local development, PostgreSQL support for production.
-- Automation: 275 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
+- Automation: 276 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
   lint gate, a lint gate, a TypeScript gate, a production build gate, and a
   GitHub Actions workflow that runs them all.
 
@@ -216,10 +216,10 @@ Wave 4 (in progress):
   re-timed captions from the source; 2–10 ordered clips with matching dimensions/audio can be
   merged into one stitched clip whose source captions are offset onto the merged timeline;
   two or more clips can use a chained video/audio crossfade that shortens the result by one
-  fade per boundary. Mixed resolutions are scaled/padded to a common canvas (with fps=30
-  normalization) before hard-cut concat or crossfade. Filter presets (grayscale, sepia, warm,
-  cool, brighten, vignette) render new assets. A storage-status badge reports local disk or
-  S3/CDN; S3-compatible uploads/deletes use CDN URLs with local fallback.
+  fade per boundary. Mixed resolutions are scaled/padded or cropped to a common canvas (with
+  fps=30 normalization) before hard-cut concat or crossfade. Filter presets (grayscale, sepia,
+  warm, cool, brighten, vignette) render new assets. A storage-status badge reports local disk
+  or S3/CDN; S3-compatible uploads/deletes use CDN URLs with local fallback.
 - Private recruitment documents (resumes and offer letters) now live outside the public
   `/media` mount under `PRIVATE_MEDIA_ROOT`; only authenticated HR routes or offer tokens can
   read them.
@@ -302,7 +302,8 @@ Wave 4 (in progress):
   minute backoff (up to three attempts) on a 5-minute job. Resolution breaches (and first-reply
   breaches on high/urgent tickets) also trigger a PagerDuty-compatible webhook when configured,
   and resolving/closing the ticket sends a matching `resolve` event for each paged alert.
-  New `verify:support-tickets` proof and sixteen backend tests.
+  Failed resolves are retained and retried by the five-minute support job.
+  New `verify:support-tickets` proof and seventeen backend tests.
 - Next: per-clip video transitions/filters, journey step-level models and pager escalation.
 
 ## Verified State (2026-10-22)

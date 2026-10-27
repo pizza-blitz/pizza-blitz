@@ -234,6 +234,8 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] Pager resolve events on ticket resolution.
 - [x] N-way chained crossfades with caption alignment.
 - [x] Mixed-resolution merge with common-canvas normalization.
+- [x] Pad/crop framing and retryable pager resolves.
+- [ ] **Feature work frozen at the delivery handover; remaining items are future phases.**
 - [ ] Acknowledgement sync, caption languages, mixed-fps audio normalization.
 - [ ] Custom report builder and scheduled exports.
 - [ ] 2FA, SSO and granular permissions.

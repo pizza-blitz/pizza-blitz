@@ -185,6 +185,20 @@ class MediaMergeTest(unittest.TestCase):
         self.assertEqual(merged["width"], 320)
         self.assertEqual(merged["height"], 320)
         self.assertGreater(merged["duration_seconds"], 1.5)
+        cropped = self.client.post(
+            "/api/v1/restaurant/media/assets/merge",
+            json={
+                "asset_ids": [first["id"], second["id"]],
+                "name": "Cropped merge",
+                "fit": "crop",
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(cropped.status_code, 201, cropped.text)
+        cropped_asset = cropped.json()["asset"]
+        self.asset_ids.append(cropped_asset["id"])
+        self.assertEqual(cropped_asset["width"], 320)
+        self.assertEqual(cropped_asset["height"], 320)
         duplicate = self.client.post(
             "/api/v1/restaurant/media/assets/merge",
             json={"asset_ids": [first["id"], first["id"]]},

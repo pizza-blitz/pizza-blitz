@@ -152,6 +152,8 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 121 | Pager resolve events | Paged SLA alerts stayed open in the pager even after the ticket was resolved. | Alert-lifecycle gap. | Store a dedup key on the notification when a page succeeds, then send a PagerDuty `resolve` event for each paged alert when the ticket is resolved/closed before cleanup. One test asserts trigger and resolve share the dedup key. Acknowledgement sync and two-way status updates remain. |
 | 122 | N-way crossfades | Crossfade worked only for exactly two clips; longer reels fell back to hard cuts. | Editing gap. | Chain ffmpeg xfade/acrossfade across 2–10 clips, clamp one shared fade by every source duration, offset captions by one fade per boundary, update UI label, replace the two-clip test with a three-clip timeline assertion and keep the two-clip proof. Mixed fps, per-boundary transitions and wipes remain. |
 | 123 | Mixed-resolution merge | Clips with different dimensions were rejected, forcing pre-export outside the portal. | Editing gap. | Compute a common even canvas from the largest width/height, scale each clip with aspect-preserving padding, normalize to 30fps, and use filtered concat (or xfade chain) instead of stream copy. Audio presence is still required. A mixed portrait/landscape test asserts a 320×320 output. Mixed-fps audio-rate normalization, crop-vs-pad choice and per-clip framing remain. |
+| 124 | Pad/crop framing | Mixed-resolution merges always letterboxed, which looks wrong in full-frame reels. | Editing-polish gap. | Added a `fit` option (`pad` or `crop`) to merge rendering, with aspect-preserving scale+pad or scale+crop to the common canvas, a merge-modal selector, and test coverage for both modes. Per-clip framing and anchor points remain. |
+| 125 | Retryable pager resolves | A failed PagerDuty resolve was lost because alert rows were deleted immediately. | Alert-reliability gap. | Keep paged unresolved alerts after ticket closure, mark them read only on successful resolve, and add a five-minute `retry_pending_pager_resolutions` job that retries `resolve` events for resolved/closed tickets. A test fails the resolve, confirms retention, then succeeds on retry. Acknowledgement sync remains. |
 
 ## Still open
 
@@ -166,7 +168,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 275 tests, all pass (in a clean venv built from
+- Backend unit suite: 276 tests, all pass (in a clean venv built from
   `backend/requirements-dev.txt`).
 - Backend lint: `ruff check .` reports zero findings.
 - `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook

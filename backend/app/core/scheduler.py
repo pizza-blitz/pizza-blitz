@@ -146,6 +146,21 @@ def support_sla_job():
         session.close()
 
 
+def support_pager_resolve_job():
+    from app.db.session import SessionLocal
+    from app.services.support_alert_delivery import retry_pending_pager_resolutions
+
+    session = SessionLocal()
+    try:
+        summary = retry_pending_pager_resolutions(session)
+        if summary["pending"]:
+            logger.info("Support pager resolve retry summary: %s", summary)
+    except Exception:
+        logger.exception("Support pager resolve retry job failed")
+    finally:
+        session.close()
+
+
 def support_sla_retry_job():
     from app.db.session import SessionLocal
     from app.services.support_alert_delivery import retry_due_alerts
@@ -159,6 +174,7 @@ def support_sla_retry_job():
         logger.exception("Support SLA retry job failed")
     finally:
         session.close()
+    support_pager_resolve_job()
 
 
 # Run every 24 hours

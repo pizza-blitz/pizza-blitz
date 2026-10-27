@@ -84,6 +84,7 @@ export default function MediaStudioPage() {
   const [mergeName, setMergeName] = useState("");
   const [mergeTransition, setMergeTransition] = useState("none");
   const [mergeFade, setMergeFade] = useState("0.5");
+  const [mergeFit, setMergeFit] = useState("pad");
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeError, setMergeError] = useState("");
   const [filterAsset, setFilterAsset] = useState<MediaAsset | null>(null);
@@ -359,6 +360,7 @@ export default function MediaStudioPage() {
           name: mergeName.trim() || "Merged clip",
           transition: mergeTransition,
           transition_seconds: Number(mergeFade),
+          fit: mergeFit,
         }),
       });
       const data = await response.json();
@@ -500,6 +502,7 @@ export default function MediaStudioPage() {
               setMergeName("");
               setMergeTransition("none");
               setMergeFade("0.5");
+              setMergeFit("pad");
               setMergeError("");
               setMergeOpen(true);
             }}
@@ -887,7 +890,19 @@ export default function MediaStudioPage() {
                   );
                 })}
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                Framing
+                <select
+                  data-testid="media-merge-fit"
+                  value={mergeFit}
+                  onChange={(event) => setMergeFit(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold"
+                >
+                  <option value="pad">Pad / letterbox</option>
+                  <option value="crop">Crop to fill</option>
+                </select>
+              </label>
               <label className="text-[9px] font-black uppercase tracking-widest text-gray-500">
                 Transition
                 <select

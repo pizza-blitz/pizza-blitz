@@ -100,6 +100,7 @@ def create_asset(
             merge_source["urls"],
             transition=merge_source.get("transition", "none"),
             transition_seconds=merge_source.get("transition_seconds", 0.5),
+            fit=merge_source.get("fit", "pad"),
         )
         saved = save_library_video(merged, name)
         return register_asset(

@@ -378,6 +378,7 @@ def merge_library_videos(
     *,
     transition: str = "none",
     transition_seconds: float = 0.5,
+    fit: str = "pad",
 ) -> bytes:
     if len(video_urls) < 2 or len(video_urls) > 10:
         raise ValueError("Select between 2 and 10 clips to merge.")
@@ -386,6 +387,9 @@ def merge_library_videos(
     transition = (transition or "none").strip().lower()
     if transition not in {"none", "fade"}:
         raise ValueError("Transition must be none or fade.")
+    fit = (fit or "pad").strip().lower()
+    if fit not in {"pad", "crop"}:
+        raise ValueError("Framing must be pad or crop.")
     sources: list[Path] = []
     for url in video_urls:
         if not url.startswith(VIDEO_PREFIX):
@@ -417,6 +421,18 @@ def merge_library_videos(
         raise ValueError("ffmpeg is required to merge videos.")
     with tempfile.TemporaryDirectory() as temp_dir:
         target = Path(temp_dir) / "merged.mp4"
+        if fit == "crop":
+            scale_filter = (
+                f"scale={target_width}:{target_height}:"
+                "force_original_aspect_ratio=increase,"
+                f"crop={target_width}:{target_height}"
+            )
+        else:
+            scale_filter = (
+                f"scale={target_width}:{target_height}:"
+                "force_original_aspect_ratio=decrease,"
+                f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2"
+            )
         if transition == "fade":
             duration = max(
                 0.1,
@@ -429,10 +445,7 @@ def merge_library_videos(
             filter_parts: list[str] = []
             for index in range(len(sources)):
                 filter_parts.append(
-                    f"[{index}:v]scale={target_width}:{target_height}:"
-                    "force_original_aspect_ratio=decrease,"
-                    f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,"
-                    f"setsar=1,fps=30[v{index}]"
+                    f"[{index}:v]{scale_filter},setsar=1,fps=30[v{index}]"
                 )
             video_label = "v0"
             offset = 0.0
@@ -485,10 +498,7 @@ def merge_library_videos(
             concat_inputs = []
             for index in range(len(sources)):
                 filter_parts.append(
-                    f"[{index}:v]scale={target_width}:{target_height}:"
-                    "force_original_aspect_ratio=decrease,"
-                    f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,"
-                    f"setsar=1,fps=30[v{index}]"
+                    f"[{index}:v]{scale_filter},setsar=1,fps=30[v{index}]"
                 )
                 concat_inputs.append(f"[v{index}]")
                 if has_audio:
