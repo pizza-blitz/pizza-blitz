@@ -2,6 +2,10 @@
 
 Standalone restaurant operating system and customer ordering platform for Pizza Blitz.
 
+> **Status:** feature work is frozen for delivery. Read
+> [HANDOVER.md](HANDOVER.md) first — it covers run instructions, verified state, known
+> limitations and where a future project should start.
+
 ## What Is Built
 
 Pizza Blitz now contains two connected products:

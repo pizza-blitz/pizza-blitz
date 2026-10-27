@@ -1,6 +1,8 @@
 # Pizza Blitz Current Status
 
-Last Updated: 2026-10-22
+Last Updated: 2026-10-27
+Status: feature-frozen for delivery. See [HANDOVER.md](HANDOVER.md) for the runbook,
+verified state and honest limitations.
 
 ## Source Of Truth
 
