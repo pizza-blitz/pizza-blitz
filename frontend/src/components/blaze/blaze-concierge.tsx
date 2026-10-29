@@ -1219,6 +1219,16 @@ export function BlazeConcierge({
                 ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
+                onKeyDown={(event) => {
+                  // Enter should always send. The form's submit handler covers
+                  // most browsers, but focusing edge cases (and some in-app
+                  // browsers) swallowed it; this makes the behaviour explicit.
+                  if (event.key !== "Enter" || event.shiftKey) return;
+                  if ((event.nativeEvent as KeyboardEvent).isComposing) return;
+                  event.preventDefault();
+                  if (!input.trim() || sending) return;
+                  void sendMessage(input);
+                }}
                 maxLength={500}
                 placeholder={
                   listening

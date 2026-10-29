@@ -919,10 +919,14 @@ export default function PublicOrderPage() {
       setCart(nextCart);
       setOrderType(restoredOrderType);
       if (draft.address) setAddress(draft.address);
+      // A restored draft never stores a zone when Blaze built the cart, and a
+      // null zone leaves the select showing "Near Store" while the delivery
+      // quote never runs (so Place Order stays disabled). Default to the first
+      // active zone so the fee and ETA resolve.
       const savedZoneId = Number(draft.selectedDeliveryZoneId);
-      if (savedZoneId && activeZones.some((zone) => zone.id === savedZoneId)) {
-        setSelectedDeliveryZoneId(savedZoneId);
-      }
+      const restoredZone =
+        activeZones.find((zone) => zone.id === savedZoneId) || activeZones[0];
+      if (restoredZone) setSelectedDeliveryZoneId(restoredZone.id);
       if (draft.couponCode) setCouponCode(String(draft.couponCode).toUpperCase());
       if (draft.queuedCouponCode) {
         setQueuedCouponCode(String(draft.queuedCouponCode).toUpperCase());
@@ -1050,7 +1054,7 @@ export default function PublicOrderPage() {
   const taxableSubtotal = Math.max(roundMoney(subtotal - discount), 0);
   const tax = coupon ? coupon.tax : roundMoney(taxableSubtotal * (billing.tax_rate / 100));
   const deliveryFee =
-    orderType === "delivery" && deliveryQuote?.is_deliverable
+    orderType === "delivery" && cart.length > 0 && deliveryQuote?.is_deliverable
       ? Number(deliveryQuote.delivery_fee || 0)
       : 0;
   const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);

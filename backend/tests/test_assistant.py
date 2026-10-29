@@ -221,6 +221,38 @@ class AssistantTest(unittest.TestCase):
         self.assertEqual(store["intent"], "store_info")
         self.assertTrue(store["reply"])
 
+    def test_an_order_that_mentions_delivery_still_adds_the_items(self):
+        # The avatar used to answer the word "delivery" with the zone list and
+        # drop the food. A streamed order has to win over the zone explainer.
+        payload = self.chat("I want one margherita pizza and garlic bread for delivery")
+        self.assertEqual(payload["intent"], "add_item")
+        self.assertEqual(payload["fulfillment"], "delivery")
+        self.assertEqual(payload["cart"]["count"], 2)
+        names = [line["name"] for line in payload["cart"]["lines"]]
+        self.assertIn("Margherita Pizza (R)", names)
+        self.assertIn("add_item", [action["type"] for action in payload["actions"]])
+        self.assertNotIn("delivery zones", payload["reply"].lower())
+
+    def test_use_delivery_chip_acknowledges_and_moves_on(self):
+        added = self.chat("two margherita pizzas")
+        self.assertEqual(added["cart"]["count"], 2)
+
+        confirmed = self.chat("Delivery, please", cart=self.cart_payload(added))
+        self.assertEqual(confirmed["intent"], "set_fulfillment")
+        self.assertEqual(confirmed["fulfillment"], "delivery")
+        self.assertEqual(confirmed["cart"]["count"], 2)
+        self.assertNotIn("we deliver to", confirmed["reply"].lower())
+        self.assertIn(
+            "start_checkout", [action["type"] for action in confirmed["actions"]]
+        )
+
+        empty = self.chat("Use delivery")
+        self.assertEqual(empty["intent"], "set_fulfillment")
+        self.assertEqual(empty["fulfillment"], "delivery")
+        self.assertEqual(empty["cart"]["count"], 0)
+        self.assertIn("what you'd like", empty["reply"].lower())
+        self.assertGreaterEqual(len(empty["recommendations"]), 1)
+
     def test_invalid_cart_lines_are_dropped_and_reported(self):
         payload = self.chat(
             "what's in my cart",

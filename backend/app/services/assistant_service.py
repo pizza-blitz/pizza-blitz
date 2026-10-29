@@ -195,6 +195,14 @@ REPEAT_ORDER_PATTERN = re.compile(
     r"last order again)\b"
 )
 
+# A message that only picks a fulfilment channel, usually from the
+# "Use delivery" / "Use pickup" chip. It has to be acknowledged and move the
+# conversation forward, never answered with the delivery-zone list again.
+FULFILMENT_ONLY_PATTERN = re.compile(
+    r"(?:(?:please\s+)?(?:use|choose|set|switch to|make it|i want|i'd like|id like)\s+)?"
+    r"(delivery|pickup|pick up|takeaway|take away|collect)(?:\s+please)?"
+)
+
 
 def _normalise(value: str | None) -> str:
     text = (value or "").lower().replace("₹", " rs ")
@@ -1153,21 +1161,29 @@ def assistant_chat(
     source = "rules"
 
     # Fulfilment switching is applied before totals are computed.
+    bare_fulfilment_choice = bool(FULFILMENT_ONLY_PATTERN.fullmatch(normalised))
     if re.search(r"\bdelivery\b", normalised) and not re.search(
         r"\b(deliver|delivery) (area|areas|zone|zones|fee|fees|time|times|address|addresses)\b",
         normalised,
     ):
+        already_delivery = effective_fulfillment == "delivery"
         effective_fulfillment = "delivery"
         channel = "delivery"
         lines, notices = _normalise_cart(db, cart or [], channel)
-        if not re.search(r"\b(show|what|which|where|do you|how)\b", normalised):
+        if (
+            not already_delivery
+            and not bare_fulfilment_choice
+            and not re.search(r"\b(show|what|which|where|do you|how)\b", normalised)
+        ):
             actions.append({"type": "set_fulfillment", "order_type": "delivery"})
     elif re.search(r"\b(pickup|pick up|collect|takeaway|take away)\b", normalised):
         if not re.search(r"\b(show|what|which|where|do you|how)\b", normalised):
+            already_pickup = effective_fulfillment == "pickup"
             effective_fulfillment = "pickup"
             channel = "takeaway"
             lines, notices = _normalise_cart(db, cart or [], channel)
-            actions.append({"type": "set_fulfillment", "order_type": "pickup"})
+            if not already_pickup and not bare_fulfilment_choice:
+                actions.append({"type": "set_fulfillment", "order_type": "pickup"})
 
     # 1. Opening greeting (also used by the avatar on first open).
     if not text:
@@ -1365,32 +1381,72 @@ def assistant_chat(
                 "Tell me the item and I'll share what the menu data lists, or call the store to confirm."
             )
         suggestions = ["Show me vegetarian picks", "What offers are on?", "Call the store"]
+    # 6b. A bare fulfilment choice ("Delivery, please") confirms the channel.
+    # This is what the "Use delivery" / "Use pickup" chip sends. It must move
+    # the conversation on; answering with the zone list again read as stuck.
+    elif bare_fulfilment_choice:
+        intent = "set_fulfillment"
+        chosen = "delivery" if "delivery" in normalised else "pickup"
+        effective_fulfillment = chosen
+        channel = "delivery" if chosen == "delivery" else "takeaway"
+        lines, notices = _normalise_cart(db, cart or [], channel)
+        totals = _cart_totals(db, lines, coupon)
+        label = "Delivery" if chosen == "delivery" else "Pickup"
+        if lines:
+            reply = (
+                f"{label} it is — {totals['count']} item"
+                f"{'s' if totals['count'] != 1 else ''} at {_money(totals['total'])}. "
+                'Say "checkout" when you are ready, or tell me what else to add.'
+            )
+            actions.append({"type": "start_checkout", "order_type": chosen})
+            suggestions = _quick_replies(["Checkout", "What's in my cart?", "Show me offers"])
+        else:
+            reply = f"{label} it is. Tell me what you'd like and I'll add it to the cart."
+            recommendations = _recommendations(available, "popular", lines, limit=3)
+            suggestions = _quick_replies(
+                ["Recommend something", "Show me the menu", "Show me offers"]
+            )
     # 7. Delivery areas, fees and minimums.
     elif re.search(r"\b(deliver|delivery|delivery areas?|zones?|minimum|delivery fee|how far)\b", normalised):
-        intent = "delivery"
-        effective_fulfillment = "delivery"
-        channel = "delivery"
-        lines, notices = _normalise_cart(db, cart or [], channel)
-        zones = public_delivery_zones(db)
-        if not zones:
-            reply = "No delivery zones are published right now. Pickup is still available at checkout."
+        # "Two margheritas for delivery" is an order with a channel, not a
+        # question about zones. Try the cart parser first so the items land.
+        if re.search(r"\b(deliver|delivery)\b", normalised) and channel != "delivery":
+            effective_fulfillment = "delivery"
+            channel = "delivery"
+            lines, notices = _normalise_cart(db, cart or [], channel)
+        add_result = _handle_add(db, normalised, available, lines, channel)
+        if add_result is not None:
+            intent = "add_item"
+            reply, lines, add_actions, _ = add_result
+            actions.extend(add_actions)
+            upsell = _upsell(available, lines)
+            if upsell:
+                reply += f" Want {upsell['name']} with that?"
+                suggestions.append(f"Add {upsell['name']}")
+            suggestions.extend(["Checkout", "Show me offers"])
+            recommendations = _recommendations(available, normalised, lines, limit=2)
         else:
-            labels = []
-            for zone in zones[:5]:
-                eta = zone.get("eta_window") or (
-                    f"{zone.get('eta_min_minutes')}–{zone.get('eta_max_minutes')} min"
-                    if zone.get("eta_max_minutes")
-                    else "ETA at checkout"
+            intent = "delivery"
+            zones = public_delivery_zones(db)
+            if not zones:
+                reply = "No delivery zones are published right now. Pickup is still available at checkout."
+            else:
+                labels = []
+                for zone in zones[:5]:
+                    eta = zone.get("eta_window") or (
+                        f"{zone.get('eta_min_minutes')}–{zone.get('eta_max_minutes')} min"
+                        if zone.get("eta_max_minutes")
+                        else "ETA at checkout"
+                    )
+                    labels.append(
+                        f"{zone.get('name')} ({_money(zone.get('delivery_fee'))} fee, {eta})"
+                    )
+                reply = (
+                    "We deliver to " + "; ".join(labels) + ". "
+                    "The exact fee and minimum are confirmed against your address at checkout."
                 )
-                labels.append(
-                    f"{zone.get('name')} ({_money(zone.get('delivery_fee'))} fee, {eta})"
-                )
-            reply = (
-                "We deliver to " + "; ".join(labels) + ". "
-                "The exact fee and minimum are confirmed against your address at checkout."
-            )
-        actions.append({"type": "set_fulfillment", "order_type": "delivery"})
-        suggestions = ["Start my order", "Show me the menu", "What offers are on?"]
+            actions.append({"type": "set_fulfillment", "order_type": "delivery"})
+            suggestions = ["Start my order", "Show me the menu", "What offers are on?"]
     # 8. Checkout.
     elif re.search(
         r"\b(checkout|check out|place (the |my )?order|place it|pay now|finalize|finalise|confirm order|that's all|thats all|i'm done|im done)\b",
