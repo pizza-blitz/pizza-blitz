@@ -11,3 +11,7 @@ backend/backups
 *.sqlite
 *.sqlite-*
 *.log
+**/Dockerfile
+**/.dockerignore
+Dockerfile
+.dockerignore

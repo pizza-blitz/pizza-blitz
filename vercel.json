@@ -3,7 +3,8 @@
   "experimentalServices": {
     "web": {
       "entrypoint": "frontend",
-      "routePrefix": "/"
+      "routePrefix": "/",
+      "framework": "nextjs"
     },
     "api": {
       "entrypoint": "backend/main.py",
