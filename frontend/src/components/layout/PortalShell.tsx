@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { SessionRole } from "@/lib/session";
+import { adminOnlyRoutePrefixes, isPathIn } from "@/lib/access";
 import {
   activeNavItem,
   navGroupsForRole,
@@ -137,6 +138,16 @@ export default function PortalShell({
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
+
+  // Next.js middleware cannot ship inside a Vercel service (it compiles to the
+  // Edge runtime, which services reject), so the one role rule that used to
+  // live there runs here. The backend still authorizes every API call; this is
+  // the redirect a staff account sees when it opens an admin-only page.
+  useEffect(() => {
+    if (role === "staff" && isPathIn(pathname, adminOnlyRoutePrefixes)) {
+      router.replace("/orders");
+    }
+  }, [pathname, role, router]);
 
   useEffect(() => {
     let cancelled = false;
