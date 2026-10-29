@@ -22,14 +22,20 @@ through `7aebc5c`. The working tree is clean after that push.
 **Supabase: connected.** PostgreSQL 17.11 with 120 tables, Alembic head `9f8e7d6c5b4a`.
 `/server/health` and `/server/ready` both return 200 on the live URL.
 
-**Vercel: project exists and serves traffic, but the Git auto-deploy is not evident.** After
-pushing `c1f732a` and `7aebc5c`, the live assistant still answered an order phrased "for
-delivery" with the old delivery-zone list (checked 2026-10-29 18:35 UTC), so the deployment
-behind `pizza-blitz.vercel.app` is still the previous build. The local Vercel CLI is logged out
-and the `VERCEL_TOKEN` environment value is rejected with 403, so a deploy cannot be triggered
-from this machine. Concrete next step: open the Vercel project → Settings → Git, confirm the
-repository and production branch are linked, then Redeploy; or supply a valid token. Re-check
-with:
+**Vercel: the project serves traffic, but it is not linked to this GitHub repository.** After
+pushing `c1f732a`, `7aebc5c` and `5496329`, the live assistant still answered an order phrased
+"for delivery" with the old delivery-zone list (checked 2026-10-29 18:40 UTC). The public
+GitHub API shows **zero commit statuses and zero GitHub deployments** for those commits, which
+means no Vercel Git integration is running on this repo. The local Vercel CLI is logged out and
+the `VERCEL_TOKEN` environment value is rejected with 403, so a deploy cannot be triggered from
+this machine. Concrete next step — do one of these:
+
+1. Vercel dashboard → project `pizza-blitz` → Settings → Git → connect
+   `pizza-blitz/pizza-blitz`, production branch `main`, then Redeploy.
+2. Create a token at vercel.com/account/tokens, save it in a gitignored file, and the deploy can
+   be run from this machine.
+
+Then re-check with:
 
 ```bash
 curl -s -X POST https://pizza-blitz.vercel.app/api/concierge \
