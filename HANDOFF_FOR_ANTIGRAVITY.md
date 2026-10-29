@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-29 (updated after live COD test)
 **Workspace:** `D:\Development\pizza Blitz` (repo root `D:/Development/pizza Blitz`)
-**Branch:** `main`, HEAD `7aebc5c` ("Hide unset store hours instead of claiming closed every day")
+**Branch:** `main`, HEAD `73265ec` (receipt Delivered, rider cash settlement, docs refresh)
 **Local build:** passes `typecheck`, `build`, 18 assistant unit tests and `verify:blaze`
 **Status:** live at `https://pizza-blitz.vercel.app`; GitHub and Supabase are connected. The newest
 commits are pushed but **the live site has not visibly rebuilt from them yet** — see below.
@@ -17,10 +17,16 @@ banner supersedes older deployment claims at the top of those files.
 ## 1. GitHub, Supabase and Vercel — verified state
 
 **GitHub: connected.** Remote `https://github.com/pizza-blitz/pizza-blitz.git`; `main` was pushed
-through `7aebc5c`. The working tree is clean after that push.
+through `73265ec`. The working tree is clean after that push.
 
 **Supabase: connected.** PostgreSQL 17.11 with 120 tables, Alembic head `9f8e7d6c5b4a`.
-`/server/health` and `/server/ready` both return 200 on the live URL.
+`/server/health` and `/server/ready` both return 200 on the live URL. The database schema was
+checked against the models on 2026-10-29: `alembic check` initially wanted a duplicate
+`ix_customer_memories_id` index because the model declared `index=True` on the primary key; with
+that declaration removed, `alembic check` reports "No new upgrade operations detected." A
+production-mode backend started with `backend/.env.deploy.local` on port 8011 answered health
+and ready 200, accepted the admin login, and returned the seeded menu (10 items), 4 customers
+and 3 delivery zones from the real Supabase database.
 
 **Vercel: the project serves traffic, but it is not linked to this GitHub repository.** After
 pushing `c1f732a`, `7aebc5c` and `5496329`, the live assistant still answered an order phrased

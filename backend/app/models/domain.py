@@ -214,7 +214,10 @@ class CustomerMemory(Base):
     """
 
     __tablename__ = "customer_memories"
-    id = Column(Integer, primary_key=True, index=True)
+    # The primary key is already indexed by the database; declaring index=True
+    # here made autogenerate want a second index that no migration creates,
+    # which failed `alembic check` against PostgreSQL.
+    id = Column(Integer, primary_key=True)
     phone = Column(String(30), unique=True, index=True, nullable=False)
     display_name = Column(String(255), nullable=True)
     allergies = Column(JSON, default=list, nullable=False)

@@ -2,12 +2,15 @@
 
 Last Updated: 2026-10-29
 Status: live at `https://pizza-blitz.vercel.app` with GitHub and Supabase connected.
-Commits `c1f732a`, `7aebc5c`, `9283568` and `535dba6` are pushed; the live build has not
-yet picked them up (verified 18:50 UTC — the live concierge still returns the old
+Commits `c1f732a`, `7aebc5c`, `9283568`, `535dba6` and `73265ec` are pushed; the live build
+has not yet picked them up (verified 18:50 UTC — the live concierge still returns the old
 delivery-zone answer), so re-check the Vercel Git link before trusting live behaviour.
 A human-level cash-on-delivery order through Blaze, rider assignment, live GPS tracking,
 proof of delivery and cash settlement is green locally; the receipt now reports Delivered
-and the rider can record cash at the door. See
+and the rider can record cash at the door. The real Supabase schema was verified against the
+models on 2026-10-29 (`alembic check` clean after removing a spurious primary-key index
+declaration), and a production-mode backend configured from `backend/.env.deploy.local`
+served health, login, menu, customers and delivery zones from that database. See
 [HANDOFF_FOR_ANTIGRAVITY.md](HANDOFF_FOR_ANTIGRAVITY.md) for the exact verified state.
 
 ## Source Of Truth
