@@ -46,6 +46,7 @@ type Order = {
   payment_provider?: string | null;
   payment_reference?: string | null;
   status: string;
+  delivery_assignment?: { status?: string | null } | null;
   notes?: string | null;
   scheduled_for?: string | null;
   scheduled_label?: string | null;
@@ -99,6 +100,16 @@ export default function ReceiptPage() {
     const match = note.match(/Coupon:\s*([A-Z0-9_-]+)/i);
     return match ? match[1].toUpperCase() : "";
   }, [order?.notes]);
+  // After a delivery the restaurant order can stay "ready" until staff close
+  // it, so show the rider's status when a delivery exists to avoid telling a
+  // customer their delivered pizza is still waiting in the kitchen.
+  const orderStatusText = useMemo(() => {
+    const deliveryStatus = order?.delivery_assignment?.status;
+    if (deliveryStatus === "delivered") return "Delivered";
+    if (deliveryStatus === "out_for_delivery") return "Out for delivery";
+    if (deliveryStatus === "failed") return "Delivery failed";
+    return titleCase(order?.status);
+  }, [order?.delivery_assignment?.status, order?.status]);
 
   useEffect(() => {
     fetchOrder();
@@ -261,7 +272,7 @@ export default function ReceiptPage() {
               <ReceiptInfo label="Table" value={order.table_number || "Counter"} />
               <ReceiptInfo label="Customer" value={order.customer_name || "Walk-in Customer"} />
               <ReceiptInfo label="Phone" value={order.customer_phone || "Not provided"} />
-              <ReceiptInfo label="Order Status" value={titleCase(order.status)} />
+              <ReceiptInfo label="Order Status" value={orderStatusText} />
               <ReceiptInfo label="Payment Status" value={titleCase(order.payment_status)} />
               <ReceiptInfo label="Payment Method" value={titleCase(order.payment_method)} />
               <ReceiptInfo

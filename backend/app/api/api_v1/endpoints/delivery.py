@@ -1144,3 +1144,40 @@ def update_rider_status(
         notify_order_event(db, order, status)
     queue_status_event(db, order, status)
     return _rider_payload(assignment)
+
+
+@router.post("/rider/{token}/cash-collected")
+def rider_cash_collected(token: str, db: Session = Depends(get_db)):
+    """Let the rider record cash taken at the door.
+
+    Cash-on-delivery orders used to wait for a staff member to settle them in
+    the payment queue after the rider had already left with the money, which
+    kept owners on the admin portal late. The rider link is already trusted to
+    mark the handoff complete, so it can settle cash at the same moment.
+    """
+    assignment = _rider_assignment(db, token)
+    order = assignment.order
+    if (order.payment_method or "").strip().lower() != "cash":
+        raise HTTPException(
+            status_code=409,
+            detail="Only cash-on-delivery orders can be settled by the rider.",
+        )
+    if (order.payment_status or "").lower() == "paid":
+        return _rider_payload(assignment)
+    if assignment.status not in {"out_for_delivery", "delivered"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Collect cash during the handoff, after starting the delivery.",
+        )
+    # Imported here because orders.py imports this module at load time.
+    from app.api.api_v1.endpoints.orders import apply_order_payment
+
+    apply_order_payment(
+        db,
+        order,
+        provider="cash",
+        reference=f"RIDER-{assignment.id}",
+        paid_amount=order.total_amount,
+    )
+    db.refresh(assignment)
+    return _rider_payload(assignment)

@@ -144,12 +144,30 @@ class RiderFlowTest(unittest.TestCase):
         )
         self.assertEqual(too_early.status_code, 409)
 
+        early_cash = self.client.post(
+            f"/api/v1/restaurant/delivery/rider/{token}/cash-collected"
+        )
+        self.assertEqual(early_cash.status_code, 409, early_cash.text)
+
         started = self.client.patch(
             f"/api/v1/restaurant/delivery/rider/{token}/status",
             json={"status": "out_for_delivery"},
         )
         self.assertEqual(started.status_code, 200, started.text)
         self.assertEqual(started.json()["status"], "out_for_delivery")
+
+        # Cash changes hands at the door, so the rider settles it without a
+        # staff member opening the admin payment queue.
+        cash = self.client.post(
+            f"/api/v1/restaurant/delivery/rider/{token}/cash-collected"
+        )
+        self.assertEqual(cash.status_code, 200, cash.text)
+        self.assertEqual(cash.json()["order"]["payment_status"], "paid")
+        repeated_cash = self.client.post(
+            f"/api/v1/restaurant/delivery/rider/{token}/cash-collected"
+        )
+        self.assertEqual(repeated_cash.status_code, 200, repeated_cash.text)
+        self.assertEqual(repeated_cash.json()["order"]["payment_status"], "paid")
 
         without_proof = self.client.patch(
             f"/api/v1/restaurant/delivery/rider/{token}/status",

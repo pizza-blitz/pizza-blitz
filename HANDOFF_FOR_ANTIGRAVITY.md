@@ -64,11 +64,11 @@ printing "Closed every day" while ordering is active.
 `npm run verify:audit:live` against `https://pizza-blitz.vercel.app`, and repeat the COD +
 tracking flow on the live site.
 
-**Known cosmetic gap from the COD test:** the receipt shows "Order Status: Ready" after the
-rider marks the delivery complete, because the delivery assignment status is not mirrored onto
-the restaurant order. The tracking page itself correctly shows 4/4 Delivered. Cash is settled by
-staff in the payment queue (`POST /orders/{id}/payment-confirmation`); the rider portal has no
-"cash collected" button.
+**Fixed after the COD test:** the customer receipt now shows "Order Status: Delivered" (it reads
+the delivery assignment, which previously left the receipt saying "Ready" after handoff), and the
+rider portal has a "Cash collected from customer" button that settles cash-on-delivery through
+`POST /delivery/rider/{token}/cash-collected` so nobody has to open the staff payment queue.
+Cash is still accepted via the staff payment queue as well.
 
 ---
 

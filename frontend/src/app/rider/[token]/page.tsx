@@ -228,8 +228,28 @@ export default function RiderPage() {
     }
   };
 
-  const shareLocation = () => {
-    if (!token || !navigator.geolocation) {
+  const collectCash = async () => {
+    if (!token) return;
+    setBusy("cash");
+    try {
+      const response = await fetch(
+        getApiUrl(`/api/v1/restaurant/delivery/rider/${token}/cash-collected`),
+        { method: "POST" }
+      );
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Cash could not be recorded.");
+      setRider(data);
+      setMessage("Cash collected. The store sees this order as paid.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Cash could not be recorded."
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const shareLocation = () => {    if (!token || !navigator.geolocation) {
       setMessage("Location is not available on this device.");
       return;
     }
@@ -407,6 +427,20 @@ export default function RiderPage() {
           <p className="mt-1 text-xs font-bold uppercase tracking-widest text-gray-400">
             {order.payment_method || "cash"} · {order.payment_status || "pending"}
           </p>
+          {(order.payment_method || "cash").toLowerCase() === "cash" &&
+            (order.payment_status || "").toLowerCase() !== "paid" &&
+            (rider.status === "out_for_delivery" || rider.status === "delivered") && (
+              <button
+                type="button"
+                data-testid="rider-cash-collected"
+                onClick={() => void collectCash()}
+                disabled={busy === "cash"}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-3 text-xs font-black uppercase tracking-widest text-black disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {busy === "cash" ? "Recording" : "Cash collected from customer"}
+              </button>
+            )}
           <ul className="mt-3 space-y-2 border-t border-white/10 pt-3">
             {order.items.map((item, index) => (
               <li key={`${item.name}-${index}`} className="flex items-start justify-between gap-3 text-sm">
@@ -617,7 +651,9 @@ export default function RiderPage() {
             <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-300" />
             <p className="mt-2 text-lg font-black text-emerald-200">Delivered</p>
             <p className="text-xs font-semibold text-emerald-200/80">
-              Proof captured. The store will close the order after payment.
+              {(order.payment_status || "").toLowerCase() === "paid"
+                ? "Proof captured and payment settled. The store can close the order."
+                : "Proof captured. The store will close the order after payment."}
             </p>
           </div>
         )}
