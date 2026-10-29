@@ -152,7 +152,7 @@ These are local-only and must be replaced in production.
 
 | Gate | Command | Latest result |
 |---|---|---|
-| Backend suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | **364 tests, 87 subtests, 0 failures** (about 61 s) |
+| Backend suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | **366 tests, 87 subtests, 0 failures** (about 75 s) |
 | Typecheck / lint / build | `cd frontend; npm run typecheck; npm run lint; npm run build` | pass; lint has only pre-existing hook-dependency and `<img>` warnings |
 | Audit preflight | `cd frontend; npm run verify:audit:preflight` | pass on `FwJA3-Y0izweWvL60Hp_T`; messaging webhook configured |
 | Live audit | `cd frontend; npm run verify:audit:live` | **65/65 in 6.6 minutes**, no runner retry, on `FwJA3-Y0izweWvL60Hp_T` |

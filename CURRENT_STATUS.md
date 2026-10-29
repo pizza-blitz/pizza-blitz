@@ -2,10 +2,12 @@
 
 Last Updated: 2026-10-29
 Status: live at `https://pizza-blitz.vercel.app` with GitHub and Supabase connected.
-Commits `c1f732a` and `7aebc5c` are pushed; the live build has not yet picked them up
-(verified 18:35 UTC), so re-check the Vercel Git link before trusting live behaviour.
+Commits `c1f732a`, `7aebc5c`, `9283568` and `535dba6` are pushed; the live build has not
+yet picked them up (verified 18:50 UTC — the live concierge still returns the old
+delivery-zone answer), so re-check the Vercel Git link before trusting live behaviour.
 A human-level cash-on-delivery order through Blaze, rider assignment, live GPS tracking,
-proof of delivery and cash settlement is green locally. See
+proof of delivery and cash settlement is green locally; the receipt now reports Delivered
+and the rider can record cash at the door. See
 [HANDOFF_FOR_ANTIGRAVITY.md](HANDOFF_FOR_ANTIGRAVITY.md) for the exact verified state.
 
 ## Source Of Truth
@@ -37,7 +39,7 @@ The standalone copy excludes generated dependency and build folders
 - Data layer: SQLAlchemy models for every flow, 119 application tables,
   Alembic migrations through `9f8e7d6c5b4a`, SQLite for local development,
   PostgreSQL support for production.
-- Automation: 364 backend tests (87 subtests), 176 browser proof
+- Automation: 366 backend tests (87 subtests), 176 browser proof
   scripts plus portal smoke, backend Ruff, frontend lint, TypeScript and
   production build gates, and a GitHub Actions workflow that runs them.
 
@@ -574,7 +576,7 @@ Wave 4 (complete):
 
 ## Verified State (2026-10-29)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: **364 backend tests pass**
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: **366 backend tests pass**
   (no failures, no skips; 87 of the assertions run as subtests).
 - `ruff check .`: zero findings across the backend (re-verified after the cleanup in
   `docs/GAP_AUDIT.md`).

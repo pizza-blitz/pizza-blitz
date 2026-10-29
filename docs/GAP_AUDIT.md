@@ -291,7 +291,7 @@ These are real gaps, but they cannot be closed from inside the repository.
 
 ## Current gate results
 
-- Backend unit suite: 364 tests, 87 subtests, zero failures and zero skips, in 60 to 150
+- Backend unit suite: 366 tests, 87 subtests, zero failures and zero skips, in 60 to 150
   seconds depending on machine load. Re-run on 2026-10-29 after the concierge order-status
   tests, the customer-memory tests, the three repeat-my-usual tests and the migration-chain
   tests were added; the same suite previously passed in a clean venv built from
