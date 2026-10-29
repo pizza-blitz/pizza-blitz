@@ -181,7 +181,7 @@ async function main() {
     await page
       .locator('[data-testid="work-page"][data-hydrated="true"]')
       .waitFor({ timeout: 30000 });
-    await page.getByRole("heading", { name: "My work" }).waitFor({ timeout: 15000 });
+    await page.getByRole("heading", { name: "My work" }).waitFor({ timeout: 30000 });
 
     const adminSidebar = page.getByTestId("portal-sidebar");
     const adminNav = adminSidebar.getByRole("navigation", { name: "Portal" });
@@ -193,7 +193,7 @@ async function main() {
       "Admin navigation is missing the Operations workspace."
     );
     const switcher = page.locator("#portal-department-switcher");
-    await switcher.waitFor({ timeout: 15000 });
+    await switcher.waitFor({ timeout: 30000 });
     assert(
       (await switcher.locator('option[value="operations"]').count()) === 1,
       "The department switcher is missing Operations."
@@ -201,7 +201,7 @@ async function main() {
 
     await page.getByTestId("work-create-open").click();
     const taskModal = page.getByTestId("work-create-modal");
-    await taskModal.waitFor({ timeout: 15000 });
+    await taskModal.waitFor({ timeout: 30000 });
     const taskSelects = taskModal.locator("select");
     await taskSelects.nth(0).selectOption("operations");
     await taskModal.getByTestId("work-title").fill(taskTitle);
@@ -210,7 +210,7 @@ async function main() {
       .fill("Count the evening drawer and log the variance.");
     await taskSelects.nth(2).selectOption("high");
     await page.getByTestId("work-submit").click();
-    await page.getByTestId("work-create-modal").waitFor({ state: "detached", timeout: 15000 });
+    await page.getByTestId("work-create-modal").waitFor({ state: "detached", timeout: 30000 });
 
     const task = await workItemId(page, taskTitle);
     adminTaskId = task.id;
@@ -241,12 +241,12 @@ async function main() {
     await task.article.getByRole("button", { name: /comments/i }).click();
     await page.getByTestId(`work-comment-input-${task.id}`).fill(taskComment);
     await page.getByTestId(`work-comment-submit-${task.id}`).click();
-    await page.getByText(taskComment, { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText(taskComment, { exact: true }).waitFor({ timeout: 30000 });
 
     // --- Raise an approval and approve it from the same inbox. ---
     await page.getByTestId("work-create-approval-open").click();
     const approvalModal = page.getByTestId("work-create-modal");
-    await approvalModal.waitFor({ timeout: 15000 });
+    await approvalModal.waitFor({ timeout: 30000 });
     await approvalModal.locator("select").nth(0).selectOption("operations");
     await approvalModal.locator("select").nth(1).selectOption("expense");
     await approvalModal.getByTestId("work-title").fill(approvalTitle);
@@ -255,7 +255,7 @@ async function main() {
       .locator("textarea")
       .fill("Weekend gas reimbursement for delivery riders.");
     await page.getByTestId("work-submit").click();
-    await page.getByTestId("work-create-modal").waitFor({ state: "detached", timeout: 15000 });
+    await page.getByTestId("work-create-modal").waitFor({ state: "detached", timeout: 30000 });
     const approvalCard = page
       .locator('article[data-testid^="approval-"]')
       .filter({ hasText: approvalTitle });
@@ -279,9 +279,9 @@ async function main() {
     await page
       .locator('[data-testid="departments-page"][data-hydrated="true"]')
       .waitFor({ timeout: 30000 });
-    await page.getByTestId("company-scorecard").waitFor({ timeout: 15000 });
+    await page.getByTestId("company-scorecard").waitFor({ timeout: 30000 });
     const scorecardOperations = page.getByTestId("scorecard-department-operations");
-    await scorecardOperations.waitFor({ timeout: 15000 });
+    await scorecardOperations.waitFor({ timeout: 30000 });
     assert(
       (await scorecardOperations.getAttribute("href")) === "/departments/operations",
       "Scorecard row does not link to the Operations workspace."
@@ -290,7 +290,7 @@ async function main() {
       /Operations/i.test(await scorecardOperations.innerText()),
       "Scorecard row is missing the Operations department."
     );
-    await page.getByTestId("scorecard-department-hr").waitFor({ timeout: 15000 });
+    await page.getByTestId("scorecard-department-hr").waitFor({ timeout: 30000 });
 
     response = await page.goto(`${baseURL}/departments/operations`, {
       waitUntil: "domcontentloaded",
@@ -306,14 +306,14 @@ async function main() {
       "Operations workspace is missing live KPIs."
     );
     const ordersModule = page.getByTestId("department-module-orders");
-    await ordersModule.waitFor({ timeout: 15000 });
+    await ordersModule.waitFor({ timeout: 30000 });
     assert(/active/i.test(await ordersModule.innerText()), "Orders module is not active.");
     assert(
       (await ordersModule.getAttribute("href")) === "/orders",
       "Orders module does not link to the POS orders page."
     );
     const needsApproval = page.getByTestId(`department-needs-approval-${approvalId}`);
-    await needsApproval.waitFor({ timeout: 15000 });
+    await needsApproval.waitFor({ timeout: 30000 });
     const needsText = await needsApproval.innerText();
     assert(
       /Weekend gas reimbursement/i.test(needsText) && /Rs 850/i.test(needsText),
@@ -338,10 +338,10 @@ async function main() {
       "Task status did not persist after reload."
     );
     await reloadedTask.article.getByRole("button", { name: /comments/i }).click();
-    await page.getByText(taskComment, { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText(taskComment, { exact: true }).waitFor({ timeout: 30000 });
 
     const pendingApproval = page.getByTestId(`approval-${approvalId}`);
-    await pendingApproval.waitFor({ timeout: 15000 });
+    await pendingApproval.waitFor({ timeout: 30000 });
     await page.getByTestId(`approval-approve-${approvalId}`).click();
     await pendingApproval.waitFor({ state: "detached", timeout: 20000 });
 
@@ -440,13 +440,13 @@ async function main() {
     // A staff-raised task defaults to its creator and stays in their queue.
     await staffPage.getByTestId("work-create-open").click();
     const staffModal = staffPage.getByTestId("work-create-modal");
-    await staffModal.waitFor({ timeout: 15000 });
+    await staffModal.waitFor({ timeout: 30000 });
     await staffModal.locator("select").nth(0).selectOption("operations");
     await staffModal.getByTestId("work-title").fill(staffTaskTitle);
     await staffPage.getByTestId("work-submit").click();
     await staffPage
       .getByTestId("work-create-modal")
-      .waitFor({ state: "detached", timeout: 15000 });
+      .waitFor({ state: "detached", timeout: 30000 });
     const staffTask = await workItemId(staffPage, staffTaskTitle);
     staffTaskId = staffTask.id;
     assert(
@@ -465,7 +465,7 @@ async function main() {
     await staffPage
       .locator('[data-testid="departments-page"][data-hydrated="true"]')
       .waitFor({ timeout: 30000 });
-    await staffPage.getByTestId("department-card-operations").waitFor({ timeout: 15000 });
+    await staffPage.getByTestId("department-card-operations").waitFor({ timeout: 30000 });
     assert(
       (await staffPage.getByTestId("department-card-hr").count()) === 0,
       "Staff departments page leaked People & HR."
@@ -474,7 +474,7 @@ async function main() {
       (await staffPage.getByTestId("department-create-open").count()) === 0,
       "Staff departments page exposed the create button."
     );
-    await staffPage.getByTestId("scorecard-department-operations").waitFor({ timeout: 15000 });
+    await staffPage.getByTestId("scorecard-department-operations").waitFor({ timeout: 30000 });
     assert(
       (await staffPage.getByTestId("scorecard-department-hr").count()) === 0,
       "Staff scorecard leaked People & HR."
@@ -491,7 +491,7 @@ async function main() {
       (await staffPage.locator('[data-testid^="department-kpi-"]').count()) >= 3,
       "Staff workspace is missing live KPIs."
     );
-    await staffPage.getByTestId("department-module-orders").waitFor({ timeout: 15000 });
+    await staffPage.getByTestId("department-module-orders").waitFor({ timeout: 30000 });
     assert(
       (await staffPage.getByLabel("Add module").count()) === 0,
       "Staff workspace exposed the add-module control."

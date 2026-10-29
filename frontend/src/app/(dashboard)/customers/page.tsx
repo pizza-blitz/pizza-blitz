@@ -162,7 +162,8 @@ export default function CustomersPage() {
       fetch(`${CUSTOMERS_API}/summary`, { credentials: "include" }),
       fetch(`${CUSTOMERS_API}/retention`, { credentials: "include" }),
     ]);
-    const customerRows = await customersRes.json();
+    const customerData = await customersRes.json().catch(() => []);
+    const customerRows = Array.isArray(customerData) ? customerData : [];
     setCustomers(customerRows);
     setCustomerDrafts((current) => {
       const next = { ...current };
@@ -174,8 +175,12 @@ export default function CustomersPage() {
       });
       return next;
     });
-    setSummary(await summaryRes.json());
-    setRetention(await retentionRes.json());
+    if (summaryRes.ok) {
+      setSummary(await summaryRes.json().catch(() => null));
+    }
+    if (retentionRes.ok) {
+      setRetention(await retentionRes.json().catch(() => null));
+    }
   };
 
   const selectSegment = (value: SegmentKey) => {
