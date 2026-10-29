@@ -37,7 +37,7 @@ CORE_TABLES = (
     "menu_items",
     "stores",
     "daily_sales",
-    "staff_users",
+    "staff_credentials",
     "alembic_version",
 )
 
