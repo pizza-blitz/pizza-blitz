@@ -1,45 +1,62 @@
 # Pizza Blitz — Handoff Brief for Antigravity
 
-**Date:** 2026-10-29
+**Date:** 2026-10-29 (updated after live COD test)
 **Workspace:** `D:\Development\pizza Blitz` (repo root `D:/Development/pizza Blitz`)
-**Branch:** `main`, HEAD `d6e921e` ("Freeze feature work and add delivery handover")
-**Local build:** `FwJA3-Y0izweWvL60Hp_T`
-**Status:** locally production-ready and fully verified; **never deployed**, and **not on GitHub**.
+**Branch:** `main`, HEAD `7aebc5c` ("Hide unset store hours instead of claiming closed every day")
+**Local build:** passes `typecheck`, `build`, 18 assistant unit tests and `verify:blaze`
+**Status:** live at `https://pizza-blitz.vercel.app`; GitHub and Supabase are connected. The newest
+commits are pushed but **the live site has not visibly rebuilt from them yet** — see below.
 
 Read this file first, then [HANDOVER.md](HANDOVER.md), [DEPLOY_REQUEST.md](DEPLOY_REQUEST.md),
 [CURRENT_STATUS.md](CURRENT_STATUS.md), [docs/LAUNCH_RUNBOOK.md](docs/LAUNCH_RUNBOOK.md) and
-[docs/GAP_AUDIT.md](docs/GAP_AUDIT.md) for detail. This brief is the short, accurate map.
+[docs/GAP_AUDIT.md](docs/GAP_AUDIT.md) for detail. Sections 2 onward remain accurate; this
+banner supersedes older deployment claims at the top of those files.
 
 ---
 
-## 1. GitHub and deployment status — read before doing anything
+## 1. GitHub, Supabase and Vercel — verified state
 
-**GitHub: not connected.** The project is a local git repository with **zero remotes**
-(`git remote` is empty), and the GitHub CLI (`gh`) is not installed. Nothing has been
-pushed. This has been verified, not assumed.
+**GitHub: connected.** Remote `https://github.com/pizza-blitz/pizza-blitz.git`; `main` was pushed
+through `7aebc5c`. The working tree is clean after that push.
 
-**The working tree is far ahead of the last commit and must be committed first.**
-As of this handoff:
+**Supabase: connected.** PostgreSQL 17.11 with 120 tables, Alembic head `9f8e7d6c5b4a`.
+`/server/health` and `/server/ready` both return 200 on the live URL.
 
-- 216 tracked files are modified (about +7,989 / −1,281 lines even when whitespace is ignored)
-- 75 files are untracked, including new API endpoints, services, Alembic migrations and browser proofs
-- The untracked files include the customer-memory and assistant backend, company-OS endpoints,
-  finance endpoints and the migrations listed in `backend/alembic/versions/`
-
-Deploying from `d6e921e` alone would ship an old build. Commit the working tree deliberately,
-check that no secret file is staged, then create the GitHub repository and push. Suggested:
+**Vercel: project exists and serves traffic, but the Git auto-deploy is not evident.** After
+pushing `c1f732a` and `7aebc5c`, the live assistant still answered an order phrased "for
+delivery" with the old delivery-zone list (checked 2026-10-29 18:35 UTC), so the deployment
+behind `pizza-blitz.vercel.app` is still the previous build. The local Vercel CLI is logged out
+and the `VERCEL_TOKEN` environment value is rejected with 403, so a deploy cannot be triggered
+from this machine. Concrete next step: open the Vercel project → Settings → Git, confirm the
+repository and production branch are linked, then Redeploy; or supply a valid token. Re-check
+with:
 
 ```bash
-git status --short               # review; .env.deploy.local must NOT appear
-git add -A
-git commit -m "Pizza Blitz: verified local release"
-git remote add origin https://github.com/<owner>/<repo>.git
-git push -u origin main
+curl -s -X POST https://pizza-blitz.vercel.app/api/concierge \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"one margherita pizza for delivery","cart":[]}'
 ```
 
-**Live: not deployed.** No Supabase project exists, no database URL is configured, and the
-available `VERCEL_TOKEN` is rejected by the Vercel API with HTTP 403. Do not present any URL
-as live until `npm run verify:deployment` passes against it.
+The fixed backend returns `intent: add_item` and a cart count of 1; the old one returns
+`intent: delivery` with zero items.
+
+**Human-level COD delivery test (local, 2026-10-29):** green. Through the Blaze avatar the
+order was added, handed to `/order`, Delivery was pre-selected, Near Store quoted Rs 25,
+order #1 was placed for Rs 358.90 cash, rider "Ravi Kumar" was assigned, GPS was published,
+the order moved to out for delivery, OTP proof was captured, and it was marked delivered
+(4/4 timeline). The customer `/track` page showed the Leaflet map and rider, and the rider
+portal at `/rider/<token>` rendered collection, proof and failure actions. Cash was then
+settled through the staff payment-confirmation endpoint.
+
+**Fixes in these commits:** Blaze adds items even when the message names delivery; the
+delivery/pickup chip is acknowledged instead of repeating zone lists; a restored cart defaults
+to an active zone so the quote runs and Place Order enables; Enter sends in the concierge;
+an empty cart no longer shows a delivery fee; unset opening hours are hidden instead of
+printing "Closed every day" while ordering is active.
+
+**Still to confirm after the live build catches up:** run `npm run verify:deployment` and
+`npm run verify:audit:live` against `https://pizza-blitz.vercel.app`, and repeat the COD +
+tracking flow on the live site.
 
 ---
 

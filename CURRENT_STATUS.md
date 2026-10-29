@@ -1,9 +1,12 @@
 # Pizza Blitz Current Status
 
 Last Updated: 2026-10-29
-Status: local/staging complete through the Company OS program. Production launch is
-blocked on hosting and provider credentials, not on code. See
-[HANDOVER.md](HANDOVER.md) for the runbook, verified state and honest limitations.
+Status: live at `https://pizza-blitz.vercel.app` with GitHub and Supabase connected.
+Commits `c1f732a` and `7aebc5c` are pushed; the live build has not yet picked them up
+(verified 18:35 UTC), so re-check the Vercel Git link before trusting live behaviour.
+A human-level cash-on-delivery order through Blaze, rider assignment, live GPS tracking,
+proof of delivery and cash settlement is green locally. See
+[HANDOFF_FOR_ANTIGRAVITY.md](HANDOFF_FOR_ANTIGRAVITY.md) for the exact verified state.
 
 ## Source Of Truth
 
