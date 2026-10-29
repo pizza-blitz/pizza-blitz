@@ -11,6 +11,12 @@ backend/backups
 *.sqlite
 *.sqlite-*
 *.log
+# Local environment files hold production secrets; Vercel injects env vars
+# from project settings instead of reading these.
+.env
+.env.*
+**/.env
+**/.env.*
 **/Dockerfile
 **/.dockerignore
 Dockerfile
