@@ -256,9 +256,13 @@ async def monitor_requests(request: Request, call_next):
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-media_root().mkdir(parents=True, exist_ok=True)
-validate_media_storage()
-app.mount("/media", StaticFiles(directory=str(media_root())), name="media")
+try:
+    media_root().mkdir(parents=True, exist_ok=True)
+    validate_media_storage()
+    if media_root().exists():
+        app.mount("/media", StaticFiles(directory=str(media_root())), name="media")
+except Exception as exc:
+    logging.getLogger("app.main").warning("Could not initialize local media storage: %s", exc)
 
 @app.get("/health")
 def health_check():

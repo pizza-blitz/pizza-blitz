@@ -34,6 +34,8 @@ def media_root() -> Path:
     configured = os.getenv("MEDIA_ROOT", "").strip()
     if configured:
         return Path(configured).expanduser().resolve()
+    if os.getenv("VERCEL") == "1" or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return (Path(tempfile.gettempdir()) / "media").resolve()
     return (Path(__file__).resolve().parents[2] / "media").resolve()
 
 
