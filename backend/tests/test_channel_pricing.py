@@ -8,7 +8,9 @@ os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.main import app
+from app.models.domain import RestaurantOrder
 
 
 def order_payload(phone: str, order_type: str, name: str) -> dict:
@@ -38,13 +40,29 @@ class ChannelPricingTest(unittest.TestCase):
         self.assertEqual(login.status_code, 200, login.text)
         self.headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
         self.item_ids: list[int] = []
+        self.order_ids: list[int] = []
 
     def tearDown(self):
         for item_id in self.item_ids:
             self.client.delete(
                 f"/api/v1/restaurant/menu/menu/{item_id}", headers=self.headers
             )
+        if self.order_ids:
+            db = SessionLocal()
+            try:
+                db.query(RestaurantOrder).filter(
+                    RestaurantOrder.id.in_(self.order_ids)
+                ).delete(synchronize_session=False)
+                db.commit()
+            finally:
+                db.close()
         self._ctx.__exit__(None, None, None)
+
+    def place_order(self, payload: dict):
+        response = self.client.post("/api/v1/restaurant/orders/", json=payload)
+        if response.status_code == 200:
+            self.order_ids.append(response.json()["order_id"])
+        return response
 
     def create_item(self, **overrides):
         payload = {
@@ -73,16 +91,14 @@ class ChannelPricingTest(unittest.TestCase):
         self.assertEqual(prices["delivery"], 349)
         self.assertEqual(prices["dine-in"], 279)
 
-        takeaway = self.client.post(
-            "/api/v1/restaurant/orders/",
-            json=order_payload("9812346301", "takeaway", item["name"]),
+        takeaway = self.place_order(
+            order_payload("9812346301", "takeaway", item["name"]),
         )
         self.assertEqual(takeaway.status_code, 200, takeaway.text)
         self.assertAlmostEqual(takeaway.json()["subtotal"], 299, places=2)
 
-        delivery = self.client.post(
-            "/api/v1/restaurant/orders/",
-            json=order_payload("9812346302", "delivery", item["name"]),
+        delivery = self.place_order(
+            order_payload("9812346302", "delivery", item["name"]),
         )
         self.assertEqual(delivery.status_code, 200, delivery.text)
         self.assertAlmostEqual(delivery.json()["subtotal"], 349, places=2)
@@ -107,9 +123,8 @@ class ChannelPricingTest(unittest.TestCase):
         self.assertEqual(paused_delivery.status_code, 200, paused_delivery.text)
         paused_item = paused_delivery.json()
         self.item_ids.append(paused_item["id"])
-        blocked = self.client.post(
-            "/api/v1/restaurant/orders/",
-            json=order_payload("9812346303", "delivery", paused_item["name"]),
+        blocked = self.place_order(
+            order_payload("9812346303", "delivery", paused_item["name"]),
         )
         self.assertEqual(blocked.status_code, 422)
 
@@ -147,14 +162,12 @@ class ChannelPricingTest(unittest.TestCase):
             if row["channel"] == "delivery"
         )
         self.assertFalse(hidden_delivery["is_visible"])
-        hidden_blocked = self.client.post(
-            "/api/v1/restaurant/orders/",
-            json=order_payload("9812346304", "delivery", hidden_item["name"]),
+        hidden_blocked = self.place_order(
+            order_payload("9812346304", "delivery", hidden_item["name"]),
         )
         self.assertEqual(hidden_blocked.status_code, 422)
-        hidden_takeaway = self.client.post(
-            "/api/v1/restaurant/orders/",
-            json=order_payload("9812346305", "takeaway", hidden_item["name"]),
+        hidden_takeaway = self.place_order(
+            order_payload("9812346305", "takeaway", hidden_item["name"]),
         )
         self.assertEqual(hidden_takeaway.status_code, 200, hidden_takeaway.text)
         self.assertAlmostEqual(hidden_takeaway.json()["subtotal"], 299, places=2)

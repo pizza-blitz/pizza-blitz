@@ -5,13 +5,19 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
-from app.models.domain import BusinessDepartment, DepartmentMember
 from app.services.auth_service import (
     AuthError,
     decode_access_token,
     decode_portal_session_token,
 )
-from app.services.permission_service import permission_enabled, staff_permission_state
+from app.services.department_service import (
+    department_permissions,
+    get_department,
+    hr_access_state as build_hr_access_state,
+    is_admin_session,
+    member_for_department,
+)
+from app.services.permission_service import permission_enabled
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -125,55 +131,72 @@ def require_permission(permission: str) -> Callable:
     return _dependency
 
 
-def _hr_membership(db: Session, session: dict) -> DepartmentMember | None:
+def _session_staff_id(session: dict) -> str:
     subject = str(session.get("subject") or "")
-    if not subject.startswith("staff:"):
-        return None
-    staff_id = subject.split("staff:", 1)[1].strip()
-    hr = (
-        db.query(BusinessDepartment)
-        .filter(BusinessDepartment.key == "hr")
-        .first()
-    )
-    if hr is None:
-        return None
-    return (
-        db.query(DepartmentMember)
-        .filter(
-            DepartmentMember.department_id == hr.id,
-            DepartmentMember.staff_id == staff_id,
-        )
-        .first()
-    )
+    if subject.startswith("staff:"):
+        return subject.split("staff:", 1)[1].strip()
+    return ""
 
 
-def require_hr_permission(permission: str) -> Callable:
-    """Allow admins, or HR department members with the staff permission."""
+def require_department_permission(department_key: str, *permissions: str) -> Callable:
+    """Allow admins, or members of the department with one of the permissions.
+
+    Department members with an explicit scoped role use that role's grants.
+    Members without a scoped role keep the legacy global staff-permission
+    fallback so existing POS and HR toggles continue to work.
+    """
 
     def _dependency(
         session: dict = Depends(get_current_session),
         db: Session = Depends(get_db),
     ) -> dict:
-        if session.get("role") == "admin":
+        if is_admin_session(session):
             return session
         if session.get("role") != "staff":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="This account does not have access to the HR department.",
+                detail="This account does not have access to that department.",
             )
-        member = _hr_membership(db, session)
-        if member is None:
+        department = get_department(db, department_key)
+        if department is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Department not found.",
+            )
+        granted = department_permissions(db, session, department)
+        requested = set(permissions)
+        if requested and not (granted & requested):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not a member of the People & HR department.",
+                detail=(
+                    "This account lacks the "
+                    f"{' or '.join(sorted(requested))} permission."
+                ),
             )
-        if not permission_enabled(db, "staff", permission):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"This account lacks the {permission} permission.",
-            )
-        session = dict(session)
-        session["hr_member_role"] = member.role
+        enriched = dict(session)
+        enriched["department_key"] = department.key
+        enriched["department_id"] = department.id
+        staff_id = _session_staff_id(session)
+        member = (
+            member_for_department(db, staff_id, department) if staff_id else None
+        )
+        if member is not None:
+            enriched["department_role"] = member.role
+            enriched["department_role_id"] = member.department_role_id
+        return enriched
+
+    return _dependency
+
+
+def require_hr_permission(permission: str) -> Callable:
+    """Backwards-compatible HR gate built on department permissions."""
+
+    def _dependency(
+        session: dict = Depends(require_department_permission("hr", permission)),
+    ) -> dict:
+        if session.get("department_role"):
+            session = dict(session)
+            session["hr_member_role"] = session["department_role"]
         return session
 
     return _dependency
@@ -181,22 +204,4 @@ def require_hr_permission(permission: str) -> Callable:
 
 def hr_access_state(db: Session, session: dict) -> dict:
     """Describe the caller's HR membership and effective permissions."""
-    if session.get("role") == "admin":
-        return {
-            "is_admin": True,
-            "is_hr_member": True,
-            "hr_role": "admin",
-            "permissions": {
-                row["key"]: True for row in staff_permission_state(db)
-            },
-        }
-    member = _hr_membership(db, session)
-    permissions = {
-        row["key"]: bool(row["enabled"]) for row in staff_permission_state(db)
-    }
-    return {
-        "is_admin": False,
-        "is_hr_member": member is not None,
-        "hr_role": member.role if member else None,
-        "permissions": permissions if member is not None else {},
-    }
+    return build_hr_access_state(db, session)

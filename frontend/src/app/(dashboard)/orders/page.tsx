@@ -1047,7 +1047,11 @@ export default function OrdersPage() {
     setRefundTarget(order);
     setRefundAmount(String(Number(order.refundable_amount || 0)));
     setRefundReason("");
-    setRefundMethod("cash");
+    setRefundMethod(
+      (order.payment_method || "").toLowerCase() === "gift_card"
+        ? "gift_card"
+        : "cash"
+    );
     setRefundReference("");
     setMessage("");
   };
@@ -2110,7 +2114,7 @@ export default function OrdersPage() {
                     onChange={(event) => setRefundMethod(event.target.value)}
                     className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-amber-300"
                   >
-                    {["cash", "upi", "card", "gateway", "bank", "other"].map((method) => (
+                    {["cash", "upi", "card", "gateway", "bank", "gift_card", "other"].map((method) => (
                       <option key={method} value={method}>
                         {method.toUpperCase()}
                       </option>

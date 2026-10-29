@@ -19,9 +19,13 @@ import {
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
 import FeedbackForm from "@/components/feedback/FeedbackForm";
+import DeliveryLiveMap from "./delivery-live-map";
 
 const TRACK_API = getApiUrl("/api/v1/restaurant/orders/track");
 const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
+const TRACK_REQUEST_TIMEOUT_MS = 15000;
+const TRACK_REFRESH_INTERVAL_MS = 30000;
+const TRACK_LIVE_INTERVAL_MS = 15000;
 
 type TrackingStep = {
   key: string;
@@ -69,6 +73,7 @@ type TrackedOrder = {
   payment_confirmed_at?: string | null;
   status: string;
   eta_window: string;
+  eta_at?: string | null;
   scheduled_for?: string | null;
   scheduled_label?: string | null;
   notifications?: {
@@ -80,6 +85,7 @@ type TrackedOrder = {
   rider?: {
     assigned_to?: string | null;
     status: string;
+    phone?: string | null;
     latitude?: number | null;
     longitude?: number | null;
     location_updated_at?: string | null;
@@ -90,10 +96,18 @@ type TrackedOrder = {
   created_at?: string | null;
 };
 
+function parseServerTime(value?: string | null) {
+  if (!value) return null;
+  // The API stores naive UTC timestamps; without a suffix the browser would
+  // read them as local time and show the guest a clock hours out of step.
+  const normalized = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function formatTrackingTime(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  const date = parseServerTime(value);
+  if (!date) return "";
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -103,6 +117,8 @@ export default function TrackOrderPage() {
   const [order, setOrder] = useState<TrackedOrder | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -116,12 +132,13 @@ export default function TrackOrderPage() {
   }, []);
 
   const placedAt = useMemo(() => {
-    if (!order?.created_at) return "";
-    return new Date(order.created_at).toLocaleString();
+    const placed = parseServerTime(order?.created_at);
+    return placed ? placed.toLocaleString() : "";
   }, [order?.created_at]);
   const isDeliveryOrder = (order?.fulfillment_type || order?.order_type || "").toLowerCase() === "delivery";
   const rawDeliveryStatus = (order?.delivery_assignment?.status || "unassigned").toLowerCase();
   const deliveryStatus = rawDeliveryStatus.replaceAll("_", " ");
+  const isLiveDelivery = rawDeliveryStatus === "assigned" || rawDeliveryStatus === "out_for_delivery";
   const isPaymentPending =
     (order?.payment_method || "").toLowerCase() === "prepaid" &&
     (order?.payment_status || "").toLowerCase() !== "paid";
@@ -166,6 +183,37 @@ export default function TrackOrderPage() {
     return "We have your address. The store team is assigning a delivery partner.";
   }, [isDeliveryOrder, rawDeliveryStatus]);
   const completedDeliveryTimelineSteps = deliveryTimeline.filter((step) => step.complete).length;
+  const etaCountdown = useMemo(() => {
+    if (!order?.eta_at || order.scheduled_label) return null;
+    const due = new Date(order.eta_at);
+    if (Number.isNaN(due.getTime())) return null;
+    const remainingMs = due.getTime() - clock;
+    const dueLabel = due.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const verb = isDeliveryOrder ? "Arriving" : "Ready";
+    if (remainingMs > 60_000) {
+      const minutes = Math.max(1, Math.round(remainingMs / 60_000));
+      return {
+        tone: "on-time",
+        text: `${verb} in ~${minutes} min`,
+        detail: `Due by ${dueLabel}`,
+      };
+    }
+    if (remainingMs > -10 * 60_000) {
+      return {
+        tone: "soon",
+        text: `${verb} any moment`,
+        detail: `Due by ${dueLabel}`,
+      };
+    }
+    return {
+      tone: "late",
+      text: "Running late",
+      detail: `Was due ${dueLabel} - the store team is checking`,
+    };
+  }, [clock, isDeliveryOrder, order?.eta_at, order?.scheduled_label]);
 
   const lookupOrder = async (nextOrderId = orderId, nextPhone = phone) => {
     const trimmedOrderId = nextOrderId.trim();
@@ -178,19 +226,84 @@ export default function TrackOrderPage() {
     setIsLoading(true);
     setMessage("");
     setOrder(null);
-    const response = await fetch(
-      `${TRACK_API}/${encodeURIComponent(trimmedOrderId)}?phone=${encodeURIComponent(trimmedPhone)}`,
-      { cache: "no-store" }
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => controller.abort(),
+      TRACK_REQUEST_TIMEOUT_MS
     );
-    const data = await response.json();
-    setIsLoading(false);
+    try {
+      const response = await fetch(
+        `${TRACK_API}/${encodeURIComponent(trimmedOrderId)}?phone=${encodeURIComponent(trimmedPhone)}`,
+        { cache: "no-store", signal: controller.signal }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(data.detail || "Order could not be found.");
+        return;
+      }
+      setOrder(data);
+      setLastUpdatedAt(new Date());
+    } catch (error) {
+      setMessage(
+        (error as Error)?.name === "AbortError"
+          ? "The store took too long to respond. Please try again."
+          : "Could not reach the store. Check your connection and try again."
+      );
+    } finally {
+      window.clearTimeout(timer);
+      setIsLoading(false);
+    }
+  };
 
-    if (!response.ok) {
-      setMessage(data.detail || "Order could not be found.");
+  useEffect(() => {
+    if (!order?.id || !phone.trim()) return;
+    if (
+      order.status === "closed" ||
+      order.delivery_assignment?.status === "delivered"
+    ) {
       return;
     }
-    setOrder(data);
-  };
+
+    let active = true;
+    let inFlight = false;
+    const refresh = async () => {
+      if (!active || inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const response = await fetch(
+          `${TRACK_API}/${order.id}?phone=${encodeURIComponent(phone.trim())}`,
+          { cache: "no-store" }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (active && response.ok) {
+          setOrder(data);
+          setLastUpdatedAt(new Date());
+        }
+      } catch {
+        // Keep the last known status when a background refresh fails.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const live =
+      order?.delivery_assignment?.status === "out_for_delivery" ||
+      order?.delivery_assignment?.status === "assigned";
+    const timer = window.setInterval(
+      refresh,
+      live ? TRACK_LIVE_INTERVAL_MS : TRACK_REFRESH_INTERVAL_MS
+    );
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [order?.delivery_assignment?.status, order?.id, order?.status, phone]);
+
+  useEffect(() => {
+    if (!order?.eta_at) return;
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, [order?.eta_at]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -207,7 +320,7 @@ export default function TrackOrderPage() {
         customer: {
           name: order.customer_name || "",
           phone: order.customer_phone || phone,
-          opt_in_marketing: true,
+          opt_in_marketing: false,
         },
         fulfillment:
           isDeliveryOrder && order.delivery_address
@@ -243,6 +356,7 @@ export default function TrackOrderPage() {
             </Link>
             <Link
               href="/account"
+              prefetch={false}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
             >
               My Orders
@@ -263,7 +377,9 @@ export default function TrackOrderPage() {
                   value={orderId}
                   onChange={(event) => setOrderId(event.target.value)}
                   placeholder="Order ID"
+                  aria-label="Order ID"
                   inputMode="numeric"
+                  autoComplete="off"
                   className="w-full outline-none"
                 />
               </label>
@@ -273,6 +389,10 @@ export default function TrackOrderPage() {
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   placeholder="Phone number"
+                  aria-label="Phone number"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   className="w-full outline-none"
                 />
               </label>
@@ -301,7 +421,12 @@ export default function TrackOrderPage() {
               <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-bold text-red-700">{order.order_type}</p>
-                  <h3 className="mt-1 text-2xl font-black">{order.next_action}</h3>
+                  <h3
+                    aria-live="polite"
+                    className="mt-1 text-2xl font-black"
+                  >
+                    {order.next_action}
+                  </h3>
                   {placedAt && (
                     <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
                       <Clock className="h-4 w-4" /> {placedAt}
@@ -319,6 +444,41 @@ export default function TrackOrderPage() {
                 <div className="rounded-md bg-slate-950 px-4 py-3 text-right text-white">
                   <p className="text-xs font-bold uppercase text-slate-300">ETA</p>
                   <p className="text-xl font-black">{order.eta_window}</p>
+                  {etaCountdown && (
+                    <p
+                      data-testid="track-eta-countdown"
+                      data-tone={etaCountdown.tone}
+                      className={`mt-2 inline-block rounded-md px-2 py-1 text-[11px] font-black leading-tight ${
+                        etaCountdown.tone === "late"
+                          ? "bg-red-500/25 text-red-100"
+                          : etaCountdown.tone === "soon"
+                            ? "bg-amber-400/25 text-amber-100"
+                            : "bg-emerald-400/20 text-emerald-100"
+                      }`}
+                    >
+                      {etaCountdown.text}
+                      <span className="mt-0.5 block text-[10px] font-semibold opacity-80">
+                        {etaCountdown.detail}
+                      </span>
+                    </p>
+                  )}
+                  {lastUpdatedAt && (
+                    <p
+                      data-testid="track-last-updated"
+                      className="mt-1 text-[10px] font-semibold text-slate-300"
+                    >
+                      Updated{" "}
+                      {lastUpdatedAt.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                      {" · "}refreshes every{" "}
+                      {(isLiveDelivery
+                        ? TRACK_LIVE_INTERVAL_MS
+                        : TRACK_REFRESH_INTERVAL_MS) / 1000}
+                      s
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -371,10 +531,7 @@ export default function TrackOrderPage() {
                         <span className="text-[10px] font-black uppercase tracking-widest text-sky-700">
                           {notification.channel}
                           {notification.created_at
-                            ? ` · ${new Date(`${notification.created_at}Z`).toLocaleTimeString(
-                                "en-IN",
-                                { hour: "2-digit", minute: "2-digit" }
-                              )}`
+                            ? ` · ${formatTrackingTime(notification.created_at)}`
                             : ""}
                         </span>
                       </li>
@@ -401,24 +558,44 @@ export default function TrackOrderPage() {
                         {order.rider.proof_captured ? " · proof captured" : ""}
                       </p>
                     </div>
-                    {order.rider.latitude != null && order.rider.longitude != null && (
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${order.rider.latitude},${order.rider.longitude}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white"
-                      >
-                        <MapPin className="h-4 w-4" /> Live location
-                      </a>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {order.rider.phone && (
+                        <a
+                          href={`tel:${order.rider.phone}`}
+                          data-testid="track-call-rider"
+                          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white"
+                        >
+                          <Phone className="h-4 w-4" /> Call rider
+                        </a>
+                      )}
+                      {order.rider.latitude != null && order.rider.longitude != null && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${order.rider.latitude},${order.rider.longitude}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-xs font-black text-white"
+                        >
+                          <MapPin className="h-4 w-4" /> Open in maps
+                        </a>
+                      )}
+                    </div>
                   </div>
+                  {order.rider.latitude != null && order.rider.longitude != null && (
+                    <DeliveryLiveMap
+                      lat={order.rider.latitude}
+                      lng={order.rider.longitude}
+                      riderName={order.rider.assigned_to || "Your rider"}
+                      updatedLabel={
+                        order.rider.location_updated_at
+                          ? `Updated ${formatTrackingTime(order.rider.location_updated_at)}`
+                          : undefined
+                      }
+                    />
+                  )}
                   {order.rider.location_updated_at && (
                     <p className="mt-2 text-xs font-semibold text-slate-400">
                       Last location update:{" "}
-                      {new Date(`${order.rider.location_updated_at}Z`).toLocaleTimeString(
-                        "en-IN",
-                        { hour: "2-digit", minute: "2-digit" }
-                      )}
+                      {formatTrackingTime(order.rider.location_updated_at)}
                     </p>
                   )}
                 </section>

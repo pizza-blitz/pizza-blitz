@@ -37,12 +37,14 @@ Pizza Blitz has two connected products:
 
 ## Phase 2 - Deployment
 
-Open. These steps need a Google Cloud project, credentials, and a production
-database; the repository side is ready (`deploy-gcp.ps1`, Dockerfiles, `/ready`
-probe, runbook).
+Open. These steps need a Supabase Postgres project, a hosting account, and
+credentials; the repository side is ready (Dockerfiles, `/ready` probe, runbook,
+`DEPLOY_REQUEST.md` with the Supabase + Render/Railway or Vercel decision). The
+`deploy-gcp.ps1`/`.sh` scripts remain as an unused option.
 
-- Deploy backend to Cloud Run.
-- Deploy frontend to Cloud Run or another selected host.
+- Deploy the backend to Render or Railway (persistent process).
+- Deploy the frontend to Vercel (or the same host).
+- Point `SQLALCHEMY_DATABASE_URI` at the Supabase session-pooler URL and run Alembic.
 - Use runtime environment variables instead of hardcoded URLs.
 - Verify `/health`, `/ready`, dashboard, daily entry, menu, orders, and reports.
 
@@ -97,7 +99,7 @@ probe, runbook).
 - [x] Database-aware readiness probe (`/ready`).
 - [ ] Connect live production database. (Open: needs the production URL.)
 - [ ] Add real provider credentials and test with sandbox accounts. (Open: needs provider accounts.)
-- [ ] Deploy backend and frontend. (Open: needs the cloud project.)
+- [ ] Deploy backend and frontend. (Open: needs a Supabase project URL plus a Vercel or Render account.)
 - [ ] Run production smoke test after deploy. (Open: depends on the two items above.)
 
 ## Phase 8 - Security And Quality Hardening
@@ -235,7 +237,89 @@ Access IDs and roles: [docs/ACCESS.md](docs/ACCESS.md).
 - [x] N-way chained crossfades with caption alignment.
 - [x] Mixed-resolution merge with common-canvas normalization.
 - [x] Pad/crop framing and retryable pager resolves.
-- [ ] **Feature work frozen at the delivery handover; remaining items are future phases.**
-- [ ] Acknowledgement sync, caption languages, mixed-fps audio normalization.
-- [ ] Custom report builder and scheduled exports.
-- [ ] 2FA, SSO and granular permissions.
+
+Deferred after the 2026-10-27 handover (future phases, not defects):
+
+- [ ] Pager acknowledgement sync, caption languages, mixed-fps audio normalization.
+- [ ] Globally deduplicated multi-channel journey caps.
+- [ ] Certified e-signature and statutory payroll filing.
+
+## Phase 10 - Company Operating System And Conversion (2026-10-27 → 2026-10-28)
+
+Plan and audit: [docs/COMPANY_OS_BLUEPRINT.md](docs/COMPANY_OS_BLUEPRINT.md).
+Feature inventory: [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md).
+
+### 10A - Conversion rescue
+
+- [x] Landing/menu CTAs send guests to `/order`; `/menu` redirects guests to the order flow.
+- [x] Cart, fulfilment mode, coupon and schedule persist across reloads and revalidate prices.
+- [x] Order submission and payment-session creation have timeout, retry, inline error state and
+  no silent failures.
+- [x] Dedicated confirmation page with order number, ETA and a route into live tracking.
+- [x] Offer cards deep-link to `/order?coupon=CODE` and show the applied state.
+- [x] Guest/privacy defaults fixed (no staff panels on the customer page, consent unchecked,
+  labelled and mobile-keyboard-friendly inputs).
+- [x] Tracking polls on an interval and shows rider stage.
+- [x] Landing truth pass: live hours/address/ETAs from the store profile, readiness-driven
+  payment copy, trust signals; sitemap/robots; no invented analytics IDs.
+- [x] OTP debug codes fail closed outside explicit local mode.
+
+### 10B - Company OS foundation
+
+- [x] Department registry: 16 department specs (10 core departments plus 5 sub-departments),
+  70 catalogued modules whose route templates exactly cover the 70 portal routes.
+- [x] Department parent/head/kind/store/cost-centre fields; scoped roles and permissions;
+  department membership drives access.
+- [x] Department-generated portal navigation, department switcher and `/work` inbox.
+- [x] Live `/departments/{key}` workspace with KPI strip, needs-you queue, team, modules,
+  quick actions and sub-departments.
+- [x] Generic tasks, comments, approvals and unread notices; expenses, purchase orders, HR
+  leave and social posts mirror into approvals.
+- [x] Company scorecard and department/store-tagged audit events.
+
+### 10C - Department depth
+
+- [x] Operations: opening/closing/shift checklists with templates, per-item state and
+  sign-off; facilities asset register, preventive maintenance and breakdown work orders.
+- [x] Kitchen: menu-engineering matrix (star / plough-horse / puzzle / dog) with margins,
+  popularity and an action list.
+- [x] Supply: physical stocktakes with variance valuation and stock corrections.
+- [x] Quality/legal: food-safety audits with CAPA items, temperature/CCP logs, and a licence
+  and contract register with expiry alerts.
+- [x] Training: courses, certification records, expiry and completion tracking.
+- [x] Revenue: issued gift cards with reload, redeem, void, public balance check, checkout
+  debit, refund credit-back and a liability summary.
+- [x] Executive: company goals with progress and franchise site pipeline with proforma and
+  opening playbook.
+- [x] Technology: data-platform overview (freshness, exports, quality checks) and CSV export.
+- [x] Finance: store dimensions on ledgers, outlet P&L with COGS/opex/waste split and
+  cross-checks.
+
+### 10D - AI concierge and landing conversion
+
+- [x] Backend ordering assistant: deterministic intent routing over the live menu, cart
+  add/remove, offers, store facts and checkout hand-off (optional LLM answer path stays
+  provider-gated).
+- [x] 3D talking avatar (Blaze) with text and browser speech, quick replies, product cards
+  and the ability to build the cart and hand it to checkout.
+- [x] Conversion-first landing page: live menu, offers, delivery areas, kitchen standards,
+  FAQ, JSON-LD/OG, concierge entry, responsive down to phone.
+
+### 10E - Verification
+
+- [x] Backend suite: 345 passed, 87 subtests.
+- [x] Alembic revision `b70420584d8b` adds all 15 workspace tables; fresh upgrade verified.
+- [x] 175 browser proof scripts; new proofs for conversion, Blaze concierge, company OS,
+  the 11 department workspaces and gift-card checkout/refund.
+- [x] OpenAPI: 427 paths / 507 operations; every new workspace endpoint smoke-tested.
+- [x] Production build, lint, typecheck and portal smoke green.
+
+### 10F - Remaining
+
+- [ ] Deploy to a verified host with real credentials. **Blocked:** no valid hosting token
+  and no Supabase project yet; nothing has been faked. Google Cloud is no longer the plan —
+  Supabase is the database, Vercel or Render is the host. See
+  [DEPLOY_REQUEST.md](DEPLOY_REQUEST.md) and [docs/LAUNCH_RUNBOOK.md](docs/LAUNCH_RUNBOOK.md).
+- [ ] Connect live Supabase Postgres, provider accounts, maps key and APM.
+- [ ] Mobbin paid-plan reference capture. **Blocked:** the connected Mobbin plan returns no
+  content; public UX conventions were used and no Mobbin assets were copied.

@@ -32,11 +32,19 @@ type PurchaseOrderItem = {
 type PurchaseOrder = {
   id: number;
   status: string;
+  store_id?: number;
+  store?: string | null;
   supplier_name?: string;
   supplier_whatsapp?: string | null;
   total_amount?: number;
   created_at: string;
   items?: PurchaseOrderItem[];
+};
+
+type StoreOption = {
+  id: number;
+  name: string;
+  code: string;
 };
 
 type ReorderGroup = {
@@ -54,17 +62,36 @@ export default function PurchaseOrders() {
   const [updatingOrderId, setUpdatingOrderId] = useState("");
   const [message, setMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [storeFilter, setStoreFilter] = useState("all");
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchOrders(controller.signal);
+    fetch(getApiUrl('/api/v1/restaurant/stores/'), {
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (payload?.stores?.length) setStores(payload.stores);
+      })
+      .catch(() => undefined);
     return () => controller.abort();
   }, []);
 
-  const fetchOrders = async (signal?: AbortSignal) => {
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchOrders(controller.signal, storeFilter);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeFilter]);
+
+  const fetchOrders = async (signal?: AbortSignal, activeStore = storeFilter) => {
     try {
+      const storeQuery = activeStore === "all" ? "" : `?store_id=${activeStore}`;
       const [data, lowStock] = await Promise.all([
-        fetchJson(getApiUrl('/api/v1/restaurant/purchase-orders/'), { signal }),
+        fetchJson(getApiUrl(`/api/v1/restaurant/purchase-orders/${storeQuery}`), { signal }),
         fetchJson(getApiUrl('/api/v1/restaurant/inventory/low-stock'), { signal }),
       ]);
       setOrders(arrayRows<PurchaseOrder>(data));
@@ -84,12 +111,14 @@ export default function PurchaseOrders() {
     setIsCreatingDrafts(true);
     setMessage("");
     try {
-      const data = await fetchJson(getApiUrl('/api/v1/restaurant/purchase-orders/from-low-stock'), {
+      const storeQuery = storeFilter === "all" ? "" : `?store_id=${storeFilter}`;
+      const data = await fetchJson(getApiUrl(`/api/v1/restaurant/purchase-orders/from-low-stock${storeQuery}`), {
         method: 'POST',
       });
+      const outlet = stores.find((store) => String(store.id) === storeFilter)?.name;
       setMessage(
         data.created
-          ? `Created ${data.created} purchase order draft${data.created === 1 ? "" : "s"}.`
+          ? `Created ${data.created} purchase order draft${data.created === 1 ? "" : "s"}${outlet ? ` for ${outlet}` : ""}.`
           : "No low-stock items need reorder drafts."
       );
       await fetchOrders();
@@ -187,7 +216,21 @@ export default function PurchaseOrders() {
           <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
           <p className="text-gray-500 mt-1">Manage suppliers and auto-generate WhatsApp orders.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <select
+            aria-label="Purchase order outlet"
+            data-testid="purchase-order-store-filter"
+            value={storeFilter}
+            onChange={(event) => setStoreFilter(event.target.value)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-bold text-gray-700 shadow-sm outline-none focus:border-orange-500"
+          >
+            <option value="all">All outlets</option>
+            {stores.map((store) => (
+              <option key={store.id} value={String(store.id)}>
+                {store.name}
+              </option>
+            ))}
+          </select>
           <label className="cursor-pointer px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-lg font-medium shadow-sm transition-colors flex items-center">
              {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
              {isUploading ? "Processing..." : "Upload Handwritten Note (PDF)"}
@@ -307,7 +350,9 @@ export default function PurchaseOrders() {
                           </span>
                         </div>
                         <p className="text-sm text-gray-500 mt-1">{order.supplier_name} &bull; {new Date(order.created_at).toLocaleDateString()}</p>
-                        <p className="text-xs text-gray-400 mt-1">{order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"} in this PO</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {order.store || "Main outlet"} &bull; {order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"} in this PO
+                        </p>
                       </div>
                       <div className="text-right space-y-2">
                         <div className="font-bold text-gray-900">Rs. {Number(order.total_amount || 0).toLocaleString()}</div>

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, BrainCircuit, CheckCircle2, ChevronRight, Loader2, Sparkles, Target, Zap } from 'lucide-react';
+import { AlertCircle, BrainCircuit, CheckCircle2, Loader2, Sparkles, Target, Zap } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 type AiInsightPayload = {
@@ -12,7 +12,8 @@ export default function AIInsights() {
   const [insights, setInsights] = useState<AiInsightPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [syncMessage, setSyncMessage] = useState<{ type: "success" | "error" | "loading"; text: string } | null>(null);
+  const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
+  const [syncMessage, setSyncMessage] = useState<{ type: "success" | "warning" | "error" | "loading"; text: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -23,7 +24,7 @@ export default function AIInsights() {
   const fetchInsights = async (signal?: AbortSignal) => {
     setIsLoading(true);
     setError(null);
-    setSyncMessage({ type: "loading", text: "Refreshing AI insight model..." });
+    setSyncMessage({ type: "loading", text: "Refreshing insight model..." });
     try {
       const res = await fetch(getApiUrl('/api/v1/restaurant/insights/ai-insights'), {
         signal,
@@ -31,21 +32,38 @@ export default function AIInsights() {
         cache: "no-store",
       });
       const result = await res.json().catch(() => ({}));
-      if (res.ok && result.status === "success") {
-        setInsights(result.data);
-        const tipCount = Array.isArray(result.data?.tips) ? result.data.tips.length : 0;
+      const data = result?.data;
+      const hasData =
+        data && typeof data.summary === "string" && Array.isArray(data.tips);
+      if (res.ok && hasData && result.status === "success") {
+        setInsights(data);
+        setAiConfigured(true);
+        const tipCount = data.tips.length;
         setSyncMessage({
           type: "success",
           text: `AI insights synced${tipCount ? ` with ${tipCount} directive${tipCount === 1 ? "" : "s"}` : ""}.`,
         });
+      } else if (res.ok && hasData && result.status === "fallback") {
+        // The AI provider is optional. When it is not configured the backend
+        // still returns standard guidance, so show it with an honest warning
+        // instead of treating the page as broken.
+        setInsights(data);
+        setAiConfigured(false);
+        setSyncMessage({
+          type: "warning",
+          text:
+            result.message ||
+            "AI provider is not configured. Showing standard operating guidance.",
+        });
       } else {
-        const message = result.message || result.detail || "Intelligence node synchronization failed.";
+        const message =
+          result.detail || result.message || "Insights could not be loaded.";
         setError(message);
         setSyncMessage({ type: "error", text: message });
       }
     } catch {
       if (signal?.aborted) return;
-      const message = "Unable to establish neural link with backend.";
+      const message = "The backend could not be reached.";
       setError(message);
       setSyncMessage({ type: "error", text: message });
     } finally {
@@ -64,14 +82,14 @@ export default function AIInsights() {
       <div className="text-center space-y-2">
         <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter leading-none">Neural Insights</h1>
         <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter italic">Analyzing Pizza Blitz Dataset</h2>
-        <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">Gemini 1.5 Flash is extracting patterns...</p>
+        <p className="text-gray-400 font-bold uppercase tracking-widest text-xs animate-pulse">Analyzing your sales and stock data...</p>
       </div>
     </div>
   );
 
   const displayData = insights || {
-    summary: "AI systems are currently initializing. Based on raw telemetry, your operational flow remains stable with a slight upward trend in weekend velocity.",
-    tips: ["Refine inventory buffers for peak weekend hours.", "Audit utility costs for midnight energy spikes.", "Boost classic pepperoni visibility via main dashboard."]
+    summary: "No guidance loaded yet. Use Force Resync to read your latest sales and stock figures.",
+    tips: ["Connect an AI provider key to get model-written recommendations.", "Keep daily sales and inventory up to date so the numbers here mean something.", "Review the Reports page for the raw figures behind any suggestion."]
   };
 
   return (
@@ -98,17 +116,22 @@ export default function AIInsights() {
 
       {syncMessage && (
         <div
+          data-testid="ai-insights-status"
           className={`flex items-center rounded-[2rem] border-2 p-5 text-sm font-black uppercase tracking-tight shadow-lg ${
             syncMessage.type === "success"
               ? "border-green-100 bg-green-50 text-green-700 shadow-green-50"
               : syncMessage.type === "error"
                 ? "border-red-100 bg-red-50 text-red-700 shadow-red-50"
-                : "border-orange-100 bg-orange-50 text-orange-700 shadow-orange-50"
+                : syncMessage.type === "warning"
+                  ? "border-amber-200 bg-amber-50 text-amber-800 shadow-amber-50"
+                  : "border-orange-100 bg-orange-50 text-orange-700 shadow-orange-50"
           }`}
         >
           {syncMessage.type === "success" ? (
             <CheckCircle2 className="mr-4 h-6 w-6 shrink-0" />
           ) : syncMessage.type === "error" ? (
+            <AlertCircle className="mr-4 h-6 w-6 shrink-0" />
+          ) : syncMessage.type === "warning" ? (
             <AlertCircle className="mr-4 h-6 w-6 shrink-0" />
           ) : (
             <Loader2 className="mr-4 h-6 w-6 shrink-0 animate-spin" />
@@ -151,9 +174,6 @@ export default function AIInsights() {
                   </div>
                   <h4 className="text-xl font-black text-gray-900 mb-3 tracking-tighter uppercase italic">Directive {i+1}</h4>
                   <p className="text-gray-500 font-bold leading-relaxed">{tip}</p>
-                  <div className="mt-8 pt-6 border-t border-gray-100 flex items-center text-[10px] font-black text-orange-600 uppercase tracking-widest">
-                     Explore Strategy <ChevronRight className="w-3 h-3 ml-1 group-hover:translate-x-1 transition-transform" />
-                  </div>
                </div>
              ))}
           </div>
@@ -164,16 +184,16 @@ export default function AIInsights() {
              <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-orange-500/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
              <div className="flex items-center space-x-3 mb-8">
                <div className="bg-white/10 p-3 rounded-2xl"><Target className="w-5 h-5 text-orange-400" /></div>
-               <h4 className="font-black uppercase tracking-widest text-xs italic">Operational Target</h4>
+               <h4 className="font-black uppercase tracking-widest text-xs italic">What This Reads</h4>
              </div>
-             <div className="space-y-8 relative z-10">
+             <div className="space-y-6 relative z-10">
                 <div className="bg-white/5 p-6 rounded-[2rem] border border-white/10 backdrop-blur-sm">
-                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">High Impact Vector</p>
-                   <p className="font-black text-2xl tracking-tighter italic">Inventory Turnover</p>
+                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Sales &amp; expenses</p>
+                   <p className="text-sm font-bold text-gray-200 leading-relaxed">The last 30 days of daily sales, summed into revenue, expense and net profit.</p>
                 </div>
                 <div className="bg-white/5 p-6 rounded-[2rem] border border-white/10 backdrop-blur-sm">
-                   <p className="text-[10px] text-green-400 font-bold uppercase tracking-widest mb-1">Potential Monthly Yield</p>
-                   <p className="font-black text-4xl text-green-400 tracking-tighter">Rs 4,500+</p>
+                   <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Inventory</p>
+                   <p className="text-sm font-bold text-gray-200 leading-relaxed">Items whose current stock has fallen below their minimum level.</p>
                 </div>
                 <button
                   type="button"
@@ -182,7 +202,7 @@ export default function AIInsights() {
                   className="flex w-full items-center justify-center gap-2 py-5 bg-orange-600 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-orange-900/50 hover:bg-orange-500 transition-all active:scale-95 disabled:cursor-wait disabled:bg-orange-300"
                 >
                    {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                   {isLoading ? "Optimizing" : "Optimize Model"}
+                   {isLoading ? "Loading" : "Re-read my data"}
                 </button>
              </div>
           </div>
@@ -193,20 +213,20 @@ export default function AIInsights() {
              </div>
              <div className="flex items-center space-x-3 mb-8 text-orange-600">
                <Zap className="w-5 h-5 fill-orange-600" />
-               <h4 className="font-black uppercase tracking-widest text-xs italic">Live Quick Wins</h4>
+               <h4 className="font-black uppercase tracking-widest text-xs italic">Getting Model-Written Insights</h4>
              </div>
              <ul className="space-y-6">
-               <li className="flex items-start group/li">
-                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0 group-hover/li:scale-150 transition-transform"></div>
-                 <p className="text-sm font-black text-gray-600 tracking-tight group-hover/li:text-gray-900 transition-colors uppercase italic">Recalibrate weekend prep logic</p>
+               <li className="flex items-start">
+                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0"></div>
+                 <p className="text-sm font-bold text-gray-600 leading-relaxed">Put a Gemini API key in the backend <code className="bg-gray-100 px-1 rounded">.env</code> file as <code className="bg-gray-100 px-1 rounded">GEMINI_API_KEY</code>.</p>
                </li>
-               <li className="flex items-start group/li">
-                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0 group-hover/li:scale-150 transition-transform"></div>
-                 <p className="text-sm font-black text-gray-600 tracking-tight group-hover/li:text-gray-900 transition-colors uppercase italic">Audit vendor pricing variances</p>
+               <li className="flex items-start">
+                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0"></div>
+                 <p className="text-sm font-bold text-gray-600 leading-relaxed">Restart the backend and press <span className="uppercase">Re-read my data</span>.</p>
                </li>
-               <li className="flex items-start group/li">
-                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0 group-hover/li:scale-150 transition-transform"></div>
-                 <p className="text-sm font-black text-gray-600 tracking-tight group-hover/li:text-gray-900 transition-colors uppercase italic">Auto-sync ledger before peak shift</p>
+               <li className="flex items-start">
+                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 mr-4 shrink-0"></div>
+                 <p className="text-sm font-bold text-gray-600 leading-relaxed">Without a key this page still works: it shows standard operating guidance from the same figures.</p>
                </li>
              </ul>
           </div>
@@ -214,12 +234,18 @@ export default function AIInsights() {
           <div className="bg-orange-50 p-8 rounded-[2.5rem] border border-orange-100 flex items-center justify-between">
              <div>
                 <p className="text-[10px] font-black text-orange-800 uppercase tracking-widest">Model Status</p>
-                <p className="text-orange-900 font-bold text-xs uppercase">Gemini 1.5 Flash - Active</p>
+                <p className="text-orange-900 font-bold text-xs uppercase" data-testid="ai-insights-model-status">
+                  {aiConfigured === null
+                    ? "Checking..."
+                    : aiConfigured
+                      ? "AI provider connected"
+                      : "AI provider not connected - standard guidance"}
+                </p>
              </div>
              <div className="animate-pulse flex space-x-1">
-                <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
-                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                <div className="w-2 h-2 bg-orange-600 rounded-full"></div>
+                <div className={`w-2 h-2 rounded-full ${aiConfigured ? "bg-orange-600" : "bg-orange-300"}`}></div>
+                <div className={`w-2 h-2 rounded-full ${aiConfigured ? "bg-orange-500" : "bg-orange-200"}`}></div>
+                <div className={`w-2 h-2 rounded-full ${aiConfigured ? "bg-orange-400" : "bg-orange-100"}`}></div>
              </div>
           </div>
         </div>

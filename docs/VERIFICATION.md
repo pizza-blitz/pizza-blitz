@@ -31,12 +31,12 @@ copy .env.example .env.local
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 276 tests covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions/trimming/merging/filters and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching/send attribution/click-open tracking/step credit/holdouts/suppression, social approval workflow, marketing calendar/reels, campaign lift/channel attribution/person-level attribution/holdout experiments/significance/click and open tracking, HR recruitment, offer templates, offer approvals, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets/SLAs/policies/alerts/delivery/retries/paging, menu allergens/nutrition, channel pricing/visibility, customer OTP, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership, HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
+| Backend unit suite | `cd backend; python -W error::FutureWarning -m unittest discover -s tests -v` | 364 backend tests (87 subtests) covering sales math, comparisons, POS lifecycle, invoices, recipes, waste, payments, refunds, promotions, readiness, access control, rate limiting, the business clock, store profile/hours, scheduled orders, tips, KDS including the allergy strip parsed from order notes, item-level line status, order notifications, menu media, the shared media library with video transcode/posters/captions/trimming/merging/filters and S3/CDN storage, storefront landing content, configurable tax/billing including inclusive prices, service charge and slabs, active payment routing, provider credentials, payment provider registry, messaging inbox/webhooks/templates, marketing journeys with conditions/attribution/A-B/frequency caps/multi-path branching/send attribution/click-open tracking/step credit/holdouts/suppression, social approval workflow, marketing calendar/reels, campaign lift/channel attribution/person-level attribution/holdout experiments/significance/click and open tracking, HR recruitment, offer templates, offer approvals, resumes/scorecards, offer letters/e-signature/delivery/reminders/countersignature, public careers, support tickets/SLAs/policies/alerts/delivery/retries/paging, menu allergens/nutrition, channel pricing/visibility, customer OTP, customer memory with proof-gated recall, allergen filtering, usual-order recall and preference-clause parsing, saved addresses, loyalty/referrals and redemption, rider GPS/proof, custom/scheduled reports, 2FA and granular permissions, department registry/membership/scoped roles/navigation/scorecard, company work items/approvals/notifications, operations checklists/assets/work orders, menu engineering, stocktake, quality audits/temperatures, licences, training, gift cards and gift-card refunds, company goals, franchise pipeline, order-assistant cart flows, the proof-gated live order answer (own order only, anonymous lookup fallback) and the proof-gated repeat-my-usual rebuild (newest non-cancelled order under 90 days, live re-pricing, saved options, gone/hidden items skipped, cross-customer isolation), HR people directory, HR leave/holidays, HR attendance, HR payroll, HR onboarding, HR documents/letters, HR exits, HR department-scoped permissions, HR analytics, multi-store consolidation, store-scoped outlet P&L, GST accounting, aggregator intake/outbound status/menu sync, shift scheduling/labour, security headers/client errors, POS hardware, deployment checklist, the Postgres migration chain rendered offline, feedback/NPS, sheet-import URL safety, production secret guards, and health probes. |
 | Backend lint | `cd backend; python -m ruff check .` | No pyflakes/bugbear/bandit findings (E4/E7/E9/F/B/S). |
 | ESLint | `cd frontend; npm run lint` | No blocking lint errors. `no-explicit-any` is a warning while the remaining response-typing debt is paid down. |
 | TypeScript | `cd frontend; npm run typecheck` | The whole frontend type-checks. |
 | Production build | `cd frontend; npm run build` | Compiles, lints, and type-checks. `next.config.mjs` no longer bypasses either check. |
-| Database schema | `cd backend; alembic upgrade head; alembic check` | Builds all 38 model tables from an empty database and confirms there is no pending schema drift. Point `SQLALCHEMY_DATABASE_URI` at a scratch SQLite file when testing locally. |
+| Database schema | `cd backend; alembic upgrade head; alembic check` | Builds all 118 model tables from an empty database and confirms there is no pending schema drift. Point `SQLALCHEMY_DATABASE_URI` at a scratch SQLite file when testing locally. |
 | Source audits | `cd frontend; npm run verify:audit:inventory` | Feature action coverage, route action inventory, and placeholder hygiene (no `alert()`, inert `#` links, `javascript:` URLs, or "coming soon" copy). |
 
 Shortcut for the backend suite plus the production build:
@@ -80,17 +80,80 @@ cd frontend
 npm run dev -- --hostname 127.0.0.1 --port 3011
 ```
 
+For the live proofs run the production bundle instead of the dev server:
+`npm run build && npm start -- --hostname 127.0.0.1 --port 3011`.
+
+Before trusting any browser proof, make sure exactly one server owns each port.
+An older `next start` or uvicorn worker left over from a previous run keeps
+answering `localhost` and silently serves stale code:
+
+```powershell
+netstat -ano | Select-String ":3011|:8010" | Select-String LISTENING
+# then, for each PID listed:
+Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select-Object CommandLine
+Stop-Process -Id <pid> -Force
+```
+
+`npm run verify:audit:preflight` now catches this for the frontend by comparing
+the served page with `frontend/.next/BUILD_ID`, and it probes the messaging
+webhook token. `verify:messaging-inbox` posts an inbound message, and that route
+answers 503 while the backend has no `MESSAGING_WEBHOOK_TOKEN`, so start the
+backend with the token the proof sends:
+
+```powershell
+$env:MESSAGING_WEBHOOK_TOKEN = "messaging-proof-token"   # matches E2E_MESSAGING_TOKEN
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload --reload-dir app
+```
+
+Against a deployed backend, set `E2E_MESSAGING_TOKEN` to the token that
+deployment uses instead of changing the server.
+
+The live audit is one ordered script, not a set of independent checks. The local
+backend keeps its data in memory, so a proof can depend on records an earlier
+proof created in the same process — a managed admin credential, for example, is
+what lets a later proof sign in through the portal login route. Restarting the
+backend therefore invalidates a partially finished run: after any restart, start
+`npm run verify:audit:live` from the beginning instead of resuming where it
+stopped.
+
+The runner is `e2e/verify-audit-live.cjs`. It reads the ordered steps from
+`verify:audit:steps` in `package.json`, prints `[audit N/65]` before each step,
+and preloads `e2e/helpers/throttle-retry.cjs` into every proof. That preload
+waits out the sign-in throttle (`Retry-After` plus one second of margin, up to
+six attempts) for the sign-in routes only, so a suite signing in from one address
+behaves like a patient busy restaurant. The limit itself is unchanged, and a 429
+anywhere else still fails its proof loudly. `verify:role-gates` is excluded on
+purpose because it asserts the throttle; its own portal and browser logins wait
+out the window instead, escalating to a full one-minute pause when the bucket is
+still full after the first `Retry-After`. A step that fails is retried once and named in the closing
+summary; a step that fails twice stops the audit.
+
 Then:
 
 | Gate | Command | What it proves |
 |------|---------|----------------|
-| Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, and production runs have credentials configured. |
+| Audit preflight | `cd frontend; npm run verify:audit:preflight` | Both targets answer, local runs serve the current `.next/BUILD_ID` (an orphaned older server fails here instead of passing proofs against stale code), the messaging webhook token is configured, and production runs have credentials configured. |
 | Browser smoke | `cd frontend; npm run test:e2e` | Public site, customer order, tracking, admin login, and core dashboard pages work in a browser. |
 | Surface audit | `cd frontend; npm run verify:audit:surface` | Every same-site link resolves; every visible control has a label; non-destructive buttons can be found by role and clicked without errors. |
-| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, menu nutrition, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof, report builder, 2FA/security, multi-store, accounting, aggregators (intake + status/menu sync), shift scheduling, channel pricing, security headers/client errors, POS hardware, deployment checklist, feedback/NPS, role gates, restaurant readiness, and the roadmap proof board. |
+| Live audit | `cd frontend; npm run verify:audit:live` | Action feedback, portal shell, landing page, landing conversion, Blaze concierge (including the landing greeting that opens it), customer memory (save, fresh-session recall, forget, personalised landing greeting, the proof-gated live order named in the greeting, answered by "Where is my order?" and opened by its Track action, "Repeat my usual" rebuilding that order into the cart at live prices, the saved allergy re-shown on checkout above Place Order, and that allergy stored on the placed order so the KDS carries it), store profile (including pause enforcement), scheduled orders, tips, responsive tables, refunds, KDS, order notifications, menu media, menu nutrition, customer OTP login, saved addresses, loyalty/referrals, points redemption, rider app/GPS/proof with a second live fix and a live arrival countdown (removed after delivery) on the open tracking page, report builder, 2FA/security, multi-store, outlet P&L, accounting, aggregators (intake + status/menu sync), shift scheduling, channel pricing, security headers/client errors, POS hardware, deployment checklist, the Postgres migration chain rendered offline, feedback/NPS, departments, the company work/approval/scorecard flow, the 11 department workspace tools, gift-card checkout/refund, HR modules and scoped access, role gates, restaurant readiness, and the roadmap proof board. |
 | Full suite | `cd frontend; npm run verify:quality` | Typecheck, build, and every audit above. |
+| Customer confirmation | `cd frontend; E2E_BASE_URL=http://localhost:3011 npm run verify:order-confirmation` | Order confirmation renders items/totals/links, tracking prefills from the link, the saved cart survives a reload, and no staff links leak. |
 
 Browser proofs write JSON artifacts to `frontend/e2e/artifacts/`.
+
+Run browser proofs with `E2E_BASE_URL=http://localhost:3011`, which is also the
+default in every proof script. A frontend started with `--hostname 127.0.0.1`
+answers both loopback spellings with the name `localhost`, so a browser that
+started on `127.0.0.1` sees sign-in redirects leave its own origin and logs a
+blocked prefetch. Start the server on loopback, and open and test it as
+`localhost`.
+
+The backend builds the absolute links it hands out (public offer pages, journey
+links, receipts) from `PIZZA_BLITZ_PUBLIC_URL`, which defaults to
+`http://localhost:3011`. If you serve the site on another origin, set that
+variable to the same origin as `E2E_BASE_URL` before starting the backend;
+`verify:offer-letter` stops with that instruction instead of opening a foreign
+address.
 
 `scripts/verify-local.ps1 -E2E` runs the backend suite, the production build,
 and the browser smoke in one command when both servers are already running.
@@ -297,6 +360,22 @@ and group revenue/orders/AOV/tips/refunds over a business-day range plus the bes
 store. The admin UI is `/settings/stores`. Covered by
 `backend/tests/test_stores.py` and `frontend/e2e/verify-stores.cjs`.
 
+## Outlet P&L and store-scoped finance
+
+`daily_sales`, `expenses`, `purchase_orders` and `waste_log` carry a `store_id`
+(backfilled to MAIN; `(store_id, date)` is unique on daily sales). Daily entry,
+expense entry, sales history and purchase-order creation/history accept an
+outlet; day totals in stats, ops close and shifts aggregate across outlets so
+multi-store days are not under-reported.
+
+`GET /restaurant/finance/outlet-pnl` returns ledger revenue, COGS (the
+"Inventory Purchase" expense category), opex, waste, the positive
+unitemised-ledger gap, gross/net profit and margins per outlet and consolidated,
+with a daily trend, category mix, POS billed cross-check and flags for missing
+inventory cost, unitemised cost, loss/thin margins and POS-vs-ledger gaps. The
+admin UI is `/finance/pnl` with date and outlet filters. Covered by
+`backend/tests/test_finance_stores.py` and `frontend/e2e/verify-finance-pnl.cjs`.
+
 ## Accounting and GST export
 
 `GET /restaurant/accounting/summary` aggregates non-cancelled orders over a
@@ -396,12 +475,42 @@ shown in the integrations UI. Covered by
 ## Deployment readiness
 
 `GET /restaurant/ops/deployment-checklist` (admin) returns ready/warn/blocked
-checks for database reachability, Alembic head, auth-secret strength, master
-admin, CORS origins, media writability, live payment provider and security
-headers, with remediation text, summary counts and verification commands.
+checks for database reachability, whether the database survives a restart,
+Alembic head, auth-secret strength, master admin, CORS origins, media
+writability, live payment provider and security headers, with remediation text,
+summary counts and verification commands. Reachability and durability are
+separate rows on purpose: the API's built-in default URI is `sqlite:///:memory:`,
+which answers `SELECT 1` and then loses every order when the process exits, so
+"Database reachable: ready" alone would be a misleading green light.
 `/settings/deployment` renders it. Covered by
 `backend/tests/test_deployment_checklist.py` and
 `frontend/e2e/verify-deployment-checklist.cjs`.
+
+`backend/app/core/config.py::validate_production_settings()` refuses to start a
+production process on repository default secrets or on any SQLite URL, so a
+deploy that forgot `SQLALCHEMY_DATABASE_URI` fails at boot instead of
+accumulating orders in RAM. A Vercel preview on SQLite is deliberately exempt: it
+boots to show the storefront and `checkout_readiness_payload()` refuses order
+capture with a 503, which `backend/tests/test_checkout_readiness.py` covers.
+Covered here by `backend/tests/test_production_settings.py`.
+
+`backend/tests/test_migration_chain.py` is the only proof that touches the
+migration history, because every other backend test builds its schema from the
+model metadata on in-memory SQLite. It renders `alembic upgrade head` in offline
+mode against the Postgres dialect — no server needed — and asserts one
+unbranching head, that the chain reaches the current revision, and that the
+generated `daily_sales.profit` column carries its expression. The SQLite version
+of that same migration renders an empty `GENERATED ALWAYS AS ()`, and the chain
+does not run on SQLite; Postgres is the deployment target and renders correctly.
+
+`backend/check_database_uri.py` is the first command to run with a real
+production URL. It rejects SQLite and non-Postgres schemes, warns about Supabase's
+transaction pooler and a missing `sslmode`, connects with a ten-second timeout,
+takes an advisory lock the way the bootstrap does, compares `alembic_version` with
+the script head, and checks the core tables. It prints the URL with the password
+replaced by `***`, so its output is safe to share. Pure helpers are covered by
+`backend/tests/test_check_database_uri.py`; the live connection path only runs
+when someone supplies a URL.
 
 ## Feedback and NPS
 
@@ -413,14 +522,42 @@ rating, response rate, rating distribution, top tags and low-rating follow-up.
 Covered by `backend/tests/test_feedback.py` and
 `frontend/e2e/verify-feedback.cjs`.
 
-## Departments
+## Departments (company OS)
 
-`GET/POST /restaurant/departments`, department detail/update/delete, membership and the
-module catalogue let admins create business units without schema changes. Operations and
-People & HR are seeded; HR's people/leave/payroll/onboarding/documents/exits modules stay
-`planned` until the Euron pilot is connected, and the external-system panel never reports a
-fake link. Covered by `backend/tests/test_departments.py` and
-`frontend/e2e/verify-departments.cjs`.
+`GET/POST /restaurant/departments`, department detail/update/delete, membership, scoped
+roles and the module catalogue let admins manage business units without schema changes.
+Phase 1 seeds 16 department specs: 10 core departments (Executive Office, Operations,
+Kitchen & Menu, Supply Chain & Inventory, Quality/Safety/Compliance, Finance & Accounts,
+People & HR, Marketing & Brand, Revenue & CRM, Technology & Data), five sub-departments
+(guest experience and facilities under Operations, training under HR, legal under Quality,
+franchise under Executive) and shared services. A 68-module catalogue maps every portal
+route to an owning department, permission key and navigation group.
+
+`/departments/{key}` renders live KPIs, a "Needs you" queue, permission-filtered quick
+actions, modules with status/routes, team roster, scoped roles, sub-departments and the
+external-system panel. The literal `/departments/hr` page remains for the HR module suite
+and shows its own approval/work queue. The shell reads `/departments/navigation`; the
+`/departments` page shows `/departments/access` plus the company scorecard, and every
+portal prefix is protected. Admins bypass department checks; legacy staff permissions
+still grant module access. A plain member added without a scoped role joins the seeded
+default Member role so their modules work immediately; heads and managers without an
+explicit scoped role keep the legacy fallback. HR's people/leave/payroll/onboarding/documents/exits modules
+stay `planned` until the Euron pilot is connected, and the external-system panel never
+reports a fake link. Covered by `backend/tests/test_company_os.py`,
+`backend/tests/test_departments.py`, `frontend/e2e/verify-departments.cjs` and
+`frontend/e2e/verify-company-os.cjs` (`npm run verify:company-os`).
+
+## Company work queue and approvals
+
+`/work` (admin and staff) lists open tasks, pending approvals, unread notices and counts
+for the signed-in account, scoped to the departments they belong to. `POST
+/restaurant/work/items` and `/work/approvals` create work; comments, status changes and
+approval decisions are separate routes. A staff-created task defaults to the creator as
+owner, while an admin-created task stays department-owned. Expense, purchase-order, leave
+and social approvals mirror into the same queue, and decisions flow back to the source
+record. The company scorecard on `/departments` links each department's primary KPI and
+attention count into its workspace. Covered by `backend/tests/test_company_os.py` and
+`frontend/e2e/verify-company-os.cjs`.
 
 ## HR People directory
 
@@ -875,6 +1012,149 @@ started timestamps, the ticket status is aggregated from all lines, and each
 change is audited with line index/name. The KDS board exposes Start/Bump/Recall
 per line. Covered by `backend/tests/test_kds_item_status.py` and the existing
 `verify:kds` proof.
+
+## Company OS registry and access
+
+`backend/app/services/company_catalog.py` is the single source of truth: 16 department specs
+(Executive Office, Company shared services and 14 functional departments, five of which are
+sub-departments), 70 catalogued modules, and route templates that cover all 70 portal routes.
+Each module carries an owning department, permission, icon, navigation group and optional
+shared-with list; `modules_for_department` resolves 101 active definitions after shared
+modules are added to each department. `GET /restaurant/departments` returns the registry,
+`/departments/navigation` the generated navigation, `/departments/access` the caller's
+permissions and `/departments/scorecard` the company roll-up. Access is enforced by
+`require_department_permission`, which lets admins bypass, grants members with a scoped role
+its permissions, and keeps a legacy staff fallback. Covered by
+`backend/tests/test_departments.py`, `backend/tests/test_company_os.py`,
+`frontend/e2e/verify-departments.cjs` and `frontend/e2e/verify-company-os.cjs`.
+
+## Company work, approvals and notifications
+
+`/api/v1/restaurant/work` provides department tasks with assignee, due date, priority,
+status, comments and unread notices, plus approvals with a decision endpoint. Expense,
+purchase-order, HR leave and social-post flows create linked approvals automatically, and
+the portal `/work` page and each department workspace merge tasks and approvals into a
+"Needs you" queue. Covered by `backend/tests/test_company_os.py` and
+`frontend/e2e/verify-company-os.cjs`.
+
+## Operations checklists
+
+Opening, closing and weekly deep-clean templates are seeded on first use. A run snapshots the
+template items with done/note/completed-at/by fields; completing a run requires all required
+items to be done, and cancelled/completed runs are read-only. The API is under
+`/restaurant/company/operations/checklists`; the page is
+`/departments/operations/checklists`. Covered by `backend/tests/test_company_operations.py`
+and `frontend/e2e/verify-department-workspace-tools.cjs`.
+
+## Facilities assets and work orders
+
+The asset register stores code, name, category, location, status, criticality, service dates
+and notes; the list and summary return open work-order counts. Work orders move through
+open/in_progress/completed/cancelled with priority and assignment. The page is
+`/departments/facilities/assets`. Covered by `backend/tests/test_company_operations.py` and
+the same workspace proof.
+
+## Menu engineering
+
+`GET /restaurant/company/kitchen/menu-engineering` joins order lines to the current menu and
+classifies each item as star, plough_horse, puzzle or dog from popularity and margin, with an
+action list and category grouping. Deleted menu items leave historical lines behind and
+SQLite can reuse their integer IDs, so a stored ID that now points at a differently named item
+is grouped by name instead of being merged into the new item. Covered by
+`backend/tests/test_company_kitchen.py` and the channel-pricing regression in
+`backend/tests/test_channel_pricing.py`; the page is
+`/departments/kitchen/engineering`.
+
+## Stocktakes
+
+`/restaurant/company/supply/stocktakes` creates a draft snapshot of inventory items, records
+counted quantities per line, computes variance quantity/value against system stock, and on
+completion posts the correction as inventory transactions and marks the session completed.
+Draft/counting sessions are editable; completed/cancelled sessions are closed. Covered by
+`backend/tests/test_company_supply.py`; the page is `/departments/supply/stocktake`.
+
+## Quality audits, temperatures and licences
+
+Quality audits carry type, auditor, schedule, score, findings with severity/status (a
+corrective-action list) and notes; the overview reports due/overdue audits and open findings.
+Temperature logs record fridge/freezer/hot-holding readings and flag out-of-range entries.
+The licence register records number, authority, issue/expiry dates, status and reminder lead
+time, with expiring/expired counts. Pages are `/departments/quality/audits` and
+`/departments/legal/licences`. Covered by `backend/tests/test_company_quality.py` and the
+workspace proof.
+
+## Training and certification
+
+Seeded core courses plus custom courses with modules, quiz questions and pass marks; records
+assign a course to an employee with due date and status, and completion records the score and
+expiry. Expiring and overdue counts appear on the page
+`/departments/training/lms`. Covered by `backend/tests/test_company_programs.py` and the
+workspace proof.
+
+## Gift cards
+
+Admin/staff issue a card (`PB-` plus eight unambiguous characters), reload, redeem and void it;
+the public endpoint validates a code and returns balance/status without exposing customer
+data. Checkout validates and debits the card inside the order transaction, returns
+`gift_card_applied`/`gift_card_balance`, and marks the order paid when the card covers the
+total. Refunds with method `gift_card` credit the same card back, reactivate a depleted card,
+and write a `refund` transaction. The summary reports issued/outstanding/expired liability.
+Covered by `backend/tests/test_company_gift_cards.py`,
+`backend/tests/test_gift_card_checkout.py`, `frontend/e2e/verify-gift-card-checkout.cjs`
+(checkout, and the Orders refund dialog defaults to and lists `gift_card`) and
+`frontend/e2e/verify-department-workspace-tools.cjs`. The page is
+`/departments/revenue/gift-cards`.
+
+## Company goals and franchise pipeline
+
+Company goals store owner, period, target/current values, unit and status, with progress
+computed by the API. Franchise sites move through lead → qualified → site visit → negotiation
+→ agreement → construction → open (or lost), with proforma investment, expected opening date
+and an opening playbook. Pages are `/departments/executive/budget` and
+`/departments/franchise/pipeline`. Covered by `backend/tests/test_company_programs.py`.
+
+## Data platform and exports
+
+`GET /restaurant/company/technology/overview` reports table freshness, row counts and data
+quality checks; `GET .../export?dataset=orders|customers|menu|inventory` streams CSV.
+Covered by `backend/tests/test_company_technology.py`; the page is
+`/departments/technology/data`.
+
+## Ordering assistant (Blaze)
+
+`GET /api/v1/assistant/config` returns the greeting, store facts, availability and quick
+replies. `POST /api/v1/assistant/chat` is rate-limited and answers from live menu/store data:
+it can switch pickup/delivery, add or remove cart lines with options and quantities, recommend
+items under a budget or vegetarian filter, quote offers, explain hours/delivery, open tracking
+and hand a priced cart to checkout. It returns executable cart actions and re-priced totals,
+so the avatar never invents a price. The optional LLM answer path is used only when a provider
+key is configured; otherwise replies are deterministic. Covered by
+`backend/tests/test_assistant.py` and `frontend/e2e/verify-blaze-concierge.cjs` (3D avatar,
+text/voice controls, recommendations, cart hand-off, mobile view).
+
+## Conversion funnel
+
+Guest CTAs route to `/order`; offer cards deep-link with the coupon; the cart, fulfilment,
+coupon and schedule persist and are revalidated on restore; order submission and payment
+session creation have timeouts, retry and inline errors; confirmation shows the order number,
+ETA and tracking; tracking polls automatically. Covered by
+`frontend/e2e/verify-landing-conversion.cjs`, `verify-order-confirmation.cjs`,
+`verify-full-customer-order-e2e.cjs`, `verify-landing-page.cjs` and the backend order/payment
+tests.
+
+## AI insights (optional provider)
+
+`GET /api/v1/restaurant/insights/ai-insights` (admin-only) reads the last 30 days of
+`daily_sales` plus below-minimum inventory. With a Gemini key configured it returns
+`status: "success"`, `ai_configured: true` and the model's summary/tips. Without a key, or if
+the model call or its JSON response fails, it returns HTTP 200 with `status: "fallback"`,
+`ai_configured: false`, the provider error in `ai_error`, a plain-language `message`, and
+guidance computed from those same real figures - never an invented trend. `/ai-insights`
+renders fallback data as an amber notice with the model status shown as
+"AI provider not connected". Covered by `backend/tests/test_ai_insights.py` (fallback with no
+key, fallback on provider exception, success path asserting the live figures reach the prompt,
+and the admin gate) and `frontend/e2e/verify-ai-insights-feedback.cjs`, which drives all four
+states in the browser and also runs inside `npm run verify:audit:live`.
 
 ## Health endpoints
 

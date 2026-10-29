@@ -12,16 +12,18 @@ def _api_key(missing_key_detail: str) -> str:
     return api_key
 
 
-def _client(missing_key_detail: str):
+def _client(missing_key_detail: str, timeout_ms: int | None = None):
     try:
         from google import genai
+        from google.genai import types
     except ImportError as exc:
         raise HTTPException(
             status_code=500,
             detail="google-genai package is not installed. Install backend requirements.",
         ) from exc
 
-    return genai.Client(api_key=_api_key(missing_key_detail))
+    http_options = types.HttpOptions(timeout=timeout_ms) if timeout_ms else None
+    return genai.Client(api_key=_api_key(missing_key_detail), http_options=http_options)
 
 
 def bytes_part(data: bytes, mime_type: str):
@@ -41,8 +43,9 @@ def generate_text(
     model: str,
     contents: Any,
     missing_key_detail: str = "Gemini API Key not configured",
+    timeout_ms: int | None = None,
 ) -> str:
-    response = _client(missing_key_detail).models.generate_content(
+    response = _client(missing_key_detail, timeout_ms=timeout_ms).models.generate_content(
         model=model,
         contents=contents,
     )

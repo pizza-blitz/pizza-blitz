@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from app.api.deps import require_roles
-from app.api.api_v1.endpoints import auth, sync, inventory, stats, daily, menu, expenses, insights, reports, purchase_orders, import_data, ocr, shifts, orders, vendors, promotions, recipes, customers, delivery, social, ads, ops, storefront, stores, accounting, aggregators, hardware, feedback, departments, hr, hr_leave, hr_attendance, hr_payroll, hr_onboarding, hr_documents, hr_exits, hr_analytics, media, storefront_content, billing_settings, provider_settings, messaging, journeys, hr_recruitment, careers, marketing, support
+from app.api.api_v1.endpoints import auth, sync, inventory, stats, daily, menu, expenses, insights, reports, purchase_orders, import_data, ocr, shifts, orders, vendors, promotions, recipes, customers, delivery, social, ads, ops, storefront, stores, accounting, aggregators, hardware, feedback, departments, company_work, hr, hr_leave, hr_attendance, hr_payroll, hr_onboarding, hr_documents, hr_exits, hr_analytics, media, storefront_content, billing_settings, provider_settings, messaging, journeys, hr_recruitment, careers, marketing, support, finance, assistant, company_operations, company_quality, company_programs, company_supply, company_kitchen, company_revenue, company_technology
 
 api_router = APIRouter()
 admin_only = [Depends(require_roles("admin"))]
@@ -38,7 +38,11 @@ api_router.include_router(marketing.router, prefix="/restaurant/marketing", tags
 api_router.include_router(support.router, prefix="/restaurant/support", tags=["support"])
 api_router.include_router(ops.router, prefix="/restaurant/ops", tags=["ops"])
 api_router.include_router(storefront.router, prefix="/restaurant/storefront", tags=["storefront"])
+api_router.include_router(
+    assistant.router, prefix="/restaurant/assistant", tags=["assistant"]
+)
 api_router.include_router(stores.router, prefix="/restaurant/stores", tags=["stores"])
+api_router.include_router(finance.router, prefix="/restaurant/finance", tags=["finance"])
 api_router.include_router(accounting.router, prefix="/restaurant/accounting", tags=["accounting"])
 api_router.include_router(
     aggregators.router,
@@ -48,6 +52,47 @@ api_router.include_router(
 api_router.include_router(hardware.router, prefix="/restaurant/hardware", tags=["hardware"])
 api_router.include_router(feedback.router, prefix="/restaurant/feedback", tags=["feedback"])
 api_router.include_router(departments.router, prefix="/restaurant/departments", tags=["departments"])
+api_router.include_router(company_work.router, prefix="/restaurant/work", tags=["company-work"])
+api_router.include_router(
+    company_operations.router,
+    prefix="/restaurant/company/operations",
+    tags=["company-operations"],
+)
+api_router.include_router(
+    company_quality.router,
+    prefix="/restaurant/company/quality",
+    tags=["company-quality"],
+)
+api_router.include_router(
+    company_programs.router,
+    prefix="/restaurant/company/programs",
+    tags=["company-programs"],
+)
+api_router.include_router(
+    company_supply.router,
+    prefix="/restaurant/company/supply",
+    tags=["company-supply"],
+)
+api_router.include_router(
+    company_kitchen.router,
+    prefix="/restaurant/company/kitchen",
+    tags=["company-kitchen"],
+)
+api_router.include_router(
+    company_revenue.router,
+    prefix="/restaurant/gift-cards",
+    tags=["gift-cards"],
+)
+api_router.include_router(
+    company_revenue.public_router,
+    prefix="/restaurant/gift-cards/public",
+    tags=["gift-cards-public"],
+)
+api_router.include_router(
+    company_technology.router,
+    prefix="/restaurant/company/technology",
+    tags=["company-technology"],
+)
 api_router.include_router(hr.router, prefix="/restaurant/hr", tags=["hr"])
 api_router.include_router(hr_leave.router, prefix="/restaurant/hr", tags=["hr-leave"])
 api_router.include_router(hr_attendance.router, prefix="/restaurant/hr", tags=["hr-attendance"])

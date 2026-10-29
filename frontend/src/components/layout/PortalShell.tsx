@@ -2,15 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { SessionRole } from "@/lib/session";
 import {
   activeNavItem,
   navGroupsForRole,
-  navItemsForRole,
   quickNavItems,
+  type PortalNavGroup,
   type PortalNavItem,
 } from "@/lib/portal-navigation";
+import { getApiUrl } from "@/lib/api";
+import {
+  portalIcon,
+  type CompanyNavigation,
+  type WorkHome,
+} from "@/lib/company";
 import {
   ChevronLeft,
   ChevronRight,
@@ -48,15 +54,69 @@ export default function PortalShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [query, setQuery] = useState("");
   const [hydrated, setHydrated] = useState(false);
+  const [navigation, setNavigation] = useState<CompanyNavigation | null>(null);
+  const [workBadge, setWorkBadge] = useState(0);
 
-  const groups = useMemo(() => navGroupsForRole(role), [role]);
-  const items = useMemo(() => navItemsForRole(role), [role]);
+  const staticGroups = useMemo(() => navGroupsForRole(role), [role]);
+  const groups = useMemo<PortalNavGroup[]>(() => {
+    const addBadge = (items: PortalNavItem[]) =>
+      items.map((item) =>
+        item.href === "/work" && workBadge > 0
+          ? { ...item, badge: workBadge }
+          : item
+      );
+    if (role === "staff" && navigation?.groups?.length) {
+      return navigation.groups.map((group) => ({
+        title: group.title,
+        items: addBadge(
+          group.items.map((item) => ({
+            name: item.name,
+            href: item.href,
+            icon: portalIcon(item.icon),
+            description: item.description || item.department_name,
+          }))
+        ),
+      }));
+    }
+    if (role === "admin" && navigation?.departments?.length) {
+      const directory: PortalNavGroup = {
+        title: "Department workspaces",
+        items: navigation.departments.map((department) => ({
+          name: department.name,
+          href: `/departments/${department.key}`,
+          icon: portalIcon(department.icon),
+          description: department.is_head
+            ? "Department workspace · you lead this team"
+            : "KPIs, work queue, team and modules",
+        })),
+      };
+      return [
+        directory,
+        ...staticGroups.map((group) => ({
+          ...group,
+          items: addBadge(group.items),
+        })),
+      ];
+    }
+    return staticGroups.map((group) => ({
+      ...group,
+      items: addBadge(group.items),
+    }));
+  }, [role, navigation, staticGroups, workBadge]);
+  const items = useMemo(
+    () => groups.flatMap((group) => group.items),
+    [groups]
+  );
   const current = activeNavItem(pathname, items);
   const quick = useMemo(() => quickNavItems(role), [role]);
+  const activeDepartmentKey =
+    pathname.match(/^\/departments\/([^/]+)/)?.[1] ?? "";
+  const departmentChoices = navigation?.departments ?? [];
 
   const filteredGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -77,6 +137,44 @@ export default function PortalShell({
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch(
+          getApiUrl("/api/v1/restaurant/departments/navigation"),
+          { credentials: "include", cache: "no-store" }
+        );
+        if (response.ok) {
+          const data = (await response.json()) as CompanyNavigation;
+          if (!cancelled) setNavigation(data);
+        }
+      } catch {
+        // Static navigation stays as the fallback.
+      }
+      try {
+        const response = await fetch(getApiUrl("/api/v1/restaurant/work"), {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (response.ok) {
+          const data = (await response.json()) as WorkHome;
+          if (!cancelled) {
+            setWorkBadge(
+              (data.counts?.work_items || 0) + (data.counts?.approvals || 0)
+            );
+          }
+        }
+      } catch {
+        // Badge is optional.
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [role, pathname]);
 
   useEffect(() => {
     if (!drawerOpen) return;
@@ -160,6 +258,40 @@ export default function PortalShell({
           </div>
         )}
 
+        {!collapsed && departmentChoices.length > 0 && (
+          <div className="px-3 pb-1 pt-2">
+            <label htmlFor="portal-department-switcher" className="sr-only">
+              Jump to department
+            </label>
+            <select
+              id="portal-department-switcher"
+              value={
+                departmentChoices.some(
+                  (department) => department.key === activeDepartmentKey
+                )
+                  ? activeDepartmentKey
+                  : ""
+              }
+              onChange={(event) =>
+                router.push(
+                  event.target.value
+                    ? `/departments/${event.target.value}`
+                    : "/departments"
+                )
+              }
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 outline-none focus:border-orange-400"
+            >
+              <option value="">Jump to department...</option>
+              {departmentChoices.map((department) => (
+                <option key={department.key} value={department.key}>
+                  {department.name}
+                  {department.is_head ? " · lead" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <nav
           aria-label="Portal"
           className="flex-1 space-y-4 overflow-y-auto px-2 py-3 [scrollbar-width:thin]"
@@ -179,12 +311,21 @@ export default function PortalShell({
                     <Link
                       key={item.href}
                       href={item.href}
-                      title={collapsed ? item.name : undefined}
+                      title={
+                        collapsed
+                          ? `${item.name}${item.badge ? ` (${item.badge})` : ""}`
+                          : undefined
+                      }
                       aria-current={active ? "page" : undefined}
                       className={navLinkClasses(active, collapsed)}
                     >
                       <Icon className="h-[18px] w-[18px] shrink-0" />
                       {!collapsed && <span className="truncate">{item.name}</span>}
+                      {!collapsed && item.badge ? (
+                        <span className="ml-auto rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-black leading-none text-white">
+                          {item.badge > 99 ? "99+" : item.badge}
+                        </span>
+                      ) : null}
                     </Link>
                   );
                 })}
@@ -397,6 +538,34 @@ export default function PortalShell({
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm font-medium outline-none focus:border-orange-400 focus:bg-white"
                 />
               </div>
+              {departmentChoices.length > 0 && (
+                <select
+                  aria-label="Jump to department"
+                  value={
+                    departmentChoices.some(
+                      (department) => department.key === activeDepartmentKey
+                    )
+                      ? activeDepartmentKey
+                      : ""
+                  }
+                  onChange={(event) =>
+                    router.push(
+                      event.target.value
+                        ? `/departments/${event.target.value}`
+                        : "/departments"
+                    )
+                  }
+                  className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-xs font-bold text-gray-700"
+                >
+                  <option value="">Jump to department...</option>
+                  {departmentChoices.map((department) => (
+                    <option key={department.key} value={department.key}>
+                      {department.name}
+                      {department.is_head ? " · lead" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <nav aria-label="Portal" className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
               {filteredGroups.map((group) => (
@@ -417,7 +586,14 @@ export default function PortalShell({
                         >
                           <Icon className="h-[18px] w-[18px] shrink-0" />
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate">{item.name}</span>
+                            <span className="flex items-center gap-2">
+                              <span className="truncate">{item.name}</span>
+                              {item.badge ? (
+                                <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] font-black leading-none text-white">
+                                  {item.badge > 99 ? "99+" : item.badge}
+                                </span>
+                              ) : null}
+                            </span>
                             <span
                               className={`block truncate text-[10px] font-medium ${
                                 active ? "text-white/70" : "text-gray-400"

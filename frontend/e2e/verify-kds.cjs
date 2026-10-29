@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const staffId = process.env.E2E_STAFF_ID || "staff";
 const staffPassword = process.env.E2E_STAFF_PASSWORD || "staff123";
@@ -51,6 +51,7 @@ async function main() {
       customer_name: "KDS Proof Guest",
       customer_phone: "9812345699",
       payment_method: "cash",
+      notes: "Customer website order | Fulfillment: takeaway | Allergy: peanuts",
       items: [
         { name: "Garlic Bread", quantity: 1, price: 119 },
         { name: "Cold Coffee", quantity: 2, price: 99 },
@@ -103,6 +104,13 @@ async function main() {
     const lineText = (await line.innerText()).toLowerCase();
     assert(lineText.includes("garlic bread"), `KDS line read "${lineText}".`);
     assert(lineText.includes("oven"), "KDS line did not show its station.");
+
+    // The allergy travels with the ticket: the cook sees it on the card, not
+    // only the guest at checkout.
+    const allergy = page.getByTestId(`kds-allergy-${orderId}`);
+    await allergy.waitFor({ timeout: 10000 });
+    const allergyText = (await allergy.innerText()).toLowerCase();
+    assert(allergyText.includes("peanuts"), `KDS allergy strip read "${allergyText}".`);
 
     await page.getByRole("button", { name: "Enable new order sound" }).click();
     await page.getByRole("button", { name: "Mute new order sound" }).waitFor({ timeout: 5000 });

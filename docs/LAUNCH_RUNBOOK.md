@@ -20,7 +20,7 @@ Completed in the application:
 ## Local Ports
 
 - Backend API: `http://127.0.0.1:8010`
-- Frontend: `http://127.0.0.1:3011`
+- Frontend: `http://localhost:3011`
 
 Use those ports for local smoke testing unless the environment explicitly overrides them.
 
@@ -28,8 +28,9 @@ Use those ports for local smoke testing unless the environment explicitly overri
 
 Backend:
 
-- `SQLALCHEMY_DATABASE_URI`: production database connection. Do not use `sqlite:///:memory:` for production.
+- `SQLALCHEMY_DATABASE_URI`: production database connection. Do not use `sqlite:///:memory:` for production; the server now refuses to start in production on SQLite. For Supabase, take the session pooler URL, change the scheme to `postgresql+psycopg2://`, and keep `?sslmode=require` — the driver name is what makes SQLAlchemy load psycopg2, and SSL is required by the server. Port 5432 is the session pooler; port 6543 is the transaction pooler and is a poor fit because this app takes an advisory lock during bootstrap.
 - `ENVIRONMENT=production`
+- `CUSTOMER_OTP_DEBUG_ENABLED=false`: OTP codes are never echoed in API responses outside explicitly local environments (`development`, `local`, `test`), and this flag is a second lock for local use only. Leave it false in staging and production.
 - `RESTAURANT_TIMEZONE`: calendar timezone for sales days, orders, promotions, and shifts (default `Asia/Kolkata`). Set it explicitly; Cloud Run hosts run in UTC.
 - `BACKEND_CORS_ORIGINS`: deployed frontend origin only.
 - `RESTAURANT_ADMIN_ID`: production admin login id.
@@ -44,6 +45,7 @@ Frontend:
 
 - `NEXT_PUBLIC_API_URL`: deployed backend API base URL.
 - `PIZZA_BLITZ_API_URL`: deployed backend API base URL for server routes.
+- `PIZZA_BLITZ_SITE_URL`: public storefront origin used in `sitemap.xml` and `robots.txt` (for example `https://pizzablitz.example`). Set it to the deployed domain, not localhost.
 - `PIZZA_BLITZ_ADMIN_ID`: admin login id used by the Next.js session route.
 - `PIZZA_BLITZ_ADMIN_PASSWORD`: production admin password secret.
 - `PIZZA_BLITZ_SESSION_SECRET`: long random secret for frontend session signing.
@@ -130,7 +132,9 @@ until the relevant provider is live; skipped/failed send steps are recorded on t
 
 ## Deployment Checklist
 
-- Production database created and migrated.
+- Production database created and migrated. Prove it with `cd backend; python check_database_uri.py`
+  before and after `python -m alembic upgrade head`; the checker refuses SQLite, names missing
+  tables and compares the schema revision with the head.
 - Secrets configured in the deployment platform.
 - Backend deployed and `/health` returns OK.
 - Frontend deployed with backend URL set.

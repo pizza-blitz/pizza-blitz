@@ -69,6 +69,8 @@ def record_operational_audit_event(
     status: str = "success",
     detail: str | None = None,
     metadata: dict[str, Any] | None = None,
+    department_id: int | None = None,
+    store_id: int | None = None,
 ) -> OperationalAuditEvent:
     actor = _actor_from_session(session)
     event = OperationalAuditEvent(
@@ -79,6 +81,8 @@ def record_operational_audit_event(
         status=(status or "success").strip().lower(),
         detail=detail,
         metadata_json=_json_safe(metadata or {}),
+        department_id=department_id,
+        store_id=store_id,
         ip_address=_request_ip(request),
         user_agent=request.headers.get("user-agent") if request is not None else None,
         **actor,
@@ -102,6 +106,8 @@ def serialize_operational_audit_event(event: OperationalAuditEvent) -> dict:
         "actor_display_name": event.actor_display_name,
         "detail": event.detail,
         "metadata": event.metadata_json or {},
+        "department_id": event.department_id,
+        "store_id": event.store_id,
         "ip_address": event.ip_address,
         "created_at": event.created_at.isoformat() if event.created_at else None,
         "is_sensitive": event.event_type in SENSITIVE_EVENT_TYPES,

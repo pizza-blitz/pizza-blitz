@@ -1,6 +1,7 @@
 import calendar
 from datetime import date, datetime, timedelta
 from collections import defaultdict
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -54,12 +55,39 @@ def _aggregate_range(db: Session, start_date, end_date):
         "days_with_entries": days_with_entries,
     }
 
+def _daily_totals(db: Session, target_date):
+    row = db.query(
+        func.sum(DailySales.total_sale).label("sale"),
+        func.sum(DailySales.total_expense).label("expense"),
+    ).filter(DailySales.date == target_date).first()
+    if row is None or (row.sale is None and row.expense is None):
+        return None
+    sale = float(row.sale or 0)
+    expense = float(row.expense or 0)
+    return SimpleNamespace(total_sale=sale, total_expense=expense, profit=sale - expense)
+
 def _daily_map(db: Session, start_date, end_date):
-    rows = db.query(DailySales).filter(
-        DailySales.date >= start_date,
-        DailySales.date <= end_date,
-    ).all()
-    return {row.date: row for row in rows}
+    rows = (
+        db.query(
+            DailySales.date.label("date"),
+            func.sum(DailySales.total_sale).label("sale"),
+            func.sum(DailySales.total_expense).label("expense"),
+        )
+        .filter(
+            DailySales.date >= start_date,
+            DailySales.date <= end_date,
+        )
+        .group_by(DailySales.date)
+        .all()
+    )
+    totals = {}
+    for row in rows:
+        sale = float(row.sale or 0)
+        expense = float(row.expense or 0)
+        totals[row.date] = SimpleNamespace(
+            total_sale=sale, total_expense=expense, profit=sale - expense
+        )
+    return totals
 
 def _metric_card(key: str, label: str, value_key: str, current: dict, previous: dict, last_year: dict):
     current_value = current[value_key]
@@ -197,7 +225,7 @@ def _same_month_last_year_to_date(value: date) -> tuple[date, date]:
     return date(year, month, 1), date(year, month, end_day)
 
 def _daily_sales_snapshot(db: Session, target_date: date, label: str) -> dict:
-    sales = db.query(DailySales).filter(DailySales.date == target_date).first()
+    sales = _daily_totals(db, target_date)
     order_summary = _order_aggregate_range(db, target_date, target_date)
     sale = float(sales.total_sale or 0) if sales else float(order_summary["revenue"] or 0)
     expense = float(sales.total_expense or 0) if sales else 0.0

@@ -17,6 +17,7 @@ __pycache__/
 .env.*
 !.env.example
 !*.env.example
+!backend/.env.deploy.local.example
 env_vars.yaml
 .vercel/
 
@@ -44,3 +45,4 @@ Thumbs.db
 /logs/
 # Private resumes and offer letters
 /backend/private_media/
+.playwright-mcp/

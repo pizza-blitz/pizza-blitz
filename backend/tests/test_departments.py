@@ -112,6 +112,31 @@ class DepartmentRegistryTest(unittest.TestCase):
         self.assertEqual(added.json()["members"][0]["display_name"], "Department Lead")
         self.assertEqual(added.json()["members"][0]["role"], "head")
 
+        member_staff = self.client.post(
+            "/api/v1/auth/staff/credential",
+            json={
+                "id": "deptmember",
+                "password": "deptmember123",
+                "display_name": "Department Member",
+                "is_active": True,
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(member_staff.status_code, 200, member_staff.text)
+        default_member = self.client.post(
+            f"/api/v1/restaurant/departments/{department['id']}/members",
+            json={"staff_id": "deptmember", "role": "member"},
+            headers=self.headers,
+        )
+        self.assertEqual(default_member.status_code, 201, default_member.text)
+        joined = next(
+            row
+            for row in default_member.json()["members"]
+            if row["staff_id"] == "deptmember"
+        )
+        self.assertEqual(joined["department_role"], "member")
+        self.assertIsNotNone(joined["department_role_id"])
+
         duplicate_member = self.client.post(
             f"/api/v1/restaurant/departments/{department['id']}/members",
             json={"staff_id": "deptlead", "role": "member"},
@@ -124,6 +149,11 @@ class DepartmentRegistryTest(unittest.TestCase):
             headers=self.headers,
         )
         self.assertEqual(removed.status_code, 204)
+        removed_member = self.client.delete(
+            f"/api/v1/restaurant/departments/{department['id']}/members/deptmember",
+            headers=self.headers,
+        )
+        self.assertEqual(removed_member.status_code, 204)
 
         updated = self.client.patch(
             f"/api/v1/restaurant/departments/{department['id']}",

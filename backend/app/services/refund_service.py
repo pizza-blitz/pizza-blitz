@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.domain import OrderRefund, RestaurantOrder
 
 REFUNDABLE_PAYMENT_STATUSES = {"paid", "partially_refunded", "refund_due"}
-REFUND_METHODS = {"cash", "upi", "card", "gateway", "bank", "other"}
+REFUND_METHODS = {"cash", "upi", "card", "gateway", "bank", "gift_card", "other"}
 
 
 class RefundNotAllowed(ValueError):

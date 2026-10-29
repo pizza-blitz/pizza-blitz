@@ -25,6 +25,12 @@ import {
   X,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import { BlazeDock } from "@/components/blaze/blaze-concierge";
+import {
+  BLAZE_CART_EVENT,
+  BLAZE_CHECKOUT_EVENT,
+  type AssistantCartEventDetail,
+} from "@/components/blaze/events";
 
 const STOREFRONT_BOOTSTRAP_API = getApiUrl("/api/v1/restaurant/storefront/bootstrap");
 const ORDER_API = getApiUrl("/api/v1/restaurant/orders/");
@@ -32,6 +38,10 @@ const COUPON_API = getApiUrl("/api/v1/restaurant/promotions/validate-code");
 const DELIVERY_QUOTE_API = getApiUrl("/api/v1/restaurant/delivery/quote");
 const CUSTOMER_STORAGE_KEY = "pizza_blitz_customer";
 const REORDER_STORAGE_KEY = "pizza_blitz_reorder";
+const ORDER_DRAFT_STORAGE_KEY = "pizza_blitz_order_draft";
+const ORDER_DRAFT_VERSION = 1;
+const ORDER_REQUEST_TIMEOUT_MS = 25000;
+const PAYMENT_SESSION_TIMEOUT_MS = 20000;
 
 type MenuItem = {
   id: number;
@@ -64,6 +74,46 @@ type CartItem = MenuItem & {
   customization_total: number;
   selected_options: SelectedOption[];
 };
+
+type SavedMemoryPayload = {
+  linked?: boolean;
+  memory?: { allergies?: unknown };
+};
+
+/** Only the guest's own saved allergy words, cleaned defensively. */
+function savedAllergiesFrom(payload: SavedMemoryPayload): string[] {
+  if (!payload.linked) return [];
+  const raw = payload.memory?.allergies;
+  if (!Array.isArray(raw)) return [];
+  const cleaned: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const text = value.trim();
+    if (!text) continue;
+    if (!cleaned.some((existing) => existing.toLowerCase() === text.toLowerCase())) {
+      cleaned.push(text);
+    }
+  }
+  return cleaned;
+}
+
+/** Mirrors the backend's conflict rule: saved words against declared allergens. */
+function allergyConflict(
+  itemAllergens: string[] | null | undefined,
+  allergies: string[]
+): string | null {
+  if (!itemAllergens?.length || !allergies.length) return null;
+  const haystack = itemAllergens.join(" ").toLowerCase();
+  for (const allergy of allergies) {
+    const needle = allergy.trim().toLowerCase();
+    if (needle.length < 3) continue;
+    if (haystack.includes(needle)) return allergy;
+    if (needle.split(/\s+/).some((word) => word.length >= 4 && haystack.includes(word))) {
+      return allergy;
+    }
+  }
+  return null;
+}
 
 type CustomizationOption = {
   id: number;
@@ -188,6 +238,15 @@ type PublicPaymentCheckout = {
   message: string;
 };
 
+type GiftCardCheck = {
+  valid: boolean;
+  code: string;
+  balance: number;
+  status: string;
+  expires_on?: string | null;
+  message: string;
+};
+
 type PendingPayment = {
   orderId: number;
   total: number;
@@ -242,6 +301,23 @@ type ReorderDraft = {
   source_order_id?: number;
 };
 
+type OrderDraft = {
+  version: number;
+  cart: CartItem[];
+  orderType: "pickup" | "delivery";
+  address: string;
+  selectedDeliveryZoneId: number | null;
+  couponCode: string;
+  queuedCouponCode: string;
+  scheduleEnabled: boolean;
+  scheduleDate: string;
+  scheduledSlot: string;
+  scheduledLabel: string;
+  tipPercent: string;
+  customTip: string;
+  savedAt: string;
+};
+
 const categoryImages: Record<string, string> = {
   Pizza:
     "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=80",
@@ -276,6 +352,20 @@ const loadExternalScript = (src: string) =>
     document.body.appendChild(script);
   });
 
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = ORDER_REQUEST_TIMEOUT_MS
+) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 declare global {
   interface Window {
     Cashfree?: (options: { mode: string }) => {
@@ -297,10 +387,15 @@ export default function PublicOrderPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [orderType, setOrderType] = useState<"pickup" | "delivery">("pickup");
-  const [paymentMethod, setPaymentMethod] = useState<"prepaid" | "cash">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"prepaid" | "cash" | "gift_card">("cash");
+  const [giftCardCode, setGiftCardCode] = useState("");
+  const [giftCard, setGiftCard] = useState<GiftCardCheck | null>(null);
+  const [giftCardError, setGiftCardError] = useState("");
+  const [isCheckingGiftCard, setIsCheckingGiftCard] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [savedAllergies, setSavedAllergies] = useState<string[]>([]);
   const [referralCode, setReferralCode] = useState("");
   const [loyaltySummary, setLoyaltySummary] = useState<{
     points_balance: number;
@@ -312,7 +407,7 @@ export default function PublicOrderPage() {
     discount_amount: number;
   } | null>(null);
   const [isRedeemingPoints, setIsRedeemingPoints] = useState(false);
-  const [optInMarketing, setOptInMarketing] = useState(true);
+  const [optInMarketing, setOptInMarketing] = useState(false);
   const [address, setAddress] = useState("");
   const [savedAddresses, setSavedAddresses] = useState<
     { id: number; label: string; address_line: string; is_default: boolean }[]
@@ -346,7 +441,9 @@ export default function PublicOrderPage() {
     tip_presets: [0, 5, 10, 15],
   });
   const [customTip, setCustomTip] = useState("");
+  const [isOrderDraftHydrated, setIsOrderDraftHydrated] = useState(false);
   const checkoutRef = useRef<HTMLElement | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -360,6 +457,26 @@ export default function PublicOrderPage() {
       })
       .catch(() => {
         // Guests simply do not see saved addresses.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    // The same proof-gated memory the concierge uses, read at the moment it
+    // matters most: before the guest pays. Signed-out guests get nothing.
+    fetch("/api/concierge", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as SavedMemoryPayload;
+      })
+      .then((data) => {
+        if (active && data) setSavedAllergies(savedAllergiesFrom(data));
+      })
+      .catch(() => {
+        // A guest without a session simply sees no reminder.
       });
     return () => {
       active = false;
@@ -470,7 +587,6 @@ export default function PublicOrderPage() {
       .then((data) => {
         const availableMenu = data.menu.filter((item) => item.is_available);
         setMenu(availableMenu);
-        applySavedReorder(availableMenu);
         setCheckoutReadiness(data.checkout_readiness);
         setPaymentCheckout(data.payment_checkout);
         if (!data.payment_checkout.prepaid_available) {
@@ -485,9 +601,14 @@ export default function PublicOrderPage() {
         }
         const activeZones = data.delivery_zones.filter((zone) => zone.is_active);
         setDeliveryZones(activeZones);
-        if (activeZones[0]) {
+        const restoredReorder = applySavedReorder(availableMenu);
+        const restoredDraft = restoredReorder
+          ? false
+          : restoreOrderDraft(availableMenu, activeZones);
+        if (!restoredDraft && activeZones[0]) {
           setSelectedDeliveryZoneId(activeZones[0].id);
         }
+        setIsOrderDraftHydrated(true);
       })
       .catch(() => {
         setMessage("Menu is not available right now.");
@@ -515,7 +636,7 @@ export default function PublicOrderPage() {
         setCustomerName(parsed.name || "");
         setCustomerPhone(parsed.phone || "");
         setCustomerEmail(parsed.email || "");
-        setOptInMarketing(parsed.opt_in_marketing ?? true);
+        setOptInMarketing(parsed.opt_in_marketing ?? false);
       } catch {
         window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
       }
@@ -668,9 +789,9 @@ export default function PublicOrderPage() {
     }));
   };
 
-  const applySavedReorder = (availableMenu: MenuItem[]) => {
+  const applySavedReorder = (availableMenu: MenuItem[]): boolean => {
     const savedReorder = window.localStorage.getItem(REORDER_STORAGE_KEY);
-    if (!savedReorder) return;
+    if (!savedReorder) return false;
 
     try {
       const draft = JSON.parse(savedReorder) as ReorderDraft;
@@ -678,7 +799,7 @@ export default function PublicOrderPage() {
         setCustomerName(draft.customer.name || "");
         setCustomerPhone(draft.customer.phone || "");
         setCustomerEmail(draft.customer.email || "");
-        setOptInMarketing(draft.customer.opt_in_marketing ?? true);
+        setOptInMarketing(draft.customer.opt_in_marketing ?? false);
       }
       if (draft.fulfillment?.order_type === "delivery" || draft.fulfillment?.delivery_address) {
         setOrderType("delivery");
@@ -694,7 +815,7 @@ export default function PublicOrderPage() {
               String(draftItem.name || "").trim().toLowerCase()
           );
           if (!item) return null;
-          const quantity = Number(draftItem.quantity || 0);
+          const quantity = Math.min(Math.max(Number(draftItem.quantity || 0), 0), 20);
           if (quantity <= 0) return null;
           const itemDraft = draftFromSavedOptions(item, draftItem.selected_options || []);
           const selectedOptions = selectedOptionsForItem(item, itemDraft);
@@ -718,7 +839,7 @@ export default function PublicOrderPage() {
 
       if (!nextCart.length) {
         setMessage("Previous order items are not available right now.");
-        return;
+        return true;
       }
 
       const missingCount = Math.max((draft.items || []).length - nextCart.length, 0);
@@ -735,12 +856,145 @@ export default function PublicOrderPage() {
           missingCount ? `; ${missingCount} unavailable item${missingCount === 1 ? "" : "s"} skipped` : ""
         }.`
       );
+      return true;
     } catch {
       setMessage("Could not load previous order.");
+      return false;
     } finally {
       window.localStorage.removeItem(REORDER_STORAGE_KEY);
     }
   };
+
+  const restoreOrderDraft = (
+    availableMenu: MenuItem[],
+    activeZones: DeliveryZone[]
+  ): boolean => {
+    const rawDraft = window.localStorage.getItem(ORDER_DRAFT_STORAGE_KEY);
+    if (!rawDraft) return false;
+
+    try {
+      const draft = JSON.parse(rawDraft) as Partial<OrderDraft>;
+      if (draft.version !== ORDER_DRAFT_VERSION) {
+        window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
+        return false;
+      }
+      const restoredOrderType = draft.orderType === "delivery" ? "delivery" : "pickup";
+      const channel = restoredOrderType === "delivery" ? "delivery" : "takeaway";
+      const savedCart = Array.isArray(draft.cart) ? draft.cart : [];
+      const nextCart = savedCart
+        .map((savedItem) => {
+          const item = availableMenu.find((menuItem) => menuItem.id === savedItem.id);
+          if (!item) return null;
+          const row = (item.channel_prices || []).find((entry) => entry.channel === channel);
+          if (row && (!row.is_available || !row.is_visible)) return null;
+          const quantity = Math.min(Math.max(Number(savedItem.quantity || 0), 0), 20);
+          if (quantity <= 0) return null;
+          const itemDraft = draftFromSavedOptions(item, savedItem.selected_options || []);
+          const selectedOptions = selectedOptionsForItem(item, itemDraft);
+          const basePrice = Number(row ? row.price : item.selling_price || 0);
+          const customizationTotal = roundMoney(
+            selectedOptions.reduce(
+              (total, option) => total + Number(option.price_delta || 0),
+              0
+            )
+          );
+          return {
+            ...item,
+            cart_key: cartKeyFor(item.id, selectedOptions),
+            quantity,
+            base_price: basePrice,
+            customization_total: customizationTotal,
+            selected_options: selectedOptions,
+            selling_price: roundMoney(basePrice + customizationTotal),
+          };
+        })
+        .filter((item): item is CartItem => item !== null);
+
+      if (!nextCart.length) {
+        window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
+        return false;
+      }
+
+      const skippedCount = savedCart.length - nextCart.length;
+      setCart(nextCart);
+      setOrderType(restoredOrderType);
+      if (draft.address) setAddress(draft.address);
+      const savedZoneId = Number(draft.selectedDeliveryZoneId);
+      if (savedZoneId && activeZones.some((zone) => zone.id === savedZoneId)) {
+        setSelectedDeliveryZoneId(savedZoneId);
+      }
+      if (draft.couponCode) setCouponCode(String(draft.couponCode).toUpperCase());
+      if (draft.queuedCouponCode) {
+        setQueuedCouponCode(String(draft.queuedCouponCode).toUpperCase());
+      }
+      if (draft.scheduleEnabled && draft.scheduledSlot) {
+        setScheduleEnabled(true);
+        if (draft.scheduleDate) setScheduleDate(draft.scheduleDate);
+        setScheduledSlot(draft.scheduledSlot);
+        setScheduledLabel(draft.scheduledLabel || "");
+      }
+      if (draft.tipPercent) setTipPercent(draft.tipPercent);
+      if (draft.customTip) setCustomTip(draft.customTip);
+      setMessage(
+        `Restored your saved cart${skippedCount > 0 ? ` (${skippedCount} unavailable item${skippedCount === 1 ? "" : "s"} removed)` : ""}.`
+      );
+      return true;
+    } catch {
+      window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    if (!isOrderDraftHydrated) return;
+    const timer = window.setTimeout(() => {
+      const draft: OrderDraft = {
+        version: ORDER_DRAFT_VERSION,
+        cart,
+        orderType,
+        address,
+        selectedDeliveryZoneId,
+        couponCode,
+        queuedCouponCode,
+        scheduleEnabled,
+        scheduleDate,
+        scheduledSlot,
+        scheduledLabel,
+        tipPercent,
+        customTip,
+        savedAt: new Date().toISOString(),
+      };
+      try {
+        if (
+          !cart.length &&
+          !couponCode &&
+          !address &&
+          !scheduleEnabled
+        ) {
+          window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
+          return;
+        }
+        window.localStorage.setItem(ORDER_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      } catch {
+        // A full or blocked localStorage must not stop ordering.
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    address,
+    cart,
+    couponCode,
+    customTip,
+    isOrderDraftHydrated,
+    orderType,
+    queuedCouponCode,
+    scheduleDate,
+    scheduleEnabled,
+    scheduledLabel,
+    scheduledSlot,
+    selectedDeliveryZoneId,
+    tipPercent,
+  ]);
 
   const pricingChannel = orderType === "delivery" ? "delivery" : "takeaway";
   const effectiveMenu = useMemo(() => {
@@ -839,7 +1093,12 @@ export default function PublicOrderPage() {
       Boolean(selectedDeliveryZoneId) &&
       Boolean(deliveryQuote?.is_deliverable) &&
       !isQuotingDelivery);
-  const paymentReady = paymentMethod === "cash" || paymentMethod === "prepaid";
+  const giftCardReady =
+    paymentMethod === "gift_card" &&
+    Boolean(giftCard?.valid) &&
+    Number(giftCard?.balance || 0) + 0.001 >= total;
+  const paymentReady =
+    paymentMethod === "cash" || paymentMethod === "prepaid" || giftCardReady;
   const canSubmitOrder =
     (Boolean(checkoutReadiness?.accepting_orders) ||
       (scheduleEnabled &&
@@ -880,8 +1139,12 @@ export default function PublicOrderPage() {
     },
     {
       label: "Payment",
-      detail: paymentMethod === "prepaid" ? "Prepaid session after order" : "Cash on pickup/delivery",
-      complete: paymentReady,
+      detail:
+        paymentMethod === "prepaid"
+          ? "Prepaid session after order"
+          : paymentMethod === "gift_card"
+            ? "Paid with gift card"
+            : "Cash on pickup/delivery",      complete: paymentReady,
     },
   ];
   const checkoutReadyCount = checkoutSteps.filter((step) => step.complete).length;
@@ -909,10 +1172,27 @@ export default function PublicOrderPage() {
     () => prioritizePromotions(activePromotions, coupon?.promotion.code || queuedCouponCode, 3),
     [activePromotions, coupon?.promotion.code, queuedCouponCode]
   );
+  const allergyConflicts = useMemo(() => {
+    const found: { itemName: string; allergen: string }[] = [];
+    if (!savedAllergies.length || !cart.length) return found;
+    for (const line of cart) {
+      const conflict = allergyConflict(line.allergens, savedAllergies);
+      if (conflict && !found.some((row) => row.itemName === line.name)) {
+        found.push({ itemName: line.name, allergen: conflict });
+      }
+    }
+    return found;
+  }, [cart, savedAllergies]);
   const trackingHref =
     orderId && customerPhone.trim()
       ? `/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`
       : "/account";
+  const confirmationHref =
+    orderId && customerPhone.trim()
+      ? `/order/confirmation?order=${orderId}&phone=${encodeURIComponent(
+          customerPhone.trim()
+        )}&eta=${encodeURIComponent(eta)}`
+      : null;
   const receiptHref =
     orderId && customerPhone.trim()
       ? `/receipt/${orderId}?phone=${encodeURIComponent(customerPhone.trim())}`
@@ -1093,6 +1373,11 @@ export default function PublicOrderPage() {
       if (!options.quiet) {
         setMessage(`Applied ${appliedCode}.`);
       }
+    } catch {
+      setCoupon(null);
+      if (!options.quiet) {
+        setMessage("Coupon could not be checked. Check your connection and try again.");
+      }
     } finally {
       setIsApplyingCoupon(false);
     }
@@ -1120,8 +1405,135 @@ export default function PublicOrderPage() {
     return () => window.clearTimeout(timer);
   }, [cart.length, coupon?.promotion.code, queuedCouponCode, subtotal]);
 
+  // Blaze keeps a server-priced cart. Mirror it into the live order page so a
+  // customer can build an order entirely by talking, then check out here.
+  useEffect(() => {
+    const onAssistantCart = (event: Event) => {
+      const detail = (event as CustomEvent<AssistantCartEventDetail>).detail;
+      if (!detail?.cart) return;
+      const channel = detail.fulfillment === "delivery" ? "delivery" : "takeaway";
+      let skipped = 0;
+      const nextCart = detail.cart.lines
+        .map((line) => {
+          const item = menu.find((menuItem) => menuItem.id === line.menu_item_id);
+          if (!item) {
+            skipped += 1;
+            return null;
+          }
+          const channelRow = (item.channel_prices || []).find(
+            (entry) => entry.channel === channel
+          );
+          if (channelRow && (!channelRow.is_available || !channelRow.is_visible)) {
+            skipped += 1;
+            return null;
+          }
+          const itemDraft = draftFromSavedOptions(item, line.selected_options || []);
+          const selectedOptions = selectedOptionsForItem(item, itemDraft);
+          const basePrice = Number(
+            channelRow ? channelRow.price : item.selling_price || 0
+          );
+          const customizationTotal = roundMoney(
+            selectedOptions.reduce(
+              (sum, option) => sum + Number(option.price_delta || 0),
+              0
+            )
+          );
+          return {
+            ...item,
+            cart_key: cartKeyFor(item.id, selectedOptions),
+            quantity: Math.min(Math.max(Number(line.quantity || 1), 1), 20),
+            base_price: basePrice,
+            customization_total: customizationTotal,
+            selected_options: selectedOptions,
+            selling_price: roundMoney(basePrice + customizationTotal),
+          };
+        })
+        .filter((item): item is CartItem => item !== null);
+
+      setOrderId(null);
+      setPendingPayment(null);
+      setCart(nextCart);
+      setOrderType(detail.fulfillment);
+      if (detail.coupon) {
+        setCouponCode(detail.coupon);
+        setQueuedCouponCode(detail.coupon);
+      }
+      setMessage(
+        skipped > 0
+          ? `Blaze updated your cart. ${skipped} item${skipped === 1 ? "" : "s"} could not be added to this order type.`
+          : "Blaze updated your cart. Review it and check out whenever you're ready."
+      );
+    };
+    const onAssistantCheckout = () => {
+      setIsCheckoutVisible(true);
+      window.setTimeout(() => {
+        checkoutRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    };
+    window.addEventListener(BLAZE_CART_EVENT, onAssistantCart);
+    window.addEventListener(BLAZE_CHECKOUT_EVENT, onAssistantCheckout);
+    return () => {
+      window.removeEventListener(BLAZE_CART_EVENT, onAssistantCart);
+      window.removeEventListener(BLAZE_CHECKOUT_EVENT, onAssistantCheckout);
+    };
+    // Helpers intentionally read the latest menu; the listener is re-bound when
+    // the live menu refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menu]);
+
+  const checkGiftCard = async () => {
+    const code = giftCardCode.trim().toUpperCase();
+    if (!code) {
+      setGiftCardError("Enter the gift card code.");
+      return;
+    }
+    setIsCheckingGiftCard(true);
+    setGiftCardError("");
+    try {
+      const response = await fetchWithTimeout(
+        getApiUrl(
+          `/api/v1/restaurant/gift-cards/public/validate/${encodeURIComponent(code)}`
+        ),
+        {},
+        12000
+      );
+      const data = (await response.json().catch(() => ({}))) as
+        | (GiftCardCheck & { detail?: string })
+        | { detail?: string };
+      if (!response.ok) {
+        throw new Error(
+          (data as { detail?: string }).detail || "Gift card could not be checked."
+        );
+      }
+      const check = data as GiftCardCheck;
+      setGiftCard(check);
+      if (!check.valid) {
+        setGiftCardError(check.message || "This gift card is not usable.");
+        setPaymentMethod("cash");
+        return;
+      }
+      if (Number(check.balance || 0) + 0.001 < total) {
+        setGiftCardError(
+          `Balance Rs ${Number(check.balance || 0).toFixed(2)} is below this order total of Rs ${total.toFixed(2)}.`
+        );
+        setPaymentMethod("cash");
+        return;
+      }
+      setPaymentMethod("gift_card");
+      setMessage("");
+    } catch (error) {
+      setGiftCard(null);
+      setGiftCardError(
+        error instanceof Error ? error.message : "Gift card could not be checked."
+      );
+    } finally {
+      setIsCheckingGiftCard(false);
+    }
+  };
+
   const placeOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submittingRef.current) return;
     const scheduling = scheduleEnabled && Boolean(scheduledSlot);
     if (
       !checkoutReadiness?.accepting_orders &&
@@ -1164,140 +1576,185 @@ export default function PublicOrderPage() {
         return;
       }
     }
-
-    setIsSubmitting(true);
-    setConfirmedSchedule(null);
-    const response = await fetch(ORDER_API, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order_type: orderType,
-        customer_name: customerName,
-        customer_phone: customerPhone,
-        customer_email: customerEmail || null,
-        opt_in_marketing: optInMarketing,
-        payment_method: paymentMethod,
-        discount_amount: discount,
-        tip_amount: tipAmount,
-        coupon_code: coupon ? coupon.promotion.code || couponCode : null,
-        referral_code: referralCode.trim() || null,
-        loyalty_redemption_token: loyaltyRedemption?.token || null,
-        delivery_address: address,
-        delivery_zone_id: selectedDeliveryZoneId,
-        scheduled_for: scheduling ? scheduledSlot : null,
-        notes: [
-          `Customer website order`,
-          `Fulfillment: ${orderType}`,
-          `ETA: ${eta}`,
-          address ? `Address: ${address}` : "",
-          orderType === "delivery" && selectedDeliveryZone
-            ? `Delivery Zone: ${selectedDeliveryZone.name}`
-            : "",
-          coupon ? `Coupon: ${coupon.promotion.code || couponCode.toUpperCase()}` : "",
-        ]
-          .filter(Boolean)
-          .join(" | "),
-        items: cart.map((item) => ({
-          menu_item_id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.selling_price,
-          base_price: item.base_price,
-          customization_total: item.customization_total,
-          selected_options: item.selected_options,
-        })),
-      }),
-    });
-    const data = await response.json();
-    setIsSubmitting(false);
-
-    if (!response.ok) {
-      setMessage(data.detail || "Order could not be placed.");
+    if (paymentMethod === "gift_card" && !giftCardReady) {
+      setMessage(
+        "Check a gift card with enough balance first, or pay by cash or prepaid."
+      );
       return;
     }
 
-    window.localStorage.setItem(
-      CUSTOMER_STORAGE_KEY,
-      JSON.stringify({
-        name: customerName,
-        phone: customerPhone,
-        email: customerEmail,
-        opt_in_marketing: optInMarketing,
-      })
-    );
-    const createdOrderId = Number(data.order_id);
-    await saveCustomerSession(createdOrderId);
-    if (paymentMethod === "prepaid") {
-      const orderId = createdOrderId;
-      const sessionResponse = await fetch(`${ORDER_API}${orderId}/payment-session`, {
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    setConfirmedSchedule(null);
+    setMessage("");
+
+    try {
+      const response = await fetchWithTimeout(ORDER_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          return_url: `${window.location.origin}/track?order=${orderId}&phone=${encodeURIComponent(customerPhone.trim())}`,
+          order_type: orderType,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_email: customerEmail || null,
+          opt_in_marketing: optInMarketing,
+          payment_method: paymentMethod,
+          gift_card_code:
+            paymentMethod === "gift_card"
+              ? giftCardCode.trim().toUpperCase()
+              : null,
+          discount_amount: discount,
+          tip_amount: tipAmount,
+          coupon_code: coupon ? coupon.promotion.code || couponCode : null,
+          referral_code: referralCode.trim() || null,
+          loyalty_redemption_token: loyaltyRedemption?.token || null,
+          delivery_address: address,
+          delivery_zone_id: selectedDeliveryZoneId,
+          scheduled_for: scheduling ? scheduledSlot : null,
+          notes: [
+            `Customer website order`,
+            `Fulfillment: ${orderType}`,
+            `ETA: ${eta}`,
+            address ? `Address: ${address}` : "",
+            orderType === "delivery" && selectedDeliveryZone
+              ? `Delivery Zone: ${selectedDeliveryZone.name}`
+              : "",
+            // The verified guest's own saved allergy rides on the order so the
+            // kitchen screen and printed ticket carry it, not just this page.
+            savedAllergies.length > 0
+              ? `Allergy: ${savedAllergies.join(", ")}`
+              : "",
+            coupon ? `Coupon: ${coupon.promotion.code || couponCode.toUpperCase()}` : "",
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          items: cart.map((item) => ({
+            menu_item_id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            price: item.selling_price,
+            base_price: item.base_price,
+            customization_total: item.customization_total,
+            selected_options: item.selected_options,
+          })),
         }),
       });
-      const sessionData = await sessionResponse.json();
-
-      if (!sessionResponse.ok) {
-        setMessage(sessionData.detail || "Payment session could not be created.");
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(data.detail || "Order could not be placed. Your cart is still saved.");
         return;
       }
 
-      const paymentSession = sessionData.payment_session;
-      const paymentReferenceValue =
-        paymentSession.provider_order_id ||
-        paymentSession.session_id ||
-        `WEB-${orderId}-${Date.now()}`;
-      setOrderId(orderId);
+      const createdOrderId = Number(data.order_id);
+      if (!Number.isFinite(createdOrderId) || createdOrderId <= 0) {
+        setMessage(
+          "The store response was incomplete. Check My Orders before retrying so you do not double-order."
+        );
+        return;
+      }
+
+      window.localStorage.setItem(
+        CUSTOMER_STORAGE_KEY,
+        JSON.stringify({
+          name: customerName,
+          phone: customerPhone,
+          email: customerEmail,
+          opt_in_marketing: optInMarketing,
+        })
+      );
+      window.localStorage.removeItem(ORDER_DRAFT_STORAGE_KEY);
+      void saveCustomerSession(createdOrderId);
+
+      setOrderId(createdOrderId);
       setCart([]);
       setCoupon(null);
       setCouponCode("");
       setQueuedCouponCode("");
-      setPendingPayment({
-        orderId,
-        total: Number(data.total || 0),
-        provider: paymentSession.provider || "manual",
-        reference: paymentReferenceValue,
-        sessionId: paymentSession.session_id,
-        providerOrderId: paymentSession.provider_order_id,
-        paymentSessionId: paymentSession.payment_session_id,
-        checkoutUrl: paymentSession.checkout_url,
-        checkoutPayload: paymentSession.checkout_payload,
-        sessionStatus: paymentSession.status,
-        message: paymentSession.message,
-      });
-      const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
-      setConfirmedSchedule(scheduleText);
       setTipPercent("0");
       setCustomTip("");
       setLoyaltyRedemption(null);
       setLoyaltySummary(null);
-      setMessage(
-        scheduleText
-          ? `Order #${orderId} ${scheduleText.toLowerCase()}. Continue to online payment.`
-          : paymentSession.provider === "manual"
-            ? `Order #${orderId} created. Payment is pending until the store team verifies it.`
-            : `Order #${orderId} created. Continue to online payment.`
-      );
-    } else {
-      const orderId = createdOrderId;
-      setOrderId(orderId);
-      setCart([]);
-      setCoupon(null);
-      setCouponCode("");
-      setQueuedCouponCode("");
-      setPendingPayment(null);
-      const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
+      setGiftCardCode("");
+      setGiftCard(null);
+      setGiftCardError("");
+      if (paymentMethod === "gift_card") setPaymentMethod("cash");      const scheduleText = scheduling ? `Scheduled for ${scheduledLabel}` : null;
       setConfirmedSchedule(scheduleText);
-      setTipPercent("0");
-      setCustomTip("");
-      setLoyaltyRedemption(null);
-      setLoyaltySummary(null);
+
+      if (paymentMethod === "prepaid") {
+        setPendingPayment(null);
+        try {
+          const sessionResponse = await fetchWithTimeout(
+            `${ORDER_API}${createdOrderId}/payment-session`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                return_url: `${window.location.origin}/track?order=${createdOrderId}&phone=${encodeURIComponent(customerPhone.trim())}`,
+              }),
+            },
+            PAYMENT_SESSION_TIMEOUT_MS
+          );
+          const sessionData = await sessionResponse.json().catch(() => ({}));
+          const paymentSession = sessionData.payment_session;
+
+          if (!sessionResponse.ok || !paymentSession) {
+            setMessage(
+              `Order #${createdOrderId} confirmed, but the online payment window could not start. Pay cash at pickup or delivery, or contact the store with this order number.`
+            );
+            return;
+          }
+
+          const paymentReferenceValue =
+            paymentSession.provider_order_id ||
+            paymentSession.session_id ||
+            `WEB-${createdOrderId}-${Date.now()}`;
+          setPendingPayment({
+            orderId: createdOrderId,
+            total: Number(data.total || 0),
+            provider: paymentSession.provider || "manual",
+            reference: paymentReferenceValue,
+            sessionId: paymentSession.session_id,
+            providerOrderId: paymentSession.provider_order_id,
+            paymentSessionId: paymentSession.payment_session_id,
+            checkoutUrl: paymentSession.checkout_url,
+            checkoutPayload: paymentSession.checkout_payload,
+            sessionStatus: paymentSession.status,
+            message: paymentSession.message,
+          });
+          setMessage(
+            scheduleText
+              ? `Order #${createdOrderId} ${scheduleText.toLowerCase()}. Continue to online payment.`
+              : paymentSession.provider === "manual"
+                ? `Order #${createdOrderId} created. Payment is pending until the store team verifies it.`
+                : `Order #${createdOrderId} created. Continue to online payment.`
+          );
+        } catch {
+          setMessage(
+            `Order #${createdOrderId} confirmed, but the payment window did not respond. Pay cash at pickup or delivery, or contact the store with this order number.`
+          );
+        }
+      } else {
+        setPendingPayment(null);
+        const giftCardNote =
+          paymentMethod === "gift_card" && data.gift_card_balance != null
+            ? ` Paid with gift card. Remaining balance Rs ${Number(data.gift_card_balance).toFixed(2)}.`
+            : "";
+        setMessage(
+          scheduleText
+            ? `Order #${createdOrderId} ${scheduleText.toLowerCase()}.${giftCardNote}`
+            : `Order #${createdOrderId} placed. Estimated ${eta}.${giftCardNote}`
+        );
+      }
+    } catch (error) {
+      const timedOut = (error as Error)?.name === "AbortError";
       setMessage(
-        scheduleText
-          ? `Order #${orderId} ${scheduleText.toLowerCase()}.`
-          : `Order #${orderId} placed. Estimated ${eta}.`
+        timedOut
+          ? "The store took too long to confirm. Your cart is still saved. Check My Orders before retrying so you do not double-order."
+          : "We could not reach the store. Your cart is still saved. Check My Orders before retrying so you do not double-order."
       );
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -1392,15 +1849,16 @@ export default function PublicOrderPage() {
           <div className="flex items-center gap-3">
             <Link
               href="/account"
+              prefetch={false}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
             >
               My Orders
             </Link>
             <Link
-              href="/login"
+              href="/track"
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
             >
-              Admin Portal
+              Track order
             </Link>
             <a
               href="#checkout"
@@ -1593,6 +2051,7 @@ export default function PublicOrderPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search menu"
+                aria-label="Search menu"
                 className="w-full rounded-md border border-slate-300 bg-white py-3 pl-10 pr-4 outline-none focus:border-red-600"
               />
             </div>
@@ -1789,10 +2248,16 @@ export default function PublicOrderPage() {
             )}
 
             {orderId && (
-              <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800">
+              <div
+                data-testid="order-confirmation"
+                className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800"
+              >
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4" /> Order #{orderId} {pendingPayment ? "created" : "confirmed"}
                 </div>
+                <p className="mt-2 text-xs font-semibold text-green-700">
+                  Estimated {eta}. We will update tracking as the kitchen moves.
+                </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <div className="rounded-md border border-green-200 bg-white px-3 py-2">
                     <p className="font-black uppercase text-green-900">Kitchen</p>
@@ -1804,6 +2269,14 @@ export default function PublicOrderPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-3">
+                  {confirmationHref && (
+                    <Link
+                      href={confirmationHref}
+                      className="inline-flex text-sm font-black text-green-900 underline"
+                    >
+                      View order confirmation
+                    </Link>
+                  )}
                   <Link
                     href={trackingHref}
                     className="inline-flex text-sm font-black text-green-900 underline"
@@ -2128,6 +2601,8 @@ export default function PublicOrderPage() {
                     setCoupon(null);
                   }}
                   placeholder="Coupon"
+                  aria-label="Coupon code"
+                  autoComplete="off"
                   className="w-full rounded-md border border-slate-300 py-3 pl-10 pr-3 outline-none focus:border-red-600"
                 />
               </div>
@@ -2325,6 +2800,8 @@ export default function PublicOrderPage() {
                   value={customerName}
                   onChange={(event) => setCustomerName(event.target.value)}
                   placeholder="Name"
+                  aria-label="Full name"
+                  autoComplete="name"
                   required
                   className="w-full outline-none"
                 />
@@ -2334,6 +2811,10 @@ export default function PublicOrderPage() {
                   value={customerPhone}
                   onChange={(event) => setCustomerPhone(event.target.value)}
                   placeholder="Phone"
+                  aria-label="Phone number"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   required
                   className="w-full outline-none"
                 />
@@ -2343,7 +2824,10 @@ export default function PublicOrderPage() {
                   value={customerEmail}
                   onChange={(event) => setCustomerEmail(event.target.value)}
                   placeholder="Email for receipts and offers"
+                  aria-label="Email"
                   type="email"
+                  inputMode="email"
+                  autoComplete="email"
                   className="w-full outline-none"
                 />
               </FieldIcon>
@@ -2373,6 +2857,7 @@ export default function PublicOrderPage() {
                       value={address}
                       onChange={(event) => setAddress(event.target.value)}
                       placeholder="Delivery address"
+                      autoComplete="street-address"
                       className="w-full outline-none"
                     />
                   </FieldIcon>
@@ -2460,7 +2945,7 @@ export default function PublicOrderPage() {
                   )}
                 </>
               )}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <SegmentButton
                   active={paymentMethod === "prepaid"}
                   label="Prepaid"
@@ -2479,14 +2964,105 @@ export default function PublicOrderPage() {
                     setMessage("");
                   }}
                 />
+                <SegmentButton
+                  active={paymentMethod === "gift_card"}
+                  label="Gift card"
+                  disabled={!giftCard?.valid}
+                  title={
+                    giftCard?.valid
+                      ? `Balance Rs ${Number(giftCard.balance || 0).toFixed(2)}`
+                      : "Check a gift card below first"
+                  }
+                  onClick={() => {
+                    if (giftCard?.valid && Number(giftCard.balance || 0) + 0.001 >= total) {
+                      setPaymentMethod("gift_card");
+                      setMessage("");
+                    } else if (giftCard?.valid) {
+                      setMessage(
+                        `This gift card has Rs ${Number(giftCard.balance || 0).toFixed(2)} but the order total is Rs ${total.toFixed(2)}.`
+                      );
+                    }
+                  }}
+                />
+              </div>
+              <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <Gift className="h-3.5 w-3.5" /> Have a gift card?
+                  </span>
+                  {giftCard?.valid ? (
+                    <span className="text-[10px] font-black text-emerald-700">
+                      Balance Rs {Number(giftCard.balance || 0).toFixed(2)}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    aria-label="Gift card code"
+                    value={giftCardCode}
+                    onChange={(event) => {
+                      setGiftCardCode(event.target.value.toUpperCase());
+                      setGiftCardError("");
+                    }}
+                    placeholder="PB-XXXXXXXX"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-black tracking-wider text-slate-900 outline-none focus:border-red-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void checkGiftCard()}
+                    disabled={isCheckingGiftCard}
+                    className="rounded-md border border-slate-300 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 hover:border-slate-500 disabled:opacity-50"
+                  >
+                    {isCheckingGiftCard ? "Checking" : "Apply"}
+                  </button>
+                </div>
+                {giftCardError ? (
+                  <p className="mt-2 text-[11px] font-semibold text-red-700">{giftCardError}</p>
+                ) : giftCard?.valid && giftCardReady ? (
+                  <p className="mt-2 text-[11px] font-semibold text-emerald-700">
+                    This card covers the order. Rs {Number(giftCard.balance || 0).toFixed(2)} available; Rs {total.toFixed(2)} will be deducted.
+                  </p>
+                ) : giftCard?.valid ? (
+                  <p className="mt-2 text-[11px] font-semibold text-amber-700">
+                    This card is short by Rs {(total - Number(giftCard.balance || 0)).toFixed(2)} for the current order.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-[11px] font-semibold text-slate-500">
+                    Gift cards are checked against the live balance before payment.
+                  </p>
+                )}
               </div>
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
                 {paymentMethod === "prepaid"
                   ? paymentCheckout?.message || "Checking online payment availability."
-                  : paymentCheckout?.prepaid_available
-                    ? `Cash keeps the order open for collection. ${paymentCheckout.label} is also available.`
-                    : paymentCheckout?.message || "Cash keeps the order open for counter or delivery collection."}
+                  : paymentMethod === "gift_card"
+                    ? "The full order total is paid from the gift card when you place the order."
+                    : paymentCheckout?.prepaid_available
+                      ? `Cash keeps the order open for collection. ${paymentCheckout.label} is also available.`
+                      : paymentCheckout?.message || "Cash keeps the order open for counter or delivery collection."}
               </div>
+              {savedAllergies.length > 0 && (
+                <div
+                  data-testid="checkout-allergy-memory"
+                  className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"
+                >
+                  Saved from your last visit: allergic to {savedAllergies.join(", ")}. Dishes
+                  that list it are flagged here before you order; please confirm with the kitchen.
+                </div>
+              )}
+              {allergyConflicts.length > 0 && (
+                <div
+                  data-testid="checkout-allergy-warning"
+                  className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs font-black text-red-800"
+                >
+                  Heads up:{" "}
+                  {allergyConflicts
+                    .map((row) => `${row.itemName} lists ${row.allergen}`)
+                    .join("; ")}
+                  . You saved this as an allergy, so please confirm with the kitchen before
+                  ordering.
+                </div>
+              )}
               <button
                 data-testid="customer-place-order"
                 disabled={!canSubmitOrder}
@@ -2501,6 +3077,13 @@ export default function PublicOrderPage() {
                       ? "Place Order"
                       : "Ordering Activating"}
               </button>
+              <p className="text-center text-xs font-semibold text-slate-500">
+                Ordered already?{" "}
+                <Link href="/account" prefetch={false} className="font-black text-red-700 underline">
+                  Check My Orders
+                </Link>{" "}
+                before placing it again.
+              </p>
             </div>
           </form>
         </aside>
@@ -2518,6 +3101,21 @@ export default function PublicOrderPage() {
           <span className="text-sm font-black">Checkout Rs {total}</span>
         </a>
       )}
+
+      <BlazeDock
+        context="order"
+        liveCart={cart.map((item) => ({
+          menu_item_id: item.id,
+          quantity: item.quantity,
+          selected_options: item.selected_options,
+        }))}
+        liveTotals={{
+          count: cartItemCount,
+          total,
+          coupon: coupon?.promotion.code || couponCode || null,
+          fulfillment: orderType,
+        }}
+      />
     </div>
   );
 }

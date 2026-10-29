@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_hr_permission
 from app.models.domain import HRHoliday, HRLeaveType
+from app.services.company_work_service import (
+    ensure_approval_for_source,
+    sync_source_approval,
+)
 from app.services.hr_leave_service import (
     balances_overview,
     cancel_request,
@@ -105,12 +109,30 @@ def list_leave_requests(
 def create_leave_request(
     payload: LeaveRequestCreate,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_hr_permission("hr.leave")),
+    session: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = create_request(db, payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    employee_name = row.employee.full_name if row.employee else f"Employee {row.employee_id}"
+    ensure_approval_for_source(
+        db,
+        department_key="hr",
+        kind="leave",
+        title=f"Leave · {employee_name} · {row.start_date} to {row.end_date}",
+        source_type="hr_leave_request",
+        source_id=row.id,
+        requested_by=str(session.get("subject") or session.get("sub") or "staff"),
+        note=row.reason,
+        metadata={
+            "employee_id": row.employee_id,
+            "leave_type": row.leave_type.name if row.leave_type else None,
+            "days": row.days,
+            "start_date": row.start_date.isoformat(),
+            "end_date": row.end_date.isoformat(),
+        },
+    )
     return serialize_request(row)
 
 
@@ -121,16 +143,25 @@ def decide_leave_request(
     db: Session = Depends(get_db),
     session: dict = Depends(require_hr_permission("hr.leave")),
 ):
+    actor = str(session.get("subject") or session.get("sub") or "admin")
     try:
         row = decide_request(
             db,
             request_id,
             payload.decision,
-            str(session.get("sub") or "admin"),
+            actor,
             payload.note,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    sync_source_approval(
+        db,
+        source_type="hr_leave_request",
+        source_id=request_id,
+        status=payload.decision,
+        decided_by=actor,
+        note=payload.note,
+    )
     return serialize_request(row)
 
 
@@ -139,12 +170,20 @@ def cancel_leave_request(
     request_id: int,
     payload: LeaveCancel,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_hr_permission("hr.leave")),
+    session: dict = Depends(require_hr_permission("hr.leave")),
 ):
     try:
         row = cancel_request(db, request_id, payload.note)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    sync_source_approval(
+        db,
+        source_type="hr_leave_request",
+        source_id=request_id,
+        status="cancelled",
+        decided_by=str(session.get("subject") or session.get("sub") or "staff"),
+        note=payload.note,
+    )
     return serialize_request(row)
 
 

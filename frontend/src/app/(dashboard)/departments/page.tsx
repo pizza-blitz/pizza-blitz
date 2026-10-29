@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
   Building2,
   CheckCircle2,
+  ListChecks,
   Loader2,
   Plus,
   Settings2,
@@ -14,6 +16,12 @@ import {
   X,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import {
+  KPI_TONES,
+  type DepartmentAccess,
+  type Kpi,
+  type Scorecard,
+} from "@/lib/company";
 
 type Department = {
   id: number;
@@ -43,11 +51,9 @@ const COLOR_CHOICES = ["#f97316", "#0f766e", "#2563eb", "#7c3aed", "#db2777", "#
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [catalog, setCatalog] = useState<Module[]>([]);
+  const [scorecard, setScorecard] = useState<Scorecard | null>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [access, setAccess] = useState<{
-    is_admin: boolean;
-    is_hr_member: boolean;
-  } | null>(null);
+  const [access, setAccess] = useState<DepartmentAccess | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -63,18 +69,27 @@ export default function DepartmentsPage() {
 
   const load = async () => {
     try {
-      const response = await fetch(
-        getApiUrl("/api/v1/restaurant/departments/"),
-        { credentials: "include", cache: "no-store" }
-      );
+      const [response, scorecardResponse, accessResponse] = await Promise.all([
+        fetch(getApiUrl("/api/v1/restaurant/departments/"), {
+          credentials: "include",
+          cache: "no-store",
+        }),
+        fetch(getApiUrl("/api/v1/restaurant/departments/scorecard"), {
+          credentials: "include",
+          cache: "no-store",
+        }),
+        fetch(getApiUrl("/api/v1/restaurant/departments/access"), {
+          credentials: "include",
+          cache: "no-store",
+        }),
+      ]);
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Departments failed to load.");
       setDepartments(data.departments || []);
       setCatalog(data.catalog || []);
-      const accessResponse = await fetch(
-        getApiUrl("/api/v1/restaurant/hr/access"),
-        { credentials: "include", cache: "no-store" }
-      );
+      if (scorecardResponse.ok) {
+        setScorecard(await scorecardResponse.json());
+      }
       if (accessResponse.ok) setAccess(await accessResponse.json());
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Departments failed to load.");
@@ -164,22 +179,106 @@ export default function DepartmentsPage() {
           </p>
         </div>
         {(!access || access.is_admin) && (
-          <button
-            type="button"
-            data-testid="department-create-open"
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
-          >
-            <Plus className="h-4 w-4" /> New department
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/work"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-xs font-black uppercase tracking-widest text-gray-700 hover:border-orange-300"
+            >
+              <ListChecks className="h-4 w-4" /> My work
+            </Link>
+            <button
+              type="button"
+              data-testid="department-create-open"
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:bg-orange-600"
+            >
+              <Plus className="h-4 w-4" /> New department
+            </button>
+          </div>
         )}
       </div>
 
-      {access && !access.is_admin && !access.is_hr_member && (
+      {access && !access.is_admin && departments.length === 0 && (
         <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          Your account is not assigned to the People &amp; HR department. Ask an admin
-          to add you to the HR team and grant the HR workspace permission.
+          Your account is not assigned to a department yet. Ask an admin to add
+          you to a team and assign a scoped role.
         </div>
+      )}
+
+      {scorecard && scorecard.departments.length > 0 && (
+        <section data-testid="company-scorecard" className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">
+                <Sparkles className="h-4 w-4" /> Company scorecard
+              </p>
+              <h2 className="mt-1 text-xl font-black text-gray-950">
+                Every department at a glance
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+              <span className="rounded-full bg-white px-3 py-1.5 text-gray-500">
+                Generated {scorecard.generated_at}
+              </span>
+              <span
+                className={`rounded-full px-3 py-1.5 ${
+                  scorecard.attention_total
+                    ? "bg-red-100 text-red-800"
+                    : "bg-emerald-100 text-emerald-800"
+                }`}
+              >
+                {scorecard.attention_total
+                  ? `${scorecard.attention_total} attention signal${
+                      scorecard.attention_total === 1 ? "" : "s"
+                    }`
+                  : "All clear"}
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {scorecard.departments.map((row) => {
+              const primary: Kpi | null = row.primary || null;
+              return (
+                <Link
+                  key={row.key}
+                  href={`/departments/${row.key}`}
+                  data-testid={`scorecard-department-${row.key}`}
+                  className={`rounded-2xl border p-3.5 transition hover:-translate-y-0.5 hover:shadow-sm ${
+                    KPI_TONES[primary?.tone || "neutral"] ||
+                    KPI_TONES.neutral
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: row.color }}
+                      />
+                      <p className="truncate text-sm font-black">{row.name}</p>
+                    </div>
+                    {row.attention_count ? (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-red-700">
+                        <AlertTriangle className="h-3 w-3" />
+                        {row.attention_count}
+                      </span>
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                    )}
+                  </div>
+                  <p className="mt-2 text-2xl font-black">
+                    {primary?.display || "No signal"}
+                  </p>
+                  <p className="text-[10px] font-black uppercase tracking-widest opacity-70">
+                    {primary?.label || "KPI pending"}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[11px] font-semibold opacity-70">
+                    {primary?.detail || "Open the workspace for the full queue."}
+                  </p>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {message && (

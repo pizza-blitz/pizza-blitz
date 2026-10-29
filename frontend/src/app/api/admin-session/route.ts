@@ -59,6 +59,7 @@ async function verifyManagedStaffCredentials(id: string, password: string) {
         ok: false,
         status: response.status,
         detail: data.detail || "Invalid staff credentials.",
+        retryAfter: response.headers.get("retry-after") || undefined,
       };
     }
     if (data.two_factor_required) {
@@ -103,6 +104,7 @@ async function verifyManagedAdminCredentials(id: string, password: string) {
         ok: false,
         status: response.status,
         detail: data.detail || "Invalid admin credentials.",
+        retryAfter: response.headers.get("retry-after") || undefined,
       };
     }
     if (data.two_factor_required) {
@@ -243,14 +245,31 @@ export async function POST(request: Request) {
     !isAdminMasterLogin &&
     !managedStaffLogin?.ok
   ) {
+    // Report what the credential service said for the role being signed in. A
+    // staff sign-in also probes the admin endpoint (an admin may enter through
+    // either page), but that probe must never describe a staff failure: its
+    // answer can be a 503 while the staff check is merely throttled.
+    const failure =
+      requestedRole === "staff"
+        ? managedStaffLogin && !managedStaffLogin.ok
+          ? managedStaffLogin
+          : null
+        : managedAdminLogin && !managedAdminLogin.ok
+          ? managedAdminLogin
+          : null;
+    const status =
+      failure?.status === 429 ? 429 : failure?.status === 401 ? 401 : 503;
+    const headers =
+      status === 429 && failure?.retryAfter
+        ? { "Retry-After": failure.retryAfter }
+        : undefined;
     return NextResponse.json(
       {
         detail:
-          managedStaffLogin?.status === 401
-            ? managedStaffLogin.detail
-            : `Production ${requestedRole} credentials are not configured yet.`,
+          failure?.detail ||
+          `Production ${requestedRole} credentials are not configured yet.`,
       },
-      { status: managedStaffLogin?.status === 401 ? 401 : 503 }
+      { status, headers }
     );
   }
 

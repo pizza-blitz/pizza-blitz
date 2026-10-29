@@ -363,7 +363,7 @@ def _public_site_url() -> str:
     return (
         os.getenv("PIZZA_BLITZ_PUBLIC_BASE_URL")
         or os.getenv("PUBLIC_SITE_URL")
-        or "http://127.0.0.1:3011"
+        or "http://localhost:3011"
     ).strip().rstrip("/")
 
 

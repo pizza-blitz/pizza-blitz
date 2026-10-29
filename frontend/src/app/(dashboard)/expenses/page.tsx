@@ -34,6 +34,7 @@ const TREND_API = getApiUrl("/api/v1/restaurant/stats/insights/profit-trend?mont
 const EXPENSES_API = getApiUrl("/api/v1/restaurant/expenses/expenses");
 const CATEGORIES_API = getApiUrl("/api/v1/restaurant/expenses/categories");
 const AUDIT_API = getApiUrl("/api/v1/restaurant/expenses/audit-command");
+const STORES_API = getApiUrl("/api/v1/restaurant/stores/");
 
 type ExpenseCategory = {
   id: number;
@@ -43,12 +44,19 @@ type ExpenseCategory = {
 
 type ExpenseRow = {
   id: number;
+  store_id?: number;
   date: string;
   category_id: number;
   category?: string;
   amount: number;
   description?: string | null;
   receipt_photo_url?: string | null;
+};
+
+type StoreOption = {
+  id: number;
+  name: string;
+  code: string;
 };
 
 type ExpenseApprovalQueueItem = ExpenseRow & {
@@ -170,6 +178,7 @@ export default function ExpenseTracker() {
   const [trends, setTrends] = useState<TrendRow[]>([]);
   const [detailedExpenses, setDetailedExpenses] = useState<ExpenseRow[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [stores, setStores] = useState<StoreOption[]>([]);
   const [audit, setAudit] = useState<ExpenseAuditCommand | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -177,6 +186,7 @@ export default function ExpenseTracker() {
   const [message, setMessage] = useState("");
   const [form, setForm] = useState({
     date: todayIso(),
+    store_id: "",
     category_id: "",
     amount: "",
     description: "",
@@ -223,12 +233,15 @@ export default function ExpenseTracker() {
   const fetchExpenseData = async (signal?: AbortSignal) => {
     setIsLoading(true);
     try {
-      const [statsRes, trendRes, expenseRes, categoryRes, auditRes] = await Promise.all([
+      const [statsRes, trendRes, expenseRes, categoryRes, auditRes, storeRes] = await Promise.all([
         readJson<{ metrics: ExpenseStats }>(STATS_API, signal),
         readJson<{ trend: TrendRow[] }>(TREND_API, signal),
         readJson<ExpenseRow[]>(EXPENSES_API, signal),
         readJson<ExpenseCategory[]>(CATEGORIES_API, signal),
         readJson<ExpenseAuditCommand>(AUDIT_API, signal),
+        readJson<{ stores: StoreOption[] }>(STORES_API, signal).catch(() => ({
+          stores: [],
+        })),
       ]);
 
       if (signal?.aborted) return;
@@ -236,9 +249,13 @@ export default function ExpenseTracker() {
       setTrends(trendRes.trend || []);
       setDetailedExpenses(expenseRes || []);
       setCategories(categoryRes || []);
+      setStores(storeRes.stores || []);
       setAudit(auditRes);
       if (!form.category_id && categoryRes?.length) {
         setForm((current) => ({ ...current, category_id: String(categoryRes[0].id) }));
+      }
+      if (!form.store_id && storeRes.stores?.length) {
+        setForm((current) => ({ ...current, store_id: String(storeRes.stores[0].id) }));
       }
     } catch (error) {
       if (signal?.aborted) return;
@@ -262,6 +279,7 @@ export default function ExpenseTracker() {
         credentials: "include",
         body: JSON.stringify({
           date: `${form.date}T12:00:00`,
+          store_id: form.store_id ? Number(form.store_id) : undefined,
           category_id: Number(form.category_id),
           amount: Number(form.amount),
           description: form.description,
@@ -322,7 +340,7 @@ export default function ExpenseTracker() {
 
       {showForm && (
         <form onSubmit={submitExpense} className="rounded-lg border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-6">
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase text-gray-400">Date</span>
               <input
@@ -332,6 +350,25 @@ export default function ExpenseTracker() {
                 className="w-full rounded-md border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
                 required
               />
+            </label>
+            <label className="space-y-2">
+              <span className="text-xs font-bold uppercase text-gray-400">Outlet</span>
+              <select
+                data-testid="expense-store-select"
+                value={form.store_id}
+                onChange={(event) => setForm((current) => ({ ...current, store_id: event.target.value }))}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 font-semibold outline-none focus:border-orange-500"
+              >
+                {stores.length ? (
+                  stores.map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name} · {store.code}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Main outlet</option>
+                )}
+              </select>
             </label>
             <label className="space-y-2">
               <span className="text-xs font-bold uppercase text-gray-400">Category</span>

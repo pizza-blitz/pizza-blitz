@@ -31,4 +31,92 @@
       min-height: 40px;
     }
   }
+
+  /* Keep the landing footer clear of the mobile order bar when it is visible. */
+  @media (max-width: 639px) {
+    body.blaze-cart-open {
+      padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}
+
+/* Live rider marker on the keyless OpenStreetMap tracking map. */
+.blaze-rider-ping {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+
+/* The rider pin glides to each new GPS fix instead of teleporting. */
+.leaflet-marker-icon.blaze-rider-marker {
+  transition: transform 1.6s linear;
+}
+
+.leaflet-zoom-anim .leaflet-marker-icon.blaze-rider-marker {
+  transition: none;
+}
+
+.blaze-rider-ping::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgba(220, 38, 38, 0.28);
+  animation: blaze-rider-pulse 1.8s ease-out infinite;
+}
+
+.blaze-rider-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 15px;
+  height: 15px;
+  margin: -7.5px 0 0 -7.5px;
+  border-radius: 9999px;
+  background: #dc2626;
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes blaze-rider-pulse {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.9;
+  }
+  80%,
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+/* Dispatch board: every rider with a live fix, gliding between updates. */
+.leaflet-marker-icon.dispatch-rider-marker {
+  transition: transform 1.6s linear;
+}
+
+.leaflet-zoom-anim .leaflet-marker-icon.dispatch-rider-marker {
+  transition: none;
+}
+
+.dispatch-rider-dot {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 4px;
+  border-radius: 9999px;
+  background: #059669;
+  border: 3px solid #ffffff;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(5, 150, 105, 0.3);
+}
+
+.dispatch-rider-marker-stale .dispatch-rider-dot {
+  background: #f59e0b;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(245, 158, 11, 0.3);
+}
+
+.leaflet-container {
+  font-family: inherit;
+  z-index: 0;
 }

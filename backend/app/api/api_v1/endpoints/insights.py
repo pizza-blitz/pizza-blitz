@@ -43,20 +43,42 @@ def get_ai_insights(db: Session = Depends(get_db)):
     try:
         text = generate_text(model="gemini-1.5-flash", contents=prompt)
         insights = parse_json_response(text)
-        return {"status": "success", "data": insights}
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Fallback if AI fails or model not found
-        return {
-            "status": "success", # Return success with fallback to avoid frontend crash
-            "data": {
-                "summary": "Data indicates stable growth. Monitor weekend surges and optimize stock levels.",
-                "tips": [
-                    "Review supplier pricing for top 5 expenses.",
-                    "Increase visibility of high-margin side items.",
-                    "Optimize staff scheduling based on peak hour sales."
-                ]
-            },
-            "ai_error": str(e)
-        }
+        return {"status": "success", "data": insights, "ai_configured": True}
+    except HTTPException as exc:
+        ai_error = str(exc.detail)
+    except Exception as exc:  # Fallback if the model or response fails.
+        ai_error = str(exc)
+
+    # The AI provider is optional. Without it the page must still tell the
+    # owner something true, so build the guidance from the same figures the
+    # model would have read instead of inventing a trend.
+    summary = (
+        f"Last 30 days: Rs {total_sales:,.2f} in sales and Rs {total_expense:,.2f} in "
+        f"expenses, leaving Rs {total_sales - total_expense:,.2f}. "
+    )
+    if low_stock_items:
+        summary += f"{len(low_stock_items)} inventory item(s) are below their minimum level."
+    else:
+        summary += "No inventory item is below its minimum level."
+
+    tips = []
+    if low_stock_items:
+        names = ", ".join(low_stock_items[:3])
+        tips.append(f"Reorder {names} before the next service.")
+    if total_sales - total_expense <= 0:
+        tips.append("Expenses match or exceed sales - review the largest expense categories in Reports.")
+    else:
+        tips.append("Track the margin between sales and expenses daily in Reports.")
+    tips.append("Staff the busiest hours first: check the day-of-week breakdown before the next roster.")
+    tips.append("Push the highest-margin side items while the peak-hours stock is confirmed.")
+
+    return {
+        "status": "fallback",
+        "data": {"summary": summary, "tips": tips},
+        "ai_error": ai_error,
+        "ai_configured": False,
+        "message": (
+            "AI provider is not configured. Showing standard operating guidance "
+            "calculated from your own sales and stock figures."
+        ),
+    }

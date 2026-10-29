@@ -732,7 +732,16 @@ def shifts_by_date(
         .order_by(ShiftLog.shift_start.asc())
         .all()
     )
-    sales = db.query(DailySales).filter(DailySales.date == parsed_date).first()
+    sales_totals = (
+        db.query(
+            func.coalesce(func.sum(DailySales.total_sale), 0).label("sale"),
+            func.coalesce(func.sum(DailySales.total_expense), 0).label("expense"),
+        )
+        .filter(DailySales.date == parsed_date)
+        .first()
+    )
+    total_sale = float(sales_totals.sale or 0) if sales_totals else 0.0
+    total_expense = float(sales_totals.expense or 0) if sales_totals else 0.0
     active_leaves = (
         db.query(StaffLeaveRequest)
         .filter(
@@ -746,8 +755,8 @@ def shifts_by_date(
         "date": parsed_date.isoformat(),
         "staff": [_shift_dict(shift) for shift in shifts],
         "leave": [_leave_dict(leave) for leave in active_leaves],
-        "total_sale": float(sales.total_sale) if sales else 0,
-        "profit": float(sales.profit) if sales else 0
+        "total_sale": total_sale,
+        "profit": total_sale - total_expense
     }
 
 

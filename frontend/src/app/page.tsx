@@ -20,6 +20,13 @@ import {
   Utensils,
 } from "lucide-react";
 
+import { BlazeDock, BlazeHeroCard } from "@/components/blaze/blaze-concierge";
+import {
+  AskBlazeButton,
+  LandingCartLink,
+  LandingMobileOrderBar,
+  QuickAddButton,
+} from "@/components/blaze/landing-order";
 import { getServerApiUrl } from "@/lib/server-api";
 import { storeMapHref, storeProfile } from "@/lib/store-profile";
 
@@ -116,6 +123,10 @@ type StorefrontPayload = {
   active_promotions: StorefrontPromotion[];
   delivery_zones: StorefrontZone[];
   checkout_readiness?: { accepting_orders?: boolean };
+  payment_checkout?: {
+    prepaid_available?: boolean;
+    cash_available?: boolean;
+  };
   store_profile?: StoreProfilePublic;
   site_content?: StorefrontContent;
 };
@@ -130,7 +141,7 @@ const emptyStorefront: StorefrontPayload = {
 const siteUrl =
   process.env.PIZZA_BLITZ_SITE_URL ||
   process.env.NEXT_PUBLIC_SITE_URL ||
-  "http://127.0.0.1:3011";
+  "http://localhost:3011";
 
 const DAY_ORDER = [
   ["mon", "Mon", "Monday"],
@@ -227,6 +238,7 @@ async function loadStorefront(): Promise<StorefrontPayload> {
         : [],
       delivery_zones: Array.isArray(payload.delivery_zones) ? payload.delivery_zones : [],
       checkout_readiness: payload.checkout_readiness || { accepting_orders: true },
+      payment_checkout: payload.payment_checkout,
       store_profile: payload.store_profile,
       site_content: payload.site_content,
     };
@@ -251,11 +263,28 @@ function formatPrice(value: number) {
   return `${storeProfile.currency} ${Math.round(Number(value || 0)).toLocaleString("en-IN")}`;
 }
 
+function pickupEtaLabel(prepTimeMinutes?: number | null): string {
+  const prep = Number(prepTimeMinutes);
+  if (!Number.isFinite(prep) || prep <= 0) return "20–25 min";
+  const lower = Math.round(prep);
+  return `${lower}–${lower + 5} min`;
+}
+
+function deliveryEtaLabel(zones: StorefrontZone[]): string {
+  const zone = zones.find(
+    (item) => Number(item.eta_min_minutes) > 0 && Number(item.eta_max_minutes) > 0
+  );
+  if (!zone) return "35–45 min";
+  const lower = Math.round(Number(zone.eta_min_minutes));
+  const upper = Math.round(Number(zone.eta_max_minutes));
+  return upper > lower ? `${lower}–${upper} min` : `${upper} min`;
+}
+
 const faqs = [
   {
     question: "How long does pickup or delivery take?",
     answer:
-      "Pickup is usually 20–25 minutes and delivery 35–45 minutes, depending on the kitchen queue and your zone. The exact window is shown at checkout and confirmed when your order is accepted.",
+      "The live pickup and delivery window is shown on this page and confirmed at checkout once you choose an address. It depends on the kitchen queue and your delivery zone, so we do not promise fixed times.",
   },
   {
     question: "How do I follow my order?",
@@ -370,6 +399,17 @@ export default async function PublicHomePage() {
       ? "The kitchen is online. Customise any item and choose pickup or delivery at checkout."
       : "The store has paused online ordering for now. Please check back shortly.");
   const hasContact = Boolean(storePhone || storeAddress || storeEmail);
+  const prepaidAvailable = storefront.payment_checkout?.prepaid_available === true;
+  const cashAvailable = storefront.payment_checkout?.cash_available !== false;
+  const pickupEta = pickupEtaLabel(profile?.prep_time_minutes);
+  const deliveryEta = deliveryEtaLabel(storefront.delivery_zones);
+  const paymentLabel = prepaidAvailable
+    ? cashAvailable
+      ? "Cash or prepaid"
+      : "Prepaid online"
+    : cashAvailable
+      ? "Cash on pickup or delivery"
+      : "Payment shown at checkout";
   const contactHref =
     profile?.map_url ||
     (storeAddress
@@ -454,12 +494,7 @@ export default async function PublicHomePage() {
               >
                 Track order
               </Link>
-              <Link
-                href="/order"
-                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-500"
-              >
-                Order now <ArrowRight className="h-4 w-4" />
-              </Link>
+              <LandingCartLink className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-black text-white hover:bg-red-500" />
             </div>
           </div>
         </header>
@@ -487,17 +522,17 @@ export default async function PublicHomePage() {
               >
                 <ShoppingBag className="h-5 w-5" /> Start your order
               </Link>
-              <Link
-                href="/menu"
+              <a
+                href="#menu"
                 className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-6 py-4 text-sm font-black uppercase tracking-wide text-white hover:bg-white hover:text-[#17130f]"
               >
                 View the menu
-              </Link>
+              </a>
             </div>
             <div className="mt-8 grid max-w-xl grid-cols-2 gap-3 text-sm sm:grid-cols-4">
               {[
-                { icon: Clock, label: "Pickup", value: "20–25 min" },
-                { icon: Truck, label: "Delivery", value: "35–45 min" },
+                { icon: Clock, label: "Pickup", value: pickupEta },
+                { icon: Truck, label: "Delivery", value: deliveryEta },
                 { icon: MapPin, label: "Tracking", value: "Live" },
                 { icon: ShieldCheck, label: "Payments", value: "Secure" },
               ].map((item) => {
@@ -515,38 +550,55 @@ export default async function PublicHomePage() {
             </div>
           </div>
 
-          <aside className="self-end rounded-2xl border border-white/15 bg-[#17130f]/80 p-6 backdrop-blur lg:justify-self-end">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
-              Tonight&apos;s status
-            </p>
-            <p className="mt-3 flex items-center gap-2 text-2xl font-black">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  orderingState === "open"
-                    ? "bg-emerald-400"
-                    : orderingState === "paused"
-                      ? "bg-amber-400"
-                      : "bg-rose-400"
-                }`}
-              />
-              {statusLabel}
-            </p>
-            <p className="mt-2 text-sm font-medium leading-6 text-white/70">{statusMessage}</p>
-            <div className="mt-5 space-y-2 border-t border-white/10 pt-4 text-sm">
-              <p className="flex items-center justify-between text-white/70">
-                <span>Coupons</span>
-                <span className="font-black text-white">Applied in cart</span>
-              </p>
-              <p className="flex items-center justify-between text-white/70">
-                <span>Order tracking</span>
-                <span className="font-black text-white">Order id + phone</span>
-              </p>
-              <p className="flex items-center justify-between text-white/70">
-                <span>Payment</span>
-                <span className="font-black text-white">Cash or prepaid</span>
+          <aside className="w-full self-end lg:max-w-[380px] lg:justify-self-end">
+            <BlazeHeroCard />
+            <div className="mt-3 rounded-2xl border border-white/[0.12] bg-[#17130f]/80 p-4 backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-2 text-sm font-black">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      orderingState === "open"
+                        ? "bg-emerald-400"
+                        : orderingState === "paused"
+                          ? "bg-amber-400"
+                          : "bg-rose-400"
+                    }`}
+                  />
+                  {statusLabel}
+                </p>
+                <p className="text-[11px] font-bold text-white/60">
+                  {pickupEta} pickup · {deliveryEta} delivery
+                </p>
+              </div>
+              <p className="mt-2 text-xs font-medium leading-5 text-white/60">{statusMessage}</p>
+              <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
+                Coupons apply in cart · {paymentLabel}
               </p>
             </div>
           </aside>
+        </div>
+      </section>
+
+      {/* Trust strip */}
+      <section aria-label="What you can count on" className="border-b border-[#17130f]/10 bg-white">
+        <div className="mx-auto grid max-w-7xl grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 md:px-8 lg:grid-cols-4">
+          {[
+            { icon: BadgeCheck, label: "Prices verified server-side" },
+            { icon: Clock, label: "Live order tracking" },
+            { icon: CreditCard, label: paymentLabel },
+            { icon: Leaf, label: "Allergen info on request" },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <p
+                key={item.label}
+                className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#5a4f45]"
+              >
+                <Icon className="h-4 w-4 shrink-0 text-red-700" />
+                {item.label}
+              </p>
+            );
+          })}
         </div>
       </section>
 
@@ -559,16 +611,25 @@ export default async function PublicHomePage() {
               Fan favourites, made to order
             </h2>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-[#5a4f45]">
-              Prices below come straight from the live menu. Sizes, crusts, toppings, dips, and
-              combos are customisable on every product card.
+              Prices below come straight from the live menu. Tap Add for our default recipe, or
+              Customise to pick the size, crust, toppings, dips, and combos.
             </p>
           </div>
-          <Link
-            href="/order"
-            className="inline-flex items-center gap-2 rounded-xl border border-[#17130f]/15 bg-white px-5 py-3 text-sm font-black text-[#17130f] hover:border-red-600 hover:text-red-700"
-          >
-            Full menu <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <AskBlazeButton
+              seed="Recommend something for me"
+              className="inline-flex items-center gap-2 rounded-xl bg-[#17130f] px-5 py-3 text-sm font-black text-white hover:bg-[#2c241d]"
+            >
+              <Sparkles className="h-4 w-4 text-amber-300" aria-hidden="true" />
+              Not sure? Ask Blaze
+            </AskBlazeButton>
+            <Link
+              href="/order"
+              className="inline-flex items-center gap-2 rounded-xl border border-[#17130f]/15 bg-white px-5 py-3 text-sm font-black text-[#17130f] hover:border-red-600 hover:text-red-700"
+            >
+              Full menu <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
 
         <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -609,12 +670,13 @@ export default async function PublicHomePage() {
                     ? "Choose your size, crust, and toppings. Baked after you order."
                     : "Add it to your order and customise the details at checkout."}
                 </p>
-                <Link
-                  href="/order"
-                  className="mt-4 inline-flex items-center gap-1 text-sm font-black text-red-700 hover:text-red-800"
-                >
-                  Customise &amp; add <ArrowRight className="h-4 w-4" />
-                </Link>
+                <div className="mt-4">
+                  <QuickAddButton
+                    itemId={item.id}
+                    itemName={item.name}
+                    label={`Add · ${formatPrice(item.selling_price)}`}
+                  />
+                </div>
               </div>
             </article>
           ))}
@@ -676,29 +738,50 @@ export default async function PublicHomePage() {
             </div>
             <div className="mt-6 space-y-3">
               {promotions.length ? (
-                promotions.map((promotion) => (
-                  <div
-                    key={promotion.code || promotion.name}
-                    className="rounded-xl border border-white/10 bg-white/5 p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-lg font-black tracking-wide text-amber-300">
-                        {promotion.code || promotion.name}
+                promotions.map((promotion) => {
+                  const cardContent = (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-lg font-black tracking-wide text-amber-300">
+                          {promotion.code || promotion.name}
+                        </p>
+                        {promotion.end_date ? (
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                            Ends {new Date(promotion.end_date).toLocaleDateString("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm font-semibold text-white/80">
+                        {promotion.description || promotion.name}
                       </p>
-                      {promotion.end_date ? (
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/50">
-                          Ends {new Date(promotion.end_date).toLocaleDateString("en-IN", {
-                            day: "numeric",
-                            month: "short",
-                          })}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-sm font-semibold text-white/80">
-                      {promotion.description || promotion.name}
-                    </p>
-                  </div>
-                ))
+                    </>
+                  );
+                  if (!promotion.code) {
+                    return (
+                      <div
+                        key={promotion.code || promotion.name}
+                        className="rounded-xl border border-white/10 bg-white/5 p-4"
+                      >
+                        {cardContent}
+                      </div>
+                    );
+                  }
+                  return (
+                    <Link
+                      key={promotion.code || promotion.name}
+                      href={`/order?coupon=${encodeURIComponent(promotion.code)}`}
+                      className="group block rounded-xl border border-white/10 bg-white/5 p-4 transition hover:border-amber-300/60 hover:bg-white/10"
+                    >
+                      {cardContent}
+                      <p className="mt-3 inline-flex items-center gap-1 text-xs font-black uppercase tracking-widest text-amber-300">
+                        Apply this offer <ArrowRight className="h-3.5 w-3.5" />
+                      </p>
+                    </Link>
+                  );
+                })
               ) : (
                 <div className="rounded-xl border border-dashed border-white/20 p-5 text-sm font-semibold text-white/70">
                   No public coupon is running this minute. Apply a code at checkout — every offer is
@@ -980,6 +1063,13 @@ export default async function PublicHomePage() {
             >
               Order online <ArrowRight className="h-4 w-4" />
             </Link>
+            <AskBlazeButton
+              seed="Help me build an order"
+              className="inline-flex items-center gap-2 rounded-xl bg-amber-300 px-6 py-4 text-sm font-black text-[#17130f] hover:bg-amber-200"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              Build it with Blaze
+            </AskBlazeButton>
             <Link
               href="/track"
               className="inline-flex items-center gap-2 rounded-xl border border-white/40 px-6 py-4 text-sm font-black text-white hover:bg-white/10"
@@ -1014,7 +1104,9 @@ export default async function PublicHomePage() {
             <ul className="mt-4 space-y-2 text-sm font-semibold text-white/80">
               <li><Link href="/order" className="hover:text-white">Menu &amp; checkout</Link></li>
               <li><Link href="/track" className="hover:text-white">Track an order</Link></li>
-              <li><Link href="/account" className="hover:text-white">My orders</Link></li>
+              {/* Guarded pages answer with a redirect, so the router must not
+                  prefetch them for a visitor who is not signed in yet. */}
+              <li><Link href="/account" prefetch={false} className="hover:text-white">My orders</Link></li>
               <li><Link href="/account/login" className="hover:text-white">Customer sign in</Link></li>
             </ul>
           </div>
@@ -1023,8 +1115,6 @@ export default async function PublicHomePage() {
             <ul className="mt-4 space-y-2 text-sm font-semibold text-white/80">
               <li><Link href="/careers" className="hover:text-white">Careers</Link></li>
               <li><Link href="/support" className="hover:text-white">Support</Link></li>
-              <li><Link href="/login" className="hover:text-white">Admin &amp; staff login</Link></li>
-              <li><Link href="/order" className="hover:text-white">Bulk orders</Link></li>
               {storeEmail ? (
                 <li>
                   <a href={`mailto:${storeEmail}`} className="hover:text-white">
@@ -1042,6 +1132,9 @@ export default async function PublicHomePage() {
           </div>
         </div>
       </footer>
+
+      <LandingMobileOrderBar />
+      <BlazeDock context="landing" />
     </main>
   );
 }

@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { cleanupProofOrder, cookieHeaderFromSetCookie } = require("./helpers/order-cleanup.cjs");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const apiURL =
   process.env.E2E_API_URL ||
   (/localhost|127\.0\.0\.1/.test(baseURL) ? "http://127.0.0.1:8010" : `${baseURL}/server`);

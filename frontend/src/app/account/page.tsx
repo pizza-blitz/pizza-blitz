@@ -109,7 +109,7 @@ export default function CustomerAccountPage() {
   const [profileDraft, setProfileDraft] = useState<ProfileDraft>({
     name: "",
     email: "",
-    opt_in_marketing: true,
+    opt_in_marketing: false,
   });
   const [profileMessage, setProfileMessage] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -136,7 +136,7 @@ export default function CustomerAccountPage() {
     setProfileDraft({
       name: data.customer.name || "",
       email: data.customer.email || "",
-      opt_in_marketing: data.customer.opt_in_marketing ?? true,
+      opt_in_marketing: data.customer.opt_in_marketing ?? false,
     });
     setHistory(data);
   };
@@ -148,7 +148,7 @@ export default function CustomerAccountPage() {
         name: customer.name || "",
         phone: customer.phone,
         email: customer.email || "",
-        opt_in_marketing: customer.opt_in_marketing ?? true,
+        opt_in_marketing: customer.opt_in_marketing ?? false,
       })
     );
   };
@@ -209,7 +209,7 @@ export default function CustomerAccountPage() {
     setProfileDraft({
       name: nextCustomer.name || "",
       email: nextCustomer.email || "",
-      opt_in_marketing: nextCustomer.opt_in_marketing ?? true,
+      opt_in_marketing: nextCustomer.opt_in_marketing ?? false,
     });
     setProfileMessage("Profile and consent preferences saved.");
   };
@@ -227,7 +227,7 @@ export default function CustomerAccountPage() {
           name: history.customer.name || "",
           phone: history.customer.phone,
           email: history.customer.email || "",
-          opt_in_marketing: history.customer.opt_in_marketing ?? true,
+          opt_in_marketing: history.customer.opt_in_marketing ?? false,
         },
         items: items.map((item) => ({
           name: item.name,
@@ -289,10 +289,10 @@ export default function CustomerAccountPage() {
               <ShoppingBag className="h-4 w-4" /> Order Food
             </Link>
             <Link
-              href="/login"
+              href="/track"
               className="rounded-md border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 hover:border-red-600 hover:text-red-700"
             >
-              Admin Portal
+              Track order
             </Link>
             <Link
               href="/logout?role=customer"

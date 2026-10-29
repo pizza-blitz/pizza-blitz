@@ -1,6 +1,6 @@
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 

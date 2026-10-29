@@ -5,12 +5,19 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { getApiUrl } from '@/lib/api';
 
 type SalesRow = {
+  store_id?: number;
   date: string;
   total_sale: number;
   total_expense: number;
   profit: number;
   cash_collected?: number;
   payment_method?: string;
+};
+
+type StoreOption = {
+  id: number;
+  name: string;
+  code: string;
 };
 
 type SalesSummary = {
@@ -74,14 +81,35 @@ export default function SalesHistory() {
   // New Month/Year Filter State
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [storeFilter, setStoreFilter] = useState("all");
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchData(controller.signal);
+    fetch(getApiUrl('/api/v1/restaurant/stores/'), {
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (payload?.stores?.length) setStores(payload.stores);
+      })
+      .catch(() => undefined);
     return () => controller.abort();
   }, []);
 
-  const fetchData = async (signal?: AbortSignal) => {
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchData(controller.signal, storeFilter);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeFilter]);
+
+  const fetchData = async (signal?: AbortSignal, activeStore = storeFilter) => {
+    const storeQuery = activeStore === "all" ? "" : `store_id=${activeStore}`;
+    const withStore = (separator: "?" | "&") =>
+      storeQuery ? `${separator}${storeQuery}` : "";
     setIsLoading(true);
     setIsReconciliationLoading(true);
     setReconciliationError("");
@@ -103,7 +131,7 @@ export default function SalesHistory() {
     signal?.addEventListener("abort", abortReconciliation, { once: true });
     const reconciliationTimer = window.setTimeout(() => reconciliationController.abort(), 75000);
     const reconciliationRequest = fetchJson(
-      '/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000&detail=summary&limit=12',
+      `/api/v1/restaurant/sales/reconciliation?expected_min_total=3000000&detail=summary&limit=12${withStore("&")}`,
       { signal: reconciliationController.signal }
     )
       .then((reconciliationRes) => {
@@ -123,7 +151,7 @@ export default function SalesHistory() {
 
     try {
       const [salesRes, statsRes] = await Promise.all([
-        fetchJson('/api/v1/restaurant/sales/'),
+        fetchJson(`/api/v1/restaurant/sales/${withStore("?")}`),
         fetchJson('/api/v1/restaurant/stats/dashboard-stats?period=30days')
       ]);
       setSalesData(Array.isArray(salesRes) ? salesRes : []);
@@ -139,7 +167,8 @@ export default function SalesHistory() {
   };
 
   const handleExport = () => {
-    window.location.href = getApiUrl('/api/v1/restaurant/sales/export/csv');
+    const suffix = storeFilter === "all" ? "" : `?store_id=${storeFilter}`;
+    window.location.href = getApiUrl(`/api/v1/restaurant/sales/export/csv${suffix}`);
   };
 
   // Filter Logic
@@ -265,6 +294,21 @@ export default function SalesHistory() {
         </div>
         <div className="flex items-center space-x-3">
           <div className="flex bg-white border border-gray-100 rounded-2xl p-1 shadow-sm">
+            <select
+              aria-label="Outlet filter"
+              data-testid="sales-store-filter"
+              value={storeFilter}
+              onChange={(e) => setStoreFilter(e.target.value)}
+              className="bg-transparent text-xs font-black uppercase tracking-widest px-4 py-2 outline-none cursor-pointer hover:text-orange-600 transition-colors"
+            >
+              <option value="all">All outlets</option>
+              {stores.map((store) => (
+                <option key={store.id} value={String(store.id)}>
+                  {store.name}
+                </option>
+              ))}
+            </select>
+            <div className="w-px h-4 bg-gray-100 my-auto"></div>
             <select 
               value={selectedMonth} 
               onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
@@ -644,6 +688,7 @@ export default function SalesHistory() {
           <thead className="bg-gray-50/50">
             <tr>
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Date / Lifecycle</th>
+              <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest">Outlet</th>
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">Revenue</th>
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">Operating Cost</th>
               <th className="px-8 py-5 text-xs font-black text-gray-400 uppercase tracking-widest text-right">Net Yield</th>
@@ -651,9 +696,9 @@ export default function SalesHistory() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {isLoading ? (
-              <tr><td colSpan={4} className="py-20 text-center text-gray-400 font-bold animate-pulse uppercase tracking-[0.2em]">Synchronizing Nodes...</td></tr>
+              <tr><td colSpan={5} className="py-20 text-center text-gray-400 font-bold animate-pulse uppercase tracking-[0.2em]">Synchronizing Nodes...</td></tr>
             ) : filteredSales.length === 0 ? (
-              <tr><td colSpan={4} className="py-20 text-center text-gray-400 font-bold uppercase tracking-widest py-32 italic">No records found for {months[selectedMonth]} {selectedYear}.</td></tr>
+              <tr><td colSpan={5} className="py-20 text-center text-gray-400 font-bold uppercase tracking-widest py-32 italic">No records found for {months[selectedMonth]} {selectedYear}.</td></tr>
             ) : (
               [...filteredSales].reverse().map((sale, i) => (
                 <tr key={i} className="hover:bg-gray-50/80 transition-all cursor-pointer group border-l-4 border-l-transparent hover:border-l-orange-500">
@@ -661,6 +706,11 @@ export default function SalesHistory() {
                     <div className="font-black text-gray-900 text-lg tracking-tighter group-hover:text-orange-600 transition-colors">
                       {new Date(sale.date).toLocaleDateString(undefined, {weekday: 'short', day: 'numeric', month: 'long', year: 'numeric'})}
                     </div>
+                  </td>
+                  <td className="px-8 py-6">
+                    <span className="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-black uppercase tracking-wide text-gray-600">
+                      {stores.find((store) => store.id === sale.store_id)?.name || "Main outlet"}
+                    </span>
                   </td>
                   <td className="px-8 py-6 text-right font-black text-gray-800 tracking-tight">₹{sale.total_sale.toLocaleString()}</td>
                   <td className="px-8 py-6 text-right text-red-500 font-bold tracking-tight">₹{sale.total_expense.toLocaleString()}</td>

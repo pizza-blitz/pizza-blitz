@@ -2,8 +2,9 @@
 
 Codes are six digits, valid for five minutes, hashed with the auth secret, and
 limited to five verification attempts. The ``console`` channel records a sent
-code without an external provider; a ``debug_code`` is returned only outside
-production so local development and proofs can complete the flow.
+code without an external provider; a ``debug_code`` is returned only in an
+explicitly local environment (development, local, test) when the debug flag is
+enabled, so staging and production never leak a live code.
 """
 
 import hashlib
@@ -18,7 +19,8 @@ from app.models.domain import Customer, CustomerOtp
 from app.services.campaign_dispatch_service import send_campaign_message
 
 MAX_ATTEMPTS = 5
-PRODUCTION_ENVIRONMENTS = {"production", "prod"}
+PRODUCTION_ENVIRONMENTS = {"production", "prod", "staging"}
+DEBUG_ENVIRONMENTS = {"development", "local", "test"}
 
 
 class OtpError(ValueError):
@@ -39,6 +41,12 @@ def _hash_code(phone: str, code: str) -> str:
 
 def _is_production() -> bool:
     return (settings.ENVIRONMENT or "").strip().lower() in PRODUCTION_ENVIRONMENTS
+
+
+def _debug_codes_allowed() -> bool:
+    """Only echo OTP codes in an explicitly local environment."""
+    environment = (settings.ENVIRONMENT or "").strip().lower()
+    return environment in DEBUG_ENVIRONMENTS and settings.CUSTOMER_OTP_DEBUG_ENABLED
 
 
 def _deliver(phone: str, code: str, channel: str) -> tuple[str, str | None]:
@@ -89,7 +97,7 @@ def request_customer_otp(db: Session, phone: str) -> dict:
         "expires_in_seconds": settings.CUSTOMER_OTP_TTL_SECONDS,
         "delivery": delivery,
     }
-    if not _is_production() and (channel == "console" or delivery != "sent"):
+    if _debug_codes_allowed() and (channel == "console" or delivery != "sent"):
         payload["debug_code"] = code
     if error:
         payload["detail"] = error

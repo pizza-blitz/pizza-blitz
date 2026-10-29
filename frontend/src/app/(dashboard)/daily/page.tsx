@@ -1,11 +1,17 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Save, AlertCircle, CheckCircle2, IndianRupee, Loader2, ArrowRight } from 'lucide-react';
 import { getApiUrl } from '@/lib/api';
 
 type DailyEntryResult = {
   date?: string;
   profit?: number;
+};
+
+type StoreOption = {
+  id: number;
+  name: string;
+  code: string;
 };
 
 export default function DailyEntry() {
@@ -17,8 +23,27 @@ export default function DailyEntry() {
     payment_method: "mixed",
     notes: ""
   });
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [storeId, setStoreId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [status, setStatus] = useState<{type: 'success' | 'error', msg: string, detail?: DailyEntryResult} | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(getApiUrl('/api/v1/restaurant/stores/'), {
+      credentials: "include",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!payload?.stores?.length) return;
+        setStores(payload.stores);
+        setStoreId((current) => current || String(payload.stores[0].id));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +56,8 @@ export default function DailyEntry() {
       cash_collected: parseFloat(formData.cash_collected),
       total_expense: parseFloat(formData.total_expense),
       payment_method: formData.payment_method,
-      notes: formData.notes
+      notes: formData.notes,
+      store_id: storeId ? Number(storeId) : undefined
     };
 
     try {
@@ -80,7 +106,7 @@ export default function DailyEntry() {
           <form onSubmit={handleSubmit} className="bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-orange-100 border border-orange-50 space-y-8 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-orange-50 rounded-bl-[5rem] -mr-16 -mt-16 opacity-50"></div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="space-y-3">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Accounting Date</label>
                   <input
@@ -91,6 +117,25 @@ export default function DailyEntry() {
                   onChange={e => setFormData({...formData, date: e.target.value})}
                   className="w-full p-4 bg-gray-50 border-2 border-transparent border-b-gray-200 rounded-2xl focus:border-orange-500 focus:bg-white outline-none transition-all font-bold text-gray-800"
                 />
+              </div>
+              <div className="space-y-3">
+                <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Outlet</label>
+                <select
+                  aria-label="Outlet"
+                  value={storeId}
+                  onChange={e => setStoreId(e.target.value)}
+                  className="w-full p-4 bg-gray-50 border-2 border-transparent border-b-gray-200 rounded-2xl focus:border-orange-500 focus:bg-white outline-none transition-all font-bold text-gray-700"
+                >
+                  {stores.length ? (
+                    stores.map((store) => (
+                      <option key={store.id} value={String(store.id)}>
+                        {store.name} · {store.code}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Main outlet</option>
+                  )}
+                </select>
               </div>
               <div className="space-y-3">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Revenue Channel</label>

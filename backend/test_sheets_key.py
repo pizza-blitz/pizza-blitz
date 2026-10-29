@@ -1,5 +1,14 @@
+"""Manual Google Sheets connectivity check.
+
+Run explicitly with credentials set:
+    GOOGLE_SHEETS_API_KEY=... GOOGLE_SHEETS_SPREADSHEET_ID=... python test_sheets_key.py
+
+Skipped automatically during the regular backend suite when credentials are absent.
+"""
+
 import os
 
+import pytest
 import requests
 
 
@@ -9,9 +18,7 @@ SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
 
 def test_access() -> bool:
     if not API_KEY or not SPREADSHEET_ID:
-        raise RuntimeError(
-            "Set GOOGLE_SHEETS_API_KEY and GOOGLE_SHEETS_SPREADSHEET_ID first."
-        )
+        pytest.skip("Set GOOGLE_SHEETS_API_KEY and GOOGLE_SHEETS_SPREADSHEET_ID first.")
 
     url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}?key={API_KEY}"
     response = requests.get(url, timeout=15)

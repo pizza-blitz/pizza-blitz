@@ -1,6 +1,20 @@
 import type { SessionRole } from "@/lib/session";
 
-export const staffRoutePrefixes = ["/counter", "/orders", "/operations", "/kds", "/receipt", "/kitchen-ticket"];
+/**
+ * Routes a staff account can open. Department and work pages are shared, but
+ * the API still enforces department membership and scoped permissions.
+ */
+export const staffRoutePrefixes = [
+  "/counter",
+  "/orders",
+  "/operations",
+  "/kds",
+  "/receipt",
+  "/kitchen-ticket",
+  "/support-inbox",
+  "/departments",
+  "/work",
+];
 
 export const adminOnlyRoutePrefixes = [
   "/dashboard",
@@ -20,10 +34,15 @@ export const adminOnlyRoutePrefixes = [
   "/promotions",
   "/social",
   "/ads",
+  "/marketing",
+  "/messaging",
+  "/feedback",
+  "/journeys",
   "/ops",
   "/vendors",
   "/waste",
   "/expenses",
+  "/finance",
   "/ai-insights",
   "/purchase-orders",
   "/settings",
@@ -33,6 +52,11 @@ export const adminRoutePrefixes = [
   ...adminOnlyRoutePrefixes,
   ...staffRoutePrefixes,
 ];
+
+/** Every page that belongs to the signed-in portal, including shared ones. */
+export const portalRoutePrefixes = Array.from(
+  new Set([...adminOnlyRoutePrefixes, ...staffRoutePrefixes])
+);
 
 export function isPathIn(pathname: string, routes: string[]) {
   return routes.some((route) => pathname === route || pathname.startsWith(`${route}/`));

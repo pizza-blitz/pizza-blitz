@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
@@ -78,6 +79,38 @@ class RiderFlowTest(unittest.TestCase):
         )
         self.assertEqual(invalid.status_code, 404)
 
+        # A rider publishes a call-back number; the customer sees it only
+        # while the delivery is active.
+        bad_contact = self.client.patch(
+            f"/api/v1/restaurant/delivery/rider/{token}/contact",
+            json={"phone": "123"},
+        )
+        self.assertEqual(bad_contact.status_code, 422, bad_contact.text)
+        contact = self.client.patch(
+            f"/api/v1/restaurant/delivery/rider/{token}/contact",
+            json={"phone": "+91 98123 45799"},
+        )
+        self.assertEqual(contact.status_code, 200, contact.text)
+        self.assertEqual(contact.json()["rider_phone"], "919812345799")
+        assigned_track = self.client.get(
+            f"/api/v1/restaurant/orders/track/{order_id}?phone={phone}"
+        )
+        self.assertEqual(assigned_track.status_code, 200, assigned_track.text)
+        self.assertEqual(
+            assigned_track.json()["rider"]["phone"], "919812345799"
+        )
+        # The guest gets a promise they can count down to, not just a window.
+        eta_at = assigned_track.json()["eta_at"]
+        self.assertTrue(
+            eta_at and eta_at.endswith("Z"),
+            f"Tracking ETA was {eta_at!r}.",
+        )
+        remaining = datetime.fromisoformat(eta_at.replace("Z", "+00:00")) - datetime.now(
+            timezone.utc
+        )
+        self.assertGreater(remaining, timedelta(minutes=40))
+        self.assertLessEqual(remaining, timedelta(minutes=46))
+
         location = self.client.post(
             f"/api/v1/restaurant/delivery/rider/{token}/location",
             json={"lat": 12.9716, "lng": 77.5946},
@@ -91,6 +124,19 @@ class RiderFlowTest(unittest.TestCase):
             ).status_code,
             422,
         )
+
+        # The operations dispatch board reads the same fix and call-back
+        # number from the queue, so that contract is asserted too.
+        queue = self.client.get(
+            "/api/v1/restaurant/delivery/queue", headers=self.headers
+        )
+        self.assertEqual(queue.status_code, 200, queue.text)
+        queued = next(
+            row for row in queue.json()["orders"] if row["id"] == order_id
+        )
+        self.assertEqual(queued["assignment"]["rider_phone"], "919812345799")
+        self.assertAlmostEqual(queued["assignment"]["location"]["lat"], 12.9716)
+        self.assertAlmostEqual(queued["assignment"]["location"]["lng"], 77.5946)
 
         too_early = self.client.patch(
             f"/api/v1/restaurant/delivery/rider/{token}/status",
@@ -144,6 +190,15 @@ class RiderFlowTest(unittest.TestCase):
         self.assertEqual(rider["status"], "delivered")
         self.assertTrue(rider["proof_captured"])
         self.assertAlmostEqual(rider["latitude"], 12.9716)
+        # A finished delivery has no countdown left to run.
+        self.assertIsNone(tracked.json()["eta_at"])
+        # The personal number is retired once the handoff is complete.
+        self.assertIsNone(rider["phone"])
+        late_contact = self.client.patch(
+            f"/api/v1/restaurant/delivery/rider/{token}/contact",
+            json={"phone": "9812345799"},
+        )
+        self.assertEqual(late_contact.status_code, 409, late_contact.text)
 
     def test_failed_delivery_requires_reason(self):
         _, token = self.create_assigned_delivery("9812345702")

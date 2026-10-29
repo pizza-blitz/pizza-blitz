@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
 const artifactsDir = path.join(__dirname, "artifacts");
@@ -72,6 +72,20 @@ async function signInAsAdmin(context) {
 function successPayload(summary, tips) {
   return {
     status: "success",
+    ai_configured: true,
+    data: {
+      summary,
+      tips,
+    },
+  };
+}
+
+function fallbackPayload(summary, tips, message) {
+  return {
+    status: "fallback",
+    ai_configured: false,
+    ai_error: "Gemini API Key not configured",
+    message,
     data: {
       summary,
       tips,
@@ -81,7 +95,7 @@ function successPayload(summary, tips) {
 
 async function installAiFixtures(context) {
   const requests = [];
-  const phaseCounts = { initial: 0, fresh: 0, error: 0 };
+  const phaseCounts = { initial: 0, fresh: 0, fallback: 0, error: 0 };
   let phase = "initial";
 
   await context.route("**/api/v1/restaurant/insights/ai-insights**", async (route) => {
@@ -113,6 +127,26 @@ async function installAiFixtures(context) {
             "Bundle soft drink with large pizza orders.",
             "Review low-margin delivery zones before next campaign.",
           ])
+        ),
+      });
+      return;
+    }
+
+    if (phase === "fallback") {
+      await sleep(400);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          fallbackPayload(
+            "Standard guidance summary when no AI provider is configured.",
+            [
+              "Review supplier pricing for top 5 expenses.",
+              "Increase visibility of high-margin side items.",
+              "Optimize staff scheduling based on peak hour sales.",
+            ],
+            "AI provider is not configured. Showing standard operating guidance based on your sales and stock data."
+          )
         ),
       });
       return;
@@ -163,6 +197,10 @@ async function main() {
     await page.getByRole("heading", { name: "Neural Insights" }).waitFor({ timeout: 15000 });
     await page.getByText("Proof AI summary for the owner dashboard.", { exact: false }).waitFor({ timeout: 15000 });
     await page.getByText("AI insights synced with 2 directives.", { exact: true }).waitFor({ timeout: 15000 });
+    await page
+      .getByTestId("ai-insights-model-status")
+      .filter({ hasText: "AI provider connected" })
+      .waitFor({ timeout: 15000 });
 
     fixtures.setPhase("fresh");
     await page.getByRole("button", { name: /Force Resync/i }).click();
@@ -172,19 +210,45 @@ async function main() {
     });
     await page.getByText("AI insights synced with 3 directives.", { exact: true }).waitFor({ timeout: 15000 });
 
+    // Without an AI provider key the endpoint answers 200 with standard
+    // guidance. The page must show that guidance with an honest warning, not
+    // an error.
+    fixtures.setPhase("fallback");
+    await page.getByRole("button", { name: /Re-read my data/i }).click();
+    await page.getByRole("button", { name: /Loading/i }).waitFor({ timeout: 15000 });
+    await page
+      .getByText("Standard guidance summary when no AI provider is configured.", { exact: false })
+      .waitFor({ timeout: 15000 });
+    await page
+      .getByTestId("ai-insights-status")
+      .filter({ hasText: "AI provider is not configured." })
+      .waitFor({ timeout: 15000 });
+    await page
+      .getByTestId("ai-insights-model-status")
+      .filter({ hasText: "AI provider not connected" })
+      .waitFor({ timeout: 15000 });
+    assert(
+      (await page.getByText("Raise mozzarella par before Saturday dinner.").count()) === 0,
+      "Fallback guidance left the previous AI directives on screen."
+    );
+
     fixtures.setPhase("error");
-    await page.getByRole("button", { name: /Optimize Model/i }).click();
-    await page.getByRole("button", { name: /Optimizing/i }).waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: /Force Resync/i }).click();
+    await page.getByRole("button", { name: /Syncing/i }).waitFor({ timeout: 15000 });
     await page.getByText("AI provider quota is not available in this proof.", { exact: true }).waitFor({
       timeout: 15000,
     });
-    await page.getByText("Fresh AI resync summary with stronger inventory action.", { exact: false }).waitFor({
+    await page.getByText("Standard guidance summary when no AI provider is configured.", { exact: false }).waitFor({
       timeout: 15000,
     });
 
     assert(fixtures.phaseCounts.initial >= 1, "Expected at least one initial AI insight request.");
     assert(fixtures.phaseCounts.fresh >= 1, "Expected Force Resync to request fresh AI insights.");
-    assert(fixtures.phaseCounts.error >= 1, "Expected Optimize Model to request AI insights and show provider failure.");
+    assert(
+      fixtures.phaseCounts.fallback >= 1,
+      "Expected Re-read my data to request insights and handle the no-provider fallback."
+    );
+    assert(fixtures.phaseCounts.error >= 1, "Expected Force Resync to show a provider failure inline.");
     watch.assertClean("AI insights feedback");
 
     const artifact = {
@@ -193,9 +257,10 @@ async function main() {
       requestCount: fixtures.requests.length,
       phaseCounts: fixtures.phaseCounts,
       proofs: [
-        "Initial AI insights load shows a synced directive count.",
+        "Initial AI insights load shows a synced directive count and a connected model status.",
         "Force Resync shows a busy state and replaces the summary with fresh directives.",
-        "Optimize Model handles provider failure inline while preserving the last successful summary.",
+        "A missing AI provider returns standard guidance with an amber warning instead of an error.",
+        "Provider failure is shown inline while the last loaded summary stays on screen.",
       ],
     };
     fs.writeFileSync(

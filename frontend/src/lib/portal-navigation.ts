@@ -15,6 +15,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Landmark,
+  ListChecks,
   Megaphone,
   MessageCircle,
   MessageSquareHeart,
@@ -45,6 +46,7 @@ export type PortalNavItem = {
   icon: ComponentType<{ className?: string }>;
   description: string;
   allowedRoles?: SessionRole[];
+  badge?: number;
 };
 
 export type PortalNavGroup = {
@@ -64,6 +66,7 @@ export const portalNavGroups: PortalNavGroup[] = [
       { name: "CEO Command", href: "/ceo", icon: Crown, description: "Weekly owner summary and health score", allowedRoles: adminOnly },
       { name: "Roadmap", href: "/roadmap", icon: CalendarDays, description: "Readiness, proofs and launch board", allowedRoles: adminOnly },
       { name: "Departments", href: "/departments", icon: Building2, description: "Business units, modules and teams", allowedRoles: floorRoles },
+      { name: "My work", href: "/work", icon: ListChecks, description: "Tasks, requests and approvals assigned to you", allowedRoles: floorRoles },
     ],
   },
   {
@@ -111,6 +114,7 @@ export const portalNavGroups: PortalNavGroup[] = [
     title: "Finance",
     items: [
       { name: "Accounting & GST", href: "/accounting", icon: Landmark, description: "GST summary and Tally-ready CSV", allowedRoles: adminOnly },
+      { name: "Outlet P&L", href: "/finance/pnl", icon: BarChart3, description: "Per-outlet profit, cost split and POS cross-check", allowedRoles: adminOnly },
       { name: "Sales History", href: "/sales", icon: DollarSign, description: "Daily ledger and reconciliation", allowedRoles: adminOnly },
       { name: "Daily Entry", href: "/daily", icon: PlusCircle, description: "Log sales, cash and expenses", allowedRoles: adminOnly },
       { name: "Invoices", href: "/invoices", icon: FileText, description: "Paid invoices and receipts", allowedRoles: adminOnly },

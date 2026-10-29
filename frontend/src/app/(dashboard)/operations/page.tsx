@@ -21,6 +21,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+import DispatchLiveMap from "@/components/dispatch/dispatch-live-map";
 
 const ORDERS_API = getApiUrl("/api/v1/restaurant/orders");
 const DELIVERY_API = getApiUrl("/api/v1/restaurant/delivery");
@@ -2575,6 +2576,7 @@ export default function OperationsPage() {
             </div>
           ))}
         </div>
+        <DispatchLiveMap />
         {!deliveryOrders.length && (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white px-4 py-5 text-sm font-semibold text-gray-500">
             No active delivery orders. New website or counter delivery orders will appear here for assignment.

@@ -9,6 +9,7 @@ import json
 sys.path.append(os.getcwd())
 from app.db.session import SessionLocal
 from app.models.domain import DailySales
+from app.services.store_service import DEFAULT_STORE_ID
 
 # Configuration
 SPREADSHEET_ID = '19oM-A7K2_p3u2Z_mHl2m3y2g-e_zF2x-y'
@@ -86,13 +87,21 @@ def import_data():
                     sale = float(str(row[3]).replace(',', '').strip() or 0)
                     
                     # Check if exists
-                    existing = db.query(DailySales).filter(DailySales.date == date_val).first()
+                    existing = (
+                        db.query(DailySales)
+                        .filter(
+                            DailySales.store_id == DEFAULT_STORE_ID,
+                            DailySales.date == date_val,
+                        )
+                        .first()
+                    )
                     if existing:
                         existing.cash_collected = cash
                         existing.total_expense = expense
                         existing.total_sale = sale
                     else:
                         new_entry = DailySales(
+                            store_id=DEFAULT_STORE_ID,
                             date=date_val,
                             cash_collected=cash,
                             total_expense=expense,

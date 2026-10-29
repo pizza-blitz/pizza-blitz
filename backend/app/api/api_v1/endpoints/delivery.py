@@ -61,6 +61,10 @@ class RiderLocationUpdate(BaseModel):
     lng: float = Field(ge=-180, le=180)
 
 
+class RiderContactUpdate(BaseModel):
+    phone: str = Field(min_length=6, max_length=30)
+
+
 class RiderProofCreate(BaseModel):
     proof_type: str = Field(pattern="^(photo|signature|otp)$")
     reference: str = Field(min_length=3, max_length=500)
@@ -1023,6 +1027,36 @@ def update_rider_location(
     assignment.current_lat = payload.lat
     assignment.current_lng = payload.lng
     assignment.location_updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(assignment)
+    return _rider_payload(assignment)
+
+
+@router.patch("/rider/{token}/contact")
+def update_rider_contact(
+    token: str,
+    payload: RiderContactUpdate,
+    db: Session = Depends(get_db),
+):
+    """Let the rider publish a call-back number while the delivery is active.
+
+    The customer sees it only during assigned/out_for_delivery, so a completed
+    delivery does not leave the rider's personal number on a tracking link.
+    """
+    assignment = _rider_assignment(db, token)
+    if assignment.status not in {"assigned", "out_for_delivery"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Contact details can only be changed before delivery is completed.",
+        )
+    digits = "".join(character for character in payload.phone if character.isdigit())
+    if len(digits) < 10 or len(digits) > 15:
+        raise HTTPException(
+            status_code=422,
+            detail="Enter a rider phone number with 10 to 15 digits.",
+        )
+    assignment.rider_phone = digits
+    assignment.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(assignment)
     return _rider_payload(assignment)

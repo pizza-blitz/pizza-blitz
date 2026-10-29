@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
@@ -18,6 +18,61 @@ function assert(condition, message) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * The live audit runs 60-plus proofs against one backend from one client
+ * address, and sign-in is deliberately throttled per client per minute. A proof
+ * that reaches the throttle is behaving like a real busy restaurant, so it waits
+ * for the window the server names rather than calling the limit a failure. A
+ * response that is not a throttle is returned untouched for the caller to judge.
+ */
+async function postLoginWhileThrottled(url, body, label, attempts = 5) {
+  let throttledBefore = 0;
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    if (response.status !== 429) return response;
+    assert(attempt < attempts, `${label} was rate limited after ${attempt} attempts.`);
+    const retryAfter = Number(response.headers.get("retry-after"));
+    // The first wait trusts the server's Retry-After. If that is not enough,
+    // the minute bucket is saturated by this audit's own earlier sign-ins, so
+    // wait out one full window rather than burning the remaining attempts on
+    // one-second hops.
+    const waitSeconds =
+      throttledBefore === 0 && Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter + 1
+        : 62;
+    throttledBefore += 1;
+    console.warn(`${label} throttled, retrying in ${waitSeconds}s.`);
+    await sleep(waitSeconds * 1000);
+  }
+}
+
+/**
+ * Playwright's request client is not covered by the audit preload, so the two
+ * browser logins wait out a throttle here. This proof is excluded from the
+ * preload precisely because it asserts the throttle itself; these two calls are
+ * setup and only need a patient client, never a different answer.
+ */
+async function postBrowserLoginWhileThrottled(context, url, data, label, attempts = 5) {
+  let throttledBefore = 0;
+  for (let attempt = 1; ; attempt += 1) {
+    const response = await context.request.post(url, { data });
+    if (response.status() !== 429) return response;
+    assert(attempt < attempts, `${label} was rate limited after ${attempt} attempts.`);
+    const retryAfter = Number(response.headers()["retry-after"]);
+    const waitSeconds =
+      throttledBefore === 0 && Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter + 1
+        : 62;
+    throttledBefore += 1;
+    console.warn(`${label} throttled, retrying in ${waitSeconds}s.`);
+    await sleep(waitSeconds * 1000);
+  }
 }
 
 async function waitForHttp(url, label) {
@@ -48,15 +103,15 @@ function cookieHeaderFromSetCookie(setCookie) {
 }
 
 async function portalLogin(role) {
-  const response = await fetch(`${baseURL}/api/admin-session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const response = await postLoginWhileThrottled(
+    `${baseURL}/api/admin-session`,
+    JSON.stringify({
       id: role === "staff" ? staffId : adminId,
       password: role === "staff" ? staffPassword : adminPassword,
       role,
     }),
-  });
+    `${role} portal login`
+  );
   const data = await response.json();
   assert(response.ok, `${role} portal login failed: ${JSON.stringify(data)}`);
   const cookie = cookieHeaderFromSetCookie(response.headers.get("set-cookie"));
@@ -65,15 +120,15 @@ async function portalLogin(role) {
 }
 
 async function optionalPortalLogin(role) {
-  const response = await fetch(`${baseURL}/api/admin-session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const response = await postLoginWhileThrottled(
+    `${baseURL}/api/admin-session`,
+    JSON.stringify({
       id: role === "staff" ? staffId : adminId,
       password: role === "staff" ? staffPassword : adminPassword,
       role,
     }),
-  });
+    `${role} portal login`
+  );
   const data = await response.json();
   if (response.ok) {
     const cookie = cookieHeaderFromSetCookie(response.headers.get("set-cookie"));
@@ -88,11 +143,11 @@ async function optionalPortalLogin(role) {
 }
 
 async function portalLoginWithCredentials({ id, password, role, expectedRole, expectedStartPath }) {
-  const response = await fetch(`${baseURL}/api/admin-session`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, password, role }),
-  });
+  const response = await postLoginWhileThrottled(
+    `${baseURL}/api/admin-session`,
+    JSON.stringify({ id, password, role }),
+    "Master portal login"
+  );
   const data = await response.json();
   assert(response.ok, `Master portal login failed: ${JSON.stringify(data)}`);
   assert(data.role === expectedRole, `Expected ${expectedRole} role, received ${data.role}.`);
@@ -226,9 +281,12 @@ async function screenshotSettingsWithAdmin() {
   const watch = createBrowserWatch(page);
 
   try {
-    const login = await context.request.post(`${baseURL}/api/admin-session`, {
-      data: { id: adminId, password: adminPassword, role: "admin" },
-    });
+    const login = await postBrowserLoginWhileThrottled(
+      context,
+      `${baseURL}/api/admin-session`,
+      { id: adminId, password: adminPassword, role: "admin" },
+      "Admin browser login"
+    );
     assert(login.ok(), `Admin browser login failed: ${await login.text()}`);
 
     const response = await page.goto(`${baseURL}/settings`, { waitUntil: "domcontentloaded" });
@@ -298,11 +356,11 @@ async function maybeVerifyManagedStaffCredential(adminCookie) {
     });
     await assertStatus("/api/v1/restaurant/orders/today", 200, managedStaffCookie, "managed staff today's orders");
 
-    const managedStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
-    });
+    const managedStaffJwtResponse = await postLoginWhileThrottled(
+      `${apiURL}/api/v1/auth/staff/login`,
+      JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
+      "Managed staff JWT login"
+    );
     const managedStaffJwt = await managedStaffJwtResponse.json();
     assert(
       managedStaffJwtResponse.ok && managedStaffJwt.role === "staff" && managedStaffJwt.access_token,
@@ -340,11 +398,11 @@ async function maybeVerifyManagedStaffCredential(adminCookie) {
     assert(cleanup.staff_id === managedStaffId, "Managed staff cleanup returned a different staff ID.");
     assert(cleanup.configured === false && cleanup.is_active === false, "Managed staff cleanup did not deactivate the credential.");
 
-    const rejectedJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
-    });
+    const rejectedJwtResponse = await postLoginWhileThrottled(
+      `${apiURL}/api/v1/auth/staff/login`,
+      JSON.stringify({ id: managedStaffId, password: managedStaffPassword }),
+      "Deactivated managed staff JWT login"
+    );
     assert(
       [401, 503].includes(rejectedJwtResponse.status),
       `Deactivated managed staff JWT login should fail, received ${rejectedJwtResponse.status}.`
@@ -377,9 +435,12 @@ async function assertStaffSettingsRedirect({
   const watch = createBrowserWatch(page);
 
   try {
-    const login = await context.request.post(`${staffBrowserURL}/api/admin-session`, {
-      data: { id, password, role: "staff" },
-    });
+    const login = await postBrowserLoginWhileThrottled(
+      context,
+      `${staffBrowserURL}/api/admin-session`,
+      { id, password, role: "staff" },
+      "Staff browser login"
+    );
     assert(login.ok(), `Staff browser login failed: ${await login.text()}`);
 
     await page.goto(`${staffBrowserURL}/settings`, { waitUntil: "domcontentloaded" });
@@ -506,11 +567,11 @@ async function main() {
   }
   await assertStatus("/api/v1/restaurant/orders/today", 403, customerCookie, "customer today's orders");
 
-  const masterStaffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: adminId, password: adminPassword }),
-  });
+  const masterStaffJwtResponse = await postLoginWhileThrottled(
+    `${apiURL}/api/v1/auth/staff/login`,
+    JSON.stringify({ id: adminId, password: adminPassword }),
+    "Master credentials staff JWT login"
+  );
   const masterStaffJwt = await masterStaffJwtResponse.json();
   assert(
     masterStaffJwtResponse.ok,
@@ -522,11 +583,11 @@ async function main() {
   );
 
   if (staffCookie) {
-    const staffJwtResponse = await fetch(`${apiURL}/api/v1/auth/staff/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: staffId, password: staffPassword }),
-    });
+    const staffJwtResponse = await postLoginWhileThrottled(
+      `${apiURL}/api/v1/auth/staff/login`,
+      JSON.stringify({ id: staffId, password: staffPassword }),
+      "Staff JWT login"
+    );
     const staffJwt = await staffJwtResponse.json();
     assert(staffJwtResponse.ok, `Staff JWT login failed: ${JSON.stringify(staffJwt)}`);
     assert(staffJwt.role === "staff" && staffJwt.access_token, "Staff JWT login did not return a staff token.");

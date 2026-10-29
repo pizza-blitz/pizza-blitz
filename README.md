@@ -40,8 +40,8 @@ npm run dev -- --hostname 127.0.0.1 --port 3011
 
 Local URLs:
 
-- Customer site: `http://127.0.0.1:3011`
-- Admin login: `http://127.0.0.1:3011/login`
+- Customer site: `http://localhost:3011`
+- Admin login: `http://localhost:3011/login`
 - Backend API: `http://127.0.0.1:8010`
 
 ## Verification

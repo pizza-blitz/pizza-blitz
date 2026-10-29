@@ -58,6 +58,14 @@ class DeploymentChecklistTest(unittest.TestCase):
             ],
             "ready",
         )
+        # The suite runs on in-memory SQLite, which is reachable but not durable,
+        # so the checklist must say so instead of reporting a launch-ready box.
+        engine_check = next(
+            check for check in data["checks"] if check["key"] == "database_engine"
+        )
+        self.assertEqual(engine_check["status"], "blocked")
+        self.assertIn("in-memory", engine_check["detail"])
+        self.assertIn("Postgres", engine_check["action"])
         self.assertEqual(
             next(
                 check

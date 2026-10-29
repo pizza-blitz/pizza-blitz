@@ -2,11 +2,13 @@
 
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.main import app
 
 
@@ -106,6 +108,16 @@ class CustomerOtpTest(unittest.TestCase):
             401,
         )
         self.assertTrue(requested["debug_code"])
+
+    def test_staging_never_returns_debug_code(self):
+        with patch.object(settings, "ENVIRONMENT", "staging"), patch.object(
+            settings, "CUSTOMER_OTP_DEBUG_ENABLED", True
+        ):
+            requested = self.request_code("9812345677")
+
+        self.assertEqual(requested.status_code, 200, requested.text)
+        self.assertNotIn("debug_code", requested.json())
+        self.assertEqual(requested.json()["delivery"], "sent")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   adminOnlyRoutePrefixes,
   isPathIn,
+  portalRoutePrefixes,
   staffRoutePrefixes,
 } from "@/lib/access";
 import {
@@ -89,6 +90,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (pathname === "/menu" && !adminSession && !staffSession) {
+    // The staff menu manager is the old public "menu" destination. Guests
+    // should land in the orderable storefront instead of an admin login wall.
+    return internalRedirect(request, "/order");
+  }
+
   if (isPathIn(pathname, adminOnlyRoutePrefixes)) {
     if (adminSession) {
       return NextResponse.next();
@@ -105,6 +112,19 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPathIn(pathname, staffRoutePrefixes) && !adminSession && !staffSession) {
+    return redirectWithClearedCookie(
+      request,
+      "/login",
+      [ADMIN_COOKIE, STAFF_COOKIE],
+      pathname
+    );
+  }
+
+  if (
+    isPathIn(pathname, portalRoutePrefixes) &&
+    !adminSession &&
+    !staffSession
+  ) {
     return redirectWithClearedCookie(
       request,
       "/login",

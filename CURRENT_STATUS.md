@@ -1,8 +1,9 @@
 # Pizza Blitz Current Status
 
-Last Updated: 2026-10-27
-Status: feature-frozen for delivery. See [HANDOVER.md](HANDOVER.md) for the runbook,
-verified state and honest limitations.
+Last Updated: 2026-10-29
+Status: local/staging complete through the Company OS program. Production launch is
+blocked on hosting and provider credentials, not on code. See
+[HANDOVER.md](HANDOVER.md) for the runbook, verified state and honest limitations.
 
 ## Source Of Truth
 
@@ -16,18 +17,278 @@ The standalone copy excludes generated dependency and build folders
 
 ## What Exists
 
-- Backend: FastAPI app with 208 endpoints across auth, sales, stats, menu,
-  inventory, expenses, orders/POS, invoices, delivery, promotions, social,
+- Backend: FastAPI app with 510 operations across 428 paths — auth, sales, stats,
+  menu, inventory, expenses, orders/POS, invoices, delivery, promotions, social,
   ads, customers, shifts, vendors, purchase orders, recipes, waste, imports,
-  OCR, insurance-style readiness probes, and production ops.
-- Frontend: Next.js 14 app with the public customer website (menu, cart,
-  checkout, tracking, account) and the internal portal (dashboard, POS/counter,
-  operations, reports, marketing, ops readiness, settings).
-- Data layer: SQLAlchemy models for every flow, Alembic scaffolding, SQLite for
-  local development, PostgreSQL support for production.
-- Automation: 276 backend tests, 168 browser proof scripts plus portal smoke, a backend Ruff
-  lint gate, a lint gate, a TypeScript gate, a production build gate, and a
-  GitHub Actions workflow that runs them all.
+  feedback, support, messaging, journeys, departments, company work, HR,
+  finance, aggregators, hardware, assistant and production ops.
+- Frontend: Next.js 14 app with the public customer website (landing, order
+  menu, cart, checkout, confirmation, tracking, account, careers, support,
+  offers, receipts, rider and customer display) and the internal portal
+  (70 catalogued routes: dashboard, POS/counter, KDS, operations, reports,
+  marketing, finance, HR, 11 department workspaces, settings and ops).
+- Departments: 16 department specs — 10 functional departments plus Company
+  shared services, with five sub-departments (Guest Experience, Facilities,
+  Legal, Training, Franchise) grouped under their parents. 70 catalogued
+  modules, 101 active module definitions after shared services are resolved.
+- Data layer: SQLAlchemy models for every flow, 119 application tables,
+  Alembic migrations through `9f8e7d6c5b4a`, SQLite for local development,
+  PostgreSQL support for production.
+- Automation: 364 backend tests (87 subtests), 176 browser proof
+  scripts plus portal smoke, backend Ruff, frontend lint, TypeScript and
+  production build gates, and a GitHub Actions workflow that runs them.
+
+## Company OS Program (2026-10-27 → 2026-10-28)
+
+The follow-on program turned the platform into a department-organized company
+operating system and rebuilt the customer entry path for conversion. Plan and
+audit: [docs/COMPANY_OS_BLUEPRINT.md](docs/COMPANY_OS_BLUEPRINT.md).
+
+**Conversion rescue (Phase 0)**
+
+- Landing and menu CTAs route guests to `/order`; offer cards deep-link with the
+  coupon code; `/menu` stays a staff menu manager.
+- Cart, fulfilment mode, coupon and schedule persist across reloads and reprice
+  on restore; checkout failures show inline errors instead of failing silently.
+- A dedicated confirmation page shows order number, ETA and tracking, and
+  tracking refreshes automatically.
+- Customer-facing privacy/trust fixes: no staff panels on the customer page,
+  marketing consent off by default, labelled inputs and mobile keyboards.
+- Landing facts come from the store profile; no address, phone, FSSAI number,
+  analytics ID or review was invented.
+
+**Company OS foundation (Phase 1)**
+
+- 16 department specs and 70 catalogued modules with exact portal route
+  coverage; department parent/head/cost-centre/store fields; scoped roles,
+  permissions and membership; navigation generated from the registry.
+- `/departments` company scorecard and `/departments/{key}` workspaces with KPI
+  strip, needs-you queue, team, modules and quick actions.
+- Generic work items, comments, approvals and unread notices at `/work`;
+  expenses, purchase orders, HR leave and social posts create approvals.
+- Department/store tags on audit events; anonymous sessions no longer default
+  to the admin shell.
+
+**Department depth (Phase 2)**
+
+- Operations checklists (templates, runs, per-item state, sign-off) at
+  `/departments/operations/checklists`.
+- Facilities asset register, preventive maintenance and breakdown work orders at
+  `/departments/facilities/assets`.
+- Menu engineering matrix with margin/popularity quadrants and actions at
+  `/departments/kitchen/engineering`.
+- Stocktakes with variance valuation and stock corrections at
+  `/departments/supply/stocktake`.
+- Food-safety audits with CAPA and temperature/CCP logs at
+  `/departments/quality/audits`; licence and contract register with expiries at
+  `/departments/legal/licences`.
+- Training courses, records and certification expiry at
+  `/departments/training/lms`.
+- Gift cards: issue, reload, redeem, void, public balance check, checkout debit,
+  refund credit-back and liability summary at
+  `/departments/revenue/gift-cards`.
+- Company goals and franchise site pipeline at
+  `/departments/executive/budget` and `/departments/franchise/pipeline`.
+- Data-platform overview and exports at `/departments/technology/data`.
+- Finance outlet P&L and store dimensions; store pickers across ledgers.
+
+**AI concierge and landing**
+
+- `/api/v1/assistant/chat` answers menu, offer, hours and delivery questions,
+  adds/removes cart lines and returns a checkout hand-off. It is deterministic
+  over live data; an optional LLM answer path stays provider-gated.
+- Blaze, the 3D talking avatar, supports text and browser speech, quick replies
+  and product cards, and can build the customer's cart before checkout.
+- Verified guests can save allergies and dietary preferences to a customer
+  memory (table `customer_memories`). Blaze greets returning guests with what it
+  remembers, filters recommendations that conflict with a saved allergen, warns
+  when an explicitly added item lists one, and the customer can forget the
+  memory. The saved allergy also follows the guest out of the chat: the checkout
+  panel reads the same proof-gated memory and shows a "Saved from your last
+  visit" reminder above Place Order, and flags any cart item whose menu
+  allergens match the saved words. When the guest places that order, the saved
+  allergy is written onto the order and the Kitchen Display card shows a red
+  "Allergy · confirm before serving" strip, so the kitchen receives it without
+  the guest repeating it. Forgetting deletes the row, hides the recap strip, and replaces the
+  saved chat transcript on the device so the old allergy greeting does not
+  remain on screen (the cart is kept). A guest who has consented also sees the
+  latest order summary, usual fulfilment and recent favourites, read from their
+  own order history only after the same phone proof, so the next greeting can
+  offer the same order again. An order alone never creates a memory row.
+  Anonymous chat still works but never stores an unproved phone number.
+- A proved guest can also ask **"where is my order?"** without retyping
+  anything. The same session or order-id proof resolves that phone's newest live
+  order (under a day old, not closed, cancelled, or already delivered), and
+  Blaze answers with the guest-facing state, ETA window and rider, plus a Track
+  action that opens `/track?order=…&phone=…` on that exact order. The greeting
+  names the live order too, so the first message is already current. A guest
+  with no live order still gets the id-and-phone lookup form, and a different
+  customer's session never sees someone else's order.
+- The same proof makes **"repeat my usual"** work. Blaze reads the guest's
+  newest real order (under 90 days, not cancelled), re-prices every line against
+  the live menu and channel, reapplies the saved sizes and options, and rebuilds
+  the cart without the guest retyping a thing. Gone or channel-hidden items are
+  named and skipped, a customisation that no longer exists falls back to the
+  standard build with a note, a saved-allergy conflict still carries the visible
+  warning, and the greeting offers Repeat my usual as a quick reply. An
+  anonymous visitor is asked to confirm their phone first, and another customer's
+  phone never supplies the items.
+- Customer tracking includes a live rider map (Leaflet + OpenStreetMap, no API
+  key) with a pulsing rider marker that glides to each new fix, a 15 second
+  refresh while a rider is assigned or out for delivery, and an "Open in maps"
+  fallback for the delivery address.
+- A rider can put the page in **live mode** while out for delivery: the browser
+  streams a GPS fix every 20 seconds (and immediately on movement), so the
+  customer map stays warm without repeated taps. The rider can publish a
+  call-back number; the customer sees a Call rider button only during assigned
+  and out-for-delivery states, and the number disappears once the handoff is
+  complete.
+- The operations page carries the same live data for the store team: every rider
+  on an assigned or out-for-delivery order is plotted on one keyless Leaflet
+  dispatch map, refreshed every 15 seconds, with a last-fix age that turns amber
+  after three minutes, a per-order rider list, and a Call rider link. The
+  `verify-rider` proof asserts the customer map, the dispatch marker and row,
+  and the staff call link in the same run.
+- The landing page shows live menu, offers, delivery areas, kitchen standards,
+  FAQ, JSON-LD/OG metadata and a concierge entry, responsive to 390px.
+
+**Cross-check fixes (2026-10-28)**
+
+- `/ai-insights` no longer fails when the optional AI key is absent. The endpoint
+  returns HTTP 200 with `status: "fallback"` and a summary/tips calculated from
+  the same 30-day sales, expense and low-stock figures the model would have
+  read, and the page shows them as an amber notice with an honest model status.
+  The invented "Potential Monthly Yield Rs 4,500+" panel and the always-"Active"
+  Gemini badge were removed.
+- Backend lint had silently drifted to 11 ruff findings (unused imports in the new
+  Company OS services, an `md5` cart-line key, an unused loop variable). All fixed;
+  `ruff check .` is green and the suite grew with
+  `backend/tests/test_ai_insights.py`.
+- `npm run verify:ai-insights` now covers all four page states (success, resync,
+  no-provider fallback, provider failure) and is wired into
+  `npm run verify:audit:live`, which previously skipped it.
+- The launch path got two real safety nets. Production now refuses to start on a
+  SQLite URL: the API default is `sqlite:///:memory:`, so a deploy that forgot
+  `SQLALCHEMY_DATABASE_URI` used to boot green and hold the restaurant's orders in
+  RAM until the process was recycled. The deployment checklist also gained a
+  separate "Database survives a restart" row, because "reachable" and "durable" are
+  different promises. And `backend/tests/test_migration_chain.py` renders the whole
+  Alembic history as Postgres SQL for the first time — until now no test had ever
+  touched a migration, even though `alembic upgrade head` is the only thing that
+  creates the tables in a real deployment. The chain has one head, reaches
+  `9f8e7d6c5b4a`, and renders the generated `daily_sales.profit` expression that
+  SQLite drops. The suite grew with these additions.
+- The launch is now aimed at **Supabase** rather than Google Cloud: plain Postgres, one
+  connection string, no service accounts. `backend/check_database_uri.py` is the first
+  command to run with that string — it rejects SQLite, warns about Supabase's transaction
+  pooler and a missing `sslmode`, connects with a timeout, takes the same advisory lock the
+  bootstrap needs, compares `alembic_version` with the head and lists missing tables. It
+  prints the URL with the password replaced, and
+  `backend/.env.deploy.local.example` lists every value to fill in. Twelve tests cover the
+  checker's pure logic; the live connection path runs the moment a real URL exists.
+- The local address is now one name everywhere: `http://localhost:3011`. A frontend
+  started with `--hostname 127.0.0.1` answers both loopback spellings with `localhost`,
+  so links and proofs that used `127.0.0.1` were crossing origin on every sign-in
+  redirect. That broke the surface audit with a blocked prefetch and would do the same
+  for a person who typed the other spelling. Generated links, proof defaults in 173
+  files, `.env.example` and the operator docs now agree, links from public pages into
+  the customer area no longer prefetch a page that redirects, and the browser policy
+  allows both loopback names only while the site address is loopback. The full surface
+  audit passes on the rebuilt bundle.
+
+**Audit reliability and final green run (2026-10-29)**
+
+- The latest full run, on the build that carries the saved allergy onto the
+  order record and the Kitchen Display, measured **65/65 in 6.6 minutes**
+  against `http://localhost:3011` and build `FwJA3-Y0izweWvL60Hp_T`, with no
+  step needing the runner's retry. `verify:role-gates`, at step 63, waited out
+  the sign-in bucket inside its own first attempt (7 s, 7 s, 5 s, then a full
+  62 s window after a second 429) and passed; the proof now escalates to a
+  one-minute wait instead of spending its retries on short hops. The preceding
+  run, on build `DOQhssetzwvE976yCNrUe` with the checkout allergy reminder,
+  measured 65/65 in 7.4 minutes and retried `verify:finance-pnl` and
+  `verify:restaurant-ready-audit` once each, both passing.
+- The 65-step live audit now runs through `e2e/verify-audit-live.cjs`, which
+  names the step in progress, retries a failed step once, and preloads a
+  sign-in-only throttle retry. An earlier run, on the build with the
+  proof-gated "where is my order?" answer, the repeat-my-usual rebuild and the
+  payment-provider proof fix, measured **65/65 in 7.9 minutes** against
+  `http://localhost:3011` and build `q4F1QOsTCY9NG9FcBRFHq`, from a cold
+  backend. `verify:role-gates` waited out its own sign-in throttle and passed,
+  as it does by design. The runner retried two steps once each and both passed:
+  `verify:recruitment-resume` and `verify:support-tickets`; the closing summary
+  named both. The preceding run measured 65/65 in 6.0 minutes on the same build
+  with no retried step. The run before that, on the build with the tracking
+  countdown and its UTC clock fix, measured 65/65 in 6.9 minutes on
+  `aoBXW8tALLb64iQB615xf` and used the runner's one retry for
+  `verify:role-gates`; before that, 6.3 minutes on `dpbIX6o3R8E2GjsAnSQGs` with
+  no retried step, and 7.4 minutes on `uc8ZjSN_HX5gl-4btzECH` with one
+  `verify:payment-providers` retry after a 20-second wait for the "Required
+  fields are present" message. An earlier run of the same 65 steps measured 5.5
+  minutes with no retried step. The retry stays as a safety net; the closing
+  summary always names any retried step.
+- The payment-provider proof no longer races its own save. It waited for the
+  word "Payments" after clicking Save, but that is the group heading and was
+  already on screen, so Validate could run before the save finished and its
+  message was then overwritten by the save response. An intermediate audit run
+  failed that step twice for this reason. The proof now waits for "saved with
+  encrypted credentials"; the step passed alone, then inside the full run.
+- `/api/admin-session` now passes a throttled sign-in through as 429 with
+  `Retry-After`, returns 401 for rejected credentials, and reserves 503 for a
+  role with no credential at all, instead of reporting every failure as
+  "credentials are not configured". A staff sign-in is judged by the staff check,
+  never by the admin probe.
+- `verify:role-gates` now waits out the throttle on its two Playwright browser
+  logins; it stays outside the preload because it asserts the throttle itself.
+- Customer memory now has browser proof, not only API tests. The new
+  `verify:customer-memory` step signs one customer in twice in two fresh browser
+  contexts: the first visit tells Blaze "I'm allergic to peanuts" and the stored
+  row appears in the "Remembered from last visit" strip; the second visit is
+  greeted with "I remember you avoid: peanuts" without repeating it; Forget
+  deletes the row and clears the strip. The same step places a real pickup
+  order, checks the greeting names it, follows "Where is my order?" to the live
+  countdown, and asks "Repeat my usual" — asserting the reply names the saved
+  item at a live price and the cart footer reads "1 item · ₹…". The same
+  session then opens `/order`, where the saved allergy appears above Place
+  Order as "Saved from your last visit: allergic to peanuts" (screenshot
+  `checkout-allergy-memory.png`), proving memory reaches the payment moment,
+  not just the chat. It is step 7 of
+  the ordered audit, directly after the Blaze proof; the memory rules and the
+  three repeat-order tests stay in the normal backend suite.
+- Blaze now greets a landing visitor instead of waiting to be found. A
+  dismissible speech bubble appears after 4.2 seconds, once per browser
+  session, opens the concierge when tapped, and personalises itself from a
+  signed-in guest's memory ("Welcome back. Want the usual? I remember: no
+  peanuts."). The Blaze proof asserts the greeting opens the concierge and
+  stays gone after a reload; the memory proof asserts the personalised line in
+  a fresh second session. Screenshots: `blaze-landing-invite.png`,
+  `blaze-landing-invite-mobile.png`, `customer-memory-landing-invite.png`.
+- The rider proof now carries a second GPS fix end to end: with the customer's
+  tracking page already open, the rider posts a new position and the page's
+  15-second live poll updates the map coordinates without a reload
+  (`visible-rider-live-refresh.png`). The live map, rider marker, call button,
+  automatic streaming, proof capture and post-delivery privacy remain covered
+  in the same proof.
+- Tracking now promises a clock, not only a window. The tracking payload adds
+  `eta_at` (order accepted time plus the delivery zone's maximum ETA, 45
+  minutes when no zone is attached; pickup uses 25) and the customer page
+  counts down against it: "Arriving in ~35 min · Due by 3:24 PM", "Arriving any
+  moment" inside the last minute, and a red "Running late" only after a
+  ten-minute grace. Delivered, closed, cancelled and scheduled orders carry no
+  countdown. The countdown exposed an older clock bug: naive UTC timestamps
+  were read as local time, so a 2:49 PM order displayed as 9:19 AM.
+  `parseServerTime` now normalises every tracking timestamp - placed-at,
+  timeline steps, notification times, the rider map label and last-fix line.
+  `verify:rider` and the delivery E2E proof assert the countdown while out for
+  delivery and its absence after delivery
+  (`visible-delivery-order-e2e-countdown.png`).
+- `verify:offer-letter` stops with a direct message when the generated public
+  offer URL points at a different origin than `E2E_BASE_URL`, naming
+  `PIZZA_BLITZ_PUBLIC_URL` as the setting to align. The landing-conversion proof
+  now writes a screenshot and the cart summary/draft if the restored cart loses a
+  quick-added line.
+
+No new commit was made; changes are in the working tree on `main`.
 
 ## Enterprise Completion Program
 
@@ -97,7 +358,7 @@ Wave 3 (in progress):
   Next rewrite; `MEDIA_ROOT` selects the storage directory.
 - New `verify:menu-media` browser proof and four backend tests; W3 is complete.
 
-Wave 4 (in progress):
+Wave 4 (complete):
 
 - Customer OTP login: six-digit hashed codes with five-minute expiry, attempt
   limits and rate limits; delivered via SMS/WhatsApp/console. Phone-only
@@ -308,22 +569,27 @@ Wave 4 (in progress):
   New `verify:support-tickets` proof and seventeen backend tests.
 - Next: per-clip video transitions/filters, journey step-level models and pager escalation.
 
-## Verified State (2026-10-22)
+## Verified State (2026-10-29)
 
-- `python -W error::FutureWarning -m unittest discover -s tests -v`: 231 tests
-  pass, including a clean-venv run installed from `requirements-dev.txt`.
-- `ruff check .`: zero findings across the backend.
-- `npm run lint`: passes with zero `no-explicit-any` findings; only the
-  existing hook-dependency and `<img>` style warnings remain.
+- `python -W error::FutureWarning -m unittest discover -s tests -v`: **364 backend tests pass**
+  (no failures, no skips; 87 of the assertions run as subtests).
+- `ruff check .`: zero findings across the backend (re-verified after the cleanup in
+  `docs/GAP_AUDIT.md`).
+- `npm run lint`: passes; only pre-existing hook-dependency and `<img>` style
+  warnings remain.
 - `npm run typecheck`: passes.
-- `npm run build`: passes with lint and type checking enabled (the previous
-  `ignoreDuringBuilds` / `ignoreBuildErrors` bypasses are removed).
+- `npm run build`: passes with lint and type checking enabled.
 - `npm run test:e2e`: portal browser smoke passes.
-- Audit suite: `npm run verify:audit` passes end to end (preflight, link
-  health, control labels, safe actions, feature coverage, route inventory,
-  placeholder hygiene, action feedback, role gates, restaurant readiness, and
-  the roadmap board). The deployment-only proof is `npm run verify:deployment`
-  and runs against a deployed URL.
+- Company OS proofs: `verify-company-os`, `verify-blaze-concierge`,
+  `verify-landing-conversion`, `verify-department-workspace-tools` (11 pages) and
+  `verify-gift-card-checkout` (checkout and refund UI) pass against a production
+  build.
+- Navigation link health: 85 same-site links across 35 source routes pass, together with
+  2362 labelled controls and 35 safe action clicks.
+- API smoke: all 15 new workspace GET endpoints return 200; OpenAPI has 428
+  paths and 510 operations.
+- Migrations: `9f8e7d6c5b4a` upgrades a copy of the database and creates all 15
+  workspace tables plus `customer_memories`; 120 SQLite tables including `alembic_version`.
 - Health probes: `/health` returns process status; `/ready` checks the database
   and returns 503 when it is unreachable.
 - Secret scan of tracked files: clean.
@@ -331,44 +597,34 @@ Wave 4 (in progress):
 ## Recent Hardening
 
 - Sensitive public endpoints (customer-login proof, order creation, payment
-  verification, and login routes) are throttled per instance, configurable
-  with `RATE_LIMIT_ENABLED`; horizontally scaled deployments should add a
-  shared limiter at the edge.
-- Production now fails closed on security: the backend refuses to start with
-  repository-default secrets, a production frontend rejects `admin/admin123`
-  unless admin credentials are configured, and both deploy scripts pass the
-  required admin, session, API, and payment-return variables to each service.
+  verification, login and assistant chat) are throttled per instance,
+  configurable with `RATE_LIMIT_ENABLED`; horizontally scaled deployments should
+  add a shared limiter at the edge.
+- Production fails closed on security: the backend refuses to start with
+  repository-default secrets, and a production frontend rejects
+  `admin/admin123` unless admin credentials are configured.
 - The Google Sheets importer only fetches Google-hosted HTTPS URLs, closing an
   SSRF path that could reach arbitrary or internal hosts.
-- Every business date (sales days, order "today" filters, promotions, shifts,
-  readiness) now comes from one configurable restaurant timezone
-  (`RESTAURANT_TIMEZONE`, default `Asia/Kolkata`) instead of mixing UTC and
-  host-local dates. This fixed the dashboard dropping the current day's sales
-  after local midnight.
-- Customer order history and order detail endpoints now require a verified
-  session or a phone+order ownership proof instead of trusting a phone number
-  or a sequential order id.
-- The Alembic chain now builds the complete schema: all 38 model tables from a
-  fresh database, with `alembic check` reporting no drift.
-- Backend runtime dependencies were reduced from 206 unbounded packages to the
-  14 the code actually uses, with bounded versions.
-- The scheduled Google Sheets job is a real, env-gated refresh instead of a
-  placeholder.
-- Build and deploy configuration was corrected (npm lockfile install, real
-  API URL defaults, no stale Vercel fallback, Python 3.11 alignment,
-  `.dockerignore` for both images).
-- A Ruff lint gate and a GitHub Actions workflow now cover backend lint,
-  tests, migrations, and the frontend lint/typecheck/build gates.
-- Docs were refreshed, and `docs/VERIFICATION.md` plus `docs/GAP_AUDIT.md` now
-  record every gate and every open item.
+- Business dates come from one configurable restaurant timezone
+  (`RESTAURANT_TIMEZONE`, default `Asia/Kolkata`).
+- Customer order history and detail require a verified session or a phone+order
+  ownership proof instead of trusting a phone number or sequential order id.
+- The Alembic chain builds the complete schema, including the 15 tables added by
+  `9f8e7d6c5b4a`; `alembic check` reports no drift on a fresh upgrade.
+- Backend runtime dependencies are bounded; a Ruff gate and a CI workflow cover
+  backend lint/tests/migrations and frontend lint/typecheck/build.
+- The scheduled Google Sheets job is a real, env-gated refresh.
 
 ## Remaining Before Launch
 
-1. Connect the production database and run migrations.
+1. Create the Supabase project and connect its Postgres URL, then run migrations.
 2. Configure production secrets and rotate local defaults.
-3. Deploy backend and frontend, then run the production-only proofs and smoke.
+3. Deploy backend and frontend to a verified host, then run the production-only
+   proofs and smoke. **Blocked:** no valid Vercel token and no Supabase project
+   yet; nothing was faked. The hosting decision is Supabase for the database and
+   Vercel or Render for the app — Google Cloud is not the plan. See
+   [DEPLOY_REQUEST.md](DEPLOY_REQUEST.md).
 4. Add real payment, WhatsApp, SMS, email, social, and ads provider
    credentials, keeping the send/launch flags off until each is verified.
-
-See `docs/LAUNCH_RUNBOOK.md`, `docs/VERIFICATION.md`, and
-`docs/GAP_AUDIT.md`.
+5. Add a maps key for live rider map tiles and an APM DSN for external error
+   monitoring.

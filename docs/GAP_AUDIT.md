@@ -37,7 +37,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 6 | Dependencies | `backend/requirements.txt` listed 206 unbounded packages (Flask, Celery, OpenCV, matplotlib, locust, Stripe, …) while the application imports 11 third-party libraries. Builds were slow and non-reproducible. | Import scan across `backend/app`; comparison with `pyproject.toml`. | Replaced with 14 bounded runtime dependencies plus a `requirements-dev.txt` that adds `httpx` for the test client. Verified by a clean venv install and a full 43-test run. |
 | 7 | Dependencies | `pyproject.toml` declared `requires-python >=3.12` while the workstation and the backend Docker image both run Python 3.11; `uvicorn` was missing from the declared dependencies. | `python --version`, `backend/Dockerfile`, `pyproject.toml`. | Range corrected to `>=3.11,<3.15`; `uvicorn[standard]` added; stale Dockerfile comment removed. |
 | 8 | Deployment | Frontend Docker build used `npm install --frozen-lockfile`, which is not an npm flag and does not produce reproducible installs. | `frontend/Dockerfile`. | Changed to `npm ci` against the committed lockfile. |
-| 9 | Deployment | Cloud Build baked `http://localhost:8000` in as the public API URL; local docs and env examples pointed at port 3000 while every other local URL uses 3011; the backend kept a stale `https://pizza-blitz.vercel.app` fallback for public links. | `frontend/cloudbuild.yaml`, `backend/.env.example`, `frontend/.env.example`, `backend/app/core/config.py`, `backend/app/services/ops_service.py`. | Local/dev defaults now consistently use `127.0.0.1:3011` / `127.0.0.1:8010`; the Vercel URL fallback was removed so a deployment must configure the real public URL; `.env.example` now documents `PIZZA_BLITZ_PUBLIC_URL` and `PIZZA_BLITZ_PUBLIC_API_PREFIX`. |
+| 9 | Deployment | Cloud Build baked `http://localhost:8000` in as the public API URL; local docs and env examples pointed at port 3000 while every other local URL uses 3011; the backend kept a stale `https://pizza-blitz.vercel.app` fallback for public links. | `frontend/cloudbuild.yaml`, `backend/.env.example`, `frontend/.env.example`, `backend/app/core/config.py`, `backend/app/services/ops_service.py`. | Local/dev defaults now consistently use `localhost:3011` for the site (the origin `next start` actually serves) and `127.0.0.1:8010` for the API; the Vercel URL fallback was removed so a deployment must configure the real public URL; `.env.example` now documents `PIZZA_BLITZ_PUBLIC_URL` and `PIZZA_BLITZ_PUBLIC_API_PREFIX`. |
 | 10 | Operations | There was no database-aware readiness probe, so a deployment could report healthy with a dead database. | Source read of `backend/app/main.py`. | Added `GET /ready`, which runs `SELECT 1` and returns 503 when the database is unreachable, plus `backend/tests/test_health_endpoints.py`. |
 | 11 | Documentation | `CURRENT_STATUS.md` (2026-05-21) still listed the `google.generativeai` migration as outstanding, described the public site as future work, and did not match the current code. `HANDOFF.md` still said the public website should not be started. `README.md` claimed `docs/` contained operational handoff and verification notes that did not exist. | Reading all three files against the code. | Status, handoff, and README rewritten to the current state; added `docs/VERIFICATION.md` (how to run every gate) and this gap audit. |
 | 12 | Repo hygiene | `scratch/` held roughly 10 MB of throwaway logs, SQLite files, and probe scripts and was untracked but not ignored, so it polluted `git status`. | `git status --porcelain` and a directory listing. | Added `/scratch/` to `.gitignore` and removed this session's probe files and verification venv. |
@@ -52,7 +52,7 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 21 | Security | A production frontend started without `PIZZA_BLITZ_ADMIN_*` environment variables still accepted the repository defaults `admin/admin123`: the cloud guard treated a default-credential match as a master login. The backend already failed closed, but the frontend route answered first. | Source read of `admin-session/route.ts`, then a live proof against a production build. | Unconfigured credentials no longer count in a cloud runtime. Verified live: production build returns `503` for `admin/admin123` and `200` for the configured strong password; the backend returns `401`/`200` respectively. |
 | 22 | Deployment | `deploy-gcp.ps1`/`.sh` passed only `NEXT_PUBLIC_API_URL` to the frontend service, so a deployment had no configured admin credentials, API URL for server routes, or session secret; the backend also lacked the shared `PIZZA_BLITZ_*` values and the payment return URL. | Script read. | Both scripts now require `PIZZA_BLITZ_SESSION_SECRET` and `PAYMENT_RETURN_URL`, pass admin credentials (both spellings), API URL, session secret, and optional staff/site/timezone values to the correct service, and pass ShellCheck with no findings. |
 | 23 | Startup safety | Production could boot with repository-default secrets (token signing key, admin password), which would make admin tokens forgeable even though readiness flagged it. | Defaults in `config.py` and the readiness report. | Added `validate_production_settings()` to the lifespan: production refuses to start when `AUTH_SECRET_KEY`, admin passwords, or the session secret are weak or missing. Covered by three tests, and the production integration run boots only with strong values. |
-| 24 | Proof scripts | Two browser proofs defaulted to the deployed `pizza-blitz.vercel.app` URL instead of the local app, so a local run silently reached the public internet and timed out (one of them failed during this pass). | Running `verify-reporting-action-board.cjs` locally. | Both default to `http://127.0.0.1:3011` now and keep `E2E_BASE_URL` as the override for deployed runs. The script passes locally. |
+| 24 | Proof scripts | Two browser proofs defaulted to the deployed `pizza-blitz.vercel.app` URL instead of the local app, so a local run silently reached the public internet and timed out (one of them failed during this pass). | Running `verify-reporting-action-board.cjs` locally. | Both default to `http://localhost:3011` now and keep `E2E_BASE_URL` as the override for deployed runs. The script passes locally. |
 | 25 | Frontend types | 18 pages carried 86 explicit-`any` annotations at their API boundaries, which hid response-shape mistakes from the compiler. | ESLint `no-explicit-any` warnings. | Added typed payload interfaces and removed every shortcut: dashboard, daily, CEO, break-even, AI insights, inventory, sales, purchase-orders, operations, ops, recipes, and the reports page (all 86 sites retired). Reports got explicit models for comparison cards and daily/weekday rows, owner comparison, campaign performance with nested outreach/redemption/ad blocks, customer segments, order-channel mixes, forecast, target pacing, and break-even. `no-explicit-any` now reports zero findings. |
 | 26 | Abuse protection | Sensitive public endpoints (customer-login proof, order creation, payment verification, admin/staff/customer login) had no throttle, so phone+order-id enumeration or credential brute force was only bounded by network speed. | Endpoint inventory and the earlier idor review. | Added a per-instance sliding-window limiter (`app/core/rate_limit.py`) wired into those endpoints, enabled by default and configurable with `RATE_LIMIT_ENABLED`. Covered by five tests (limit, bucket isolation, proxy header, disable switch, endpoint wiring). Docs note that horizontal deployments should add a shared Redis limiter or edge WAF rule. |
 | 27 | Data privacy | The public storefront bootstrap returned each menu item's `cost_price`, exposing internal margins to anonymous callers. | Reading the storefront payload while rebuilding the landing page. | `public_menu()` now strips `cost_price`; a regression test asserts it is absent from the public payload while the admin menu endpoint keeps it. |
@@ -155,6 +155,129 @@ external accounts. Every "fixed" entry lists the evidence that proves it.
 | 124 | Pad/crop framing | Mixed-resolution merges always letterboxed, which looks wrong in full-frame reels. | Editing-polish gap. | Added a `fit` option (`pad` or `crop`) to merge rendering, with aspect-preserving scale+pad or scale+crop to the common canvas, a merge-modal selector, and test coverage for both modes. Per-clip framing and anchor points remain. |
 | 125 | Retryable pager resolves | A failed PagerDuty resolve was lost because alert rows were deleted immediately. | Alert-reliability gap. | Keep paged unresolved alerts after ticket closure, mark them read only on successful resolve, and add a five-minute `retry_pending_pager_resolutions` job that retries `resolve` events for resolved/closed tickets. A test fails the resolve, confirms retention, then succeeds on retry. Acknowledgement sync remains. |
 
+## Company OS and conversion phase (2026-10-27 → 2026-10-28)
+
+Closed in this phase:
+
+- P0 funnel leaks: guest CTAs to `/order`, persisted/revalidated cart, resilient order
+  submission, confirmation with ETA, offer deep links, tracking refresh, consent defaults.
+- Department registry and generated navigation, 16 specs and 70 modules covering every portal
+  route, scoped permissions, department workspaces, work/approvals, scorecard.
+- Department tools: checklists, facilities assets/work orders, menu engineering, stocktake,
+  quality audits/temperatures/CAPA, licence register, training/certification, gift cards,
+  company goals, franchise pipeline, data platform.
+- Gift-card checkout debit and refund credit-back, including the Orders refund-method UI
+  (`gift_card` was API-supported but not selectable before this pass).
+- Store dimensions and outlet P&L; Blaze concierge and conversion landing page.
+- Guarded routes redirected visitors between the two loopback names, and the browser read that
+  hop as cross-origin: the CSP blocked the follow-up fetch and the CORS preflight for a router
+  prefetch failed outright. Measured against the running server with different `Host` headers,
+  on both binds, for `/account` and `/dashboard`. A real hostname and a proxy
+  `X-Forwarded-Host` are always echoed back, so deployment is unaffected. On loopback the
+  answer depends on how the server was started: with `--hostname 127.0.0.1` it answered
+  `localhost` for both spellings, and with `--hostname 0.0.0.0` it echoed the requested
+  spelling. `src/middleware.ts` cannot pin it, because it rewrites the `Location` on the way
+  out, which was tested by taking the visitor's own origin from the `Referer` header: the
+  header reached the middleware, the assigned host was still replaced. A relative `Location`
+  is not available either: `NextResponse.redirect` rejects it with `TypeError: Invalid URL`,
+  which surfaced as HTTP 500 on every guarded route. Resolved on four fronts. Bind the local
+  server to loopback, which is the safe default and now the documented command, and standardise
+  everything on the name it answers with, `http://localhost:3011`: proof defaults in 173 files,
+  `PIZZA_BLITZ_PUBLIC_URL`, `PAYMENT_RETURN_URL`, the promotion deep-link fallback, the landing
+  page and metadata site URL, `.env.example` and the operator docs. Links from public pages
+  into the customer area now pass `prefetch={false}`, because a prefetch is a fetch and a
+  redirect out of the guarded area is not worth a background request for a visitor who is not
+  signed in. The browser policy in `next.config.mjs` additionally lists both loopback origins
+  in `connect-src` and `form-action`, but only while the configured site URL is a loopback
+  address, so anyone who still types `127.0.0.1` is not left with a broken page and a
+  deployment on a public host ships the strict policy. Seven proofs carried a hardcoded
+  `localhost:3011` in the filter for the known router-prefetch console message; that filter
+  now matches either spelling.
+- Browser proofs could silently run against a **stale build**: an orphaned `next start` kept
+  port 3011 (bound to `0.0.0.0`) while the restarted server bound `127.0.0.1`, so `localhost`
+  served the previous build and the link-health proof failed on a CSS file that no longer
+  existed. `npm run verify:audit:preflight` now compares the served page with
+  `frontend/.next/BUILD_ID` and fails loudly with the exact restart steps when they differ
+  (dev servers are detected and skipped). The same care applies to the backend: the local
+  database is in memory, and one proof's record is another proof's precondition, so a
+  partially finished live audit cannot be resumed after a backend restart. This pass proved
+  it — restarting the backend to set `MESSAGING_WEBHOOK_TOKEN` made
+  `verify:restaurant-ready-audit` fail on portal sign-in, because the managed admin
+  credential it relies on belonged to the previous process. Running the whole chain again
+  from the start passed. `docs/VERIFICATION.md` now states the rule.
+- `verify:audit:live` spent about twenty minutes before reaching
+  `verify:messaging-inbox`, which fails outright when the backend has no
+  `MESSAGING_WEBHOOK_TOKEN`, and the failure said nothing about the missing setting until it
+  had burned the rest of the evening. `npm run verify:audit:preflight` now probes the webhook
+  directly: an unconfigured token answers 503 and a configured one answers 401, so the
+  preflight names the variable and the command to set before the chain starts.
+- `verify:role-gates` failed at the end of a complete live audit with "Too many requests",
+  because 62 earlier proofs signed in from the same client address and sign-in is throttled per
+  client per minute. The throttle is correct behaviour for a live restaurant, so the fix is in
+  the proof, not the limit: every sign-in in that script now waits out the window the server
+  names in `Retry-After` and tries again, and reports the wait instead of calling it a failure.
+- The same throttle then caught `verify:menu-nutrition` on a later full run, twenty-six proofs
+  in, because retrying inside one proof only protected that proof. `npm run verify:audit:live`
+  now runs through `e2e/verify-audit-live.cjs`, which reads the ordered steps from
+  `verify:audit:steps` in `package.json` and preloads `e2e/helpers/throttle-retry.cjs` into
+  every proof. The preload waits out `Retry-After` for the sign-in routes only; the sign-in
+  limit is unchanged, and every other response passes through untouched so any other 429
+  still fails loudly.
+- Running the audit exposed a **misleading portal sign-in error**. When the backend throttled
+  the managed-admin check, `/api/admin-session` turned the 429 into
+  "Production admin credentials are not configured yet." with a 503, so a portal user arriving
+  in a busy minute would be told the deployment had no credentials. The route now passes the
+  credential service's real answer through: 429 with `Retry-After`, 401 for a rejected
+  password, and 503 only when no credential exists. The browser proof retry also covers a
+  cold-start flake drawn out by the longer run; it is named in the audit summary.
+- Production could start on a **database that forgets everything**. The API reads
+  `SQLALCHEMY_DATABASE_URI` and its built-in default is `sqlite:///:memory:`, so a deploy that
+  omits that one variable boots green, takes real orders into RAM, and loses every one of them
+  when the platform recycles the process. `validate_production_settings()` already refused to
+  start on repository default secrets; it now refuses production on any SQLite URL too, and the
+  deployment checklist has a separate `database_engine` row called "Database survives a restart"
+  that reports in-memory SQLite as blocked, a SQLite file as a warning, and a server engine as
+  ready. Reachability and durability are deliberately two rows: the old single row called an
+  in-memory database "ready", which is the one sentence an operator must not be misled by.
+  The guard keys on `ENVIRONMENT=production`, not on the `VERCEL` flag, because a Vercel
+  preview is supposed to boot and show the storefront: `checkout_readiness_payload()` already
+  answers 503 for order capture there, and the first version of this guard broke exactly that
+  preview path until the full suite caught it. A preview without orders is honest; a preview
+  that cannot load at all is not.
+- The migration chain had **never been executed by the test suite**. All 357 tests build their
+  schema from the model metadata on in-memory SQLite, so nothing proved `alembic upgrade head`
+  works — even though that command is the only thing that creates tables in a real deployment.
+  `backend/tests/test_migration_chain.py` now renders the full chain in offline mode against the
+  Postgres dialect, which needs no server: it asserts one unbranching head, that the chain
+  reaches `9f8e7d6c5b4a`, and that the generated `daily_sales.profit` column renders as
+  `GENERATED ALWAYS AS (total_sale - total_expense) STORED`. That last assertion matters because
+  the same migration renders as `GENERATED ALWAYS AS ()` on SQLite — an empty, invalid
+  expression — and the chain genuinely fails there. Postgres is the target, and it renders
+  correctly; running migrations on SQLite is not supported and the local app never does it.
+- `DATABASE_URL` was a **ghost variable**: the readiness hint for a failed database check told
+  operators to "Check DATABASE_URL", but no code reads that name. The message now names
+  `SQLALCHEMY_DATABASE_URI`, the variable the application actually reads.
+- Backend lint had drifted: 11 ruff findings (9 unused imports left behind in the new Company OS
+  modules, an `md5` cart-line key flagged by bandit, one unused loop variable). All fixed and
+  `ruff check .` is green again.
+- `/ai-insights` returned an error page when the optional Gemini key was missing. The endpoint
+  now answers 200 with `status: "fallback"` and guidance calculated from the restaurant's own
+  30-day sales, expense and low-stock figures, and the page shows it as an amber notice with an
+  honest model status instead of a failure. Removed the invented "Potential Monthly Yield
+  Rs 4,500+" panel and the "Gemini 1.5 Flash - Active" claim that was true only when a key
+  existed. Covered by `backend/tests/test_ai_insights.py` (4 tests) and the extended
+  `npm run verify:ai-insights` proof.
+
+Still open, honestly:
+
+| Area | Gap | Why it is open |
+|---|---|---|
+| Deployment | No live URL. A Vercel token was invalid and the active GCP project has no Pizza Blitz service. | Needs a verified host/account; nothing was faked. |
+| AI concierge | Optional LLM answer path needs a provider key; speech uses browser APIs. | Deterministic path works; a hosted voice/telephony vendor is a product decision. |
+| Gift cards | Stored-value records only; no card-network authorisation or physical issuance. | Needs a card processor/issuer. |
+| Company OS scope | No double-entry GL, AP/AR subledger or bank reconciliation. | ERP scope is a future product, not a missing page. |
+| References | Mobbin's connected plan returned no content. | Needs a paid Mobbin workspace; public UX conventions were used without copying assets. |
+
 ## Still open
 
 These are real gaps, but they cannot be closed from inside the repository.
@@ -162,28 +285,74 @@ These are real gaps, but they cannot be closed from inside the repository.
 | # | Area | Gap | Why it is open |
 |---|------|-----|----------------|
 | 1 | Launch | Production database has not been connected; local runs use in-memory SQLite. | Needs the production database URL and a migration run. See `docs/LAUNCH_RUNBOOK.md`. |
-| 2 | Launch | Backend and frontend are not deployed, so the live deployment proof and production smoke scripts have nothing to run against. | Needs a Google Cloud / Vercel project and credentials (`deploy-gcp.ps1`). |
+| 2 | Launch | Backend and frontend are not deployed, so the live deployment proof and production smoke scripts have nothing to run against. | Needs a Supabase Postgres URL and a hosting credential: Render or Railway for a persistent backend, or Vercel for a preview. The GCP scripts remain an unused option after the Supabase decision; see `DEPLOY_REQUEST.md`. |
 | 3 | Providers | Payment gateway, WhatsApp, SMS, email, Meta social, and Meta ads credentials are not configured. | Needs real provider accounts. The features stay gated behind `CAMPAIGN_SEND_ENABLED`, `SOCIAL_PUBLISH_ENABLED`, and `ADS_LAUNCH_ENABLED`, which is the intended safe default. |
-| 4 | Browser proofs | A handful of the 139 proof scripts assert against a deployed URL (live deployment proof, production launch, live environment). They are expected to fail locally until item 2 is done. `verify:audit` used to include the deployment proof, so the documented local quality gate could never pass. | They require the deployed environment; the deployment-only proof was split into `npm run verify:deployment` and removed from `verify:audit`, so the local suite is fully green and the deployed check stays explicit. |
+| 4 | Browser proofs | A handful of the proof scripts assert against a deployed URL (live deployment proof, production launch, live environment). They are expected to fail locally until item 2 is done. `verify:audit` used to include the deployment proof, so the documented local quality gate could never pass. | They require the deployed environment; the deployment-only proof was split into `npm run verify:deployment` and removed from `verify:audit`, so the local suite is fully green and the deployed check stays explicit. |
 
 ## Current gate results
 
-- Backend unit suite: 276 tests, all pass (in a clean venv built from
-  `backend/requirements-dev.txt`).
-- Backend lint: `ruff check .` reports zero findings.
-- `npm run lint`: 0 errors and 0 `no-explicit-any` findings; 19 hook
-  dependency and 6 `<img>` warnings remain.
+- Backend unit suite: 364 tests, 87 subtests, zero failures and zero skips, in 60 to 150
+  seconds depending on machine load. Re-run on 2026-10-29 after the concierge order-status
+  tests, the customer-memory tests, the three repeat-my-usual tests and the migration-chain
+  tests were added; the same suite previously passed in a clean venv built from
+  `backend/requirements-dev.txt`.
+- Backend lint: `ruff check .` reports zero findings, re-run after each edit above. It had 11
+  findings before the cleanup.
+- `npm run lint`: 0 errors; only pre-existing hook-dependency and `<img>` warnings.
 - `npm run typecheck`: pass.
-- `npm run build`: pass, with lint and type checking enabled.
-- `npm run test:e2e`: pass.
-- `npm run verify:audit` (preflight, surface, inventory, live): pass end to end,
-  including the new landing-page and portal-shell proofs. The deployment-only
-  proof is now the separate `npm run verify:deployment`.
-- Audit surface, inventory, action feedback, role gates, restaurant ready
-  audit, and roadmap proofs: pass.
-- The 11 order/customer proof scripts touched by the auth hardening: pass.
-- `alembic upgrade head` on an empty database: 38 tables, and `alembic check`
-  reports no drift.
+- `npm run build`: pass, with lint and type checking enabled. The bundle the audits below ran
+  against is `frontend/.next/BUILD_ID` `FwJA3-Y0izweWvL60Hp_T`, rebuilt after the saved
+  allergy began riding on the order record and the Kitchen Display gained its red allergy
+  strip; the preceding bundle `DOQhssetzwvE976yCNrUe` added the checkout allergy reminder,
+  `q4F1QOsTCY9NG9FcBRFHq` the proof-gated "where is my order?" answer and its Track action,
+  `aoBXW8tALLb64iQB615xf` the tracking arrival countdown and its UTC clock fix,
+  `dpbIX6o3R8E2GjsAnSQGs` the landing Blaze greeting, and `uc8ZjSN_HX5gl-4btzECH` the
+  `/api/admin-session` fix.
+- `npm run verify:audit:preflight`: pass. It reports the served build id and the messaging
+  webhook state.
+- `npm run verify:audit:surface`: pass on the same bundle. 158 same-site links over 35 source
+  routes, 3000 labelled controls, and 35 non-destructive action clicks with no console errors.
+- `npm run verify:audit:live`: all 65 steps pass against one backend process, in order, from a
+  cold start on `http://localhost:3011`. The latest run, on build `FwJA3-Y0izweWvL60Hp_T`
+  with the saved allergy on the order record and its Kitchen Display strip, measured 65/65 in
+  6.6 minutes on 2026-10-29, with no step needing the runner's retry. `verify:role-gates`
+  waited out its own sign-in throttle inside one attempt — 7 s, 7 s, 5 s, then a full 62 s
+  window after a second 429 — because the proof now escalates to a one-minute wait instead of
+  spending its retries on short hops. The preceding run, on `DOQhssetzwvE976yCNrUe` with the
+  checkout allergy reminder, measured 7.4 minutes and retried `verify:finance-pnl` and
+  `verify:restaurant-ready-audit` once each, both passing; before that, 7.9 minutes with
+  `verify:recruitment-resume` and `verify:support-tickets` retried once each, both passing.
+  Landing conversion, the landing
+  Blaze greeting that opens the concierge, Blaze concierge, customer memory (save,
+  fresh-session recall, forget, personalised landing greeting, the proof-gated live order
+  named in the greeting, answered by "Where is my order?" and opened by its Track action,
+  "Repeat my usual" rebuilding that order at live prices, and the saved allergy re-shown on
+  checkout before payment), company OS, the 11 department
+  workspaces, gift-card checkout and refund, messaging inbox, security headers, POS hardware,
+  role gates, offer letters and the restaurant readiness audit are included. The rider proof
+  also asserts the live arrival countdown while out for delivery and its absence after
+  delivery. `verify:role-gates` waited out its own sign-in throttle before passing, as
+  designed. The payment-provider step no longer races its save: an intermediate run stopped
+  there twice because the proof waited for the "Payments" group heading, already on screen,
+  instead of the save confirmation, so Validate could run first and its message was
+  overwritten by the save response. It now waits for "saved with encrypted credentials" and
+  passed alone and in this run. The preceding run measured 65/65 in 6.0 minutes on the same
+  build with no retried step; before that, 6.9 minutes on build `aoBXW8tALLb64iQB615xf` with
+  the runner's single retry for `verify:role-gates`; before that, 6.3 minutes on
+  `dpbIX6o3R8E2GjsAnSQGs` with no retried step, and 7.4
+  minutes on `uc8ZjSN_HX5gl-4btzECH` with the retry once for `verify:payment-providers`: the
+  first attempt timed out after 20 s waiting for the "Required fields are present" message,
+  and the retry passed. An earlier run measured 5.5 minutes with no retried step. The 64-step
+  run before those needed the retry once for `verify-restaurant-ready-audit` when that proof
+  hit the sign-in throttle; the retry remains as the documented safety net, and the closing
+  summary names any retried step. `verify:role-gates` waits out throttled browser sign-ins
+  itself because it asserts the throttle and is excluded from the preload.
+- The deployment-only proof remains separate as `npm run verify:deployment`, because there is no
+  deployed target to point it at yet.
+- The customer order/conversion proof scripts: pass.
+- `alembic upgrade head` on an empty database: 118 tables, and `alembic check`
+  reports no drift. `9f8e7d6c5b4a` was additionally applied to a copy of the working
+  database and created all 15 workspace tables.
 - GitHub Actions workflow parses and covers both apps.
 - Production credential behavior: default `admin/admin123` is rejected by a
   production frontend and backend; configured strong credentials are accepted.

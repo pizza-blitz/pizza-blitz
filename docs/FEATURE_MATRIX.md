@@ -331,11 +331,16 @@ and the token cannot be reused. Reusing, sharing or over-spending a token is
 rejected. Covered by two backend tests and `verify:loyalty-redemption`.
 
 W4 measured results (rider): `/rider/{token}` is a bearer-token mobile page for
-assigned riders. It starts delivery, shares GPS coordinates with freshness, and
-captures photo/signature/OTP proof before allowing delivered. Delivered/failed
-transitions update the assignment and send customer notifications; tracking shows
-rider status, last location link and proof captured. Admin order cards expose a
-Rider link button. Covered by two backend tests and `verify:rider`.
+assigned riders. It starts delivery, shares GPS once or streams a fix every 20
+seconds in live mode, and captures photo/signature/OTP proof before allowing
+delivered. A rider can publish a call-back number that the customer sees only
+while the delivery is active. Delivered/failed transitions update the assignment
+and send customer notifications; tracking shows rider status, a keyless live
+OpenStreetMap with a gliding marker and a Call rider button, and proof captured.
+The operations page plots every active rider on one dispatch map with a 15-second
+refresh, stale-fix warnings and per-order call links. Admin order cards expose a
+Rider link button. Covered by two backend tests and `verify:rider`, which now
+asserts the customer map, dispatch marker and staff call link.
 
 W4 measured results (reports): the report builder computes metric totals from
 non-cancelled orders over business-day ranges, groups by day/order type/payment/

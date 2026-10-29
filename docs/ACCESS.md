@@ -3,7 +3,7 @@
 ## Quick access (local development)
 
 Start the backend on `8010` and the frontend on `3011`, then open
-`http://127.0.0.1:3011/login`.
+`http://localhost:3011/login`.
 
 | Role | ID | Password | Landing page | What they can open |
 |---|---|---|---|---|
@@ -90,12 +90,12 @@ Route protection is enforced by `frontend/src/middleware.ts` using
 ```powershell
 # Admin portal login (frontend session route)
 $body = @{ id = "admin"; password = "admin123"; role = "admin" } | ConvertTo-Json
-Invoke-WebRequest -Method Post -Uri http://127.0.0.1:3011/api/admin-session `
+Invoke-WebRequest -Method Post -Uri http://localhost:3011/api/admin-session `
   -ContentType "application/json" -Body $body
 
 # Staff portal login
 $body = @{ id = "staff"; password = "staff123"; role = "staff" } | ConvertTo-Json
-Invoke-WebRequest -Method Post -Uri http://127.0.0.1:3011/api/admin-session `
+Invoke-WebRequest -Method Post -Uri http://localhost:3011/api/admin-session `
   -ContentType "application/json" -Body $body
 
 # Browser proof for role gates

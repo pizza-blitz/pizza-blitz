@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   CheckCircle2,
@@ -13,6 +13,8 @@ import {
   Truck,
 } from "lucide-react";
 import { getApiUrl } from "@/lib/api";
+
+const LOCATION_PUSH_INTERVAL_MS = 20000;
 
 type RiderPayload = {
   assignment_id: number;
@@ -56,6 +58,13 @@ export default function RiderPage() {
   const [proofReference, setProofReference] = useState("");
   const [proofNotes, setProofNotes] = useState("");
   const [failureNotes, setFailureNotes] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [autoSharing, setAutoSharing] = useState(false);
+
+  const watchIdRef = useRef<number | null>(null);
+  const pushTimerRef = useRef<number | null>(null);
+  const latestPositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  const sendingLocationRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -78,6 +87,122 @@ export default function RiderPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (rider?.rider_phone) setContactPhone(rider.rider_phone);
+  }, [rider?.rider_phone]);
+
+  const haltAutoSharing = useCallback(() => {
+    if (watchIdRef.current != null && typeof navigator !== "undefined") {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+    watchIdRef.current = null;
+    if (pushTimerRef.current != null) {
+      window.clearInterval(pushTimerRef.current);
+    }
+    pushTimerRef.current = null;
+    setAutoSharing(false);
+  }, []);
+
+  // Stop streaming as soon as the handoff is no longer live, and on unmount.
+  useEffect(() => {
+    if (rider && rider.status !== "out_for_delivery") haltAutoSharing();
+  }, [rider?.status, haltAutoSharing, rider]);
+
+  useEffect(() => () => haltAutoSharing(), [haltAutoSharing]);
+
+  const pushLocation = useCallback(
+    async (coords: { lat: number; lng: number }) => {
+      if (!token || sendingLocationRef.current) return;
+      sendingLocationRef.current = true;
+      try {
+        const response = await fetch(
+          getApiUrl(`/api/v1/restaurant/delivery/rider/${token}/location`),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(coords),
+          }
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || "Location could not be shared.");
+        }
+        setRider((current) =>
+          current ? { ...current, location: data.location } : current
+        );
+      } catch (error) {
+        setMessage(
+          error instanceof Error ? error.message : "Location could not be shared."
+        );
+      } finally {
+        sendingLocationRef.current = false;
+      }
+    },
+    [token]
+  );
+
+  const startAutoSharing = useCallback(() => {
+    if (!navigator.geolocation) {
+      setMessage("Location is not available on this device.");
+      return;
+    }
+    if (watchIdRef.current != null) return;
+    setMessage("Allow location access. Keep this page open while you ride.");
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        latestPositionRef.current = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        void pushLocation(latestPositionRef.current);
+      },
+      () => {
+        haltAutoSharing();
+        setMessage("Allow location access to share your live position.");
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    );
+    // The watch only fires when the device moves; this keeps the pin fresh
+    // while the rider is waiting at a signal or a door.
+    pushTimerRef.current = window.setInterval(() => {
+      if (latestPositionRef.current) void pushLocation(latestPositionRef.current);
+    }, LOCATION_PUSH_INTERVAL_MS);
+    setAutoSharing(true);
+    setMessage("");
+  }, [haltAutoSharing, pushLocation]);
+
+  const saveContact = async () => {
+    if (!token) return;
+    const digits = contactPhone.replace(/\D/g, "");
+    if (digits.length < 10 || digits.length > 15) {
+      setMessage("Enter a call-back number with 10 to 15 digits.");
+      return;
+    }
+    setBusy("contact");
+    try {
+      const response = await fetch(
+        getApiUrl(`/api/v1/restaurant/delivery/rider/${token}/contact`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: contactPhone }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Call-back number could not be saved.");
+      }
+      setRider(data);
+      setMessage("Call-back number saved. The customer can call you during this delivery.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Call-back number could not be saved."
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const updateStatus = async (status: string, notes?: string) => {
     if (!token) return;
@@ -311,16 +436,81 @@ export default function RiderPage() {
               {timestamp ? `Updated ${timestamp}` : "Not shared yet"}
             </span>
           </div>
-          <button
-            type="button"
-            data-testid="rider-location"
-            onClick={shareLocation}
-            disabled={busy === "location"}
-            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-black disabled:opacity-50"
-          >
-            <Navigation className="h-4 w-4" />
-            {busy === "location" ? "Sharing" : "Share live location"}
-          </button>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="rider-location"
+              onClick={shareLocation}
+              disabled={busy === "location"}
+              className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-black disabled:opacity-50"
+            >
+              <Navigation className="h-4 w-4" />
+              {busy === "location" ? "Sharing" : "Share once"}
+            </button>
+            {rider.status === "out_for_delivery" && (
+              <button
+                type="button"
+                data-testid="rider-auto-location"
+                onClick={autoSharing ? haltAutoSharing : startAutoSharing}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-black uppercase tracking-widest ${
+                  autoSharing
+                    ? "bg-emerald-500 text-black"
+                    : "bg-white/10 text-white"
+                }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  {autoSharing && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-black/40" />
+                  )}
+                  <span
+                    className={`relative inline-flex h-2 w-2 rounded-full ${
+                      autoSharing ? "bg-black" : "bg-emerald-400"
+                    }`}
+                  />
+                </span>
+                {autoSharing ? "Live · stop sharing" : "Go live (auto)"}
+              </button>
+            )}
+          </div>
+          {autoSharing && (
+            <p
+              data-testid="rider-live-badge"
+              className="mt-2 text-[11px] font-bold uppercase tracking-widest text-emerald-300"
+            >
+              Live · sending every {LOCATION_PUSH_INTERVAL_MS / 1000}s · keep this
+              page open
+            </p>
+          )}
+
+          <div className="mt-4 border-t border-white/10 pt-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+              Call-back number
+            </p>
+            <p className="mt-1 text-[11px] font-semibold text-gray-400">
+              Shared with this customer only while you are delivering.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input
+                data-testid="rider-phone"
+                aria-label="Call-back number"
+                value={contactPhone}
+                onChange={(event) => setContactPhone(event.target.value)}
+                placeholder="Your mobile number"
+                inputMode="tel"
+                autoComplete="tel"
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-sm font-semibold text-white placeholder:text-gray-500"
+              />
+              <button
+                type="button"
+                data-testid="rider-phone-save"
+                onClick={() => void saveContact()}
+                disabled={busy === "contact"}
+                className="rounded-lg bg-white/10 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {busy === "contact" ? "Saving" : "Save"}
+              </button>
+            </div>
+          </div>
         </section>
 
         {rider.status === "assigned" && (

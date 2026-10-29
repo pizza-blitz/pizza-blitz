@@ -42,7 +42,17 @@ def serialize_store(store: Store, summary: dict | None = None) -> dict:
     }
 
 
-def _bounds(start_date: date, end_date: date) -> tuple[datetime, datetime]:
+def resolve_store(db: Session, store_id: int | None = None) -> Store:
+    """Return a requested store or the default store when none is named."""
+    if store_id is None:
+        return ensure_default_store(db)
+    store = db.query(Store).filter(Store.id == store_id).first()
+    if store is None:
+        raise ValueError("Store not found.")
+    return store
+
+
+def period_bounds(start_date: date, end_date: date) -> tuple[datetime, datetime]:
     zone = business_zone()
     start_local = datetime.combine(start_date, time.min, tzinfo=zone)
     end_local = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=zone)
@@ -50,6 +60,10 @@ def _bounds(start_date: date, end_date: date) -> tuple[datetime, datetime]:
         start_local.astimezone(timezone.utc).replace(tzinfo=None),
         end_local.astimezone(timezone.utc).replace(tzinfo=None),
     )
+
+
+def _bounds(start_date: date, end_date: date) -> tuple[datetime, datetime]:
+    return period_bounds(start_date, end_date)
 
 
 def store_metrics(

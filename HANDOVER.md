@@ -1,10 +1,14 @@
 # Pizza Blitz — Handover & Freeze
 
-**Status:** feature work frozen for delivery.
-**Date:** 2026-10-27
-**Final code commit:** `4cbd122` — *Add pad/crop merge framing and retry failed pager resolves*
-**Handover:** this document (committed with the freeze).
-**Verification:** 276 backend tests, 168 browser proofs + portal smoke, full audit green.
+**Status:** feature work frozen for delivery; the Company OS and conversion program is
+complete in the working tree.
+**Date:** 2026-10-28
+**Last code commit:** `d6e921e` — *Freeze feature work and add delivery handover*
+**Uncommitted work:** the Company OS, conversion and AI-concierge program described in
+[ROADMAP.md](ROADMAP.md) Phase 10 (no commit was made).
+**Handover:** this document.
+**Verification:** 364 backend tests (87 subtests), 176 browser proofs + portal smoke,
+OpenAPI 428 paths / 510 operations, migration `9f8e7d6c5b4a`, production build green.
 
 This is the document to read first. It explains what exists, how to run it, what is
 verified, what is honestly not finished, and where a future project should start.
@@ -13,19 +17,81 @@ verified, what is honestly not finished, and where a future project should start
 
 ## 1. What this is
 
-Pizza Blitz is a working restaurant platform with three connected surfaces:
+Pizza Blitz is a working restaurant platform with four connected surfaces:
 
-1. **Customer website** — landing page, menu, cart, pickup/delivery checkout, payments,
-   order tracking, loyalty, addresses, feedback.
+1. **Customer website** — conversion-first landing page, menu, cart, pickup/delivery
+   checkout, gift-card and coupon support, confirmation, tracking with a live Leaflet
+   rider map, loyalty, addresses, feedback, plus Blaze, a 3D talking ordering concierge
+   that remembers a verified guest's allergies and dietary preferences.
 2. **Staff/owner portal** — POS, kitchen display, delivery dispatch, inventory, purchasing,
-   recipes, workforce, finance, marketing, support, HR, media, reports.
-3. **HR department end to end** — recruitment → resumes/scorecards → offer templates and
+   recipes, workforce, finance, marketing, support, HR, media and reports.
+3. **Company OS** — 16 department specs (10 departments + Company shared services + five
+   sub-departments), 70 catalogued modules, department workspaces, a shared work/approval
+   inbox, and 11 new operating tools (checklists, assets, menu engineering, stocktake,
+   quality audits, licences, training, gift cards, goals, franchise pipeline, data platform).
+4. **HR department end to end** — recruitment → resumes/scorecards → offer templates and
    approvals → offer letters/e-signature → onboarding → attendance/leave → payroll preview
    → documents → exits → department-scoped permissions → HR analytics.
 
-The original HR objective is complete. Later rounds added supporting platform depth. The
-platform is **not deployed to a live production environment** and **does not fake third-party
-integrations**; provider-backed features stay gated until real credentials are supplied.
+The platform is **not deployed to a live production environment** and **does not fake
+third-party integrations**; provider-backed features stay gated until real credentials are
+supplied. Deployment is blocked on a verified host and account, not on code.
+
+**Latest capability pass (2026-10-29):** verified customer memory for Blaze end to end — chat,
+checkout and the kitchen ticket — plus a live rider
+map on `/track`. Memory is proof-gated — it is only stored when the phone number is proved by
+a signed customer session or a real order id, and anonymous chat never saves a number. A
+consented memory also shows the latest order summary, usual fulfilment and recent favourites
+from the guest's own order history, read only after that same proof, so the next greeting can
+offer the same order; an order alone never creates a memory row. The saved allergy also
+reaches checkout: `/order` reads the same proof-gated memory and shows "Saved from your last
+visit" above Place Order, flagging any cart item whose menu allergens match the saved words.
+Placing that order writes the allergy onto the order, and the Kitchen Display card shows a red
+"Allergy · confirm before serving" strip, so the cook sees it without the guest retyping it.
+
+The landing page now lets Blaze start the conversation: a dismissible speech bubble appears
+after a few seconds, once per browser session, and opens the full concierge. For a signed-in
+guest it uses the same proof-gated memory to say "Welcome back. Want the usual?" and to name a
+saved allergy, so the memory is visible before anyone types. The Blaze and memory browser
+proofs cover the greeting, its personalisation and its dismissal.
+
+The rider app now has a **live mode**: while a delivery is out, it streams a GPS fix every 20
+seconds (and on movement) so the customer map stays current without repeated taps. A rider can
+publish a call-back number; the customer's tracking card shows **Call rider** only while the
+delivery is assigned or out for delivery, and the number is withdrawn once the handoff ends.
+The map pin glides between fixes instead of jumping. The operations page plots the same fixes
+on one dispatch map for the store team, refreshed every 15 seconds, with a last-fix age that
+turns amber after three minutes and per-order call links.
+
+Tracking now shows a **clock, not just a window**: the API returns `eta_at` (accepted time plus
+the zone's maximum ETA) and the customer page counts down against it, says "Arriving any
+moment" near the end and turns red "Running late" only after a ten-minute grace, so a quiet
+late order is visible without a phone call. The same work fixed a real clock bug: naive UTC
+timestamps were displayed as local time, so a 2:49 PM order read 9:19 AM on the tracking page.
+Every tracking timestamp (placed-at, timeline, notifications, map label) now normalises to UTC
+first. Both the rider and delivery E2E proofs assert the live countdown and its removal after
+delivery.
+
+Blaze can now answer **"where is my order?"** for the same proved guest. The chat endpoint
+reuses the session/order-id proof to resolve that phone's newest live order (under a day old,
+not closed, cancelled, or already delivered) and hands the service only what may be said out
+loud: order id, guest-facing state, ETA window, rider name and a tracking link. The greeting
+names the live order, the answer carries a Track action that opens
+`/track?order=…&phone=…` on that exact order, and a guest with no live order still gets the
+id-and-phone lookup form. Another customer's session never sees the order; the browser proof
+signs in twice, places a real pickup order, checks the named status and follows the Track
+action to the live countdown.
+
+The same proof now makes **"repeat my usual"** real. The endpoint reads the guest's newest
+non-cancelled order from the last 90 days and gives the service only its item ids, quantities
+and saved customisations — never the old price, address or total. Every line is re-priced
+against today's menu and the chosen channel, so an old price cannot come back; items that are
+gone or hidden for that channel are named and skipped, and a customisation that no longer
+exists falls back to the standard build with a note. The reply rebuilds the server-priced cart
+and the greeting offers Repeat my usual as a quick reply. An anonymous visitor is asked to
+confirm their phone first, and another customer's phone never supplies the items. The memory
+proof asks for the repeat, asserts the reply names the item and the price, and reads the cart
+footer ("1 item · ₹…") rendered from the server-priced cart.
 
 ---
 
@@ -36,12 +102,14 @@ Read in this order:
 1. `HANDOVER.md` (this file)
 2. `CURRENT_STATUS.md` — plain-language state of each module
 3. `DELIVERY_REPORT.md` — what was delivered and how it was verified
-4. `docs/FEATURE_MATRIX.md` — complete feature inventory and gaps
-5. `docs/GAP_AUDIT.md` — numbered gap history with what remains
-6. `docs/VERIFICATION.md` — every gate and proof
-7. `ACCESS.md` — logins and role entry points
+4. `docs/BEGINNER_GUIDE.md` — the system explained without jargon
+5. `docs/COMPANY_OS_BLUEPRINT.md` — department model and conversion plan
+6. `docs/FEATURE_MATRIX.md` — complete feature inventory and gaps
+7. `docs/GAP_AUDIT.md` — numbered gap history with what remains
+8. `docs/VERIFICATION.md` — every gate and proof
+9. `docs/ACCESS.md` — logins and role entry points
 
-Do not start by reading 435 endpoints. Start with the modules you care about in
+Do not start by reading 510 API operations. Start with the modules you care about in
 `CURRENT_STATUS.md`, then open the matching page in the portal and the proof script in
 `frontend/e2e/`.
 
@@ -86,6 +154,13 @@ For development instead of a production build:
 npm run dev -- --hostname 127.0.0.1 --port 3011
 ```
 
+**Shared session secret:** the browser cookie is signed by Next and verified again by
+FastAPI. In production set the same strong `PIZZA_BLITZ_SESSION_SECRET` in both processes.
+Locally the backend also accepts its admin-password defaults for compatibility, which is why
+a development login works without extra setup; a token signed with any other secret is
+rejected. If customer memory or customer API calls look anonymous after a deployment, compare
+this variable first — Next verifies the cookie before it forwards it.
+
 ### URLs and access
 
 | Item | Value |
@@ -103,7 +178,7 @@ Development defaults are rejected in production unless explicitly configured.
 
 ```powershell
 cd backend
-python -W error::FutureWarning -m unittest discover -s tests -v   # 276 tests
+python -W error::FutureWarning -m unittest discover -s tests -v   # 364 backend tests
 
 cd ..\frontend
 npm run lint
@@ -126,19 +201,23 @@ is not fully idempotent. Restart the backend, then run `verify:audit`.
 
 | Measure | Value |
 |---|---|
-| API endpoints | 435 |
-| Frontend routes | 73 (57 portal, 1 KDS, 15 public) |
-| Database tables | 96 |
-| Backend tests | 276 |
-| Browser proofs | 168 + portal smoke |
-| Full audit | green (`AUDIT=0`, `SMOKE=0`) |
+| API operations | 510 across 428 paths |
+| Frontend routes | 97 page files (70 catalogued portal routes + public/dynamic pages) |
+| Departments | 16 specs; 11 top-level including Company shared services; 5 sub-departments |
+| Catalogued modules | 70 (101 active definitions after shared services) |
+| Database tables | 119 application tables |
+| Backend tests | 364 (87 subtests) |
+| Browser proofs | 176 + portal smoke |
+| OpenAPI | 428 paths / 510 operations |
+| Migrations | `9f8e7d6c5b4a`; fresh upgrade creates all 15 workspace tables |
 | Production build | green, including API-offline build |
-| Migrations | fresh upgrade + `alembic check` clean |
-| Last verified commit | `4cbd122` |
+| Last code commit | `d6e921e`; Company OS program is uncommitted working-tree work |
 
-The audit exercises every major module, including HR leave/attendance/payroll/onboarding/
-documents/exits/permissions/analytics, recruitment, offer letters, support, journeys, media,
-accounting, aggregators, deployment readiness and the full order-to-KDS path.
+The audit exercises every major module, including the Company OS department workspaces,
+conversion funnel, Blaze concierge, gift-card checkout/refund, HR leave/attendance/payroll/
+onboarding/documents/exits/permissions/analytics, recruitment, offer letters, support,
+journeys, media, accounting, aggregators, deployment readiness and the full order-to-KDS
+path.
 
 ---
 
@@ -157,6 +236,10 @@ docs/      feature inventory, gap audit, verification, operations
   S3-compatible storage and CDN URLs.
 - Provider credentials are encrypted with Fernet derived from `AUTH_SECRET_KEY`, with
   per-field environment fallback.
+- The department registry (`backend/app/services/company_catalog.py`) is the single source
+  of truth for departments, modules, permissions and navigation; 118 application tables.
+- The ordering assistant (`backend/app/services/assistant_service.py`) is deterministic over
+  the live menu with an optional LLM answer path; it never invents prices or offers.
 - `frontend/next.config` proxies `/server` and `/media` to the API.
 
 ---
@@ -172,8 +255,9 @@ These are **not faked**. They work when configured and stay visibly gated when n
 | S3/CDN media | Local disk fallback | Bucket, keys, CDN base URL |
 | PagerDuty | Webhook trigger/resolve with retries | PagerDuty routing key and service |
 | Aggregators | Intake simulator and outbound status | Real Swiggy/Zomato credentials/endpoints |
-| Maps/GPS | Stored rider coordinates and tracking UI | Maps key for live map tiles/geocoding |
+| Maps/GPS | Keyless OpenStreetMap tiles on customer tracking and the operations dispatch board; the rider app auto-streams a fix every 20 seconds while out for delivery | A maps key only if you add geocoding or routing |
 | Auth | Local admin/staff accounts | SSO/identity provider if required |
+| AI concierge | Deterministic cart/menu answers locally; optional LLM path off | An LLM API key if the optional answer path is wanted |
 | Deployment | Local production build | Postgres, host, TLS, backups, worker topology |
 
 `docs/VERIFICATION.md` marks provider-gated proofs. The audit reports five live-provider/
@@ -218,6 +302,25 @@ environment gates remaining; that is intentional and honest.
 - E-signature is an in-app typed signature flow, not a certified e-sign vendor.
 - Biometric attendance hardware is not integrated; attendance is manual/import-based.
 
+### Company OS
+- Department workspaces are operational tools, not a full ERP; there is no double-entry
+  general ledger, AP/AR subledger or bank reconciliation.
+- Gift cards are stored-value records with a liability summary; no external card-network
+  authorisation or physical card production.
+- The assistant answers from live menu/store data. Its optional LLM answer path requires a
+  provider key; without one it uses deterministic routing.
+- The 3D avatar and speech use browser capabilities; there is no hosted voice/TTS vendor.
+- Goals, franchise proforma and outlet P&L are planning tools, not audited financial
+  statements.
+
+### Deployment
+- No live URL exists yet. A Vercel token in the environment was invalid and no Supabase
+  project exists yet; deployment was not faked. The chosen shape is Supabase Postgres plus
+  Vercel or Render — Google Cloud is only a later option, so its unusable project no longer
+  blocks anything. See [DEPLOY_REQUEST.md](DEPLOY_REQUEST.md).
+- The backend scheduler assumes one worker; production needs Postgres, TLS, backups and a
+  shared rate limiter/job lock.
+
 ---
 
 ## 8. What is intentionally not done
@@ -232,6 +335,8 @@ Feature work stopped here by decision. The following are future phases, not defe
 6. Visual journey branch canvas.
 7. Certified e-signature and statutory payroll integrations.
 8. Horizontal scheduler/worker topology.
+9. Double-entry accounting, AP/AR subledgers and bank reconciliation.
+10. Hosted TTS/voice provider and telephony ordering.
 
 ---
 
@@ -241,7 +346,12 @@ If this becomes a new project, do **not** restart from a blank page.
 
 **Recommended first week:**
 
-1. Run the backend, frontend, 276 tests and full audit. Confirm all green.
+1. Run the backend, frontend, 364 tests and full audit. Confirm all green. Start with
+   `cd frontend; npm run verify:audit:preflight` — it proves the port serves the current
+   build and that the messaging webhook token is configured, both of which otherwise fail
+   late in the 65-step `npm run verify:audit:live` chain. That chain is one ordered script
+   running against an in-memory database, so after any backend restart, rerun it from
+   step one instead of resuming where it stopped.
 2. Pick one production target: local staging with Postgres, or a real host.
 3. Configure the smallest provider set that matters (payments + messaging + storage).
 4. Run the provider-gated proofs with real credentials.
@@ -253,11 +363,14 @@ If this becomes a new project, do **not** restart from a blank page.
 
 - `backend/app/main.py` — app wiring, bootstrap, scheduler toggle
 - `backend/app/core/config.py` — every environment variable
-- `backend/app/models/domain.py` — 96-table domain model
-- `backend/app/api/api_v1/router.py` — endpoint map
+- `backend/app/services/company_catalog.py` — departments, modules, permissions, navigation
+- `backend/app/models/domain.py` — 118-table domain model
+- `backend/app/api/api_v1/api.py` — endpoint map
 - `frontend/src/app/(dashboard)/layout.tsx` — portal shell/navigation
+- `frontend/src/components/blaze/blaze-concierge.tsx` — the customer ordering avatar
 - `frontend/e2e/verify-audit.cjs` — audit orchestration
 - `docs/VERIFICATION.md` — what each gate proves
+- `docs/BEGINNER_GUIDE.md` — plain-language tour
 
 **Definition of done for the next phase:** a real deployment URL, real provider credentials
 exercised end to end, Postgres migrations applied, backups/restore rehearsed, and the audit
@@ -280,9 +393,12 @@ run against that deployment — not another feature count.
 ## 11. Freeze declaration
 
 - Feature work: **frozen**.
-- Code state: committed on `main`, working tree clean at handover.
-- Verification: **276 tests, 168 proofs, audit green, build green**.
-- Goal: closed as delivered for local/staging evaluation with the limitations above.
+- Code state: `main` at `d6e921e`; the Company OS/conversion program is uncommitted
+  working-tree work, because no commit was requested.
+- Verification: **364 backend tests (87 subtests), 176 proofs, production build green**.
+- Deployment: **blocked and not faked** — no valid hosting token or Pizza Blitz cloud
+  project; see [DEPLOY_REQUEST.md](DEPLOY_REQUEST.md).
+- Goal: delivered for local/staging evaluation with the limitations above.
 
-If work resumes, treat this document and the green audit as the baseline. Do not reopen
-closed gaps without a concrete production requirement.
+If work resumes, treat this document and the green verification as the baseline. Do not
+reopen closed gaps without a concrete production requirement.

@@ -2,7 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
-from app.models.domain import DailySales, GoogleSheetSync, SalesRepairBlock, WasteLog
+from app.models.domain import (
+    DailySales,
+    GoogleSheetSync,
+    SalesRepairBlock,
+    Store,
+    WasteLog,
+)
+from app.services.store_service import resolve_store
 from pydantic import BaseModel
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -19,9 +26,15 @@ class SalesRepairBlockRequest(BaseModel):
     blocked_by: Optional[str] = None
 
 @router.get("/")
-def list_sales(db: Session = Depends(get_db)):
-    """List all daily sales records sorted by date descending."""
-    sales = db.query(DailySales).order_by(DailySales.date.desc()).all()
+def list_sales(
+    store_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """List daily sales records, newest first, optionally for one outlet."""
+    query = db.query(DailySales)
+    if store_id is not None:
+        query = query.filter(DailySales.store_id == store_id)
+    sales = query.order_by(DailySales.date.desc()).all()
     return sales
 
 @router.get("/reconciliation")
@@ -31,6 +44,7 @@ def sales_reconciliation(
     limit: int = Query(default=12, ge=1, le=60),
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    store_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
     """Month-wise import health so source-sheet gaps are visible before reports are trusted."""
@@ -41,7 +55,10 @@ def sales_reconciliation(
     parsed_start = datetime.strptime(start_date, "%Y-%m-%d").date() if start_date else None
     parsed_end = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else today
 
-    query = db.query(DailySales).order_by(DailySales.date.asc())
+    query = db.query(DailySales)
+    if store_id is not None:
+        query = query.filter(DailySales.store_id == store_id)
+    query = query.order_by(DailySales.date.asc())
     if parsed_start:
       query = query.filter(DailySales.date >= parsed_start)
     if parsed_end:
@@ -249,6 +266,7 @@ class DailyEntryRequest(BaseModel):
     total_expense: float
     payment_method: str = "mixed"
     notes: Optional[str] = None
+    store_id: Optional[int] = None
 
 class WasteEntryRequest(BaseModel):
     date: date
@@ -257,12 +275,25 @@ class WasteEntryRequest(BaseModel):
     unit: str = "kg"
     estimated_cost: float
     reason: str
+    store_id: Optional[int] = None
 
 @router.post("/daily-entry")
 def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)):
-    # Check if entry already exists for this date
-    existing = db.query(DailySales).filter(DailySales.date == request.date).first()
-    
+    try:
+        store = resolve_store(db, request.store_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # One ledger row per outlet and business date.
+    existing = (
+        db.query(DailySales)
+        .filter(
+            DailySales.store_id == store.id,
+            DailySales.date == request.date,
+        )
+        .first()
+    )
+
     if existing:
         # Update existing
         existing.total_sale = request.total_sale
@@ -276,6 +307,7 @@ def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)
     else:
         # Create new
         entry = DailySales(
+            store_id=store.id,
             date=request.date,
             total_sale=request.total_sale,
             cash_collected=request.cash_collected,
@@ -286,15 +318,16 @@ def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)
         )
         db.add(entry)
         action = "created"
-    
+
     try:
         db.commit()
         db.refresh(entry)
         return {
-            "status": "success", 
+            "status": "success",
             "action": action,
             "data": {
                 "date": str(entry.date),
+                "store_id": entry.store_id,
                 "total_sale": float(entry.total_sale),
                 "total_expense": float(entry.total_expense),
                 "profit": float(entry.profit)
@@ -308,28 +341,38 @@ def create_daily_entry(request: DailyEntryRequest, db: Session = Depends(get_db)
 def export_sales_csv(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    store_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    query = db.query(DailySales).order_by(DailySales.date.desc())
+    query = db.query(DailySales)
+    if store_id is not None:
+        query = query.filter(DailySales.store_id == store_id)
+    query = query.order_by(DailySales.date.desc())
     if start_date:
         query = query.filter(DailySales.date >= start_date)
     if end_date:
         query = query.filter(DailySales.date <= end_date)
-        
+
     sales = query.all()
-    
+    store_ids = {sale.store_id for sale in sales}
+    store_names = {
+        store.id: store.name
+        for store in db.query(Store).filter(Store.id.in_(store_ids)).all()
+    } if store_ids else {}
+
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Total Sale", "Cash Collected", "Total Expense", "Net Profit", "Payment Method", "Notes"])
-    
+    writer.writerow(["Date", "Outlet", "Total Sale", "Cash Collected", "Total Expense", "Net Profit", "Payment Method", "Notes"])
+
     for sale in sales:
         writer.writerow([
-            sale.date, 
-            sale.total_sale, 
-            sale.cash_collected, 
-            sale.total_expense, 
-            sale.profit, 
-            sale.payment_method, 
+            sale.date,
+            store_names.get(sale.store_id, f"Store {sale.store_id}"),
+            sale.total_sale,
+            sale.cash_collected,
+            sale.total_expense,
+            sale.profit,
+            sale.payment_method,
             sale.notes
         ])
         
@@ -341,12 +384,19 @@ def export_sales_csv(
     )
 
 @router.get("/waste")
-def list_waste(db: Session = Depends(get_db)):
-    rows = db.query(WasteLog).order_by(WasteLog.date.desc(), WasteLog.id.desc()).limit(100).all()
+def list_waste(
+    store_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(WasteLog)
+    if store_id is not None:
+        query = query.filter(WasteLog.store_id == store_id)
+    rows = query.order_by(WasteLog.date.desc(), WasteLog.id.desc()).limit(100).all()
     return [
         {
             "id": str(row.id),
             "date": row.date.isoformat() if row.date else None,
+            "store_id": row.store_id,
             "item_name": row.item_name,
             "quantity": row.quantity,
             "unit": row.unit,
@@ -358,7 +408,13 @@ def list_waste(db: Session = Depends(get_db)):
 
 @router.post("/waste")
 def create_waste_entry(request: WasteEntryRequest, db: Session = Depends(get_db)):
+    try:
+        store = resolve_store(db, request.store_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     row = WasteLog(
+        store_id=store.id,
         date=request.date,
         item_name=request.item_name,
         quantity=request.quantity,
@@ -372,6 +428,7 @@ def create_waste_entry(request: WasteEntryRequest, db: Session = Depends(get_db)
     return {
         "id": str(row.id),
         "date": row.date.isoformat(),
+        "store_id": row.store_id,
         "item_name": row.item_name,
         "quantity": row.quantity,
         "unit": row.unit,
@@ -380,11 +437,17 @@ def create_waste_entry(request: WasteEntryRequest, db: Session = Depends(get_db)
     }
 
 @router.get("/waste/summary")
-def waste_summary(db: Session = Depends(get_db)):
+def waste_summary(
+    store_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     from datetime import timedelta
 
     start_date = business_today() - timedelta(days=30)
-    rows = db.query(WasteLog).filter(WasteLog.date >= start_date).all()
+    query = db.query(WasteLog).filter(WasteLog.date >= start_date)
+    if store_id is not None:
+        query = query.filter(WasteLog.store_id == store_id)
+    rows = query.all()
     total = sum(float(row.estimated_cost or 0) for row in rows)
     by_item = {}
     for row in rows:

@@ -82,7 +82,12 @@ async function main() {
     const enabled = bank.locator('input[type="checkbox"]');
     if (!(await enabled.isChecked())) await enabled.check();
     await page.getByTestId("provider-save-direct_bank").click();
-    await page.getByText("Payments", { exact: false }).first().waitFor({ timeout: 20000 });
+    // Wait for the save to finish before validating. "Payments" is the group
+    // heading and is already on screen, so waiting for it let Validate race the
+    // save and overwrite the validation message with the later save response.
+    await page
+      .getByText("saved with encrypted credentials", { exact: false })
+      .waitFor({ timeout: 20000 });
     await bank.getByText("Validate", { exact: true }).click();
     await page.getByText("Required fields are present", { exact: false }).waitFor({
       timeout: 20000,

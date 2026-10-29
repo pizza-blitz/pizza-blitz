@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_roles
 from app.core.config import settings
 from app.models.domain import SocialPost, SocialPostDelivery
+from app.services.company_work_service import (
+    ensure_approval_for_source,
+    sync_source_approval,
+)
 from app.services.social_autopublish_service import (
     publish_due_social_posts,
     social_auto_publish_status,
@@ -577,6 +581,22 @@ def create_social_post(
     db.add(post)
     db.commit()
     db.refresh(post)
+    if payload.requires_approval:
+        ensure_approval_for_source(
+            db,
+            department_key="marketing",
+            kind="social_post",
+            title=f"Social post · {post.title}",
+            source_type="social_post",
+            source_id=post.id,
+            requested_by=str(session.get("subject") or "staff"),
+            note=post.approval_note,
+            metadata={
+                "platforms": post.platforms,
+                "media_type": post.media_type,
+                "status": post.status,
+            },
+        )
     return {"status": "social post created", "post": _social_post_dict(post)}
 
 
@@ -657,6 +677,22 @@ def submit_social_post_for_approval(
     post.approved_at = None
     db.commit()
     db.refresh(post)
+    ensure_approval_for_source(
+        db,
+        department_key="marketing",
+        kind="social_post",
+        title=f"Social post · {post.title}",
+        source_type="social_post",
+        source_id=post.id,
+        requested_by=str(session.get("subject") or "staff"),
+        note=post.approval_note,
+        metadata={
+            "platforms": post.platforms,
+            "media_type": post.media_type,
+            "status": post.status,
+        },
+        reopen=True,
+    )
     return {"post": _social_post_dict(post)}
 
 
@@ -680,6 +716,14 @@ def approve_social_post(
     post.approved_at = datetime.utcnow()
     db.commit()
     db.refresh(post)
+    sync_source_approval(
+        db,
+        source_type="social_post",
+        source_id=post.id,
+        status="approved",
+        decided_by=post.approved_by,
+        note=payload.note,
+    )
     return {"post": _social_post_dict(post)}
 
 
@@ -705,6 +749,14 @@ def reject_social_post(
     post.approved_at = datetime.utcnow()
     db.commit()
     db.refresh(post)
+    sync_source_approval(
+        db,
+        source_type="social_post",
+        source_id=post.id,
+        status="rejected",
+        decided_by=post.approved_by,
+        note=payload.note,
+    )
     return {"post": _social_post_dict(post)}
 
 

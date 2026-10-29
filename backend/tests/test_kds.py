@@ -122,6 +122,19 @@ class KdsBoardTest(unittest.TestCase):
         ids = {row["id"] for row in board["orders"]}
         self.assertNotIn(order_id, ids)
 
+    def test_board_exposes_saved_allergy_from_order_notes(self):
+        allergy_order = self.create_order(
+            notes="Customer website order | Fulfillment: takeaway | Allergy: peanuts, gluten"
+        )
+        plain_order = self.create_order(customer_phone="9812345672")
+        board = self.client.get(
+            "/api/v1/restaurant/orders/kds", headers=self.headers
+        ).json()
+        flagged = next(row for row in board["orders"] if row["id"] == allergy_order)
+        plain = next(row for row in board["orders"] if row["id"] == plain_order)
+        self.assertEqual(flagged["allergy_note"], "peanuts, gluten")
+        self.assertIsNone(plain["allergy_note"])
+
     def test_board_requires_authentication(self):
         response = self.client.get("/api/v1/restaurant/orders/kds")
         self.assertEqual(response.status_code, 401)

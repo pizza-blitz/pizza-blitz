@@ -25,6 +25,8 @@ from app.models.domain import (
     DailySales,
     DeliveryAssignment,
     DiningTable,
+    GiftCard,
+    GiftCardTransaction,
     InventoryItem,
     InventoryTransaction,
     Invoice,
@@ -208,6 +210,7 @@ class OrderCreate(BaseModel):
     coupon_code: Optional[str] = None
     referral_code: Optional[str] = None
     loyalty_redemption_token: Optional[str] = None
+    gift_card_code: Optional[str] = Field(default=None, max_length=40)
     payment_method: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_zone_id: Optional[int] = None
@@ -241,7 +244,7 @@ class RefundCreateRequest(BaseModel):
     amount: float = Field(gt=0, le=100000)
     reason: str = Field(min_length=3, max_length=255)
     method: str = Field(
-        default="cash", pattern="^(cash|upi|card|gateway|bank|other)$"
+        default="cash", pattern="^(cash|upi|card|gateway|bank|gift_card|other)$"
     )
     reference: Optional[str] = Field(default=None, max_length=120)
     notes: Optional[str] = Field(default=None, max_length=1000)
@@ -420,7 +423,7 @@ def order_eta_window(order: RestaurantOrder) -> str:
     if assignment_status == "delivered":
         return "Completed"
     if assignment_status == "out_for_delivery":
-        return "Arriving soon"
+        return "On the way"
     if assignment_status == "assigned":
         return "Rider assigned"
     if order.status == "ready":
@@ -433,6 +436,35 @@ def order_eta_window(order: RestaurantOrder) -> str:
     if (order.order_type or "").lower() == "delivery":
         return "35-45 min"
     return "20-25 min"
+
+
+def order_eta_at(order: RestaurantOrder) -> Optional[datetime]:
+    """The clock time the guest can hold the kitchen to.
+
+    A vague "35-45 min" window never changes, so a guest cannot tell whether
+    an order is early, on time, or forgotten. This pins the promise to the
+    delivery zone's maximum ETA measured from when the order was accepted; the
+    tracking page counts down against it and flags a genuinely late delivery.
+    Finished, cancelled, scheduled, and ready-for-pickup orders have no
+    countdown to run, so they return None.
+    """
+    if order.status in {"cancelled", "closed"}:
+        return None
+    assignment = order.delivery_assignment
+    if assignment is not None and (assignment.status or "").lower() == "delivered":
+        return None
+    if order.scheduled_for or not order.created_at:
+        return None
+    if (order.order_type or "").lower() == "delivery":
+        minutes = 45
+        zone = assignment.zone if assignment is not None else None
+        if zone is not None and zone.eta_max_minutes:
+            minutes = int(zone.eta_max_minutes)
+    elif order.status == "ready":
+        return None
+    else:
+        minutes = 25
+    return order.created_at + timedelta(minutes=minutes)
 
 
 def delivery_assignment_next_action(status: Optional[str]) -> str:
@@ -546,9 +578,13 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
             next_action = "Order completed. Thank you for ordering."
         else:
             next_action = "Order received. Assigning a delivery partner."
+    eta_at = order_eta_at(order)
     payload.update(
         {
             "eta_window": order_eta_window(order),
+            # Timestamps in this API are stored as naive UTC, so the suffix
+            # makes the browser read the countdown in the guest's own clock.
+            "eta_at": f"{eta_at.isoformat()}Z" if eta_at else None,
             "tracking_steps": order_tracking_steps(order),
             "next_action": next_action,
             "notifications": sent_notifications_for_order(order),
@@ -556,6 +592,11 @@ def serialize_order_tracking(order: RestaurantOrder) -> dict:
                 {
                     "assigned_to": assignment.assigned_to,
                     "status": assignment.status,
+                    "phone": (
+                        assignment.rider_phone
+                        if assignment.status in {"assigned", "out_for_delivery"}
+                        else None
+                    ),
                     "latitude": assignment.current_lat,
                     "longitude": assignment.current_lng,
                     "location_updated_at": (
@@ -1949,6 +1990,53 @@ def create_refund(
     order = db.query(RestaurantOrder).filter(RestaurantOrder.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    gift_card_redeem = None
+    if (payload.method or "").lower() == "gift_card":
+        gift_card_redeem = (
+            db.query(GiftCardTransaction)
+            .filter(
+                GiftCardTransaction.order_id == order.id,
+                GiftCardTransaction.kind == "redeem",
+            )
+            .first()
+        )
+        if gift_card_redeem is None:
+            raise HTTPException(
+                status_code=422,
+                detail="This order was not paid with a gift card.",
+            )
+        redeemed = round(
+            sum(
+                float(row.amount or 0)
+                for row in db.query(GiftCardTransaction)
+                .filter(
+                    GiftCardTransaction.order_id == order.id,
+                    GiftCardTransaction.kind == "redeem",
+                )
+                .all()
+            ),
+            2,
+        )
+        already_credited = round(
+            sum(
+                float(row.amount or 0)
+                for row in db.query(GiftCardTransaction)
+                .filter(
+                    GiftCardTransaction.order_id == order.id,
+                    GiftCardTransaction.kind == "refund",
+                )
+                .all()
+            ),
+            2,
+        )
+        if payload.amount > redeemed - already_credited + 0.001:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "The gift card was charged Rs "
+                    f"{redeemed - already_credited:.2f} and cannot be credited more."
+                ),
+            )
     try:
         refund = create_order_refund(
             db,
@@ -1964,6 +2052,36 @@ def create_refund(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RefundAmountError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    gift_card_refunded = 0.0
+    if gift_card_redeem is not None:
+        card = (
+            db.query(GiftCard)
+            .filter(GiftCard.id == gift_card_redeem.gift_card_id)
+            .with_for_update()
+            .first()
+        )
+        if card is not None:
+            card.balance = round(float(card.balance or 0) + float(refund.amount), 2)
+            if (card.status or "").lower() == "depleted":
+                card.status = "active"
+            db.add(
+                GiftCardTransaction(
+                    gift_card_id=card.id,
+                    order_id=order.id,
+                    kind="refund",
+                    amount=float(refund.amount),
+                    balance_after=card.balance,
+                    reference=f"refund-{refund.id}",
+                    note=f"Refund for order #{order.id}: {refund.reason}",
+                    created_by=session.get("display_name")
+                    or session.get("subject")
+                    or "admin",
+                )
+            )
+            db.commit()
+            db.refresh(order)
+            gift_card_refunded = float(refund.amount)
 
     record_operational_audit_event(
         db,
@@ -1988,6 +2106,7 @@ def create_refund(
         "refund": serialize_refund(refund),
         "order": serialize_order(order),
         "summary": refund_summary(order),
+        "gift_card_refunded": round(gift_card_refunded, 2),
     }
 
 
@@ -2232,6 +2351,43 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
     payment_method = (order.payment_method or "cash").lower()
     payment_status = "awaiting_payment" if payment_method == "prepaid" else "pending"
 
+    gift_card = None
+    gift_card_code = (order.gift_card_code or "").strip().upper()
+    if gift_card_code:
+        gift_card = (
+            db.query(GiftCard)
+            .filter(GiftCard.code == gift_card_code)
+            .with_for_update()
+            .first()
+        )
+        if gift_card is None:
+            raise HTTPException(
+                status_code=404, detail="That gift card code was not found."
+            )
+        stored_status = (gift_card.status or "").lower()
+        if stored_status in {"void", "expired"}:
+            raise HTTPException(
+                status_code=422,
+                detail="That gift card is no longer active.",
+            )
+        today = business_today()
+        if gift_card.expires_on is not None and gift_card.expires_on < today:
+            raise HTTPException(
+                status_code=422, detail="That gift card has expired."
+            )
+        balance = round(float(gift_card.balance or 0), 2)
+        if balance + 0.001 < total:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Gift card balance Rs {balance:.2f} is less than the order "
+                    f"total Rs {total:.2f}. Add another payment method or use a "
+                    "different card."
+                ),
+            )
+        payment_method = "gift_card"
+        payment_status = "paid"
+
     notes = order.notes
     if applied_promo and applied_promo.code:
         notes = append_order_note(notes, f"Coupon: {applied_promo.code}")
@@ -2266,6 +2422,29 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
     )
     db.add(row)
     db.flush()
+    gift_card_applied = False
+    gift_card_balance_after = None
+    if gift_card is not None:
+        gift_card.balance = round(float(gift_card.balance or 0) - total, 2)
+        if gift_card.balance <= 0:
+            gift_card.balance = 0
+            gift_card.status = "depleted"
+        gift_card_balance_after = float(gift_card.balance)
+        masked_code = f"{gift_card.code[:3]}…{gift_card.code[-4:]}"
+        db.add(
+            GiftCardTransaction(
+                gift_card_id=gift_card.id,
+                order_id=row.id,
+                kind="redeem",
+                amount=total,
+                balance_after=gift_card.balance,
+                reference=f"order-{row.id}",
+                note=f"Checkout payment for order #{row.id}",
+                created_by=order.customer_phone or "customer-checkout",
+            )
+        )
+        row.notes = append_order_note(row.notes, f"Gift card: {masked_code}")
+        gift_card_applied = True
     if (order.order_type or "").lower() == "delivery":
         db.add(
             DeliveryAssignment(
@@ -2332,6 +2511,8 @@ def create_order(order: OrderCreate, request: Request, db: Session = Depends(get
         "referral_applied": referral_applied,
         "loyalty_discount": loyalty_discount,
         "loyalty_points_redeemed": loyalty_points_redeemed,
+        "gift_card_applied": gift_card_applied,
+        "gift_card_balance": gift_card_balance_after,
         "scheduled_for": to_business_iso(scheduled_for),
         "scheduled_label": scheduled_label(scheduled_for),
     }
@@ -2483,7 +2664,14 @@ def close_order(
                 table.current_order_id = None
                 table.last_updated = datetime.utcnow()
 
-        daily = db.query(DailySales).filter(DailySales.date == business_today()).first()
+        daily = (
+            db.query(DailySales)
+            .filter(
+                DailySales.store_id == order.store_id,
+                DailySales.date == business_today(),
+            )
+            .first()
+        )
         if daily:
             daily.total_sale = float(daily.total_sale or 0) + float(order.total_amount or 0)
             if (order.payment_method or "").lower() == "cash":
@@ -2491,6 +2679,7 @@ def close_order(
             daily.profit = float(daily.total_sale or 0) - float(daily.total_expense or 0)
         else:
             daily = DailySales(
+                store_id=order.store_id,
                 date=business_today(),
                 total_sale=order.total_amount or 0,
                 cash_collected=order.total_amount if (order.payment_method or "").lower() == "cash" else 0,
@@ -3594,6 +3783,9 @@ def build_kds_board(db: Session) -> dict:
                 "table_number": order.table_number,
                 "customer_name": order.customer_name,
                 "customer_phone": order.customer_phone,
+                # The guest's own saved allergy, carried onto the kitchen ticket
+                # so the warning is not only on the customer's screen.
+                "allergy_note": note_value(order.notes, "Allergy"),
                 "payment_status": order.payment_status,
                 "created_at": order.created_at.isoformat() if order.created_at else None,
                 "age_minutes": age_minutes,
@@ -3675,7 +3867,14 @@ def authorize_customer_history_access(
         if role in {"admin", "staff"}:
             return
         if role == "customer":
-            if customer_subject_phone(session) == phone:
+            # Two signed session shapes reach this point. The browser session
+            # puts the phone in the subject (`customer:<phone>`), while an API
+            # token from the OTP flow puts the customer id in the subject and
+            # the phone in its own claim. Both are equally trustworthy because
+            # they are signed at issue time, so accept either.
+            if customer_subject_phone(session) == phone or str(
+                session.get("phone") or ""
+            ) == phone:
                 return
             raise HTTPException(
                 status_code=403,

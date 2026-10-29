@@ -179,6 +179,12 @@ async function main() {
     await link.waitFor({ timeout: 30000 });
     const offerUrl = await link.getAttribute("href");
     assert(offerUrl && offerUrl.includes("/offer/"), "Offer link was not generated.");
+    if (new URL(offerUrl).origin !== new URL(baseURL).origin) {
+      throw new Error(
+        `Offer link points at ${new URL(offerUrl).origin} but the site under test is ${new URL(baseURL).origin}. ` +
+          "Set PIZZA_BLITZ_PUBLIC_URL to the site under test before starting the backend."
+      );
+    }
 
     page.once("dialog", (dialog) => void dialog.accept("People Lead"));
     await page.getByTestId("recruitment-countersign-offer").click();

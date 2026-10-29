@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_roles
@@ -128,7 +129,16 @@ def daily_close_command_payload(db: Session, close_date: date | None = None) -> 
         and (order.delivery_assignment.status or "").lower() != "delivered"
     ]
 
-    daily_sales = db.query(DailySales).filter(DailySales.date == close_date).first()
+    daily_totals = (
+        db.query(
+            func.coalesce(func.sum(DailySales.total_sale), 0).label("sale"),
+            func.coalesce(func.sum(DailySales.total_expense), 0).label("expense"),
+        )
+        .filter(DailySales.date == close_date)
+        .first()
+    )
+    daily_sales_total = float(daily_totals.sale or 0) if daily_totals else 0.0
+    daily_expense_total = float(daily_totals.expense or 0) if daily_totals else 0.0
     expenses = (
         db.query(Expense)
         .filter(Expense.date >= day_start, Expense.date <= day_end)
@@ -289,9 +299,9 @@ def daily_close_command_payload(db: Session, close_date: date | None = None) -> 
             "missing_receipt_count": missing_receipt_count,
             "shift_count": len(shifts),
             "open_shift_count": open_shift_count,
-            "daily_sales_total": _money(daily_sales.total_sale if daily_sales else 0),
-            "daily_expense_total": _money(daily_sales.total_expense if daily_sales else 0),
-            "daily_profit": _money(daily_sales.profit if daily_sales else 0),
+            "daily_sales_total": _money(daily_sales_total),
+            "daily_expense_total": _money(daily_expense_total),
+            "daily_profit": _money(daily_sales_total - daily_expense_total),
             "next_action": next_action,
         },
         "checks": checks,
@@ -807,8 +817,33 @@ def deployment_checklist(
         "Database reachable",
         "ready" if database_ok else "blocked",
         f"{engine.dialect.name} connection {'OK' if database_ok else 'failed'}.",
-        "" if database_ok else "Check DATABASE_URL and database availability.",
+        "" if database_ok else "Check SQLALCHEMY_DATABASE_URI and database availability.",
     )
+
+    # Reachable is not the same as durable. The default URI is
+    # `sqlite:///:memory:`, which accepts real orders into RAM and forgets every
+    # one of them when the process restarts, so the engine gets its own row.
+    is_production = settings.ENVIRONMENT.strip().lower() == "production"
+    in_memory = ":memory:" in settings.SQLALCHEMY_DATABASE_URI
+    if engine.dialect.name == "sqlite":
+        add(
+            "database_engine",
+            "Database survives a restart",
+            "blocked" if is_production or in_memory else "warn",
+            (
+                "SQLite in-memory: every order disappears when this process exits."
+                if in_memory
+                else "SQLite file: restarts are safe, but this is not the production engine."
+            ),
+            "Set SQLALCHEMY_DATABASE_URI to a Postgres URL for the launch.",
+        )
+    else:
+        add(
+            "database_engine",
+            "Database survives a restart",
+            "ready",
+            f"{engine.dialect.name} is a durable server-backed engine.",
+        )
 
     current_revision = None
     try:

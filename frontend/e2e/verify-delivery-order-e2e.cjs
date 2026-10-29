@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
@@ -249,6 +249,22 @@ async function main() {
     await page.getByTestId("track-delivery-timeline").getByText("3/4 delivery steps complete", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByTestId("track-delivery-timeline").getByText("Rider assigned", { exact: true }).waitFor({ timeout: 10000 });
     await page.getByTestId("track-delivery-timeline").getByText("Out for delivery", { exact: true }).waitFor({ timeout: 10000 });
+    // The guest sees a live arrival countdown, not just a fixed window.
+    const countdown = page.getByTestId("track-eta-countdown");
+    await countdown.waitFor({ timeout: 10000 });
+    const countdownText = ((await countdown.textContent()) || "").replace(/\s+/g, " ").trim();
+    assert(
+      /Arriving in ~\d+ min.*Due by/i.test(countdownText),
+      `Tracking countdown read "${countdownText}".`
+    );
+    assert(
+      (await countdown.getAttribute("data-tone")) === "on-time",
+      `Fresh delivery countdown was not on time: "${countdownText}".`
+    );
+    await page.screenshot({
+      path: path.join(artifactsDir, "visible-delivery-order-e2e-countdown.png"),
+      fullPage: false,
+    });
     await assertHealthyPage(page, "delivery tracking out-for-delivery page");
 
     response = await page.goto(`${baseURL}/operations`, { waitUntil: "domcontentloaded" });
@@ -269,6 +285,10 @@ async function main() {
     await page.getByTestId("track-delivery-assignment-status").getByText("delivered", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByTestId("track-delivery-timeline").getByText("4/4 delivery steps complete", { exact: false }).waitFor({ timeout: 10000 });
     await page.getByTestId("track-delivery-timeline").getByText("Delivered", { exact: true }).waitFor({ timeout: 10000 });
+    assert(
+      (await page.getByTestId("track-eta-countdown").count()) === 0,
+      "A delivered order still shows an arrival countdown."
+    );
     await page.getByText(itemName, { exact: false }).waitFor({ timeout: 10000 });
 
     await page.screenshot({

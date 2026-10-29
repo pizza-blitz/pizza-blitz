@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const artifactsDir = path.join(__dirname, "artifacts");
 
 function assert(condition, message) {
@@ -79,6 +79,14 @@ async function assertLanding(page, label) {
     (await page.locator('a[href="/order"]').count()) >= 2,
     `${label} does not link to the order flow.`
   );
+  assert(
+    (await page.locator('a[href="/menu"]').count()) === 0,
+    `${label} still links guests to the staff menu manager.`
+  );
+  assert(
+    (await page.locator('a[href="/login"]').count()) === 0,
+    `${label} exposes the staff login to customers.`
+  );
   assert((await page.locator("footer").count()) === 1, `${label} is missing a footer.`);
 }
 
@@ -110,6 +118,18 @@ async function main() {
       path: path.join(artifactsDir, "visible-landing-page-desktop.png"),
       fullPage: true,
     });
+    const staffMenuResponse = await desktopPage.goto(`${baseURL}/menu`, {
+      waitUntil: "domcontentloaded",
+    });
+    assert(
+      staffMenuResponse && staffMenuResponse.ok(),
+      `Guest /menu returned HTTP ${staffMenuResponse?.status() || "no response"}.`
+    );
+    await desktopPage.waitForURL(/\/order(\?|$)/, { timeout: 15000 });
+    assert(
+      !desktopPage.url().includes("/login"),
+      "A guest visiting /menu was still sent to the staff login."
+    );
     await desktop.close();
 
     const mobile = await browser.newContext({

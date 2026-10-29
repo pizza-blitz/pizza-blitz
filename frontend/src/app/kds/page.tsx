@@ -47,6 +47,7 @@ type KdsOrder = {
   fulfillment_type?: string | null;
   table_number?: string | null;
   customer_name?: string | null;
+  allergy_note?: string | null;
   payment_status?: string | null;
   created_at?: string | null;
   age_minutes: number;
@@ -443,6 +444,15 @@ export default function KdsPage() {
                             {formatElapsed(seconds)}
                           </span>
                         </div>
+
+                        {order.allergy_note && (
+                          <p
+                            data-testid={`kds-allergy-${order.id}`}
+                            className="mt-2 rounded-md border border-red-400/60 bg-red-500/20 px-2 py-1.5 text-[11px] font-black uppercase tracking-wide text-red-100"
+                          >
+                            Allergy · {order.allergy_note} · confirm before serving
+                          </p>
+                        )}
 
                         {order.scheduled_label && (
                           <p className="mt-2 inline-flex rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-black text-amber-200">

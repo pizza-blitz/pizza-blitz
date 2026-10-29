@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
@@ -88,7 +88,11 @@ async function main() {
     const hr = page.getByTestId("department-card-hr");
     await operations.waitFor({ timeout: 20000 });
     await hr.waitFor({ timeout: 20000 });
-    assert(/Restaurant Operations/i.test(await operations.innerText()), "Operations card missing.");
+    const operationsText = await operations.innerText();
+    assert(
+      /Operations/i.test(operationsText) && /Service floor/i.test(operationsText),
+      "Operations card missing."
+    );
     assert(/People & HR/i.test(await hr.innerText()), "HR card missing.");
     assert(/Euron Open HRMS/i.test(await hr.innerText()), "HR integration label missing.");
 

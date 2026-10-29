@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.api.deps import get_db, require_roles
 from app.models.domain import DailySales
 from app.services.sheets_service import SheetsService
+from app.services.store_service import DEFAULT_STORE_ID
 from app.services.gemini_service import bytes_part, generate_text, parse_json_response
 from datetime import datetime
 
@@ -88,15 +89,25 @@ async def import_from_pdf(file: UploadFile = File(...), db: Session = Depends(ge
         
         imported_count = 0
         for entry in extracted_data:
-            # Simple mapping to DailySales
-            db_obj = DailySales(
-                date=datetime.strptime(entry['date'], '%Y-%m-%d').date(),
-                total_sale=entry['total_sale'],
-                total_expense=entry['total_expense'],
-                profit=float(entry['total_sale']) - float(entry['total_expense']),
-                notes=entry.get('notes', 'Imported from PDF')
+            parsed_date = datetime.strptime(entry['date'], '%Y-%m-%d').date()
+            # PDF imports are single-store; keep them on the default outlet.
+            db_obj = (
+                db.query(DailySales)
+                .filter(
+                    DailySales.store_id == DEFAULT_STORE_ID,
+                    DailySales.date == parsed_date,
+                )
+                .first()
             )
-            db.merge(db_obj) # Avoid duplicates if date exists
+            if db_obj is None:
+                db_obj = DailySales(
+                    store_id=DEFAULT_STORE_ID, date=parsed_date
+                )
+                db.add(db_obj)
+            db_obj.total_sale = entry['total_sale']
+            db_obj.total_expense = entry['total_expense']
+            db_obj.profit = float(entry['total_sale']) - float(entry['total_expense'])
+            db_obj.notes = entry.get('notes', 'Imported from PDF')
             imported_count += 1
             
         db.commit()

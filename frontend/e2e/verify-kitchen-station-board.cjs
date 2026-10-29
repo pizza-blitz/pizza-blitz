@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = (process.env.E2E_BASE_URL || "http://127.0.0.1:3011").replace(/\/$/, "");
+const baseURL = (process.env.E2E_BASE_URL || "http://localhost:3011").replace(/\/$/, "");
 const apiURL = (
   process.env.E2E_API_URL ||
   (/^https?:\/\/(127\.0\.0\.1|localhost)/.test(baseURL)

@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { chromium } = require("@playwright/test");
 
-const baseURL = process.env.E2E_BASE_URL || "http://127.0.0.1:3011";
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3011";
 const apiURL = process.env.E2E_API_URL || "http://127.0.0.1:8010";
 const adminId = process.env.E2E_ADMIN_ID || "admin";
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || "admin123";
@@ -91,7 +91,7 @@ function createBrowserWatch(page) {
     const text = message.text();
     if (/Failed to load resource|favicon\.ico|images\.unsplash\.com/i.test(text)) return;
     if (/Failed to fetch RSC payload/i.test(text) && /Falling back to browser navigation/i.test(text)) return;
-    if (/Access to fetch at 'http:\/\/localhost:3011\/login'.*\/logout\?_rsc=/i.test(text)) return;
+    if (/Access to fetch at 'http:\/\/(?:localhost|127\.0\.0\.1):3011\/login'.*\/logout\?_rsc=/i.test(text)) return;
     issues.push(`console error: ${text}`);
   });
   page.on("requestfailed", (request) => {

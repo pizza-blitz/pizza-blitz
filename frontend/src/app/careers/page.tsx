@@ -59,7 +59,7 @@ export default async function CareersPage() {
             <span className="text-lg font-black tracking-tight">Pizza Blitz</span>
           </Link>
           <div className="flex items-center gap-4 text-sm font-bold">
-            <Link href="/menu" className="text-white/70 hover:text-white">
+            <Link href="/order" className="text-white/70 hover:text-white">
               Menu
             </Link>
             <Link

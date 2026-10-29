@@ -5,8 +5,19 @@ from app.db.base import Base
 
 class DailySales(Base):
     __tablename__ = "daily_sales"
+    __table_args__ = (
+        UniqueConstraint("store_id", "date", name="uq_daily_sales_store_date"),
+    )
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, unique=True, index=True)
+    store_id = Column(
+        Integer,
+        ForeignKey("stores.id"),
+        index=True,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    date = Column(Date, index=True)
     cash_collected = Column(Numeric(10, 2), default=0.0)
     total_expense = Column(Numeric(10, 2), default=0.0)
     total_sale = Column(Numeric(10, 2), default=0.0)
@@ -14,6 +25,7 @@ class DailySales(Base):
     payment_method = Column(String, default="mixed")
     notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    store = relationship("Store")
 
 class SalesRepairBlock(Base):
     __tablename__ = "sales_repair_blocks"
@@ -124,23 +136,42 @@ class ExpenseCategory(Base):
 class Expense(Base):
     __tablename__ = "expenses"
     id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer,
+        ForeignKey("stores.id"),
+        index=True,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     date = Column(DateTime, index=True)
     category_id = Column(Integer, ForeignKey("expense_categories.id"))
     amount = Column(Float, nullable=False)
     description = Column(String, nullable=True)
     receipt_photo_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    store = relationship("Store")
 
 class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
     id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer,
+        ForeignKey("stores.id"),
+        index=True,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     supplier_name = Column(String)
     supplier_whatsapp = Column(String)
     items = Column(JSON)
     total_amount = Column(Float, default=0.0)
     status = Column(String, default="draft") # draft/sent/received
     whatsapp_sent_at = Column(DateTime, nullable=True)
+    received_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    store = relationship("Store")
 
 class Customer(Base):
     __tablename__ = "customers"
@@ -170,6 +201,31 @@ class CustomerAddress(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     customer = relationship("Customer", back_populates="addresses")
+
+
+class CustomerMemory(Base):
+    """What the concierge is allowed to remember about one returning guest.
+
+    Keyed by phone because that is what the customer types at checkout and what
+    the order-history proof already verifies. Everything here is optional: an
+    empty row is the same as no row, and a guest who withdraws consent deletes
+    it. Allergies are stored as the guest's own words so the assistant can echo
+    them back rather than paraphrase a medical claim.
+    """
+
+    __tablename__ = "customer_memories"
+    id = Column(Integer, primary_key=True, index=True)
+    phone = Column(String(30), unique=True, index=True, nullable=False)
+    display_name = Column(String(255), nullable=True)
+    allergies = Column(JSON, default=list, nullable=False)
+    dietary_preferences = Column(JSON, default=list, nullable=False)
+    favourite_items = Column(JSON, default=list, nullable=False)
+    usual_fulfillment = Column(String(20), nullable=True)
+    last_order_summary = Column(String(500), nullable=True)
+    notes = Column(Text, nullable=True)
+    consent_granted = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class LoyaltyAccount(Base):
@@ -257,6 +313,10 @@ class OperationalAuditEvent(Base):
     actor_display_name = Column(String(160), nullable=True)
     detail = Column(String, nullable=True)
     metadata_json = Column(JSON, default=dict)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=True
+    )
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
     ip_address = Column(String(80), nullable=True)
     user_agent = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -682,6 +742,14 @@ class FixedCost(Base):
 class WasteLog(Base):
     __tablename__ = "waste_log"
     id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer,
+        ForeignKey("stores.id"),
+        index=True,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     date = Column(Date, default=date.today, index=True)
     item_name = Column(String(255), index=True, nullable=False)
     quantity = Column(Float, default=0.0)
@@ -689,6 +757,7 @@ class WasteLog(Base):
     estimated_cost = Column(Float, default=0.0)
     reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    store = relationship("Store")
 
 class Recipe(Base):
     __tablename__ = "recipes"
@@ -890,17 +959,79 @@ class BusinessDepartment(Base):
     icon = Column(String(40), nullable=False, default="building")
     status = Column(String(20), nullable=False, default="active", index=True)
     sort_order = Column(Integer, nullable=False, default=100)
+    parent_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=True
+    )
+    head_staff_id = Column(String(120), nullable=True)
+    kind = Column(
+        String(20),
+        nullable=False,
+        default="functional",
+        server_default="functional",
+        index=True,
+    )
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    cost_center = Column(String(60), nullable=True)
     external_system = Column(String(80), nullable=True)
     external_url = Column(String(500), nullable=True)
     integration_status = Column(String(30), nullable=False, default="not_connected")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    parent = relationship(
+        "BusinessDepartment",
+        remote_side=[id],
+        backref="children",
+        foreign_keys=[parent_id],
+    )
     members = relationship(
         "DepartmentMember", back_populates="department", cascade="all, delete-orphan"
     )
     modules = relationship(
         "DepartmentModule", back_populates="department", cascade="all, delete-orphan"
     )
+    roles = relationship(
+        "DepartmentRole", back_populates="department", cascade="all, delete-orphan"
+    )
+
+
+class DepartmentRole(Base):
+    __tablename__ = "department_roles"
+    __table_args__ = (
+        UniqueConstraint("department_id", "key", name="uq_department_role"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=False
+    )
+    key = Column(String(40), nullable=False)
+    name = Column(String(80), nullable=False)
+    description = Column(String(240), nullable=True)
+    level = Column(String(20), nullable=False, default="member")
+    is_default = Column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    department = relationship("BusinessDepartment", back_populates="roles")
+    permissions = relationship(
+        "DepartmentRolePermission",
+        back_populates="role",
+        cascade="all, delete-orphan",
+    )
+
+
+class DepartmentRolePermission(Base):
+    __tablename__ = "department_role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role_id", "permission_key", name="uq_department_role_permission"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    role_id = Column(
+        Integer, ForeignKey("department_roles.id"), index=True, nullable=False
+    )
+    permission_key = Column(String(80), nullable=False, index=True)
+    enabled = Column(Boolean, nullable=False, default=True, server_default="1")
+    role = relationship("DepartmentRole", back_populates="permissions")
 
 
 class DepartmentMember(Base):
@@ -914,8 +1045,21 @@ class DepartmentMember(Base):
     )
     staff_id = Column(String(120), index=True, nullable=False)
     role = Column(String(30), nullable=False, default="member")
+    title = Column(String(120), nullable=True)
+    reports_to_staff_id = Column(String(120), nullable=True)
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), index=True, nullable=True
+    )
+    department_role_id = Column(
+        Integer, ForeignKey("department_roles.id"), index=True, nullable=True
+    )
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    effective_from = Column(Date, nullable=True)
+    effective_to = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     department = relationship("BusinessDepartment", back_populates="members")
+    department_role = relationship("DepartmentRole")
+    employee = relationship("HREmployee")
 
 
 class DepartmentModule(Base):
@@ -931,10 +1075,121 @@ class DepartmentModule(Base):
     )
     module_key = Column(String(60), nullable=False)
     label = Column(String(120), nullable=False)
+    description = Column(String(240), nullable=True)
+    icon = Column(String(40), nullable=True)
     route = Column(String(240), nullable=True)
     status = Column(String(20), nullable=False, default="planned")
     sort_order = Column(Integer, nullable=False, default=100)
+    permission_key = Column(String(80), nullable=True, index=True)
+    nav_group = Column(String(80), nullable=True)
+    nav_order = Column(
+        Integer, nullable=False, default=100, server_default="100"
+    )
+    is_owner = Column(Boolean, nullable=False, default=True, server_default="1")
+    is_shared = Column(Boolean, nullable=False, default=False, server_default="0")
     department = relationship("BusinessDepartment", back_populates="modules")
+
+
+class WorkItem(Base):
+    __tablename__ = "work_items"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=False
+    )
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    kind = Column(String(30), nullable=False, default="task")
+    status = Column(String(30), nullable=False, default="open", index=True)
+    priority = Column(String(20), nullable=False, default="normal", index=True)
+    owner_staff_id = Column(String(120), nullable=True, index=True)
+    created_by = Column(String(160), nullable=True)
+    due_at = Column(DateTime, nullable=True, index=True)
+    source_type = Column(String(60), nullable=True)
+    source_id = Column(String(120), nullable=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    department = relationship("BusinessDepartment")
+    comments = relationship(
+        "WorkItemComment",
+        back_populates="work_item",
+        cascade="all, delete-orphan",
+    )
+
+
+class WorkItemComment(Base):
+    __tablename__ = "work_item_comments"
+    id = Column(Integer, primary_key=True, index=True)
+    work_item_id = Column(
+        Integer, ForeignKey("work_items.id"), index=True, nullable=False
+    )
+    author_staff_id = Column(String(120), nullable=True)
+    author_name = Column(String(160), nullable=True)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    work_item = relationship("WorkItem", back_populates="comments")
+
+
+class Approval(Base):
+    __tablename__ = "approvals"
+    id = Column(Integer, primary_key=True, index=True)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=False
+    )
+    kind = Column(String(40), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    amount = Column(Float, nullable=True)
+    currency = Column(String(8), nullable=False, default="INR")
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    requested_by = Column(String(160), nullable=True)
+    decided_by = Column(String(160), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=True)
+    source_type = Column(String(60), nullable=True, index=True)
+    source_id = Column(String(120), nullable=True, index=True)
+    store_id = Column(Integer, ForeignKey("stores.id"), index=True, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    department = relationship("BusinessDepartment")
+    steps = relationship(
+        "ApprovalStep", back_populates="approval", cascade="all, delete-orphan"
+    )
+
+
+class ApprovalStep(Base):
+    __tablename__ = "approval_steps"
+    id = Column(Integer, primary_key=True, index=True)
+    approval_id = Column(
+        Integer, ForeignKey("approvals.id"), index=True, nullable=False
+    )
+    step_order = Column(Integer, nullable=False, default=1)
+    approver_department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=True
+    )
+    approver_staff_id = Column(String(120), nullable=True, index=True)
+    status = Column(String(20), nullable=False, default="pending")
+    decided_at = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    approval = relationship("Approval", back_populates="steps")
+
+
+class StaffNotification(Base):
+    __tablename__ = "staff_notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    staff_id = Column(String(120), index=True, nullable=False)
+    department_id = Column(
+        Integer, ForeignKey("business_departments.id"), index=True, nullable=True
+    )
+    kind = Column(String(40), nullable=False, default="info")
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    link = Column(String(240), nullable=True)
+    read_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class HREmployee(Base):
@@ -1681,3 +1936,333 @@ class SupportMessage(Base):
     internal = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     ticket = relationship("SupportTicket", back_populates="messages")
+
+
+# ---------------------------------------------------------------------------
+# Department operations: checklists, facilities, quality, training, franchise,
+# goals, gift cards and stocktake. These back the department workspaces that
+# used to be listed as "planned" in the company catalogue.
+# ---------------------------------------------------------------------------
+
+
+class OpsChecklistTemplate(Base):
+    """A reusable opening / closing / shift checklist."""
+
+    __tablename__ = "ops_checklist_templates"
+    id = Column(Integer, primary_key=True, index=True)
+    department_key = Column(String(60), nullable=False, index=True, default="operations")
+    name = Column(String(160), nullable=False)
+    description = Column(String(500), nullable=True)
+    kind = Column(String(30), nullable=False, default="daily", index=True)
+    items = Column(JSON, nullable=False, default=list)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OpsChecklistRun(Base):
+    """One execution of a checklist on a given day."""
+
+    __tablename__ = "ops_checklist_runs"
+    __table_args__ = (
+        UniqueConstraint("template_id", "store_id", "run_date", name="uq_checklist_run_day"),
+    )
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(
+        Integer, ForeignKey("ops_checklist_templates.id"), nullable=False, index=True
+    )
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=False, default=1,
+        server_default="1",
+    )
+    run_date = Column(Date, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="in_progress", index=True)
+    items = Column(JSON, nullable=False, default=list)
+    started_by = Column(String(120), nullable=True)
+    completed_by = Column(String(120), nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    notes = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    template = relationship("OpsChecklistTemplate")
+
+
+class MaintenanceAsset(Base):
+    """A piece of equipment tracked by facilities."""
+
+    __tablename__ = "maintenance_assets"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=False, default=1,
+        server_default="1",
+    )
+    name = Column(String(160), nullable=False)
+    category = Column(String(60), nullable=False, default="kitchen", index=True)
+    location = Column(String(120), nullable=True)
+    serial_number = Column(String(120), nullable=True)
+    status = Column(String(30), nullable=False, default="operational", index=True)
+    criticality = Column(String(20), nullable=False, default="normal")
+    purchase_date = Column(Date, nullable=True)
+    warranty_until = Column(Date, nullable=True)
+    next_service_due = Column(Date, nullable=True, index=True)
+    notes = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MaintenanceWorkOrder(Base):
+    """A repair or preventive-maintenance job."""
+
+    __tablename__ = "maintenance_work_orders"
+    id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(
+        Integer, ForeignKey("maintenance_assets.id"), index=True, nullable=True
+    )
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=False, default=1,
+        server_default="1",
+    )
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    priority = Column(String(20), nullable=False, default="normal", index=True)
+    status = Column(String(30), nullable=False, default="open", index=True)
+    reported_by = Column(String(120), nullable=True)
+    assigned_to = Column(String(120), nullable=True)
+    due_at = Column(DateTime, nullable=True, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    cost = Column(Numeric(10, 2), nullable=False, default=0, server_default="0")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    asset = relationship("MaintenanceAsset")
+
+
+class QualityAudit(Base):
+    """A scored food-safety / hygiene audit with structured findings."""
+
+    __tablename__ = "quality_audits"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=False, default=1,
+        server_default="1",
+    )
+    department_key = Column(String(60), nullable=False, default="quality", index=True)
+    title = Column(String(200), nullable=False)
+    audit_type = Column(String(40), nullable=False, default="hygiene", index=True)
+    auditor = Column(String(120), nullable=True)
+    status = Column(String(30), nullable=False, default="scheduled", index=True)
+    score = Column(Float, nullable=True)
+    max_score = Column(Float, nullable=False, default=100)
+    findings = Column(JSON, nullable=False, default=list)
+    notes = Column(Text, nullable=True)
+    scheduled_for = Column(Date, nullable=True, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TemperatureLog(Base):
+    """Fridge, freezer and hot-holding temperature checks."""
+
+    __tablename__ = "temperature_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=False, default=1,
+        server_default="1",
+    )
+    unit_name = Column(String(120), nullable=False)
+    unit_type = Column(String(40), nullable=False, default="fridge", index=True)
+    temperature_c = Column(Float, nullable=False)
+    status = Column(String(20), nullable=False, default="ok", index=True)
+    recorded_by = Column(String(120), nullable=True)
+    recorded_at = Column(DateTime, default=datetime.utcnow, index=True)
+    notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ComplianceLicence(Base):
+    """Licences and certificates with expiry tracking."""
+
+    __tablename__ = "compliance_licences"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=True
+    )
+    name = Column(String(200), nullable=False)
+    category = Column(String(60), nullable=False, default="fssai", index=True)
+    licence_number = Column(String(120), nullable=True)
+    issuing_authority = Column(String(200), nullable=True)
+    issued_on = Column(Date, nullable=True)
+    expires_on = Column(Date, nullable=True, index=True)
+    status = Column(String(30), nullable=False, default="valid", index=True)
+    document_url = Column(String(500), nullable=True)
+    owner_staff_id = Column(String(120), nullable=True)
+    notes = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TrainingCourse(Base):
+    """A short internal course with optional quiz questions."""
+
+    __tablename__ = "training_courses"
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(80), unique=True, index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    department_key = Column(String(60), nullable=False, default="training", index=True)
+    level = Column(String(30), nullable=False, default="core", index=True)
+    duration_minutes = Column(Integer, nullable=False, default=15)
+    pass_score = Column(Integer, nullable=False, default=80)
+    quiz = Column(JSON, nullable=False, default=list)
+    content = Column(JSON, nullable=False, default=list)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TrainingRecord(Base):
+    """A course assignment and its result for one employee."""
+
+    __tablename__ = "training_records"
+    id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(
+        Integer, ForeignKey("training_courses.id"), nullable=False, index=True
+    )
+    employee_id = Column(
+        Integer, ForeignKey("hr_employees.id"), nullable=True, index=True
+    )
+    staff_name = Column(String(160), nullable=False)
+    status = Column(String(30), nullable=False, default="assigned", index=True)
+    score = Column(Float, nullable=True)
+    answers = Column(JSON, nullable=False, default=list)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+    due_on = Column(Date, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    course = relationship("TrainingCourse")
+
+
+class FranchiseSite(Base):
+    """A franchise prospect moving through the expansion pipeline."""
+
+    __tablename__ = "franchise_sites"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    city = Column(String(120), nullable=False, index=True)
+    state = Column(String(120), nullable=True)
+    contact_name = Column(String(160), nullable=True)
+    contact_phone = Column(String(30), nullable=True)
+    contact_email = Column(String(200), nullable=True)
+    stage = Column(String(40), nullable=False, default="lead", index=True)
+    expected_investment = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    probability = Column(Integer, nullable=False, default=20)
+    owner_staff_id = Column(String(120), nullable=True)
+    next_step = Column(String(300), nullable=True)
+    next_action_on = Column(Date, nullable=True, index=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CompanyGoal(Base):
+    """A department or company-level target with progress tracking."""
+
+    __tablename__ = "company_goals"
+    id = Column(Integer, primary_key=True, index=True)
+    department_key = Column(String(60), nullable=False, default="executive", index=True)
+    title = Column(String(200), nullable=False)
+    description = Column(String(1000), nullable=True)
+    owner_staff_id = Column(String(120), nullable=True)
+    metric = Column(String(120), nullable=False, default="revenue")
+    target_value = Column(Float, nullable=False, default=0)
+    current_value = Column(Float, nullable=False, default=0, server_default="0")
+    unit = Column(String(30), nullable=False, default="₹")
+    period = Column(String(30), nullable=False, default="monthly", index=True)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True, index=True)
+    status = Column(String(30), nullable=False, default="active", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GiftCard(Base):
+    """A stored-value gift card that can be redeemed at checkout."""
+
+    __tablename__ = "gift_cards"
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(40), unique=True, index=True, nullable=False)
+    initial_balance = Column(Numeric(10, 2), nullable=False, default=0)
+    balance = Column(Numeric(10, 2), nullable=False, default=0, server_default="0")
+    currency = Column(String(10), nullable=False, default="INR")
+    status = Column(String(20), nullable=False, default="active", index=True)
+    customer_phone = Column(String(30), nullable=True, index=True)
+    note = Column(String(500), nullable=True)
+    issued_by = Column(String(120), nullable=True)
+    issued_at = Column(DateTime, default=datetime.utcnow)
+    expires_on = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GiftCardTransaction(Base):
+    """Every balance movement for a gift card."""
+
+    __tablename__ = "gift_card_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    gift_card_id = Column(
+        Integer, ForeignKey("gift_cards.id"), nullable=False, index=True
+    )
+    order_id = Column(
+        Integer, ForeignKey("orders.id"), nullable=True, index=True
+    )
+    kind = Column(String(30), nullable=False, default="redeem", index=True)
+    amount = Column(Numeric(10, 2), nullable=False, default=0)
+    balance_after = Column(Numeric(10, 2), nullable=False, default=0)
+    reference = Column(String(120), nullable=True)
+    note = Column(String(500), nullable=True)
+    created_by = Column(String(120), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    gift_card = relationship("GiftCard")
+
+
+class StocktakeSession(Base):
+    """A physical stock count for a store."""
+
+    __tablename__ = "stocktake_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(
+        Integer, ForeignKey("stores.id"), index=True, nullable=False, default=1,
+        server_default="1",
+    )
+    title = Column(String(200), nullable=False, default="Stocktake")
+    status = Column(String(30), nullable=False, default="draft", index=True)
+    counted_by = Column(String(120), nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    variance_value = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    notes = Column(String(1000), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StocktakeLine(Base):
+    """Expected vs counted quantity for one inventory item."""
+
+    __tablename__ = "stocktake_lines"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(
+        Integer, ForeignKey("stocktake_sessions.id"), nullable=False, index=True
+    )
+    item_id = Column(Integer, ForeignKey("inventory_items.id"), nullable=True, index=True)
+    item_name = Column(String(160), nullable=False)
+    unit = Column(String(30), nullable=True)
+    expected_qty = Column(Float, nullable=False, default=0)
+    counted_qty = Column(Float, nullable=False, default=0)
+    variance_qty = Column(Float, nullable=False, default=0)
+    unit_cost = Column(Float, nullable=False, default=0)
+    variance_value = Column(Float, nullable=False, default=0)
+    note = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    session = relationship("StocktakeSession")

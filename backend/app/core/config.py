@@ -66,8 +66,12 @@ class Settings(BaseSettings):
     CUSTOMER_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("CUSTOMER_TOKEN_EXPIRE_MINUTES", "43200"))
     PAYMENT_PROVIDER: str = os.getenv("PAYMENT_PROVIDER", "manual")
     PAYMENT_CURRENCY: str = os.getenv("PAYMENT_CURRENCY", "INR")
-    PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://127.0.0.1:3011/account")
-    PIZZA_BLITZ_PUBLIC_URL: str = os.getenv("PIZZA_BLITZ_PUBLIC_URL", "http://127.0.0.1:3011")
+    # Local site default is `localhost:3011`, the spelling a loopback-bound frontend
+    # answers redirects with: started with `--hostname 127.0.0.1`, Next answers both
+    # loopback spellings with `localhost`, so generated links keep the visitor on the
+    # origin they are already using.
+    PAYMENT_RETURN_URL: str = os.getenv("PAYMENT_RETURN_URL", "http://localhost:3011/account")
+    PIZZA_BLITZ_PUBLIC_URL: str = os.getenv("PIZZA_BLITZ_PUBLIC_URL", "http://localhost:3011")
     PIZZA_BLITZ_PUBLIC_API_PREFIX: str = os.getenv("PIZZA_BLITZ_PUBLIC_API_PREFIX", "/server")
     # Transactional order-status notifications. The "console" channel records a
     # sent notification without calling an external provider (development/demo).
@@ -78,6 +82,12 @@ class Settings(BaseSettings):
     CUSTOMER_OTP_CHANNEL: str = os.getenv("CUSTOMER_OTP_CHANNEL", "console")
     MESSAGING_WEBHOOK_TOKEN: str | None = os.getenv("MESSAGING_WEBHOOK_TOKEN")
     CUSTOMER_OTP_TTL_SECONDS: int = int(os.getenv("CUSTOMER_OTP_TTL_SECONDS", "300"))
+    # Only local development and tests may echo a debug OTP. Staging and
+    # production fail closed even if the channel is console or delivery fails.
+    CUSTOMER_OTP_DEBUG_ENABLED: bool = (
+        os.getenv("CUSTOMER_OTP_DEBUG_ENABLED", "true").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
     CASHFREE_APP_ID: str | None = os.getenv("CASHFREE_APP_ID")
     CASHFREE_SECRET_KEY: str | None = os.getenv("CASHFREE_SECRET_KEY")
     CASHFREE_WEBHOOK_SECRET: str | None = os.getenv("CASHFREE_WEBHOOK_SECRET")
@@ -157,11 +167,19 @@ WEAK_SECRET_VALUES = {
 
 
 def validate_production_settings() -> None:
-    """Refuse to boot production on local default secrets.
+    """Refuse to boot production on local default secrets or a throwaway database.
 
     A deploy that forgets AUTH_SECRET_KEY would otherwise sign admin tokens
-    with a repository default that anyone can read. Failing at startup is the
-    only safe outcome, and it is reported as one actionable error.
+    with a repository default that anyone can read. A deploy that forgets
+    SQLALCHEMY_DATABASE_URI would otherwise start happily on `sqlite:///:memory:`,
+    accept orders into RAM, and lose every one of them when the platform
+    recycles the process. Failing at startup is the only safe outcome, and it is
+    reported as one actionable error.
+
+    A Vercel preview with SQLite is deliberately outside this guard: it boots so
+    the storefront can be shown, and `checkout_readiness_payload()` refuses order
+    capture with a 503 instead. `ENVIRONMENT=production` is what marks a deploy
+    as a real restaurant rather than a preview.
     """
     if settings.ENVIRONMENT.strip().lower() != "production":
         return
@@ -177,9 +195,14 @@ def validate_production_settings() -> None:
         settings.PIZZA_BLITZ_SESSION_SECRET in WEAK_SECRET_VALUES
     ):
         problems.append("PIZZA_BLITZ_SESSION_SECRET")
+    if settings.SQLALCHEMY_DATABASE_URI.strip().lower().startswith("sqlite"):
+        problems.append(
+            "SQLALCHEMY_DATABASE_URI (production needs a Postgres URL; "
+            "SQLite is for local runs only)"
+        )
     if problems:
         raise RuntimeError(
-            "Refusing to start in production with default secrets: "
+            "Refusing to start in production with unsafe settings: "
             + ", ".join(problems)
             + ". Set strong unique values for these environment variables."
         )

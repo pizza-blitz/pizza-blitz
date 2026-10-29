@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Any
 from app.core.clock import business_today
-from app.api.deps import get_db
+from app.api.deps import get_current_session, get_db
 from app.models.domain import (
     DailySales,
     Expense,
@@ -13,8 +13,13 @@ from app.models.domain import (
     Vendor,
     VendorPriceHistory,
 )
+from app.services.company_work_service import (
+    ensure_approval_for_source,
+    sync_source_approval,
+)
+from app.services.store_service import resolve_store
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, time
 
 router = APIRouter()
 
@@ -24,6 +29,7 @@ class PurchaseOrderCreate(BaseModel):
     items: List[Any]
     total_amount: float
     status: str = "draft"
+    store_id: int | None = None
 
 
 class PurchaseOrderStatusUpdate(BaseModel):
@@ -37,6 +43,8 @@ class PurchaseOrderItemsUpdate(BaseModel):
 def _serialize_purchase_order(order: PurchaseOrder) -> dict:
     return {
         "id": order.id,
+        "store_id": order.store_id,
+        "store": order.store.name if order.store else None,
         "supplier_name": order.supplier_name,
         "supplier_whatsapp": order.supplier_whatsapp,
         "items": order.items or [],
@@ -46,6 +54,9 @@ def _serialize_purchase_order(order: PurchaseOrder) -> dict:
             order.whatsapp_sent_at.isoformat()
             if order.whatsapp_sent_at
             else None
+        ),
+        "received_at": (
+            order.received_at.isoformat() if order.received_at else None
         ),
         "created_at": order.created_at.isoformat() if order.created_at else None,
     }
@@ -274,21 +285,30 @@ def _post_purchase_order_expense(order: PurchaseOrder, db: Session) -> Expense |
         return existing_expense
 
     category = _ensure_inventory_expense_category(db)
+    today = business_today()
     expense = Expense(
-        date=datetime.utcnow(),
+        store_id=order.store_id,
+        date=datetime.combine(today, time.min),
         category_id=category.id,
         amount=amount,
         description=description,
     )
     db.add(expense)
 
-    today = business_today()
-    daily = db.query(DailySales).filter(DailySales.date == today).first()
+    daily = (
+        db.query(DailySales)
+        .filter(
+            DailySales.store_id == order.store_id,
+            DailySales.date == today,
+        )
+        .first()
+    )
     if daily:
         daily.total_expense = round(float(daily.total_expense or 0) + amount, 2)
         daily.profit = round(float(daily.total_sale or 0) - float(daily.total_expense or 0), 2)
     else:
         db.add(DailySales(
+            store_id=order.store_id,
             date=today,
             cash_collected=0,
             total_sale=0,
@@ -359,15 +379,70 @@ def _post_vendor_price_history(order: PurchaseOrder, db: Session) -> list[dict]:
 
 
 @router.get("/")
-def get_purchase_orders(db: Session = Depends(get_db)):
+def get_purchase_orders(
+    store_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(PurchaseOrder)
+    if store_id is not None:
+        query = query.filter(PurchaseOrder.store_id == store_id)
     return [
         _serialize_purchase_order(order)
-        for order in db.query(PurchaseOrder).all()
+        for order in query.order_by(PurchaseOrder.id.desc()).all()
     ]
 
+
+def _mirror_purchase_order_approval(
+    db: Session,
+    order: PurchaseOrder,
+    session: dict,
+    *,
+    status: str = "pending",
+    note: str | None = None,
+):
+    return ensure_approval_for_source(
+        db,
+        department_key="supply",
+        kind="purchase_order",
+        title=(
+            f"Purchase order · {order.supplier_name} · "
+            f"Rs {float(order.total_amount or 0):,.0f}"
+        ),
+        source_type="purchase_order",
+        source_id=order.id,
+        amount=float(order.total_amount or 0),
+        requested_by=str(session.get("subject") or "admin"),
+        note=note,
+        store_id=order.store_id,
+        metadata={
+            "supplier_name": order.supplier_name,
+            "status": order.status,
+            "line_count": len(order.items or []),
+            "store_id": order.store_id,
+            "store": order.store.name if order.store else None,
+        },
+        status=status,
+        decided_by=(
+            str(session.get("subject") or "admin")
+            if status != "pending"
+            else None
+        ),
+    )
+
+
 @router.post("/")
-def create_purchase_order(obj_in: PurchaseOrderCreate, db: Session = Depends(get_db)):
+def create_purchase_order(
+    obj_in: PurchaseOrderCreate,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_current_session),
+):
+    try:
+        store = resolve_store(db, obj_in.store_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     db_obj = PurchaseOrder(
+        store_id=store.id,
         supplier_name=obj_in.supplier_name,
         supplier_whatsapp=obj_in.supplier_whatsapp,
         items=obj_in.items,
@@ -377,10 +452,20 @@ def create_purchase_order(obj_in: PurchaseOrderCreate, db: Session = Depends(get
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
+    _mirror_purchase_order_approval(db, db_obj, session)
     return _serialize_purchase_order(db_obj)
 
 @router.post("/from-low-stock")
-def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
+def create_purchase_orders_from_low_stock(
+    store_id: int | None = None,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_current_session),
+):
+    try:
+        store = resolve_store(db, store_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     low_items = (
         db.query(InventoryItem)
         .filter(InventoryItem.current_stock < InventoryItem.minimum_stock)
@@ -402,6 +487,7 @@ def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
     created_orders = []
     for (supplier_name, supplier_whatsapp), items in grouped.items():
         purchase_order = PurchaseOrder(
+            store_id=store.id,
             supplier_name=supplier_name,
             supplier_whatsapp=supplier_whatsapp,
             items=items,
@@ -417,6 +503,7 @@ def create_purchase_orders_from_low_stock(db: Session = Depends(get_db)):
     db.commit()
     for purchase_order in created_orders:
         db.refresh(purchase_order)
+        _mirror_purchase_order_approval(db, purchase_order, session)
 
     return {
         "created": len(created_orders),
@@ -467,7 +554,11 @@ def mark_purchase_order_sent(order_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{order_id}/receive")
-def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
+def receive_purchase_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    session: dict = Depends(get_current_session),
+):
     order = _get_purchase_order_or_404(order_id, db)
     if order.status == "received":
         return {
@@ -481,9 +572,21 @@ def receive_purchase_order(order_id: int, db: Session = Depends(get_db)):
 
     inventory_updates, skipped_items = _receive_inventory(order, db)
     order.status = "received"
+    order.received_at = order.received_at or datetime.utcnow()
     expense = _post_purchase_order_expense(order, db)
     vendor_prices = _post_vendor_price_history(order, db)
     db.commit()
+    db.refresh(order)
+    if expense:
+        db.refresh(expense)
+    sync_source_approval(
+        db,
+        source_type="purchase_order",
+        source_id=order.id,
+        status="approved",
+        decided_by=str(session.get("subject") or "admin"),
+        note="Purchase order received into inventory.",
+    )
     db.refresh(order)
     if expense:
         db.refresh(expense)

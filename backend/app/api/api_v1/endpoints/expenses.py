@@ -7,12 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import business_today
 from app.api.deps import get_db, require_roles
-from app.models.domain import DailySales, Expense, ExpenseCategory
+from app.models.domain import DailySales, Expense, ExpenseCategory, Store
+from app.services.company_work_service import ensure_approval_for_source
+from app.services.store_service import resolve_store
 
 router = APIRouter()
 
 class ExpenseSchema(BaseModel):
     id: Optional[int] = None
+    store_id: Optional[int] = None
     date: datetime
     category_id: int
     amount: float
@@ -32,10 +35,14 @@ class CategorySchema(BaseModel):
 
 @router.get("/expenses", response_model=List[ExpenseSchema])
 def get_expenses(
+    store_id: Optional[int] = None,
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
-    return db.query(Expense).order_by(Expense.date.desc()).all()
+    query = db.query(Expense)
+    if store_id is not None:
+        query = query.filter(Expense.store_id == store_id)
+    return query.order_by(Expense.date.desc()).all()
 
 @router.get("/categories", response_model=List[CategorySchema])
 def get_categories(
@@ -48,7 +55,7 @@ def get_categories(
 def add_expense(
     req: ExpenseSchema,
     db: Session = Depends(get_db),
-    _: dict = Depends(require_roles("admin")),
+    session: dict = Depends(require_roles("admin")),
 ):
     category = db.query(ExpenseCategory).filter(
         ExpenseCategory.id == req.category_id,
@@ -56,8 +63,13 @@ def add_expense(
     ).first()
     if not category:
         raise HTTPException(status_code=404, detail="Expense category not found")
+    try:
+        store = resolve_store(db, req.store_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     db_expense = Expense(
+        store_id=store.id,
         date=req.date,
         category_id=req.category_id,
         amount=req.amount,
@@ -67,12 +79,20 @@ def add_expense(
     db.add(db_expense)
 
     expense_day = req.date.date()
-    daily = db.query(DailySales).filter(DailySales.date == expense_day).first()
+    daily = (
+        db.query(DailySales)
+        .filter(
+            DailySales.store_id == store.id,
+            DailySales.date == expense_day,
+        )
+        .first()
+    )
     if daily:
         daily.total_expense = round(float(daily.total_expense or 0) + req.amount, 2)
         daily.profit = round(float(daily.total_sale or 0) - float(daily.total_expense or 0), 2)
     else:
         db.add(DailySales(
+            store_id=store.id,
             date=expense_day,
             cash_collected=0,
             total_sale=0,
@@ -84,14 +104,43 @@ def add_expense(
 
     db.commit()
     db.refresh(db_expense)
+    ensure_approval_for_source(
+        db,
+        department_key="finance",
+        kind="expense",
+        title=f"Expense · {category.name} · Rs {float(req.amount):,.0f}",
+        source_type="expense",
+        source_id=db_expense.id,
+        amount=float(req.amount or 0),
+        requested_by=str(session.get("subject") or "admin"),
+        note=req.description,
+        store_id=store.id,
+        metadata={
+            "category": category.name,
+            "date": expense_day.isoformat(),
+            "store_id": store.id,
+            "store": store.name,
+            "receipt_photo_url": req.receipt_photo_url,
+            "recorded_by_admin": True,
+        },
+        status="approved",
+        decided_by=str(session.get("subject") or "admin"),
+    )
     return db_expense
 
 
-def _expense_row(expense: Expense, category_by_id: dict[int, ExpenseCategory]) -> dict:
+def _expense_row(
+    expense: Expense,
+    category_by_id: dict[int, ExpenseCategory],
+    store_by_id: dict[int, Store] | None = None,
+) -> dict:
     category = category_by_id.get(int(expense.category_id or 0))
+    store = (store_by_id or {}).get(expense.store_id)
     return {
         "id": expense.id,
         "date": expense.date.date().isoformat() if expense.date else None,
+        "store_id": expense.store_id,
+        "store": store.name if store else None,
         "category_id": expense.category_id,
         "category": category.name if category else "Unmapped",
         "amount": round(float(expense.amount or 0), 2),
@@ -107,6 +156,7 @@ def _receipt_missing(expense: Expense) -> bool:
 @router.get("/audit-command")
 def expense_audit_command(
     days: int = Query(default=30, ge=7, le=365),
+    store_id: Optional[int] = None,
     db: Session = Depends(get_db),
     _: dict = Depends(require_roles("admin")),
 ):
@@ -122,18 +172,22 @@ def expense_audit_command(
         .all()
     )
     category_by_id = {int(category.id): category for category in categories}
-    expenses = (
-        db.query(Expense)
-        .filter(Expense.date >= start_at, Expense.date <= end_at)
-        .order_by(Expense.date.desc(), Expense.id.desc())
-        .all()
+    stores = db.query(Store).order_by(Store.id.asc()).all()
+    store_by_id = {store.id: store for store in stores}
+    expense_query = db.query(Expense).filter(
+        Expense.date >= start_at, Expense.date <= end_at
     )
-    sales_rows = (
-        db.query(DailySales)
-        .filter(DailySales.date >= start_date, DailySales.date <= today)
-        .order_by(DailySales.date.asc())
-        .all()
+    sales_query = db.query(DailySales).filter(
+        DailySales.date >= start_date, DailySales.date <= today
     )
+    if store_id is not None:
+        expense_query = expense_query.filter(Expense.store_id == store_id)
+        sales_query = sales_query.filter(DailySales.store_id == store_id)
+    expenses = expense_query.order_by(
+        Expense.date.desc(), Expense.id.desc()
+    ).all()
+    sales_rows = sales_query.order_by(DailySales.date.asc()).all()
+    selected_store = store_by_id.get(store_id) if store_id is not None else None
 
     total_sales = round(sum(float(row.total_sale or 0) for row in sales_rows), 2)
     sales_expenses = round(sum(float(row.total_expense or 0) for row in sales_rows), 2)
@@ -210,7 +264,7 @@ def expense_audit_command(
             reasons.append("Possible duplicate expense entry.")
         approval_queue.append(
             {
-                **_expense_row(expense, category_by_id),
+                **_expense_row(expense, category_by_id, store_by_id),
                 "severity": "fail" if high_value_receipt_gap or duplicate_candidate else "warn",
                 "approval_status": "needs_review",
                 "reasons": reasons,
@@ -219,14 +273,18 @@ def expense_audit_command(
         )
 
     daily_risks = []
-    expense_days = {expense.date.date() for expense in expenses if expense.date}
+    expense_days = {
+        (expense.store_id, expense.date.date())
+        for expense in expenses
+        if expense.date
+    }
     for row in sales_rows:
         sale = float(row.total_sale or 0)
         expense = float(row.total_expense or 0)
         day_ratio = round((expense / sale) * 100, 2) if sale else (100.0 if expense else 0.0)
         severity = None
         reason = ""
-        if sale > 0 and expense <= 0 and row.date not in expense_days:
+        if sale > 0 and expense <= 0 and (row.store_id, row.date) not in expense_days:
             severity = "warn"
             reason = "Sales exist but no expense is recorded for this day."
         elif sale > 0 and day_ratio > 75:
@@ -242,6 +300,12 @@ def expense_audit_command(
             daily_risks.append(
                 {
                     "date": row.date.isoformat(),
+                    "store_id": row.store_id,
+                    "store": (
+                        store_by_id.get(row.store_id).name
+                        if store_by_id.get(row.store_id)
+                        else None
+                    ),
                     "sales": round(sale, 2),
                     "expenses": round(expense, 2),
                     "profit": round(float(row.profit or sale - expense), 2),
@@ -300,6 +364,8 @@ def expense_audit_command(
             "start_date": start_date.isoformat(),
             "end_date": today.isoformat(),
             "days": days,
+            "store_id": selected_store.id if selected_store else None,
+            "store": selected_store.name if selected_store else "All outlets",
         },
         "overall": overall,
         "readiness_score": readiness_score,
@@ -324,7 +390,10 @@ def expense_audit_command(
         "category_breakdown": category_breakdown[:8],
         "daily_risks": daily_risks[-12:],
         "approval_queue": approval_queue[:20],
-        "top_expenses": [_expense_row(expense, category_by_id) for expense in expenses[:8]],
+        "top_expenses": [
+            _expense_row(expense, category_by_id, store_by_id)
+            for expense in expenses[:8]
+        ],
         "next_actions": [
             check["detail"]
             for check in checks

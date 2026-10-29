@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import PortalShell from "@/components/layout/PortalShell";
 import {
   ADMIN_COOKIE,
@@ -7,7 +8,7 @@ import {
   verifySessionToken,
 } from "@/lib/session";
 
-async function currentPortalRole(): Promise<SessionRole> {
+async function currentPortalRole(): Promise<SessionRole | null> {
   const cookieStore = cookies();
   const adminSession = await verifySessionToken(
     cookieStore.get(ADMIN_COOKIE)?.value,
@@ -21,7 +22,7 @@ async function currentPortalRole(): Promise<SessionRole> {
   );
   if (staffSession) return "staff";
 
-  return "admin";
+  return null;
 }
 
 export default async function DashboardLayout({
@@ -30,6 +31,9 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const role = await currentPortalRole();
+  if (!role) {
+    redirect("/login");
+  }
 
   return <PortalShell role={role}>{children}</PortalShell>;
 }

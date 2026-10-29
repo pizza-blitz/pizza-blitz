@@ -35,6 +35,19 @@ type Department = {
   integration_status: string;
   modules: Module[];
   members: { staff_id: string; display_name: string; role: string }[];
+  needs_you_count?: number;
+  work_items?: {
+    id: number;
+    title: string;
+    priority: string;
+    status: string;
+  }[];
+  approvals?: {
+    id: number;
+    title: string;
+    kind: string;
+    amount?: number | null;
+  }[];
 };
 
 type Overview = {
@@ -290,6 +303,60 @@ export default function HRDepartmentPage() {
           );
         })}
       </section>
+
+      {((department.work_items?.length || 0) + (department.approvals?.length || 0)) > 0 && (
+        <section
+          data-testid="hr-department-queue"
+          className="rounded-2xl border border-orange-100 bg-orange-50/50 p-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-orange-800">
+              Needs HR · {department.needs_you_count ?? 0} open
+            </p>
+            <Link
+              href="/work"
+              className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-orange-800"
+            >
+              Open my work <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {(department.approvals || []).map((approval) => (
+              <Link
+                key={`approval-${approval.id}`}
+                href="/work"
+                className="rounded-xl bg-white px-3 py-2 hover:ring-1 hover:ring-orange-200"
+              >
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">
+                  {approval.kind.replace(/_/g, " ")} approval
+                </p>
+                <p className="truncate text-sm font-black text-gray-900">
+                  {approval.title}
+                </p>
+                {approval.amount ? (
+                  <p className="text-[10px] font-bold text-gray-400">
+                    Rs {Number(approval.amount).toLocaleString()}
+                  </p>
+                ) : null}
+              </Link>
+            ))}
+            {(department.work_items || []).map((item) => (
+              <Link
+                key={`task-${item.id}`}
+                href="/work"
+                className="rounded-xl bg-white px-3 py-2 hover:ring-1 hover:ring-orange-200"
+              >
+                <p className="text-[9px] font-black uppercase tracking-widest text-gray-500">
+                  {item.priority} priority task
+                </p>
+                <p className="truncate text-sm font-black text-gray-900">
+                  {item.title}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className="rounded-2xl border border-gray-100 bg-white p-5">

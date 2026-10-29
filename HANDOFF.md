@@ -30,8 +30,10 @@ Full commands and what each gate proves: `docs/VERIFICATION.md`.
    and verify `/ready` against it.
 2. Configure production secrets: admin credentials, `AUTH_SECRET_KEY`,
    `PIZZA_BLITZ_SESSION_SECRET`, `BACKEND_CORS_ORIGINS`, and the public URLs.
-3. Deploy with `deploy-gcp.ps1` (backend then frontend), then run the
-   production-only proofs listed in `docs/VERIFICATION.md`.
+3. Deploy the backend and frontend to the chosen host, then run the
+   production-only proofs listed in `docs/VERIFICATION.md`. `DEPLOY_REQUEST.md`
+   records the decision (Supabase Postgres plus Render/Railway or Vercel); the
+   `deploy-gcp.ps1`/`.sh` scripts remain as an unused option.
 4. Add provider credentials one at a time (payment sandbox first), keeping
    `CAMPAIGN_SEND_ENABLED`, `SOCIAL_PUBLISH_ENABLED`, and `ADS_LAUNCH_ENABLED`
    off until each provider is verified.

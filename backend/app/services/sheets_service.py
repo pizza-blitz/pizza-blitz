@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import business_today
 from app.models.domain import DailySales, GoogleSheetSync
+from app.services.store_service import DEFAULT_STORE_ID
 
 
 class SheetsService:
@@ -412,12 +413,21 @@ class SheetsService:
             notes = str(self._cell(row, mapping.get("notes")) or "").strip()
             payment_method = str(self._cell(row, mapping.get("payment_method")) or "mixed").strip() or "mixed"
 
-            sale_record = db.query(DailySales).filter(DailySales.date == parsed_date).first()
+            sale_record = (
+                db.query(DailySales)
+                .filter(
+                    DailySales.store_id == DEFAULT_STORE_ID,
+                    DailySales.date == parsed_date,
+                )
+                .first()
+            )
             if sale_record:
                 updated += 1
             else:
                 created += 1
-                sale_record = DailySales(date=parsed_date)
+                sale_record = DailySales(
+                    store_id=DEFAULT_STORE_ID, date=parsed_date
+                )
                 db.add(sale_record)
 
             sale_record.cash_collected = cash
