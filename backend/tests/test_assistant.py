@@ -233,6 +233,19 @@ class AssistantTest(unittest.TestCase):
         self.assertIn("add_item", [action["type"] for action in payload["actions"]])
         self.assertNotIn("delivery zones", payload["reply"].lower())
 
+    def test_delivery_phrase_without_a_verb_still_adds_the_item(self):
+        # "one margherita pizza for delivery" is how a guest actually types
+        # it; without an add verb the old parser read "delivery" as a zone
+        # question and answered with the fee list instead of the cart.
+        payload = self.chat("one margherita pizza for delivery")
+        self.assertEqual(payload["intent"], "add_item")
+        self.assertEqual(payload["fulfillment"], "delivery")
+        self.assertEqual(payload["cart"]["count"], 1)
+
+        shorter = self.chat("one margherita for delivery")
+        self.assertEqual(shorter["intent"], "add_item")
+        self.assertEqual(shorter["cart"]["count"], 1)
+
     def test_use_delivery_chip_acknowledges_and_moves_on(self):
         added = self.chat("two margherita pizzas")
         self.assertEqual(added["cart"]["count"], 2)

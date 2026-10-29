@@ -21,14 +21,6 @@
           "source": "/server/:path(.*)?",
           "destination": "/:path"
         }
-      ],
-      "bindings": [
-        {
-          "type": "service",
-          "service": "web",
-          "format": "url",
-          "env": "WEB_URL"
-        }
       ]
     }
   },

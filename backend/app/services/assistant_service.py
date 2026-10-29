@@ -1414,7 +1414,20 @@ def assistant_chat(
             effective_fulfillment = "delivery"
             channel = "delivery"
             lines, notices = _normalise_cart(db, cart or [], channel)
-        add_result = _handle_add(db, normalised, available, lines, channel)
+        # The guest may name the channel after the food ("one margherita
+        # pizza for delivery"). Strip that tail before matching, otherwise
+        # the add parser reads the word "delivery" as a zone question and
+        # drops the food.
+        order_text = re.sub(
+            r"\b(?:for|with|as|to)\s+(?:delivery|pickup|takeaway|collection)\b",
+            " ",
+            normalised,
+        )
+        order_text = re.sub(r"\b(?:delivery|pickup|takeaway)\s+please\b", " ", order_text)
+        order_text = re.sub(r"\s+", " ", order_text).strip()
+        add_result = _handle_add(
+            db, order_text or normalised, available, lines, channel
+        )
         if add_result is not None:
             intent = "add_item"
             reply, lines, add_actions, _ = add_result
