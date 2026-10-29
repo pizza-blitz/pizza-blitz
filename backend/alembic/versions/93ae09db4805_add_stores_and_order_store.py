@@ -39,7 +39,7 @@ def upgrade() -> None:
         sa.text(
             "INSERT INTO stores "
             "(id, name, code, address_line, phone, timezone, is_active, created_at, updated_at) "
-            "VALUES (1, 'Pizza Blitz', 'MAIN', 'Main store', NULL, 'Asia/Kolkata', 1, "
+            "VALUES (1, 'Pizza Blitz', 'MAIN', 'Main store', NULL, 'Asia/Kolkata', true, "
             "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         )
     )
