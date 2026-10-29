@@ -156,9 +156,11 @@ const DAY_ORDER = [
 function formatOpeningHours(
   hours?: Record<string, StoreOpeningWindow | null> | null
 ): string {
-  if (hours === null || hours === undefined) return "Open 24/7";
+  // No configured hours must never read as "Closed every day" while the
+  // store is taking orders. Return nothing and let the caller hide the row.
+  if (!hours) return "";
   const entries = DAY_ORDER.filter(([key]) => hours[key]);
-  if (!entries.length) return "Closed every day";
+  if (!entries.length) return "";
   const windows = entries.map(([key]) => hours[key] as StoreOpeningWindow);
   const uniform =
     entries.length === 7 &&
@@ -983,10 +985,12 @@ export default async function PublicHomePage() {
                     <span>{storeAddress}</span>
                   </li>
                 ) : null}
-                <li className="flex items-start gap-3">
-                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
-                  <span>{storeHoursText}</span>
-                </li>
+                {storeHoursText ? (
+                  <li className="flex items-start gap-3">
+                    <Clock className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
+                    <span>{storeHoursText}</span>
+                  </li>
+                ) : null}
                 {storePhone ? (
                   <li className="flex items-start gap-3">
                     <Phone className="mt-0.5 h-4 w-4 shrink-0 text-red-700" />
